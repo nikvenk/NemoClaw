@@ -201,20 +201,29 @@ async function deploy(instanceName) {
   run(`ssh ${name} 'mkdir -p /home/ubuntu/nemoclaw'`);
   run(`scp -r -o StrictHostKeyChecking=no "${ROOT}/scripts" "${ROOT}/Dockerfile" "${ROOT}/nemoclaw" "${ROOT}/nemoclaw-blueprint" "${ROOT}/.jensenclaw" ${name}:/home/ubuntu/nemoclaw/`);
 
-  console.log("  Running setup...");
-  const ghTokenEnv = process.env.GITHUB_TOKEN ? ` GITHUB_TOKEN="${process.env.GITHUB_TOKEN}"` : "";
-  run(`ssh -t ${name} 'cd /home/ubuntu/nemoclaw && NVIDIA_API_KEY="${process.env.NVIDIA_API_KEY}"${ghTokenEnv} bash scripts/brev-setup.sh'`);
-
+  // Write credentials to a .env file on the VM (avoids shell quoting issues)
+  const envLines = [`NVIDIA_API_KEY=${process.env.NVIDIA_API_KEY}`];
+  const ghToken = process.env.GITHUB_TOKEN;
+  if (ghToken) envLines.push(`GITHUB_TOKEN=${ghToken}`);
   const tgToken = getCredential("TELEGRAM_BOT_TOKEN");
+  if (tgToken) envLines.push(`TELEGRAM_BOT_TOKEN=${tgToken}`);
+  const envTmp = path.join(require("os").tmpdir(), `nemoclaw-env-${Date.now()}`);
+  fs.writeFileSync(envTmp, envLines.join("\n") + "\n", { mode: 0o600 });
+  run(`scp -o StrictHostKeyChecking=no "${envTmp}" ${name}:/home/ubuntu/nemoclaw/.env`);
+  fs.unlinkSync(envTmp);
+
+  console.log("  Running setup...");
+  run(`ssh -t ${name} 'cd /home/ubuntu/nemoclaw && set -a && . .env && set +a && bash scripts/brev-setup.sh'`);
+
   if (tgToken) {
     console.log("  Starting services...");
-    run(`ssh ${name} 'cd /home/ubuntu/nemoclaw && NVIDIA_API_KEY="${process.env.NVIDIA_API_KEY}" TELEGRAM_BOT_TOKEN="${tgToken}" bash scripts/start-services.sh'`);
+    run(`ssh ${name} 'cd /home/ubuntu/nemoclaw && set -a && . .env && set +a && bash scripts/start-services.sh'`);
   }
 
   console.log("");
   console.log("  Connecting to sandbox...");
   console.log("");
-  run(`ssh -t ${name} 'NVIDIA_API_KEY="${process.env.NVIDIA_API_KEY}" openshell sandbox connect nemoclaw'`);
+  run(`ssh -t ${name} 'cd /home/ubuntu/nemoclaw && set -a && . .env && set +a && openshell sandbox connect nemoclaw'`);
 }
 
 async function start() {
