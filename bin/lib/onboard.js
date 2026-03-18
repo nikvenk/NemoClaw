@@ -64,6 +64,10 @@ function isOpenshellInstalled() {
 function installOpenshell() {
   console.log("  Installing openshell CLI...");
   run(`bash "${path.join(SCRIPTS, "install-openshell.sh")}"`, { ignoreError: true });
+  const localBin = process.env.XDG_BIN_HOME || path.join(process.env.HOME || "", ".local", "bin");
+  if (fs.existsSync(path.join(localBin, "openshell")) && !process.env.PATH.split(path.delimiter).includes(localBin)) {
+    process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
+  }
   return isOpenshellInstalled();
 }
 

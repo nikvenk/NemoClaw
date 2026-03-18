@@ -65,10 +65,18 @@ fi
 
 tar xzf "$tmpdir/$ASSET" -C "$tmpdir"
 
-if [ -w /usr/local/bin ]; then
-  install -m 755 "$tmpdir/openshell" /usr/local/bin/openshell
+target_dir="/usr/local/bin"
+
+if [ -w "$target_dir" ]; then
+  install -m 755 "$tmpdir/openshell" "$target_dir/openshell"
+elif [ "${NEMOCLAW_NON_INTERACTIVE:-}" = "1" ] || [ ! -t 0 ]; then
+  target_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  mkdir -p "$target_dir"
+  install -m 755 "$tmpdir/openshell" "$target_dir/openshell"
+  warn "Installed openshell to $target_dir/openshell (user-local path)"
+  warn "Ensure $target_dir is on PATH for future shells."
 else
-  sudo install -m 755 "$tmpdir/openshell" /usr/local/bin/openshell
+  sudo install -m 755 "$tmpdir/openshell" "$target_dir/openshell"
 fi
 
-info "openshell $(openshell --version 2>&1 || echo '') installed"
+info "$("$target_dir/openshell" --version 2>&1 || echo openshell) installed"
