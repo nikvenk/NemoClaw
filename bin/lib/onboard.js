@@ -15,6 +15,7 @@ const {
 const {
   DEFAULT_CLOUD_MODEL,
   DEFAULT_OLLAMA_MODEL,
+  getOpenClawPrimaryModel,
   getProviderSelectionConfig,
 } = require("./inference-config");
 const {
@@ -62,6 +63,14 @@ function shellQuote(value) {
 }
 
 function buildSandboxConfigSyncScript(selectionConfig) {
+  const primaryModel = getOpenClawPrimaryModel(
+    selectionConfig.endpointType === "ollama"
+      ? "ollama-local"
+      : selectionConfig.endpointType === "vllm"
+        ? "vllm-local"
+        : "nvidia-nim",
+    selectionConfig.model,
+  );
   return `
 set -euo pipefail
 mkdir -p ~/.nemoclaw ~/.openclaw
@@ -78,14 +87,14 @@ if os.path.exists(cfg_path):
     with open(cfg_path) as f:
         cfg = json.load(f)
 
-cfg.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})['primary'] = ${JSON.stringify(selectionConfig.model)}
+cfg.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})['primary'] = ${JSON.stringify(primaryModel)}
 
 with open(cfg_path, 'w') as f:
     json.dump(cfg, f, indent=2)
 
 os.chmod(cfg_path, 0o600)
 PYCFG
-openclaw models set ${shellQuote(selectionConfig.model)} > /dev/null 2>&1 || true
+openclaw models set ${shellQuote(primaryModel)} > /dev/null 2>&1 || true
 exit
 `.trim();
 }

@@ -39,9 +39,23 @@ function getProviderSelectionConfig(provider, model) {
   }
 }
 
+function getOpenClawPrimaryModel(provider, model) {
+  switch (provider) {
+    case "nvidia-nim":
+      return model || DEFAULT_CLOUD_MODEL;
+    case "vllm-local":
+      return `vllm/${model || "vllm-local"}`;
+    case "ollama-local":
+      return `ollama/${model || DEFAULT_OLLAMA_MODEL}`;
+    default:
+      return model || null;
+  }
+}
+
 module.exports = {
   DEFAULT_CLOUD_MODEL,
   DEFAULT_OLLAMA_MODEL,
   INFERENCE_ROUTE_URL,
+  getOpenClawPrimaryModel,
   getProviderSelectionConfig,
 };

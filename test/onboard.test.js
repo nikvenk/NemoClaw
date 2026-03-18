@@ -20,8 +20,9 @@ describe("onboard helpers", () => {
 
     assert.match(script, /cat > ~\/\.nemoclaw\/config\.json/);
     assert.match(script, /"model": "nemotron-3-nano:30b"/);
-    assert.match(script, /openclaw models set 'nemotron-3-nano:30b'/);
+    assert.match(script, /openclaw models set 'ollama\/nemotron-3-nano:30b'/);
     assert.match(script, /cfg\.setdefault\('agents', \{\}\)\.setdefault\('defaults', \{\}\)\.setdefault\('model', \{\}\)\['primary'\]/);
+    assert.match(script, /ollama\/nemotron-3-nano:30b/);
     assert.match(script, /^exit$/m);
   });
 });

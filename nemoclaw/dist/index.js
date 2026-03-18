@@ -30,6 +30,86 @@ function getPluginConfig(api) {
             : DEFAULT_PLUGIN_CONFIG.inferenceProvider,
     };
 }
+function activeModelEntries(onboardCfg) {
+    if (!onboardCfg?.model) {
+        return [
+            {
+                id: "nvidia/nemotron-3-super-120b-a12b",
+                label: "Nemotron 3 Super 120B (March 2026)",
+                contextWindow: 131072,
+                maxOutput: 8192,
+            },
+            {
+                id: "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+                label: "Nemotron Ultra 253B",
+                contextWindow: 131072,
+                maxOutput: 4096,
+            },
+            {
+                id: "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+                label: "Nemotron Super 49B v1.5",
+                contextWindow: 131072,
+                maxOutput: 4096,
+            },
+            {
+                id: "nvidia/nemotron-3-nano-30b-a3b",
+                label: "Nemotron 3 Nano 30B",
+                contextWindow: 131072,
+                maxOutput: 4096,
+            },
+        ];
+    }
+    const entryId = onboardCfg.endpointType === "ollama"
+        ? `ollama/${onboardCfg.model}`
+        : onboardCfg.endpointType === "vllm"
+            ? `vllm/${onboardCfg.model}`
+            : onboardCfg.model;
+    return [
+        {
+            id: entryId,
+            label: onboardCfg.model,
+            contextWindow: 131072,
+            maxOutput: 8192,
+        },
+    ];
+}
+function registeredProviderForConfig(onboardCfg, providerCredentialEnv) {
+    const authLabel = providerCredentialEnv === "NVIDIA_API_KEY"
+        ? `NVIDIA API Key (${providerCredentialEnv})`
+        : `OpenAI API Key (${providerCredentialEnv})`;
+    switch (onboardCfg?.endpointType) {
+        case "ollama":
+            return {
+                id: "ollama-local",
+                label: "Local Ollama",
+                aliases: ["ollama"],
+                envVars: [providerCredentialEnv],
+                models: { chat: activeModelEntries(onboardCfg) },
+                auth: [{ type: "bearer", envVar: providerCredentialEnv, headerName: "Authorization", label: authLabel }],
+            };
+        case "vllm":
+            return {
+                id: "vllm-local",
+                label: "Local vLLM",
+                aliases: ["vllm"],
+                envVars: [providerCredentialEnv],
+                models: { chat: activeModelEntries(onboardCfg) },
+                auth: [{ type: "bearer", envVar: providerCredentialEnv, headerName: "Authorization", label: authLabel }],
+            };
+        default:
+            return {
+                id: "nvidia-nim",
+                label: onboardCfg
+                    ? `NVIDIA NIM (${onboardCfg.endpointType}${onboardCfg.ncpPartner ? ` - ${onboardCfg.ncpPartner}` : ""})`
+                    : "NVIDIA NIM (build.nvidia.com)",
+                docsPath: "https://build.nvidia.com/docs",
+                aliases: ["nvidia", "nim"],
+                envVars: [providerCredentialEnv],
+                models: { chat: activeModelEntries(onboardCfg) },
+                auth: [{ type: "bearer", envVar: providerCredentialEnv, headerName: "Authorization", label: authLabel }],
+            };
+    }
+}
 // ---------------------------------------------------------------------------
 // Plugin entry point
 // ---------------------------------------------------------------------------
@@ -48,52 +128,7 @@ function register(api) {
     // 3. Register nvidia-nim provider — use onboard config if available
     const onboardCfg = (0, config_js_1.loadOnboardConfig)();
     const providerCredentialEnv = onboardCfg?.credentialEnv ?? "NVIDIA_API_KEY";
-    const providerLabel = onboardCfg
-        ? `NVIDIA NIM (${onboardCfg.endpointType}${onboardCfg.ncpPartner ? ` - ${onboardCfg.ncpPartner}` : ""})`
-        : "NVIDIA NIM (build.nvidia.com)";
-    api.registerProvider({
-        id: "nvidia-nim",
-        label: providerLabel,
-        docsPath: "https://build.nvidia.com/docs",
-        aliases: ["nvidia", "nim"],
-        envVars: [providerCredentialEnv],
-        models: {
-            chat: [
-                {
-                    id: "nvidia/nemotron-3-super-120b-a12b",
-                    label: "Nemotron 3 Super 120B (March 2026)",
-                    contextWindow: 131072,
-                    maxOutput: 8192,
-                },
-                {
-                    id: "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-                    label: "Nemotron Ultra 253B",
-                    contextWindow: 131072,
-                    maxOutput: 4096,
-                },
-                {
-                    id: "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-                    label: "Nemotron Super 49B v1.5",
-                    contextWindow: 131072,
-                    maxOutput: 4096,
-                },
-                {
-                    id: "nvidia/nemotron-3-nano-30b-a3b",
-                    label: "Nemotron 3 Nano 30B",
-                    contextWindow: 131072,
-                    maxOutput: 4096,
-                },
-            ],
-        },
-        auth: [
-            {
-                type: "bearer",
-                envVar: providerCredentialEnv,
-                headerName: "Authorization",
-                label: `NVIDIA API Key (${providerCredentialEnv})`,
-            },
-        ],
-    });
+    api.registerProvider(registeredProviderForConfig(onboardCfg, providerCredentialEnv));
     const bannerEndpoint = onboardCfg?.endpointType ?? "build.nvidia.com";
     const bannerModel = onboardCfg?.model ?? "nvidia/nemotron-3-super-120b-a12b";
     api.logger.info("");

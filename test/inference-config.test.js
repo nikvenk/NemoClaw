@@ -7,6 +7,7 @@ const assert = require("node:assert/strict");
 const {
   DEFAULT_OLLAMA_MODEL,
   INFERENCE_ROUTE_URL,
+  getOpenClawPrimaryModel,
   getProviderSelectionConfig,
 } = require("../bin/lib/inference-config");
 
@@ -31,5 +32,12 @@ describe("inference selection config", () => {
       profile: "default",
       credentialEnv: "NVIDIA_API_KEY",
     });
+  });
+
+  it("builds a qualified OpenClaw primary model for ollama-local", () => {
+    assert.equal(
+      getOpenClawPrimaryModel("ollama-local", "nemotron-3-nano:30b"),
+      "ollama/nemotron-3-nano:30b",
+    );
   });
 });
