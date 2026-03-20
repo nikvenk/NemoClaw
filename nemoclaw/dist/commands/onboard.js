@@ -507,7 +507,7 @@ async function cliOnboard(opts) {
             return;
         }
         logger.info("Waiting for local NIM health check...");
-        const startup = (0, nim_js_1.monitorNimStartup)(runtime, opts.pluginConfig.sandboxName, 8000, 1800, 5);
+        const startup = (0, nim_js_1.monitorNimStartup)(runtime, opts.pluginConfig.sandboxName, 8000, 1200, 5, 14400);
         if (!startup.healthy) {
             logger.error(startup.reason ?? "Local NIM did not become healthy on http://localhost:8000/v1.");
             if (startup.detail) {

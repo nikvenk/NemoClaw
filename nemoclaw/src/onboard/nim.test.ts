@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assessNimModels,
   containerName,
@@ -242,26 +242,63 @@ describe("nim helpers", () => {
   });
 
   it("reports timeout details when startup never becomes healthy", () => {
-    let inspectCalls = 0;
+    const nowSpy = vi.spyOn(Date, "now");
+    {
+      const values = [0, 0, 1000, 2000, 2000];
+      nowSpy.mockImplementation(() => values.shift() ?? 2000);
+    }
     const runtime: NimRuntime = {
       exec(command: string): string {
         if (command.includes("curl -sf http://localhost:8000/v1/models")) return "";
-        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) {
-          inspectCalls += 1;
-          return "running";
-        }
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) return "running";
         if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) return "still downloading";
         if (command.includes("sleep 0")) return "";
         throw new Error(`unexpected command: ${command}`);
       },
     };
 
-    expect(monitorNimStartup(runtime, "openclaw", 8000, 0, 0)).toMatchObject({
-      healthy: false,
-      reason: "Local NIM did not become healthy within 0 seconds.",
-      detail: "still downloading",
-    });
-    expect(inspectCalls).toBeGreaterThanOrEqual(0);
+    try {
+      expect(monitorNimStartup(runtime, "openclaw", 8000, 1, 0, 10)).toMatchObject({
+        healthy: false,
+        reason: "Local NIM made no startup progress for 1 seconds.",
+        detail: "still downloading",
+        idleSeconds: 1,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("keeps waiting while logs continue to change and then succeeds", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    {
+      const values = [0, 0, 500, 1000, 1000, 1500];
+      nowSpy.mockImplementation(() => values.shift() ?? 1500);
+    }
+    let logCalls = 0;
+    const runtime: NimRuntime = {
+      exec(command: string): string {
+        if (command.includes("curl -sf http://localhost:8000/v1/models")) {
+          return logCalls >= 2 ? '{"data":[{"id":"nvidia/nemotron-3-nano"}]}' : "";
+        }
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) return "running";
+        if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) {
+          logCalls += 1;
+          return `download chunk ${String(logCalls)}`;
+        }
+        if (command.includes("sleep 0")) return "";
+        throw new Error(`unexpected command: ${command}`);
+      },
+    };
+
+    try {
+      expect(monitorNimStartup(runtime, "openclaw", 8000, 1, 0, 10)).toEqual({
+        healthy: true,
+        state: "running",
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("returns models compatible with the detected machine profile in recommendation order", () => {

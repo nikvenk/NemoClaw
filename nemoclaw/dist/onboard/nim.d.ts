@@ -47,6 +47,7 @@ export interface NimStartupResult {
     detail?: string;
     state?: string;
     fatalPattern?: string;
+    idleSeconds?: number;
 }
 export declare function createNimRuntime(): NimRuntime;
 export declare function getServedModelForModel(modelName: string): string;
@@ -61,6 +62,6 @@ export declare function getCompatibleModels(gpu: GpuInfo, freeDiskGB?: number | 
 export declare function getRecommendedModels(gpu: GpuInfo, freeDiskGB?: number | null): NimModel[];
 export declare function resolveRunningNimModel(runtime: NimRuntime, requestedModel: string, port?: number): string;
 export declare function startNimContainer(sandboxName: string, model: string, runtime: NimRuntime, port?: number, imageOverride?: string): string;
-export declare function monitorNimStartup(runtime: NimRuntime, sandboxName: string, port?: number, timeoutSeconds?: number, sleepSeconds?: number): NimStartupResult;
+export declare function monitorNimStartup(runtime: NimRuntime, sandboxName: string, port?: number, idleTimeoutSeconds?: number, sleepSeconds?: number, maxTimeoutSeconds?: number): NimStartupResult;
 export declare function waitForNimHealth(runtime: NimRuntime, port?: number, timeoutSeconds?: number, sleepSeconds?: number): boolean;
 //# sourceMappingURL=nim.d.ts.map

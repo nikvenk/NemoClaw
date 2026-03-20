@@ -223,7 +223,7 @@ describe("nim", () => {
 
       try {
         assert.deepEqual(
-          nim.monitorNimStartup("openclaw", 8000, 1),
+          nim.monitorNimStartup("openclaw", 8000, 1, 0),
           {
             healthy: false,
             state: "running",
@@ -234,6 +234,70 @@ describe("nim", () => {
         );
       } finally {
         runner.runCapture = originalRunCapture;
+      }
+    });
+
+    it("times out on idle startup but keeps waiting while logs change", () => {
+      const runnerPath = path.join(__dirname, "..", "bin", "lib", "runner.js");
+      const runner = require(runnerPath);
+      const originalRunCapture = runner.runCapture;
+      const originalNow = Date.now;
+
+      let logCalls = 0;
+      Date.now = (() => {
+        const values = [0, 0, 1000, 2000, 2000];
+        return () => values.shift() ?? 1000;
+      })();
+      runner.runCapture = (command) => {
+        if (command.includes("curl -sf http://localhost:8000/v1/models")) return "";
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) return "running";
+        if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) return "still downloading";
+        return "";
+      };
+
+      try {
+        assert.deepEqual(
+          nim.monitorNimStartup("openclaw", 8000, 1, 0, 10),
+          {
+            healthy: false,
+            state: "running",
+            idleSeconds: 1,
+            reason: "Local NIM made no startup progress for 1s.",
+            detail: "still downloading",
+          }
+        );
+      } finally {
+        runner.runCapture = originalRunCapture;
+        Date.now = originalNow;
+      }
+
+      Date.now = (() => {
+        const values = [0, 0, 500, 1000];
+        return () => values.shift() ?? 1000;
+      })();
+      runner.runCapture = (command) => {
+        if (command.includes("curl -sf http://localhost:8000/v1/models")) {
+          return logCalls >= 2 ? '{"data":[{"id":"nvidia/nemotron-3-nano"}]}' : "";
+        }
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) return "running";
+        if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) {
+          logCalls += 1;
+          return `download chunk ${logCalls}`;
+        }
+        return "";
+      };
+
+      try {
+        assert.deepEqual(
+          nim.monitorNimStartup("openclaw", 8000, 1, 0, 10),
+          {
+            healthy: true,
+            state: "running",
+          }
+        );
+      } finally {
+        runner.runCapture = originalRunCapture;
+        Date.now = originalNow;
       }
     });
   });

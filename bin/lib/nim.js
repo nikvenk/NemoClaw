@@ -518,6 +518,10 @@ function getContainerLogs(container, lines = 120) {
   });
 }
 
+function summarizeLogs(logs) {
+  return logs.trim().split(/\r?\n/).slice(-20).join("\n");
+}
+
 function detectFatalLog(logs) {
   if (!logs) return null;
   for (const entry of NIM_FATAL_LOG_PATTERNS) {
@@ -525,7 +529,7 @@ function detectFatalLog(logs) {
     if (match) {
       return {
         reason: entry.reason,
-        detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+        detail: summarizeLogs(logs),
         fatalPattern: entry.pattern.source,
       };
     }
@@ -533,13 +537,15 @@ function detectFatalLog(logs) {
   return null;
 }
 
-function monitorNimStartup(sandboxName, port = 8000, timeout = 1800) {
+function monitorNimStartup(sandboxName, port = 8000, idleTimeout = 1200, sleepSeconds = 5, maxTimeout = 14400) {
   const container = containerName(sandboxName);
   const start = Date.now();
-  const interval = 5000;
-  console.log(`  Waiting for NIM health on port ${port} (timeout: ${timeout}s)...`);
+  let lastProgressAt = start;
+  let previousState = null;
+  let previousLogs = "";
+  console.log(`  Waiting for NIM health on port ${port} (idle timeout: ${idleTimeout}s, max: ${maxTimeout}s)...`);
 
-  while ((Date.now() - start) / 1000 < timeout) {
+  while ((Date.now() - start) / 1000 < maxTimeout) {
     try {
       const result = runner.runCapture(`curl -sf http://localhost:${port}/v1/models`, {
         ignoreError: true,
@@ -552,6 +558,11 @@ function monitorNimStartup(sandboxName, port = 8000, timeout = 1800) {
 
     const state = getContainerState(container);
     const logs = getContainerLogs(container);
+    if (state !== previousState || logs !== previousLogs) {
+      lastProgressAt = Date.now();
+      previousState = state;
+      previousLogs = logs;
+    }
     const fatal = detectFatalLog(logs);
     if (fatal) {
       return { healthy: false, state: state || "unknown", ...fatal };
@@ -561,19 +572,30 @@ function monitorNimStartup(sandboxName, port = 8000, timeout = 1800) {
         healthy: false,
         state,
         reason: `Local NIM container exited before becoming healthy (state: ${state}).`,
-        detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+        detail: summarizeLogs(logs),
       };
     }
 
-    require("child_process").spawnSync("sleep", ["5"]);
+    const idleSeconds = Math.floor((Date.now() - lastProgressAt) / 1000);
+    if (idleSeconds >= idleTimeout) {
+      return {
+        healthy: false,
+        state: state || "unknown",
+        idleSeconds,
+        reason: `Local NIM made no startup progress for ${idleTimeout}s.`,
+        detail: summarizeLogs(logs),
+      };
+    }
+
+    require("child_process").spawnSync("sleep", [String(sleepSeconds)]);
   }
 
   const finalLogs = getContainerLogs(container);
   return {
     healthy: false,
     state: getContainerState(container) || "unknown",
-    reason: `Local NIM did not become healthy within ${timeout}s.`,
-    detail: finalLogs.trim().split(/\r?\n/).slice(-20).join("\n"),
+    reason: `Local NIM did not become healthy within the maximum startup window of ${maxTimeout}s.`,
+    detail: summarizeLogs(finalLogs),
   };
 }
 

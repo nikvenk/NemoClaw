@@ -528,6 +528,9 @@ function getContainerState(runtime, container) {
 function getContainerLogs(runtime, container, lines = 120) {
     return tryExec(runtime, `docker logs --tail ${String(lines)} ${container} 2>&1`);
 }
+function summarizeLogs(logs) {
+    return logs.trim().split(/\r?\n/).slice(-20).join("\n");
+}
 function detectFatalLog(logs) {
     if (!logs) {
         return null;
@@ -535,25 +538,32 @@ function detectFatalLog(logs) {
     for (const entry of NIM_FATAL_LOG_PATTERNS) {
         const match = logs.match(entry.pattern);
         if (match) {
-            const detail = logs.trim().split(/\r?\n/).slice(-20).join("\n");
             return {
                 reason: entry.reason,
-                detail,
+                detail: summarizeLogs(logs),
                 fatalPattern: entry.pattern.source,
             };
         }
     }
     return null;
 }
-function monitorNimStartup(runtime, sandboxName, port = 8000, timeoutSeconds = 1800, sleepSeconds = 5) {
+function monitorNimStartup(runtime, sandboxName, port = 8000, idleTimeoutSeconds = 1200, sleepSeconds = 5, maxTimeoutSeconds = 14400) {
     const container = containerName(sandboxName);
-    const deadline = Date.now() + timeoutSeconds * 1000;
-    while (Date.now() < deadline) {
+    const startTime = Date.now();
+    let lastProgressAt = startTime;
+    let previousState = null;
+    let previousLogs = "";
+    while (Date.now() - startTime < maxTimeoutSeconds * 1000) {
         if (tryExec(runtime, `curl -sf http://localhost:${String(port)}/v1/models 2>/dev/null`)) {
             return { healthy: true, state: "running" };
         }
         const state = getContainerState(runtime, container);
         const logs = getContainerLogs(runtime, container);
+        if (state !== previousState || logs !== previousLogs) {
+            lastProgressAt = Date.now();
+            previousState = state;
+            previousLogs = logs;
+        }
         const fatal = detectFatalLog(logs);
         if (fatal) {
             return {
@@ -569,7 +579,17 @@ function monitorNimStartup(runtime, sandboxName, port = 8000, timeoutSeconds = 1
                 healthy: false,
                 state,
                 reason: `Local NIM container exited before becoming healthy (state: ${state}).`,
-                detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+                detail: summarizeLogs(logs),
+            };
+        }
+        const idleSeconds = Math.floor((Date.now() - lastProgressAt) / 1000);
+        if (idleSeconds >= idleTimeoutSeconds) {
+            return {
+                healthy: false,
+                state: state ?? "unknown",
+                idleSeconds,
+                reason: `Local NIM made no startup progress for ${String(idleTimeoutSeconds)} seconds.`,
+                detail: summarizeLogs(logs),
             };
         }
         tryExec(runtime, `sleep ${String(sleepSeconds)}`);
@@ -578,8 +598,8 @@ function monitorNimStartup(runtime, sandboxName, port = 8000, timeoutSeconds = 1
     return {
         healthy: false,
         state: getContainerState(runtime, container) ?? "unknown",
-        reason: `Local NIM did not become healthy within ${String(timeoutSeconds)} seconds.`,
-        detail: finalLogs.trim().split(/\r?\n/).slice(-20).join("\n"),
+        reason: `Local NIM did not become healthy within the maximum startup window of ${String(maxTimeoutSeconds)} seconds.`,
+        detail: summarizeLogs(finalLogs),
     };
 }
 function waitForNimHealth(runtime, port = 8000, timeoutSeconds = 300, sleepSeconds = 5) {
