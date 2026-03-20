@@ -38,6 +38,9 @@ info() { echo -e "${GREEN}>>>${NC} $1"; }
 warn() { echo -e "${YELLOW}>>>${NC} $1"; }
 fail() { echo -e "${RED}>>>${NC} $1"; exit 1; }
 
+DEFAULT_CLOUD_MODEL="nvidia/nemotron-3-super-120b-a12b"
+INFERENCE_MODEL="${NEMOCLAW_MODEL:-$DEFAULT_CLOUD_MODEL}"
+
 upsert_provider() {
   local name="$1"
   local type="$2"
@@ -157,9 +160,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
   fi
 fi
 
-# 4b. Inference route — default to nvidia-nim
-info "Setting inference route to nvidia-nim / Nemotron 3 Super..."
-openshell inference set --no-verify --provider nvidia-nim --model nvidia/nemotron-3-super-120b-a12b > /dev/null 2>&1
+# 4b. Inference route — default to configured cloud model unless overridden
+info "Setting inference route to nvidia-nim / ${INFERENCE_MODEL}..."
+openshell inference set --no-verify --provider nvidia-nim --model "$INFERENCE_MODEL" > /dev/null 2>&1
 
 # 5. Build and create sandbox
 info "Deleting old ${SANDBOX_NAME} sandbox (if any)..."
@@ -187,7 +190,7 @@ CREATE_LOG=$(mktemp /tmp/nemoclaw-create-XXXXXX.log)
 set +e
 openshell sandbox create --from "$BUILD_CTX/Dockerfile" --name "$SANDBOX_NAME" \
   --provider nvidia-nim \
-  -- env NVIDIA_API_KEY="$NVIDIA_API_KEY" > "$CREATE_LOG" 2>&1
+  -- env NVIDIA_API_KEY="$NVIDIA_API_KEY" NEMOCLAW_MODEL="$INFERENCE_MODEL" > "$CREATE_LOG" 2>&1
 CREATE_RC=$?
 set -e
 rm -rf "$BUILD_CTX"

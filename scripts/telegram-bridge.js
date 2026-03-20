@@ -39,6 +39,17 @@ if (!API_KEY) { console.error("NVIDIA_API_KEY required"); process.exit(1); }
 let offset = 0;
 const activeSessions = new Map(); // chatId → message history
 
+function getConfiguredModel() {
+  try {
+    const output = execSync(`"${OPENSHELL}" inference get --json`, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const route = JSON.parse(output);
+    if (typeof route?.model === "string" && route.model.trim()) {
+      return route.model.trim();
+    }
+  } catch {}
+  return process.env.NEMOCLAW_MODEL || "unknown";
+}
+
 // ── Telegram API helpers ──────────────────────────────────────────
 
 function tgApi(method, body) {
@@ -232,7 +243,7 @@ async function main() {
   console.log("  │                                                     │");
   console.log(`  │  Bot:      @${(me.result.username + "                    ").slice(0, 37)}│`);
   console.log("  │  Sandbox:  " + (SANDBOX + "                              ").slice(0, 40) + "│");
-  console.log("  │  Model:    nvidia/nemotron-3-super-120b-a12b       │");
+  console.log("  │  Model:    " + (getConfiguredModel() + "                              ").slice(0, 40) + "│");
   console.log("  │                                                     │");
   console.log("  │  Messages are forwarded to the OpenClaw agent      │");
   console.log("  │  inside the sandbox. Run 'openshell term' in       │");
