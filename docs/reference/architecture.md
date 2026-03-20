@@ -24,7 +24,7 @@ NemoClaw has two main components: a TypeScript plugin that integrates with the O
 
 ## NemoClaw Plugin
 
-The plugin is a thin TypeScript package that registers commands under `openclaw nemoclaw`.
+The plugin is a thin TypeScript package that registers an inference provider and the `/nemoclaw` slash command.
 It runs in-process with the OpenClaw gateway and handles user-facing CLI interactions.
 
 ```text
