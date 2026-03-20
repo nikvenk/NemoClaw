@@ -515,15 +515,16 @@ describe("registerRuntimeContext", () => {
       expect(second).toBeUndefined();
     });
 
-    it("uses fallback cache key (nemoclaw:<sandboxName>) when hookContext has no sessionKey", async () => {
+    it("emits full context on every call when hookContext has no sessionKey (no shared caching)", async () => {
       const { api } = makeMockApi();
       registerRuntimeContext(api, defaultConfig);
 
       const first = await api._trigger("before_agent_start", {}, {});
       const second = await api._trigger("before_agent_start", {}, {});
 
+      // Without a session key caching is disabled — both calls must inject context.
       expect(first).toHaveProperty("prependContext");
-      expect(second).toBeUndefined();
+      expect(second).toHaveProperty("prependContext");
     });
 
     it("treats null hookContext as missing session key", async () => {

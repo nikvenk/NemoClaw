@@ -205,27 +205,29 @@ function summarizeFilesystem(policy: Record<string, unknown> | null): string[] {
 /**
  * Fetches the full policy YAML for `sandboxName` and parses it.
  *
- * @throws When `execOpenShell` fails (openshell unavailable, timeout, etc.).
- * @returns The parsed policy document, or `null` when output is empty or
- *   cannot be parsed as valid YAML.
+ * @throws When `execOpenShell` fails (openshell unavailable, timeout, etc.),
+ *   when the output contains no recognisable YAML, or when the YAML document
+ *   cannot be parsed as an object.  Callers must not cache the result of a
+ *   degraded or missing policy load.
  */
-async function loadPolicyDoc(sandboxName: string): Promise<Record<string, unknown> | null> {
+async function loadPolicyDoc(sandboxName: string): Promise<Record<string, unknown>> {
   // Intentionally does not catch execOpenShell errors — propagate to caller so
   // that only successful policy loads are written to sessionRuntimeCache.
   const output = await execOpenShell(["policy", "get", sandboxName, "--full"]);
   const yamlText = normalizePolicyYaml(output);
   if (!yamlText) {
-    return null;
+    throw new Error(`openshell policy get --full returned no YAML for sandbox "${sandboxName}"`);
   }
+  let parsed: unknown;
   try {
-    const parsed: unknown = yaml.parse(yamlText);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
+    parsed = yaml.parse(yamlText);
+  } catch (error) {
+    throw new Error(`failed to parse openshell policy document: ${String(error)}`);
   }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("openshell policy get --full returned a non-object document");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 /**
@@ -281,10 +283,15 @@ function serializeFingerprint(fingerprint: RuntimeFingerprint): string {
 }
 
 /**
- * Resolves the cache key for the current agent session.  Prefers an explicit
- * `sessionKey` from `hookContext`; falls back to `nemoclaw:<sandboxName>`.
+ * Resolves the cache key for the current agent session.  Returns the
+ * `sessionKey` from `hookContext` when present and non-empty, or `undefined`
+ * when no per-session identifier is available.
+ *
+ * A `undefined` return value signals to callers that caching should be
+ * skipped entirely for this invocation so that different conversations without
+ * session keys never share a cache entry.
  */
-function getSessionCacheKey(pluginConfig: NemoClawConfig, hookContext: unknown): string {
+function getSessionCacheKey(_pluginConfig: NemoClawConfig, hookContext: unknown): string | undefined {
   if (hookContext && typeof hookContext === "object") {
     const ctx = hookContext as Record<string, unknown>;
     const sessionKey = ctx["sessionKey"];
@@ -292,7 +299,7 @@ function getSessionCacheKey(pluginConfig: NemoClawConfig, hookContext: unknown):
       return sessionKey;
     }
   }
-  return `nemoclaw:${getSandboxName(pluginConfig)}`;
+  return undefined;
 }
 
 /**
@@ -380,6 +387,10 @@ function buildRuntimeDeltaText(
  * prepend, or `null` when the fingerprint is unchanged and no injection is
  * needed.
  *
+ * When no session key is available (i.e. `getSessionCacheKey` returns
+ * `undefined`) caching is skipped entirely and a full context block is always
+ * returned so that unrelated conversations never share stale state.
+ *
  * Writes to `sessionRuntimeCache` only when `loadPolicyDoc` succeeds, so
  * degraded openshell states are never persisted as authoritative cached
  * entries.
@@ -391,6 +402,15 @@ async function getCachedRuntimeInjection(pluginConfig: NemoClawConfig, hookConte
   const fingerprint = await getRuntimeFingerprint(pluginConfig);
   const fingerprintKey = serializeFingerprint(fingerprint);
   const cacheKey = getSessionCacheKey(pluginConfig, hookContext);
+
+  // No session key — skip caching entirely to avoid cross-conversation sharing.
+  if (cacheKey === undefined) {
+    const summary = await getRuntimeSummaryFromFingerprint(fingerprint);
+    return buildRuntimeContextText(summary);
+  }
+
+  // Evict stale/excess entries before reading so we never return a stale hit.
+  evictCache();
   const cached = sessionRuntimeCache.get(cacheKey);
   if (cached && cached.fingerprintKey === fingerprintKey) {
     return null;
@@ -398,8 +418,9 @@ async function getCachedRuntimeInjection(pluginConfig: NemoClawConfig, hookConte
   // May throw if openshell is unavailable for the full policy fetch; the caller
   // must catch and apply the static fallback — do not cache on failure.
   const summary = await getRuntimeSummaryFromFingerprint(fingerprint);
-  evictCache();
   sessionRuntimeCache.set(cacheKey, { fingerprintKey, summary, createdAt: Date.now() });
+  // Enforce size cap after the new entry is written.
+  evictCache();
   if (!cached) {
     return buildRuntimeContextText(summary);
   }
@@ -435,7 +456,12 @@ export async function getRuntimeSummary(pluginConfig: NemoClawConfig): Promise<R
  */
 export function registerRuntimeContext(api: OpenClawPluginApi, pluginConfig: NemoClawConfig): void {
   api.on("before_agent_start", async (_event: unknown, hookContext: unknown) => {
+    // Initialise to the configured default; overwritten below with the live
+    // state value so the fallback block reflects the active sandbox name even
+    // when the sandbox was changed after the plugin was initialised.
+    let activeSandbox = pluginConfig.sandboxName;
     try {
+      activeSandbox = getSandboxName(pluginConfig);
       const prependContext = await getCachedRuntimeInjection(pluginConfig, hookContext);
       if (!prependContext) {
         return undefined;
@@ -448,7 +474,7 @@ export function registerRuntimeContext(api: OpenClawPluginApi, pluginConfig: Nem
       return {
         prependContext: [
           "<nemoclaw-runtime>",
-          `You are running inside OpenShell sandbox "${pluginConfig.sandboxName}" via NemoClaw.`,
+          `You are running inside OpenShell sandbox "${activeSandbox}" via NemoClaw.`,
           "Treat network access as deny-by-default and report proxy 403 responses as policy blocks.",
           "Do not claim unrestricted host or internet access.",
           "</nemoclaw-runtime>",
