@@ -53,6 +53,7 @@ jobs:
         run: |
           find docs/_build -name .doctrees -prune -exec rm -rf {} \;
           find docs/_build -name .buildinfo -exec rm {} \;
+          touch docs/_build/html/.nojekyll
 
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@v1
