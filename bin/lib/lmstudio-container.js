@@ -182,19 +182,11 @@ function getCredential() {
 }
 
 /**
- * List all models currently downloaded in the sidecar.
- * Parses `lms ls` output — extracts LLM model names (skips EMBEDDING section).
+ * Parse `lms ls` output into an array of LLM model identifiers.
+ * Skips the EMBEDDING section and header/separator lines.
  */
-function listModels(sandboxName) {
-  const name = containerName(sandboxName);
-  const output = runCapture(
-    `docker exec ${name} lms ls 2>/dev/null`,
-    { ignoreError: true }
-  );
-  if (!output) return [];
-  // lms ls output has sections: LLM and EMBEDDING, separated by blank lines
-  // Extract model identifiers from the LLM section
-  const lines = output.split(/\r?\n/);
+function parseLmsList(output) {
+  const lines = String(output || "").split(/\r?\n/);
   const models = [];
   let inLlmSection = false;
   for (const line of lines) {
@@ -207,6 +199,20 @@ function listModels(sandboxName) {
     if (id) models.push(id);
   }
   return models;
+}
+
+/**
+ * List all models currently downloaded in the sidecar.
+ * Parses `lms ls` output — extracts LLM model names (skips EMBEDDING section).
+ */
+function listModels(sandboxName) {
+  const name = containerName(sandboxName);
+  const output = runCapture(
+    `docker exec ${name} lms ls 2>/dev/null`,
+    { ignoreError: true }
+  );
+  if (!output) return [];
+  return parseLmsList(output);
 }
 
 /**
@@ -234,6 +240,7 @@ module.exports = {
   isRunning,
   listModels,
   loadModel,
+  parseLmsList,
   pullModel,
   startLmstudioContainer,
   stopLmstudioContainer,

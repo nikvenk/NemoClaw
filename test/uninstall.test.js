@@ -69,7 +69,12 @@ describe("uninstall helpers", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe("openshell-cluster-nemoclaw");
+    const expected = [
+      "openshell-cluster-nemoclaw",
+      "nemoclaw-ollama-models",
+      "nemoclaw-lmstudio-models",
+    ].join("\n");
+    expect(result.stdout.trim()).toBe(expected);
   });
 
   it("removes the user-local nemoclaw shim", () => {
