@@ -22,10 +22,9 @@ const RUNNER_PY = path.join(
 );
 
 // Matches --credential followed by a value containing "=" (i.e. KEY=VALUE).
-// This catches patterns like:
-//   --credential "NVIDIA_API_KEY=" + process.env.NVIDIA_API_KEY
-//   --credential "OPENAI_API_KEY=somevalue"
-//   --credential f"OPENAI_API_KEY={credential}"
+// Catches quoted KEY=VALUE patterns in JS and Python f-string interpolation.
+// Assumes credentials are always in quoted strings (which matches our codebase).
+// NOTE: unquoted forms like `--credential KEY=VALUE` would not be detected.
 const JS_EXPOSURE_RE = /--credential\s+[^"]*"[A-Z_]+=/;
 const JS_CREDENTIAL_CONCAT_RE = /--credential.*=.*process\.env\./;
 const PY_EXPOSURE_RE = /--credential.*=.*\{/;
@@ -36,7 +35,7 @@ describe("credential exposure in process arguments", () => {
     const lines = src.split("\n");
 
     const violations = lines.filter(
-      (line, i) =>
+      (line) =>
         (JS_EXPOSURE_RE.test(line) || JS_CREDENTIAL_CONCAT_RE.test(line)) &&
         // Allow comments that describe the old pattern
         !line.trimStart().startsWith("//"),
