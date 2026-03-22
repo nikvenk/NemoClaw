@@ -72,6 +72,25 @@ module.exports = function createAdapter(config) {
 
               const userName = msg.from?.first_name || "someone";
 
+              // Handle bot commands locally — these existed in the
+              // monolithic telegram-bridge.js and users may depend on them.
+              if (msg.text === "/start") {
+                await tgApi("sendMessage", {
+                  chat_id: channelId,
+                  text: "NemoClaw — powered by Nemotron\n\nSend me a message and I'll run it through the OpenClaw agent inside an OpenShell sandbox.",
+                  reply_to_message_id: msg.message_id,
+                }).catch(() => {});
+                continue;
+              }
+              if (msg.text === "/reset") {
+                await tgApi("sendMessage", {
+                  chat_id: channelId,
+                  text: "Session reset.",
+                  reply_to_message_id: msg.message_id,
+                }).catch(() => {});
+                continue;
+              }
+
               await onMessage({
                 channelId,
                 userName,
