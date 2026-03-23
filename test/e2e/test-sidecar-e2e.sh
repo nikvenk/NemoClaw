@@ -37,7 +37,12 @@ set -uo pipefail
 if [ -n "${OLLAMA_MODELS:-}" ]; then
   read -ra OLLAMA_MODELS <<<"$OLLAMA_MODELS"
 else
-  OLLAMA_MODELS=("nemotron-3-nano:30b")
+  OLLAMA_MODELS=(
+    "nemotron-3-nano:30b"
+    "nemotron-3-nano:4b"
+    "nemotron-cascade-2:30b"
+    "nemotron-mini:4b"
+  )
 fi
 if [ -n "${LMSTUDIO_MODELS:-}" ]; then
   read -ra LMSTUDIO_MODELS <<<"$LMSTUDIO_MODELS"

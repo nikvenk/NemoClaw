@@ -26,7 +26,10 @@ const SIDECARS = {
     containerName: ollamaContainer.containerName,
     label: "Ollama",
     starterModels: [
-      { model: "nemotron-3-nano:30b", label: "Nemotron 3 Nano 30B (18 GB)" },
+      { model: "nemotron-3-nano:30b", label: "Nemotron 3 Nano 30B MoE (18 GB)" },
+      { model: "nemotron-3-nano:4b", label: "Nemotron 3 Nano 4B (3 GB, fast)" },
+      { model: "nemotron-cascade-2:30b", label: "Nemotron Cascade 2 30B MoE (18 GB)" },
+      { model: "nemotron-mini:4b", label: "Nemotron Mini 4B (3 GB)" },
     ],
     // Ollama model IDs are the same for pull and API
     getApiModelId: (model) => model,
