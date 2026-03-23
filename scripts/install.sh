@@ -99,7 +99,10 @@ else
 fi
 
 # Ensure nvm environment is loaded in the current shell.
+# Skip if node is already on PATH — sourcing nvm.sh can reset PATH and
+# override the caller's node/npm (e.g. in test environments with stubs).
 ensure_nvm_loaded() {
+  command -v node &>/dev/null && return 0
   if [ -z "${NVM_DIR:-}" ]; then
     export NVM_DIR="$HOME/.nvm"
   fi
