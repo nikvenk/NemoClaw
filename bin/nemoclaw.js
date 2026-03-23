@@ -172,13 +172,13 @@ async function deploy(instanceName) {
     }
   }
 
-  // Pin the host key now that the VM is reachable
-  const hostKeys = execFileSync("ssh-keyscan", ["-H", name], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
-  fs.writeFileSync(knownHostsFile, hostKeys, { mode: 0o600 });
-
-  const sshOpts = `-o UserKnownHostsFile=${shellQuote(knownHostsFile)} -o StrictHostKeyChecking=yes -o LogLevel=ERROR`;
-
   try {
+    // Pin the host key now that the VM is reachable
+    const hostKeys = execFileSync("ssh-keyscan", ["-H", name], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    fs.writeFileSync(knownHostsFile, hostKeys, { mode: 0o600 });
+
+    const sshOpts = `-o UserKnownHostsFile=${shellQuote(knownHostsFile)} -o StrictHostKeyChecking=yes -o LogLevel=ERROR`;
+
     console.log("  Syncing NemoClaw to VM...");
     run(`ssh ${sshOpts} ${qname} 'mkdir -p /home/ubuntu/nemoclaw'`);
     run(`rsync -az --delete --exclude node_modules --exclude .git --exclude src -e "ssh ${sshOpts}" "${ROOT}/scripts" "${ROOT}/Dockerfile" "${ROOT}/nemoclaw" "${ROOT}/nemoclaw-blueprint" "${ROOT}/bin" "${ROOT}/package.json" ${qname}:/home/ubuntu/nemoclaw/`);
