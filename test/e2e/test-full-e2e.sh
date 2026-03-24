@@ -204,7 +204,7 @@ section "Phase 3: Sandbox verification"
 
 # 3a: nemoclaw list
 if list_output=$(nemoclaw list 2>&1); then
-  if echo "$list_output" | grep -Fq -- "$SANDBOX_NAME"; then
+  if grep -Fq -- "$SANDBOX_NAME" <<<"$list_output"; then
     pass "nemoclaw list contains '${SANDBOX_NAME}'"
   else
     fail "nemoclaw list does not contain '${SANDBOX_NAME}'"
@@ -223,7 +223,7 @@ fi
 # 3c: Inference must be configured by onboard (no fallback — if onboard
 # failed to configure it, that's a bug we want to catch)
 if inf_check=$(openshell inference get 2>&1); then
-  if echo "$inf_check" | grep -qi "nvidia-prod"; then
+  if grep -qi "nvidia-prod" <<<"$inf_check"; then
     pass "Inference configured via onboard"
   else
     fail "Inference not configured — onboard did not set up nvidia-prod provider"
@@ -234,14 +234,14 @@ fi
 
 # 3d: Policy presets applied
 if policy_output=$(openshell policy get --full "$SANDBOX_NAME" 2>&1); then
-  if echo "$policy_output" | grep -qi "network_policies"; then
+  if grep -qi "network_policies" <<<"$policy_output"; then
     pass "Policy applied to sandbox"
   else
     fail "No network policy found on sandbox"
   fi
 
   # Check that at least npm or pypi preset endpoints are present (onboard auto-suggests these)
-  if echo "$policy_output" | grep -qi "registry.npmjs.org\|pypi.org"; then
+  if grep -qi "registry.npmjs.org\|pypi.org" <<<"$policy_output"; then
     pass "Policy presets (npm/pypi) detected in sandbox policy"
   else
     skip "Could not confirm npm/pypi presets in policy (may vary by environment)"
@@ -269,7 +269,7 @@ api_response=$(curl -s --max-time 30 \
 
 if [ -n "$api_response" ]; then
   api_content=$(echo "$api_response" | parse_chat_content 2>/dev/null) || true
-  if echo "$api_content" | grep -qi "PONG"; then
+  if grep -qi "PONG" <<<"$api_content"; then
     pass "[LIVE] Direct API: model responded with PONG"
   else
     fail "[LIVE] Direct API: expected PONG, got: ${api_content:0:200}"
@@ -303,7 +303,7 @@ rm -f "$ssh_config"
 
 if [ -n "$sandbox_response" ]; then
   sandbox_content=$(echo "$sandbox_response" | parse_chat_content 2>/dev/null) || true
-  if echo "$sandbox_content" | grep -qi "PONG"; then
+  if grep -qi "PONG" <<<"$sandbox_content"; then
     pass "[LIVE] Sandbox inference: model responded with PONG through sandbox"
     info "Full path proven: user → sandbox → openshell gateway → NVIDIA Endpoints → response"
   else
@@ -342,7 +342,7 @@ nemoclaw "$SANDBOX_NAME" destroy 2>&1 | tail -3 || true
 openshell gateway destroy -g nemoclaw 2>/dev/null || true
 
 list_after=$(nemoclaw list 2>&1)
-if echo "$list_after" | grep -Fq -- "$SANDBOX_NAME"; then
+if grep -Fq -- "$SANDBOX_NAME" <<<"$list_after"; then
   fail "Sandbox ${SANDBOX_NAME} still in list after destroy"
 else
   pass "Sandbox ${SANDBOX_NAME} removed"
