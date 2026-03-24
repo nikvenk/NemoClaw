@@ -1386,11 +1386,15 @@ async function createSandbox(gpu, model, provider, preferredInferenceApi = null)
   console.log(`  Creating sandbox '${sandboxName}' (this takes a few minutes on first run)...`);
   const chatUiUrl = process.env.CHAT_UI_URL || "http://127.0.0.1:18789";
   patchStagedDockerfile(stagedDockerfile, model, chatUiUrl, String(Date.now()), provider, preferredInferenceApi);
+  // Only pass non-sensitive env vars to the sandbox. NVIDIA_API_KEY is NOT
+  // needed inside the sandbox — inference is proxied through the OpenShell
+  // gateway which injects the stored credential server-side. The gateway
+  // also strips any Authorization headers sent by the sandbox client.
+  // See: crates/openshell-sandbox/src/proxy.rs (header stripping),
+  //      crates/openshell-router/src/backend.rs (server-side auth injection).
   const envArgs = [formatEnvAssignment("CHAT_UI_URL", chatUiUrl)];
   const sandboxEnv = { ...process.env };
-  if (process.env.NVIDIA_API_KEY) {
-    sandboxEnv.NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
-  }
+  delete sandboxEnv.NVIDIA_API_KEY;
   const discordToken = getCredential("DISCORD_BOT_TOKEN") || process.env.DISCORD_BOT_TOKEN;
   if (discordToken) {
     sandboxEnv.DISCORD_BOT_TOKEN = discordToken;
@@ -2142,6 +2146,11 @@ async function onboard(opts = {}) {
   process.env.NEMOCLAW_OPENSHELL_BIN = getOpenshellBinary();
   await startGateway(gpu);
   await setupInference(GATEWAY_NAME, model, provider, endpointUrl, credentialEnv);
+  // The key is now stored in openshell's provider config. Clear it from our
+  // process environment so new child processes don't inherit it. Note: this
+  // does NOT clear /proc/pid/environ (kernel snapshot is immutable after exec),
+  // but it prevents run()'s { ...process.env } from propagating the key.
+  delete process.env.NVIDIA_API_KEY;
   const sandboxName = await createSandbox(gpu, model, provider, preferredInferenceApi);
   if (nimContainer) {
     registry.updateSandbox(sandboxName, { nimContainer });
