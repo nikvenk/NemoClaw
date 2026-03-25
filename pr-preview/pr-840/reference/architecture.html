@@ -50,7 +50,7 @@
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
-    <script src="../_static/search-assets.bundle.js?v=00e3e057"></script>
+    <script src="../_static/search-assets.bundle.js?v=0ad6c85c"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
     <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
@@ -890,10 +890,16 @@ The plugin resolves, verifies, and executes the blueprint as a subprocess.
 The blueprint drives all interactions with the OpenShell CLI.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nemoclaw-blueprint/
 ├── blueprint.yaml                  Manifest — version, profiles, compatibility
-├── orchestrator/
-│   └── runner.py                   CLI runner — plan / apply / status
 ├── policies/
 │   └── openclaw-sandbox.yaml       Default network + filesystem policy
+</pre></div>
+</div>
+<p>The blueprint runtime (TypeScript) lives in the plugin source tree:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nemoclaw/src/blueprint/
+├── runner.ts                       CLI runner — plan / apply / status / rollback
+├── ssrf.ts                         SSRF endpoint validation (IP + DNS checks)
+├── snapshot.ts                     Migration snapshot / restore lifecycle
+├── state.ts                        Persistent run state management
 </pre></div>
 </div>
 <section id="blueprint-lifecycle">

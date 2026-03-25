@@ -50,7 +50,7 @@
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
-    <script src="../_static/search-assets.bundle.js?v=00e3e057"></script>
+    <script src="../_static/search-assets.bundle.js?v=0ad6c85c"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'reference/inference-profiles';</script>
 
@@ -489,20 +489,24 @@ NemoClaw validates by sending a real inference request, because many proxies do 
 </ul>
 <p>If validation fails, the wizard does not continue to sandbox creation.</p>
 </section>
-<section id="local-providers">
-<h2>Local Providers<a class="headerlink" href="#local-providers" title="Link to this heading">#</a></h2>
-<p>Local providers use the same routed <code class="docutils literal notranslate"><span class="pre">inference.local</span></code> pattern, but the upstream runtime runs on the host rather than in the cloud.</p>
-<ul class="simple">
-<li><p>Local Ollama</p></li>
-<li><p>Local NVIDIA NIM</p></li>
-<li><p>Local vLLM</p></li>
-</ul>
+<section id="local-ollama">
+<h2>Local Ollama<a class="headerlink" href="#local-ollama" title="Link to this heading">#</a></h2>
+<p>Local Ollama is available in the standard onboarding flow when Ollama is installed or running on the host.
+It uses the same routed <code class="docutils literal notranslate"><span class="pre">inference.local</span></code> pattern, but the upstream runtime runs locally instead of in the cloud.</p>
 <p>Ollama gets additional onboarding help:</p>
 <ul class="simple">
 <li><p>if no models are installed, NemoClaw offers starter models</p></li>
 <li><p>it pulls the selected model</p></li>
 <li><p>it warms the model</p></li>
 <li><p>it validates the model before continuing</p></li>
+</ul>
+</section>
+<section id="experimental-local-providers">
+<h2>Experimental Local Providers<a class="headerlink" href="#experimental-local-providers" title="Link to this heading">#</a></h2>
+<p>The following local providers require <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_EXPERIMENTAL=1</span></code>:</p>
+<ul class="simple">
+<li><p>Local NVIDIA NIM (requires a NIM-capable GPU)</p></li>
+<li><p>Local vLLM (must already be running on <code class="docutils literal notranslate"><span class="pre">localhost:8000</span></code>)</p></li>
 </ul>
 </section>
 <section id="runtime-switching">
@@ -563,7 +567,8 @@ NemoClaw validates by sending a real inference request, because many proxies do 
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#routed-provider-model">Routed Provider Model</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-providers">Supported Providers</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#validation-during-onboarding">Validation During Onboarding</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#local-providers">Local Providers</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#local-ollama">Local Ollama</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#experimental-local-providers">Experimental Local Providers</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-switching">Runtime Switching</a></li>
 </ul>
   </nav></div>

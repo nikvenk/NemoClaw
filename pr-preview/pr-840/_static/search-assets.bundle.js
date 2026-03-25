@@ -420,15 +420,11 @@ class SearchEngine {
      * Initialize the search engine with documents
      */
     async initialize(documents) {
-        try {
-            await this.loadLunr();
-            this.documents = documents;
-            this.collectMetadata();
-            this.buildIndex();
-            this.isInitialized = true;
-        } catch (error) {
-            throw error;
-        }
+        await this.loadLunr();
+        this.documents = documents;
+        this.collectMetadata();
+        this.buildIndex();
+        this.isInitialized = true;
     }
 
     /**
@@ -633,7 +629,7 @@ class SearchEngine {
                         section_path: self.arrayToString(doc.section_path),
                         author: doc.author || ''
                     });
-                } catch (docError) {
+                } catch (_docError) {
                     // Skip documents that fail to index
                 }
             }, this);
@@ -685,7 +681,7 @@ class SearchEngine {
 
             return groupedResults.slice(0, maxResults);
 
-        } catch (error) {
+        } catch (_error) {
             return [];
         }
     }
@@ -1964,7 +1960,7 @@ class ResultRenderer {
      */
     bindResultEvents(container, results) {
         container.querySelectorAll('.search-result-item').forEach((item, index) => {
-            const result = results[index];
+            const _result = results[index];
 
             // Main item click - go to document
             item.addEventListener('click', (e) => {
@@ -2405,6 +2401,7 @@ window.EventHandler = EventHandler;
  * Handles search functionality on the dedicated search page with filtering and grouping
  */
 
+/* exported SearchPageManager */
 class SearchPageManager {
     constructor() {
         this.searchInput = null;
@@ -2530,17 +2527,6 @@ class SearchPageManager {
         const types = this.filterOptions.documentTypes || [];
         const typeOptions = types.map(type =>
             `<option value="${this.escapeHtml(type)}">${this.escapeHtml(this.formatTypeName(type))}</option>`
-        ).join('');
-
-        // Use audience (new) or personas (legacy) with null safety
-        const audience = this.filterOptions.audience || this.filterOptions.personas || [];
-        const audienceOptions = audience.map(aud =>
-            `<option value="${this.escapeHtml(aud)}">${this.escapeHtml(this.formatPersonaName(aud))}</option>`
-        ).join('');
-
-        const difficulties = this.filterOptions.difficulties || [];
-        const difficultyOptions = difficulties.map(difficulty =>
-            `<option value="${this.escapeHtml(difficulty)}">${this.escapeHtml(this.formatDifficultyName(difficulty))}</option>`
         ).join('');
 
         // Dynamic facets - render additional filter dropdowns for each facet
@@ -3607,6 +3593,7 @@ class SearchPageManager {
 
 
 // === main.js ===
+/* global Utils, DocumentLoader, SearchEngine, SearchPageManager */
 /**
  * Enhanced Search Main Entry Point
  * Loads search engine and page manager for enhanced search page
@@ -3615,6 +3602,7 @@ class SearchPageManager {
 
 // Prevent multiple initializations
 if (typeof window.EnhancedSearch !== 'undefined') {
+    // already initialized
 } else {
 
 // Import modules (will be loaded dynamically)
@@ -3661,7 +3649,7 @@ class EnhancedSearch {
             }
 
             this.isLoaded = true;
-        } catch (error) {
+        } catch (_error) {
             this.fallbackToDefaultSearch();
         }
     }
@@ -3697,7 +3685,7 @@ class EnhancedSearch {
             try {
                 await this.loadModule(path);
                 return;
-            } catch (error) {
+            } catch (_error) {
                 // Continue to next path
             }
         }
@@ -3765,7 +3753,7 @@ class EnhancedSearch {
         return this.searchEngine.search(query);
     }
 
-    renderResults(results, query) {
+    renderResults(_results, _query) {
         // Use SearchPageManager for search page rendering
         return '';
     }
