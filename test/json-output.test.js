@@ -69,11 +69,14 @@ describe("--json output", () => {
 
   it("list --json outputs empty array when no sandboxes", () => {
     const emptyHome = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-json-empty-"));
-    const r = run("list --json", emptyHome);
-    expect(r.code).toBe(0);
-    const data = JSON.parse(r.out);
-    expect(data.sandboxes).toEqual([]);
-    fs.rmSync(emptyHome, { recursive: true, force: true });
+    try {
+      const r = run("list --json", emptyHome);
+      expect(r.code).toBe(0);
+      const data = JSON.parse(r.out);
+      expect(data.sandboxes).toEqual([]);
+    } finally {
+      fs.rmSync(emptyHome, { recursive: true, force: true });
+    }
   });
 
   it("status --json outputs valid JSON with sandbox array", () => {
