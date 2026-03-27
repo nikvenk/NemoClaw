@@ -29,10 +29,27 @@ index 5503637..f932e82 100644
      pub async fn report_policy_status(
          &self,
 diff --git a/crates/openshell-sandbox/src/lib.rs b/crates/openshell-sandbox/src/lib.rs
-index 493e4d2..0de9149 100644
+index 493e4d2..fb9c211 100644
 --- a/crates/openshell-sandbox/src/lib.rs
 +++ b/crates/openshell-sandbox/src/lib.rs
-@@ -617,6 +617,18 @@ pub async fn run_sandbox(
+@@ -573,6 +573,7 @@ pub async fn run_sandbox(
+         (&sandbox_id, &openshell_endpoint, &opa_engine)
+     {
+         let poll_id = id.clone();
++        let poll_name = sandbox_name_for_agg.clone().unwrap_or_else(|| id.clone());
+         let poll_endpoint = endpoint.clone();
+         let poll_engine = engine.clone();
+         let poll_interval_secs: u64 = std::env::var("OPENSHELL_POLICY_POLL_INTERVAL_SECS")
+@@ -582,7 +583,7 @@ pub async fn run_sandbox(
+
+         tokio::spawn(async move {
+             if let Err(e) =
+-                run_policy_poll_loop(&poll_endpoint, &poll_id, &poll_engine, poll_interval_secs)
++                run_policy_poll_loop(&poll_endpoint, &poll_id, &poll_name, &poll_engine, poll_interval_secs)
+                     .await
+             {
+                 warn!(error = %e, "Policy poll loop exited with error");
+@@ -617,6 +618,25 @@ pub async fn run_sandbox(
                      })
                      .await;
              });
@@ -42,6 +59,13 @@ index 493e4d2..0de9149 100644
 +            let cfg_name = sandbox_name_for_agg.clone().unwrap_or_else(|| id.clone());
 +            tokio::spawn(async move {
 +                let _ = std::fs::create_dir_all(CONFIG_REQUESTS_DIR);
++                // World-writable so the sandbox user (non-root) can create
++                // config request files from inside the sandbox.
++                use std::os::unix::fs::PermissionsExt;
++                let _ = std::fs::set_permissions(
++                    CONFIG_REQUESTS_DIR,
++                    std::fs::Permissions::from_mode(0o777),
++                );
 +                let interval = Duration::from_secs(5);
 +                loop {
 +                    tokio::time::sleep(interval).await;
@@ -51,7 +75,7 @@ index 493e4d2..0de9149 100644
          }
      }
 
-@@ -1300,6 +1312,192 @@ async fn flush_proposals_to_gateway(
+@@ -1300,11 +1320,198 @@ async fn flush_proposals_to_gateway(
      Ok(())
  }
 
@@ -244,17 +268,25 @@ index 493e4d2..0de9149 100644
  /// `reload_from_proto()`. Reports load success/failure back to the server.
  /// On failure, the previous engine is untouched (LKG behavior).
  async fn run_policy_poll_loop(
-@@ -1348,6 +1546,8 @@ async fn run_policy_poll_loop(
+     endpoint: &str,
+     sandbox_id: &str,
++    sandbox_name: &str,
+     opa_engine: &Arc<OpaEngine>,
+     interval_secs: u64,
+ ) -> Result<()> {
+@@ -1348,6 +1555,10 @@ async fn run_policy_poll_loop(
          };
 
          if result.config_revision == current_config_revision {
 +            // Check for approved config chunks even when policy hasn't changed.
-+            apply_approved_config_chunks(endpoint, sandbox_id).await;
++            // Uses sandbox_name (not sandbox_id) because get_draft_policy
++            // resolves by name on the server side.
++            apply_approved_config_chunks(endpoint, sandbox_name).await;
              continue;
          }
 
 diff --git a/crates/openshell-server/src/grpc.rs b/crates/openshell-server/src/grpc.rs
-index fd4bf58..323def7 100644
+index de73da6..2a9f4ed 100644
 --- a/crates/openshell-server/src/grpc.rs
 +++ b/crates/openshell-server/src/grpc.rs
 @@ -1795,7 +1795,7 @@ impl OpenShell for OpenShellService {
