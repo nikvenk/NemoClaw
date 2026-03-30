@@ -93,7 +93,7 @@ else
 fi
 
 info "Verifying SHA-256 checksum..."
-(cd "$tmpdir" && grep "$ASSET" "$CHECKSUM_FILE" | shasum -a 256 -c -) \
+(cd "$tmpdir" && grep -F "$ASSET" "$CHECKSUM_FILE" | shasum -a 256 -c -) \
   || fail "SHA-256 checksum verification failed for $ASSET"
 
 tar xzf "$tmpdir/$ASSET" -C "$tmpdir"
