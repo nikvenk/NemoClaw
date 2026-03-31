@@ -390,7 +390,7 @@ ensure_nemoclaw_alias_in_profile() {
       alias_line="alias nemoclaw \"$shim_path\""
       ;;
     tcsh | csh)
-      alias_line="alias nemoclaw $shim_path"
+      alias_line="alias nemoclaw '$shim_path'"
       ;;
     *)
       alias_line="alias nemoclaw=\"$shim_path\""

@@ -293,6 +293,26 @@ remove_openshell_resources() {
   run_optional "Destroyed gateway '${DEFAULT_GATEWAY}'" openshell gateway destroy -g "$DEFAULT_GATEWAY"
 }
 
+# Remove the "# NemoClaw CLI alias" marker and alias line from shell profiles.
+remove_nemoclaw_alias_from_profile() {
+  local profiles=(
+    "$HOME/.bashrc"
+    "$HOME/.zshrc"
+    "$HOME/.profile"
+    "$HOME/.config/fish/config.fish"
+    "$HOME/.tcshrc"
+    "$HOME/.cshrc"
+  )
+  local p
+  for p in "${profiles[@]}"; do
+    if [ -f "$p" ] && grep -qF '# NemoClaw CLI alias' "$p" 2>/dev/null; then
+      # Delete the marker comment and the alias line that follows it.
+      sed -i.bak '/^# NemoClaw CLI alias$/,+1d' "$p" && rm -f "${p}.bak"
+      info "Removed NemoClaw alias from $p"
+    fi
+  done
+}
+
 remove_nemoclaw_cli() {
   if command -v npm >/dev/null 2>&1; then
     npm unlink -g nemoclaw >/dev/null 2>&1 || true
@@ -310,6 +330,8 @@ remove_nemoclaw_cli() {
   elif [ -f "${NEMOCLAW_SHIM_DIR}/nemoclaw" ]; then
     warn "Leaving ${NEMOCLAW_SHIM_DIR}/nemoclaw in place because it is not an installer-managed shim."
   fi
+
+  remove_nemoclaw_alias_from_profile
 }
 
 remove_docker_resources() {
