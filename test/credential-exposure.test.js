@@ -79,6 +79,7 @@ describe("credential exposure in process arguments", () => {
     // sandboxEnv must be built with a blocklist that strips all credential env vars
     expect(src).toMatch(/blockedSandboxEnvNames/);
     expect(src).toMatch(/NVIDIA_API_KEY/);
+    expect(src).toMatch(/BEDROCK_API_KEY/);
     expect(src).toMatch(/DISCORD_BOT_TOKEN/);
     expect(src).toMatch(/SLACK_BOT_TOKEN/);
     expect(src).toMatch(/TELEGRAM_BOT_TOKEN/);

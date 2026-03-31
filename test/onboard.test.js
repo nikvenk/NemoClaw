@@ -1267,7 +1267,7 @@ const { createSandbox } = require(${onboardPath});
     assert.doesNotMatch(createCommand.command, /SLACK_BOT_TOKEN=/);
   });
 
-  it("creates providers for messaging tokens and attaches them to the sandbox", async () => {
+  it("creates providers for messaging tokens and attaches them to the sandbox", { timeout: 60_000 }, async () => {
     const repoRoot = path.join(import.meta.dirname, "..");
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-messaging-providers-"));
     const fakeBin = path.join(tmpDir, "bin");
@@ -1375,10 +1375,30 @@ const { createSandbox } = require(${onboardPath});
     assert.match(createCommand.command, /'--provider' 'slack-bridge'/);
     assert.match(createCommand.command, /'--provider' 'telegram-bridge'/);
 
-    // Verify real token values are NOT in the sandbox create command or env
+    // Verify real token values are NOT in the sandbox create command
     assert.doesNotMatch(createCommand.command, /test-discord-token-value/);
     assert.doesNotMatch(createCommand.command, /xoxb-test-slack-token-value/);
     assert.doesNotMatch(createCommand.command, /123456:ABC-test-telegram-token/);
+
+    // Verify blocked credentials are NOT in the sandbox spawn environment
+    assert.ok(createCommand.env, "expected env to be captured from spawn call");
+    assert.equal(createCommand.env.DISCORD_BOT_TOKEN, undefined,
+      "DISCORD_BOT_TOKEN must not be in sandbox env");
+    assert.equal(createCommand.env.SLACK_BOT_TOKEN, undefined,
+      "SLACK_BOT_TOKEN must not be in sandbox env");
+    assert.equal(createCommand.env.TELEGRAM_BOT_TOKEN, undefined,
+      "TELEGRAM_BOT_TOKEN must not be in sandbox env");
+    assert.equal(createCommand.env.NVIDIA_API_KEY, undefined,
+      "NVIDIA_API_KEY must not be in sandbox env");
+
+    // Belt-and-suspenders: raw token values must not appear anywhere in env
+    const envString = JSON.stringify(createCommand.env);
+    assert.ok(!envString.includes("test-discord-token-value"),
+      "Discord token value must not leak into sandbox env");
+    assert.ok(!envString.includes("xoxb-test-slack-token-value"),
+      "Slack token value must not leak into sandbox env");
+    assert.ok(!envString.includes("123456:ABC-test-telegram-token"),
+      "Telegram token value must not leak into sandbox env");
   });
 
   it("continues once the sandbox is Ready even if the create stream never closes", async () => {

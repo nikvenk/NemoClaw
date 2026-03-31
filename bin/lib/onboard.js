@@ -844,6 +844,15 @@ async function promptValidationRecovery(label, recovery, credentialEnv = null, h
   return "selection";
 }
 
+/**
+ * Build the argument array for an `openshell provider create` or `update` command.
+ * @param {"create"|"update"} action - Whether to create or update.
+ * @param {string} name - Provider name.
+ * @param {string} type - Provider type (e.g. "openai", "anthropic", "generic").
+ * @param {string} credentialEnv - Credential environment variable name.
+ * @param {string|null} baseUrl - Optional base URL for API-compatible endpoints.
+ * @returns {string[]} Argument array for runOpenshell().
+ */
 function buildProviderArgs(action, name, type, credentialEnv, baseUrl) {
   const args =
     action === "create"
@@ -857,6 +866,18 @@ function buildProviderArgs(action, name, type, credentialEnv, baseUrl) {
   return args;
 }
 
+/**
+ * Create or update an OpenShell provider in the gateway.
+ *
+ * Attempts `openshell provider create`; if that fails (provider already exists),
+ * falls back to `openshell provider update` with the same credential.
+ * @param {string} name - Provider name (e.g. "discord-bridge", "inference").
+ * @param {string} type - Provider type ("openai", "anthropic", "generic").
+ * @param {string} credentialEnv - Environment variable name for the credential.
+ * @param {string|null} baseUrl - Optional base URL for the provider endpoint.
+ * @param {Record<string, string>} [env={}] - Environment variables for the openshell command.
+ * @returns {{ ok: boolean, status?: number, message?: string }}
+ */
 function upsertProvider(name, type, credentialEnv, baseUrl, env = {}) {
   const createArgs = buildProviderArgs("create", name, type, credentialEnv, baseUrl);
   const runOpts = { ignoreError: true, env, stdio: ["ignore", "pipe", "pipe"] };
@@ -882,7 +903,16 @@ function upsertProvider(name, type, credentialEnv, baseUrl, env = {}) {
   return { ok: true };
 }
 
-function verifyProviderExists(name) {
+/**
+ * Check whether an OpenShell provider exists in the gateway.
+ *
+ * Queries the gateway-level provider registry via `openshell provider get`.
+ * Does NOT verify that the provider is attached to a specific sandbox —
+ * OpenShell CLI does not currently expose a sandbox-scoped provider query.
+ * @param {string} name - Provider name to look up (e.g. "discord-bridge").
+ * @returns {boolean} True if the provider exists in the gateway.
+ */
+function providerExistsInGateway(name) {
   const result = runOpenshell(["provider", "get", name], { ignoreError: true });
   return result.status === 0;
 }
@@ -2223,6 +2253,7 @@ async function createSandbox(gpu, model, provider, preferredInferenceApi = null,
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
+    "BEDROCK_API_KEY",
     "COMPATIBLE_API_KEY",
     "COMPATIBLE_ANTHROPIC_API_KEY",
     "DISCORD_BOT_TOKEN",
@@ -2333,9 +2364,10 @@ async function createSandbox(gpu, model, provider, preferredInferenceApi = null,
   console.log("  Setting up sandbox DNS proxy...");
   run(`bash "${path.join(SCRIPTS, "setup-dns-proxy.sh")}" ${GATEWAY_NAME} "${sandboxName}" 2>&1 || true`, { ignoreError: true });
 
-  // Verify messaging providers are attached to the sandbox
+  // Check that messaging providers exist in the gateway (sandbox attachment
+  // cannot be verified via CLI yet — only gateway-level existence is checked).
   for (const p of messagingProviders) {
-    if (!verifyProviderExists(p)) {
+    if (!providerExistsInGateway(p)) {
       console.error(`  ⚠ Messaging provider '${p}' was not found in the gateway.`);
       console.error(`    The credential may not be available inside the sandbox.`);
       console.error(`    To fix: openshell provider create --name ${p} --type generic --credential <KEY>`);
