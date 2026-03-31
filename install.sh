@@ -91,6 +91,25 @@ error() {
 }
 ok() { printf "  ${C_GREEN}✓${C_RESET}  %s\n" "$*"; }
 
+verify_downloaded_script() {
+  local file="$1" label="${2:-script}"
+  if [ ! -s "$file" ]; then
+    error "$label installer download is empty or missing"
+  fi
+  if ! head -1 "$file" | grep -qE '^#!.*(sh|bash)'; then
+    error "$label installer does not start with a shell shebang — possible download corruption"
+  fi
+  local hash
+  if command -v sha256sum >/dev/null 2>&1; then
+    hash="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    hash="$(shasum -a 256 "$file" | awk '{print $1}')"
+  fi
+  if [ -n "${hash:-}" ]; then
+    info "$label installer SHA-256: $hash"
+  fi
+}
+
 resolve_default_sandbox_name() {
   local registry_file="${HOME}/.nemoclaw/sandboxes.json"
   local sandbox_name="${NEMOCLAW_SANDBOX_NAME:-}"
@@ -362,8 +381,65 @@ ensure_nemoclaw_shim() {
   mkdir -p "$NEMOCLAW_SHIM_DIR"
   ln -sfn "$npm_bin/nemoclaw" "$shim_path"
   refresh_path
+  ensure_local_bin_in_profile
   info "Created user-local shim at $shim_path"
   return 0
+}
+
+# Add ~/.local/bin (and for fish, the nvm node bin) to the user's shell
+# profile PATH so that nemoclaw, openshell, and any future tools installed
+# there are discoverable in new terminal sessions.
+# Idempotent — skips if the marker comment is already present.
+ensure_local_bin_in_profile() {
+  local profile
+  profile="$(detect_shell_profile)"
+  [[ -n "$profile" ]] || return 0
+
+  # Already present — nothing to do.
+  if [[ -f "$profile" ]] && grep -qF '# NemoClaw PATH setup' "$profile" 2>/dev/null; then
+    return 0
+  fi
+
+  local shell_name
+  shell_name="$(basename "${SHELL:-bash}")"
+
+  local local_bin="$NEMOCLAW_SHIM_DIR"
+
+  case "$shell_name" in
+    fish)
+      # fish needs both ~/.local/bin and the nvm node bin (nvm doesn't support fish).
+      local node_bin=""
+      node_bin="$(command -v node 2>/dev/null)" || true
+      if [[ -n "$node_bin" ]]; then
+        node_bin="$(dirname "$node_bin")"
+      fi
+      {
+        printf '\n# NemoClaw PATH setup\n'
+        printf 'fish_add_path --path --append "%s"\n' "$local_bin"
+        if [[ -n "$node_bin" ]]; then
+          printf 'fish_add_path --path --append "%s"\n' "$node_bin"
+        fi
+        printf '# end NemoClaw PATH setup\n'
+      } >>"$profile"
+      ;;
+    tcsh | csh)
+      {
+        printf '\n# NemoClaw PATH setup\n'
+        # shellcheck disable=SC2016
+        printf 'setenv PATH "%s:${PATH}"\n' "$local_bin"
+        printf '# end NemoClaw PATH setup\n'
+      } >>"$profile"
+      ;;
+    *)
+      # bash, zsh, and others — nvm already handles node PATH for these shells.
+      {
+        printf '\n# NemoClaw PATH setup\n'
+        # shellcheck disable=SC2016
+        printf 'export PATH="%s:$PATH"\n' "$local_bin"
+        printf '# end NemoClaw PATH setup\n'
+      } >>"$profile"
+      ;;
+  esac
 }
 
 version_major() {
@@ -485,14 +561,26 @@ install_or_upgrade_ollama() {
       info "Ollama v${current} meets minimum requirement (>= v${OLLAMA_MIN_VERSION})"
     else
       info "Ollama v${current:-unknown} is below v${OLLAMA_MIN_VERSION} — upgrading…"
-      curl -fsSL https://ollama.com/install.sh | sh
+      (
+        tmpdir="$(mktemp -d)"
+        trap 'rm -rf "$tmpdir"' EXIT
+        curl -fsSL https://ollama.com/install.sh -o "$tmpdir/install_ollama.sh"
+        verify_downloaded_script "$tmpdir/install_ollama.sh" "Ollama"
+        sh "$tmpdir/install_ollama.sh"
+      )
       info "Ollama upgraded to $(get_ollama_version)"
     fi
   else
     # No ollama — only install if a GPU is present
     if detect_gpu; then
       info "GPU detected — installing Ollama…"
-      curl -fsSL https://ollama.com/install.sh | sh
+      (
+        tmpdir="$(mktemp -d)"
+        trap 'rm -rf "$tmpdir"' EXIT
+        curl -fsSL https://ollama.com/install.sh -o "$tmpdir/install_ollama.sh"
+        verify_downloaded_script "$tmpdir/install_ollama.sh" "Ollama"
+        sh "$tmpdir/install_ollama.sh"
+      )
       info "Ollama installed: v$(get_ollama_version)"
     else
       warn "No GPU detected — skipping Ollama installation."
@@ -513,6 +601,44 @@ install_or_upgrade_ollama() {
     info "Pulling nemotron-3-nano:30b…"
     ollama pull nemotron-3-nano:30b
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Fix npm permissions for global installs (Linux only).
+# If the npm global prefix points to a system directory (e.g. /usr or
+# /usr/local) the user likely lacks write permissions and npm link will fail
+# with EACCES.  Redirect the prefix to ~/.npm-global so the install succeeds
+# without sudo.
+# ---------------------------------------------------------------------------
+fix_npm_permissions() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    return 0
+  fi
+
+  local npm_prefix
+  npm_prefix="$(npm config get prefix 2>/dev/null || true)"
+  if [[ -z "$npm_prefix" ]]; then
+    return 0
+  fi
+
+  if [[ -w "$npm_prefix" || -w "$npm_prefix/lib" ]]; then
+    return 0
+  fi
+
+  info "npm global prefix '${npm_prefix}' is not writable — configuring user-local installs"
+  mkdir -p "$HOME/.npm-global"
+  npm config set prefix "$HOME/.npm-global"
+
+  # shellcheck disable=SC2016
+  local path_line='export PATH="$HOME/.npm-global/bin:$PATH"'
+  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [[ -f "$rc" ]] && ! grep -q ".npm-global" "$rc"; then
+      printf '\n# Added by NemoClaw installer\n%s\n' "$path_line" >>"$rc"
+    fi
+  done
+
+  export PATH="$HOME/.npm-global/bin:$PATH"
+  ok "npm configured for user-local installs (~/.npm-global)"
 }
 
 # ---------------------------------------------------------------------------
@@ -741,6 +867,7 @@ main() {
 
   step 2 "NemoClaw CLI"
   # install_or_upgrade_ollama
+  fix_npm_permissions
   install_nemoclaw
   verify_nemoclaw
 
