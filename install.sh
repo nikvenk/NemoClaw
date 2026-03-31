@@ -362,8 +362,45 @@ ensure_nemoclaw_shim() {
   mkdir -p "$NEMOCLAW_SHIM_DIR"
   ln -sfn "$npm_bin/nemoclaw" "$shim_path"
   refresh_path
+  ensure_nemoclaw_alias_in_profile "$shim_path"
   info "Created user-local shim at $shim_path"
   return 0
+}
+
+# Write a shell alias for nemoclaw into the user's profile so that new
+# terminals can resolve the command without adding all of ~/.local/bin
+# to PATH.  Idempotent — skips if the marker comment is already present.
+ensure_nemoclaw_alias_in_profile() {
+  local shim_path="$1"
+  local profile
+  profile="$(detect_shell_profile)"
+  [[ -n "$profile" ]] || return 0
+
+  # Already present — nothing to do.
+  if [[ -f "$profile" ]] && grep -qF '# NemoClaw CLI alias' "$profile" 2>/dev/null; then
+    return 0
+  fi
+
+  local shell_name
+  shell_name="$(basename "${SHELL:-bash}")"
+
+  local alias_line
+  case "$shell_name" in
+    fish)
+      alias_line="alias nemoclaw \"$shim_path\""
+      ;;
+    tcsh | csh)
+      alias_line="alias nemoclaw $shim_path"
+      ;;
+    *)
+      alias_line="alias nemoclaw=\"$shim_path\""
+      ;;
+  esac
+
+  {
+    printf '\n# NemoClaw CLI alias\n'
+    printf '%s\n' "$alias_line"
+  } >>"$profile"
 }
 
 version_major() {
