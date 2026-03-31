@@ -39,69 +39,57 @@ let instanceCreated = false;
 function brev(...args) {
   return execFileSync("brev", args, {
     encoding: "utf-8",
-    timeout: 60_000,
+    timeout: 120_000,
     stdio: ["pipe", "pipe", "pipe"],
   }).trim();
 }
 
-function ssh(cmd, { timeout = 120_000 } = {}) {
-  // Use single quotes to prevent local shell expansion of remote commands
-  const escaped = cmd.replace(/'/g, "'\\''");
-  return execSync(
-    `ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR "${INSTANCE_NAME}" '${escaped}'`,
-    { encoding: "utf-8", timeout, stdio: ["pipe", "pipe", "pipe"] },
-  ).trim();
+/**
+ * Run a command on the remote instance via brev exec.
+ * This avoids the need for SSH config / brev.pem on the CI runner.
+ */
+function remoteExec(cmd, { timeout = 120_000 } = {}) {
+  return execFileSync("brev", ["exec", INSTANCE_NAME, cmd], {
+    encoding: "utf-8",
+    timeout,
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim();
 }
 
 function shellEscape(value) {
   return value.replace(/'/g, "'\\''");
 }
 
-/** Run a command on the remote VM with secrets passed via stdin (not CLI args). */
-function sshWithSecrets(cmd, { timeout = 600_000 } = {}) {
+/** Run a command on the remote VM with secrets passed as inline exports. */
+function remoteExecWithSecrets(cmd, { timeout = 600_000 } = {}) {
   const secretPreamble = [
     `export NVIDIA_API_KEY='${shellEscape(process.env.NVIDIA_API_KEY)}'`,
     `export GITHUB_TOKEN='${shellEscape(process.env.GITHUB_TOKEN)}'`,
     `export NEMOCLAW_NON_INTERACTIVE=1`,
     `export NEMOCLAW_SANDBOX_NAME=e2e-test`,
-  ].join("\n");
+  ].join(" && ");
 
-  // Pipe secrets via stdin so they don't appear in ps/process listings
-  return execSync(
-    `ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR "${INSTANCE_NAME}" 'eval "$(cat)" && ${cmd.replace(/'/g, "'\\''")}'`,
-    {
-      encoding: "utf-8",
-      timeout,
-      input: secretPreamble,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  ).trim();
+  return execFileSync("brev", ["exec", INSTANCE_NAME, `${secretPreamble} && ${cmd}`], {
+    encoding: "utf-8",
+    timeout,
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim();
 }
 
-function waitForSsh(maxAttempts = 180, intervalMs = 5_000) {
+function waitForInstance(maxAttempts = 180, intervalMs = 5_000) {
   for (let i = 1; i <= maxAttempts; i++) {
     try {
-      ssh("echo ok", { timeout: 10_000 });
-      return;
+      const result = remoteExec("echo ok", { timeout: 15_000 });
+      if (result.includes("ok")) return;
     } catch (err) {
-      if (i % 5 === 0 || i === 1) {
-        console.log(`[ssh attempt ${i}/${maxAttempts}] ${err.message?.split("\n")[0]}`);
-        try {
-          const refreshOut = brev("refresh");
-          console.log(`[brev refresh] ${refreshOut.split("\n")[0]}`);
-        } catch (refreshErr) {
-          console.log(`[brev refresh failed] ${refreshErr.message?.split("\n")[0]}`);
-        }
+      if (i % 10 === 0 || i === 1) {
+        console.log(`[attempt ${i}/${maxAttempts}] Waiting for instance...`);
         try {
           const lsOut = brev("ls");
-          console.log(`[brev ls] ${lsOut.split("\n").slice(0, 3).join(" | ")}`);
-        } catch { /* ignore */ }
-        try {
-          const sshConfig = execSync(`grep -A5 "${INSTANCE_NAME}" ~/.ssh/config 2>/dev/null || echo "no ssh config entry"`, { encoding: "utf-8", timeout: 5_000 }).trim();
-          console.log(`[ssh config] ${sshConfig.split("\n").slice(0, 3).join(" | ")}`);
+          console.log(`[brev ls] ${lsOut.split("\n").slice(0, 4).join(" | ")}`);
         } catch { /* ignore */ }
       }
-      if (i === maxAttempts) throw new Error(`SSH not ready after ${maxAttempts} attempts`, { cause: err });
+      if (i === maxAttempts) throw new Error(`Instance not ready after ${maxAttempts} attempts`, { cause: err });
       execSync(`sleep ${intervalMs / 1000}`);
     }
   }
@@ -115,7 +103,7 @@ function runRemoteTest(scriptPath) {
     `bash ${scriptPath}`,
   ].join(" && ");
 
-  return sshWithSecrets(cmd, { timeout: 600_000 });
+  return remoteExecWithSecrets(cmd, { timeout: 600_000 });
 }
 
 // --- suite ------------------------------------------------------------------
@@ -138,46 +126,35 @@ describe.runIf(hasRequiredVars)("Brev E2E", () => {
     const BREV_ORG = process.env.BREV_ORG || "Nemoclaw CI/CD";
     brev("org", "set", BREV_ORG);
 
-    // Ensure ~/.ssh/config includes brev's SSH config (fresh CI runners lack this)
-    const sshDir = path.join(homedir(), ".ssh");
-    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
-    const sshConfigPath = path.join(sshDir, "config");
-    const brevInclude = `Include ${path.join(homedir(), ".brev", "ssh_config")}\n`;
-    try {
-      const existing = execSync(`cat ${sshConfigPath} 2>/dev/null || true`, { encoding: "utf-8" });
-      if (!existing.includes(".brev/ssh_config")) {
-        writeFileSync(sshConfigPath, brevInclude + existing, { mode: 0o600 });
-      }
-    } catch {
-      writeFileSync(sshConfigPath, brevInclude, { mode: 0o600 });
-    }
-
     // Create instance
     brev("create", INSTANCE_NAME, "--cpu", BREV_CPU, "--detached");
     instanceCreated = true;
 
-    // Wait for SSH
-    try { brev("refresh"); } catch { /* ignore */ }
-    waitForSsh();
+    // Wait for instance to be reachable via brev exec
+    waitForInstance();
 
-    // Sync code
-    const remoteHome = ssh("echo $HOME");
+    // Sync code via brev exec + tar (rsync needs SSH config, brev exec does not)
+    const remoteHome = remoteExec("echo $HOME");
     remoteDir = `${remoteHome}/nemoclaw`;
-    ssh(`mkdir -p ${remoteDir}`);
+    remoteExec(`mkdir -p ${remoteDir}`);
+
+    // Create tarball locally, pipe to remote via brev exec
+    console.log("[setup] Syncing code to remote instance...");
     execSync(
-      `rsync -az --delete --exclude node_modules --exclude .git --exclude dist --exclude .venv "${REPO_DIR}/" "${INSTANCE_NAME}:${remoteDir}/"`,
-      { encoding: "utf-8", timeout: 120_000 },
+      `tar -czf - --exclude=node_modules --exclude=.git --exclude=dist --exclude=.venv -C "${REPO_DIR}" . | brev exec ${INSTANCE_NAME} "tar -xzf - -C ${remoteDir}"`,
+      { encoding: "utf-8", timeout: 120_000, stdio: ["pipe", "pipe", "pipe"] },
     );
 
     // Bootstrap VM
-    sshWithSecrets(`cd ${remoteDir} && bash scripts/brev-setup.sh`, { timeout: 900_000 });
+    console.log("[setup] Running bootstrap...");
+    remoteExecWithSecrets(`cd ${remoteDir} && bash scripts/brev-setup.sh`, { timeout: 900_000 });
   }, 1_200_000); // 20 min — instance creation + bootstrap can be slow
 
   afterAll(() => {
     if (!instanceCreated) return;
     if (process.env.KEEP_ALIVE === "true") {
       console.log(`\n  Instance "${INSTANCE_NAME}" kept alive for debugging.`);
-      console.log(`  To connect: brev refresh && ssh ${INSTANCE_NAME}`);
+      console.log(`  To connect: brev shell ${INSTANCE_NAME}`);
       console.log(`  To delete:  brev delete ${INSTANCE_NAME}\n`);
       return;
     }
