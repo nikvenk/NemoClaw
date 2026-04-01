@@ -233,6 +233,9 @@ info "Building and creating NemoClaw sandbox (this takes a few minutes on first 
 # Stage a clean build context (openshell doesn't honor .dockerignore)
 BUILD_CTX="$(mktemp -d)"
 cp "$REPO_DIR/Dockerfile" "$BUILD_CTX/"
+# Brev/setup flow expects immediate dashboard access without device pairing,
+# so disable device auth for images built via setup.sh (see #1217).
+sed -i 's/^ARG NEMOCLAW_DISABLE_DEVICE_AUTH=.*/ARG NEMOCLAW_DISABLE_DEVICE_AUTH=1/' "$BUILD_CTX/Dockerfile"
 cp -r "$REPO_DIR/nemoclaw" "$BUILD_CTX/nemoclaw"
 cp -r "$REPO_DIR/nemoclaw-blueprint" "$BUILD_CTX/nemoclaw-blueprint"
 cp -r "$REPO_DIR/scripts" "$BUILD_CTX/scripts"
