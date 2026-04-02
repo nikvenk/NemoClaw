@@ -2131,10 +2131,12 @@ async function createSandbox(
   // Check whether messaging providers will be needed — this must happen before
   // the sandbox reuse decision so we can detect stale sandboxes that were created
   // without provider attachments (security: prevents legacy raw-env-var leaks).
+  const getMessagingToken = (envKey) =>
+    getCredential(envKey) || normalizeCredentialValue(process.env[envKey]) || null;
   const hasMessagingTokens =
-    !!(getCredential("DISCORD_BOT_TOKEN") || process.env.DISCORD_BOT_TOKEN) ||
-    !!(getCredential("SLACK_BOT_TOKEN") || process.env.SLACK_BOT_TOKEN) ||
-    !!(getCredential("TELEGRAM_BOT_TOKEN") || process.env.TELEGRAM_BOT_TOKEN);
+    !!getMessagingToken("DISCORD_BOT_TOKEN") ||
+    !!getMessagingToken("SLACK_BOT_TOKEN") ||
+    !!getMessagingToken("TELEGRAM_BOT_TOKEN");
 
   // Reconcile local registry state with the live OpenShell gateway state.
   const liveExists = pruneStaleSandboxEntry(sandboxName);
@@ -2152,8 +2154,7 @@ async function createSandbox(
         { envKey: "SLACK_BOT_TOKEN", provider: "slack-bridge" },
         { envKey: "TELEGRAM_BOT_TOKEN", provider: "telegram-bridge" },
       ].some(
-        ({ envKey, provider }) =>
-          (getCredential(envKey) || process.env[envKey]) && !providerExistsInGateway(provider),
+        ({ envKey, provider }) => getMessagingToken(envKey) && !providerExistsInGateway(provider),
       );
 
     if (existingSandboxState === "ready" && process.env.NEMOCLAW_RECREATE_SANDBOX !== "1") {
@@ -2218,17 +2219,17 @@ async function createSandbox(
     {
       name: "discord-bridge",
       envKey: "DISCORD_BOT_TOKEN",
-      token: getCredential("DISCORD_BOT_TOKEN") || process.env.DISCORD_BOT_TOKEN,
+      token: getMessagingToken("DISCORD_BOT_TOKEN"),
     },
     {
       name: "slack-bridge",
       envKey: "SLACK_BOT_TOKEN",
-      token: getCredential("SLACK_BOT_TOKEN") || process.env.SLACK_BOT_TOKEN,
+      token: getMessagingToken("SLACK_BOT_TOKEN"),
     },
     {
       name: "telegram-bridge",
       envKey: "TELEGRAM_BOT_TOKEN",
-      token: getCredential("TELEGRAM_BOT_TOKEN") || process.env.TELEGRAM_BOT_TOKEN,
+      token: getMessagingToken("TELEGRAM_BOT_TOKEN"),
     },
   ];
   for (const { name, envKey, token } of messagingTokenDefs) {
@@ -2260,13 +2261,12 @@ async function createSandbox(
   //      crates/openshell-router/src/backend.rs (inference auth injection).
   const envArgs = [formatEnvAssignment("CHAT_UI_URL", chatUiUrl)];
   const blockedSandboxEnvNames = new Set([
-    "NVIDIA_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GEMINI_API_KEY",
+    // Derived from REMOTE_PROVIDER_CONFIG to prevent drift
+    ...Object.values(REMOTE_PROVIDER_CONFIG)
+      .map((cfg) => cfg.credentialEnv)
+      .filter(Boolean),
+    // Additional credentials not in REMOTE_PROVIDER_CONFIG
     "BEDROCK_API_KEY",
-    "COMPATIBLE_API_KEY",
-    "COMPATIBLE_ANTHROPIC_API_KEY",
     "DISCORD_BOT_TOKEN",
     "SLACK_BOT_TOKEN",
     "TELEGRAM_BOT_TOKEN",

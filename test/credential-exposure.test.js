@@ -64,11 +64,14 @@ describe("credential exposure in process arguments", () => {
     const src = fs.readFileSync(ONBOARD_JS, "utf-8");
 
     // sandboxEnv must be built with a blocklist that strips all credential env vars.
-    // Extract the actual blocklist array to avoid false positives from other mentions.
+    // The blocklist derives provider keys from REMOTE_PROVIDER_CONFIG and adds
+    // messaging tokens explicitly. Verify both mechanisms are present.
     const blocklistMatch = src.match(/const blockedSandboxEnvNames = new Set\(\[([\s\S]*?)\]\);/);
     expect(blocklistMatch).not.toBeNull();
     const blocklist = blocklistMatch[1];
-    expect(blocklist).toContain('"NVIDIA_API_KEY"');
+    // Provider credentials are derived from REMOTE_PROVIDER_CONFIG
+    expect(blocklist).toContain("REMOTE_PROVIDER_CONFIG");
+    // Messaging and additional credentials are listed explicitly
     expect(blocklist).toContain('"BEDROCK_API_KEY"');
     expect(blocklist).toContain('"DISCORD_BOT_TOKEN"');
     expect(blocklist).toContain('"SLACK_BOT_TOKEN"');
