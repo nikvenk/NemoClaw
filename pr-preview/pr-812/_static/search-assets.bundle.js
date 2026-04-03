@@ -260,6 +260,7 @@ class DocumentLoader {
             title: this.sanitizeText(doc.title, 200),
             // Add description as separate indexed field (for improved search relevance)
             description: this.sanitizeText(doc.description, 300),
+            description_agent: this.sanitizeText(doc.description_agent, 300),
             content: this.sanitizeText(doc.content, 5000),
             summary: this.sanitizeText(doc.summary, 500),
             headings: this.sanitizeHeadings(doc.headings),
@@ -420,15 +421,11 @@ class SearchEngine {
      * Initialize the search engine with documents
      */
     async initialize(documents) {
-        try {
-            await this.loadLunr();
-            this.documents = documents;
-            this.collectMetadata();
-            this.buildIndex();
-            this.isInitialized = true;
-        } catch (error) {
-            throw error;
-        }
+        await this.loadLunr();
+        this.documents = documents;
+        this.collectMetadata();
+        this.buildIndex();
+        this.isInitialized = true;
     }
 
     /**
@@ -589,7 +586,8 @@ class SearchEngine {
 
             // Primary fields - highest relevance
             this.field('title', { boost: 10 });           // Title matches most important
-            this.field('description', { boost: 8 });      // Frontmatter description (hand-crafted)
+            this.field('description', { boost: 8 });      // Frontmatter description.main (hand-crafted)
+            this.field('description_agent', { boost: 6 }); // description.agent for agent-oriented phrasing
 
             // Secondary fields - structural relevance
             this.field('keywords', { boost: 7 });         // Explicit keywords
@@ -616,7 +614,10 @@ class SearchEngine {
                     this.add({
                         id: doc.id,
                         title: doc.title || '',
-                        description: doc.description || '',  // NEW: separate indexed field
+                        description: doc.description || '',
+                        description_agent: doc.description_agent && doc.description_agent !== doc.description
+                            ? doc.description_agent
+                            : '',
                         content: (doc.content || '').substring(0, 5000), // Limit content length
                         summary: doc.summary || '',
                         headings: self.extractHeadingsText(doc.headings),
@@ -633,7 +634,7 @@ class SearchEngine {
                         section_path: self.arrayToString(doc.section_path),
                         author: doc.author || ''
                     });
-                } catch (docError) {
+                } catch (_docError) {
                     // Skip documents that fail to index
                 }
             }, this);
@@ -685,7 +686,7 @@ class SearchEngine {
 
             return groupedResults.slice(0, maxResults);
 
-        } catch (error) {
+        } catch (_error) {
             return [];
         }
     }
@@ -1042,19 +1043,21 @@ class SearchEngine {
      * Calculate boost for description matches
      */
     calculateDescriptionBoost(doc, queryTerms) {
-        if (!doc.description) return 0;
+        const texts = [...new Set(
+            [doc.description, doc.description_agent].filter(Boolean)
+        )];
+        if (texts.length === 0) return 0;
 
-        const descLower = doc.description.toLowerCase();
         let boost = 0;
-
-        // Check if query terms appear early in description
-        queryTerms.forEach(term => {
-            const pos = descLower.indexOf(term);
-            if (pos !== -1) {
-                // Boost more if term appears early
-                boost += pos < 50 ? 1 : 0.5;
-            }
-        });
+        for (const text of texts) {
+            const descLower = text.toLowerCase();
+            queryTerms.forEach(term => {
+                const pos = descLower.indexOf(term);
+                if (pos !== -1) {
+                    boost += pos < 50 ? 1 : 0.5;
+                }
+            });
+        }
 
         return boost;
     }
@@ -1964,7 +1967,7 @@ class ResultRenderer {
      */
     bindResultEvents(container, results) {
         container.querySelectorAll('.search-result-item').forEach((item, index) => {
-            const result = results[index];
+            const _result = results[index];
 
             // Main item click - go to document
             item.addEventListener('click', (e) => {
@@ -2405,6 +2408,7 @@ window.EventHandler = EventHandler;
  * Handles search functionality on the dedicated search page with filtering and grouping
  */
 
+/* exported SearchPageManager */
 class SearchPageManager {
     constructor() {
         this.searchInput = null;
@@ -2530,17 +2534,6 @@ class SearchPageManager {
         const types = this.filterOptions.documentTypes || [];
         const typeOptions = types.map(type =>
             `<option value="${this.escapeHtml(type)}">${this.escapeHtml(this.formatTypeName(type))}</option>`
-        ).join('');
-
-        // Use audience (new) or personas (legacy) with null safety
-        const audience = this.filterOptions.audience || this.filterOptions.personas || [];
-        const audienceOptions = audience.map(aud =>
-            `<option value="${this.escapeHtml(aud)}">${this.escapeHtml(this.formatPersonaName(aud))}</option>`
-        ).join('');
-
-        const difficulties = this.filterOptions.difficulties || [];
-        const difficultyOptions = difficulties.map(difficulty =>
-            `<option value="${this.escapeHtml(difficulty)}">${this.escapeHtml(this.formatDifficultyName(difficulty))}</option>`
         ).join('');
 
         // Dynamic facets - render additional filter dropdowns for each facet
@@ -3607,6 +3600,7 @@ class SearchPageManager {
 
 
 // === main.js ===
+/* global Utils, DocumentLoader, SearchEngine, SearchPageManager */
 /**
  * Enhanced Search Main Entry Point
  * Loads search engine and page manager for enhanced search page
@@ -3615,6 +3609,7 @@ class SearchPageManager {
 
 // Prevent multiple initializations
 if (typeof window.EnhancedSearch !== 'undefined') {
+    // already initialized
 } else {
 
 // Import modules (will be loaded dynamically)
@@ -3661,7 +3656,7 @@ class EnhancedSearch {
             }
 
             this.isLoaded = true;
-        } catch (error) {
+        } catch (_error) {
             this.fallbackToDefaultSearch();
         }
     }
@@ -3697,7 +3692,7 @@ class EnhancedSearch {
             try {
                 await this.loadModule(path);
                 return;
-            } catch (error) {
+            } catch (_error) {
                 // Continue to next path
             }
         }
@@ -3765,7 +3760,7 @@ class EnhancedSearch {
         return this.searchEngine.search(query);
     }
 
-    renderResults(results, query) {
+    renderResults(_results, _query) {
         // Use SearchPageManager for search page rendering
         return '';
     }

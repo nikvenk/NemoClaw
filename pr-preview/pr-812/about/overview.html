@@ -50,7 +50,7 @@
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
-    <script src="../_static/search-assets.bundle.js?v=00e3e057"></script>
+    <script src="../_static/search-assets.bundle.js?v=099b119e"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'about/overview';</script>
 
@@ -110,6 +110,9 @@
   <div class="pst-async-banner-revealer d-none">
   <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
 </div>
+<aside class="bd-header-announcement" aria-label="Announcement">
+  <div class="bd-header-announcement__content">&#x1F514; NVIDIA NemoClaw is <strong>alpha software</strong>. APIs and behavior may change without notice. Do not use in production.</div>
+</aside>
 
   
     <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
@@ -338,10 +341,15 @@
 <li class="toctree-l1"><a class="reference internal" href="../network-policy/approve-network-requests.html">Approve or Deny Network Requests</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../network-policy/customize-network-policy.html">Customize the Network Policy</a></li>
 </ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Security</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../security/best-practices.html">Security Best Practices</a></li>
+</ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Deployment</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up the Telegram Bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
 <ul class="nav bd-sidenav">
@@ -362,6 +370,7 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md">Report Vulnerabilities</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../resources/license.html">License</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://discord.gg/XFpfPv9Uvx">Discord</a></li>
 </ul>
@@ -421,14 +430,6 @@
 -->
 <section class="tex2jax_ignore mathjax_ignore" id="overview">
 <h1>Overview<a class="headerlink" href="#overview" title="Link to this heading">#</a></h1>
-<!-- markdownlint-disable MD041 -->
-<div class="admonition-alpha-software admonition">
-<p class="admonition-title">Alpha software</p>
-<p>NemoClaw is in alpha, available as an early preview since March 16, 2026.
-APIs, configuration schemas, and runtime behavior are subject to breaking changes between releases.
-Do not use this software in production environments.
-File issues and feedback through the GitHub repository as the project continues to stabilize.</p>
-</div>
 <p>NVIDIA NemoClaw is an open source reference stack that simplifies running <a class="reference external" href="https://openclaw.ai" rel="noreferer noopener" target="_blank">OpenClaw</a> always-on assistants.
 It incorporates policy-based privacy and security guardrails, giving users control over their agents’ behavior and data handling.
 This enables self-evolving claws to run more safely in clouds, on prem, RTX PCs and DGX Spark.</p>
@@ -453,6 +454,38 @@ By combining powerful open source models with built-in safety measures, NemoClaw
 </tbody>
 </table>
 </div>
+<section id="key-features">
+<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading">#</a></h2>
+<p>NemoClaw provides the following capabilities on top of the OpenShell runtime.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Guided onboarding</p></td>
+<td><p>Validates credentials, selects providers, and creates a working sandbox in one command.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Hardened blueprint</p></td>
+<td><p>A security-first Dockerfile with capability drops, least-privilege network rules, and declarative policy.</p></td>
+</tr>
+<tr class="row-even"><td><p>State management</p></td>
+<td><p>Safe migration of agent state across machines with credential stripping and integrity verification.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Messaging bridges</p></td>
+<td><p>Host-side processes that connect Telegram, Discord, and Slack to the sandboxed agent.</p></td>
+</tr>
+<tr class="row-even"><td><p>Routed inference</p></td>
+<td><p>Provider-routed model calls through the OpenShell gateway, transparent to the agent. Supports NVIDIA Endpoints, OpenAI, Anthropic, Google Gemini, and local Ollama.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Layered protection</p></td>
+<td><p>Network, filesystem, process, and inference controls that can be hot-reloaded or locked at creation.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 <section id="challenge">
 <h2>Challenge<a class="headerlink" href="#challenge" title="Link to this heading">#</a></h2>
 <p>Autonomous AI agents like OpenClaw can make arbitrary network requests, access the host filesystem, and call any inference endpoint. Without guardrails, this creates security, cost, and compliance risks that grow as agents run unattended.</p>
@@ -572,6 +605,7 @@ By combining powerful open source models with built-in safety measures, NemoClaw
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-features">Key Features</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#challenge">Challenge</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#benefits">Benefits</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#use-cases">Use Cases</a></li>

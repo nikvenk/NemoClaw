@@ -50,7 +50,7 @@
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
-    <script src="../_static/search-assets.bundle.js?v=00e3e057"></script>
+    <script src="../_static/search-assets.bundle.js?v=099b119e"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
     <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
@@ -546,6 +546,9 @@ window.runMermaid = runMermaid;</script>
   <div class="pst-async-banner-revealer d-none">
   <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
 </div>
+<aside class="bd-header-announcement" aria-label="Announcement">
+  <div class="bd-header-announcement__content">&#x1F514; NVIDIA NemoClaw is <strong>alpha software</strong>. APIs and behavior may change without notice. Do not use in production.</div>
+</aside>
 
   
     <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
@@ -774,10 +777,15 @@ window.runMermaid = runMermaid;</script>
 <li class="toctree-l1"><a class="reference internal" href="../network-policy/approve-network-requests.html">Approve or Deny Network Requests</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../network-policy/customize-network-policy.html">Customize the Network Policy</a></li>
 </ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Security</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../security/best-practices.html">Security Best Practices</a></li>
+</ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Deployment</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up the Telegram Bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
 <ul class="nav bd-sidenav">
@@ -798,6 +806,7 @@ window.runMermaid = runMermaid;</script>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md">Report Vulnerabilities</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../resources/license.html">License</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://discord.gg/XFpfPv9Uvx">Discord</a></li>
 </ul>
@@ -858,6 +867,65 @@ window.runMermaid = runMermaid;</script>
 <section class="tex2jax_ignore mathjax_ignore" id="architecture">
 <h1>Architecture<a class="headerlink" href="#architecture" title="Link to this heading">#</a></h1>
 <p>NemoClaw has two main components: a TypeScript plugin that integrates with the OpenClaw CLI, and a Python blueprint that orchestrates OpenShell resources.</p>
+<section id="system-overview">
+<h2>System Overview<a class="headerlink" href="#system-overview" title="Link to this heading">#</a></h2>
+<p>NVIDIA OpenShell is a general-purpose agent runtime. It provides sandbox containers, a credential-storing gateway, inference proxying, and policy enforcement, but has no opinions about what runs inside. NemoClaw is an opinionated reference stack built on OpenShell that handles what goes in the sandbox and makes the setup accessible.</p>
+<pre  class="mermaid">
+        graph LR
+    classDef nemoclaw fill:#76b900,stroke:#5a8f00,color:#fff,stroke-width:2px,font-weight:bold
+    classDef openshell fill:#1a1a1a,stroke:#1a1a1a,color:#fff,stroke-width:2px,font-weight:bold
+    classDef sandbox fill:#444,stroke:#76b900,color:#fff,stroke-width:2px,font-weight:bold
+    classDef agent fill:#f5f5f5,stroke:#e0e0e0,color:#1a1a1a,stroke-width:1px
+    classDef external fill:#f5f5f5,stroke:#e0e0e0,color:#1a1a1a,stroke-width:1px
+    classDef user fill:#fff,stroke:#76b900,color:#1a1a1a,stroke-width:2px,font-weight:bold
+
+    USER([&quot;👤 User&quot;]):::user
+
+    subgraph EXTERNAL[&quot;External Services&quot;]
+        INFERENCE[&quot;Inference Provider&lt;br/&gt;&lt;small&gt;NVIDIA Endpoints · OpenAI&lt;br/&gt;Anthropic · Ollama · vLLM&lt;/small&gt;&quot;]:::external
+        MSGAPI[&quot;Messaging Platforms&lt;br/&gt;&lt;small&gt;Telegram · Discord · Slack&lt;/small&gt;&quot;]:::external
+        INTERNET[&quot;Internet&lt;br/&gt;&lt;small&gt;PyPI · npm · GitHub · APIs&lt;/small&gt;&quot;]:::external
+    end
+
+    subgraph HOST[&quot;Host Machine&quot;]
+
+        subgraph NEMOCLAW[&quot;NemoClaw&quot;]
+            direction TB
+            NCLI[&quot;CLI + Onboarding&lt;br/&gt;&lt;small&gt;Guided setup · provider selection&lt;br/&gt;credential validation · deploy&lt;/small&gt;&quot;]:::nemoclaw
+            BRIDGE[&quot;Messaging Bridges&lt;br/&gt;&lt;small&gt;Connect chat platforms&lt;br/&gt;to sandboxed agent&lt;/small&gt;&quot;]:::nemoclaw
+            BP[&quot;Blueprint&lt;br/&gt;&lt;small&gt;Hardened Dockerfile&lt;br/&gt;Network policies · Presets&lt;br/&gt;Security configuration&lt;/small&gt;&quot;]:::nemoclaw
+            MIGRATE[&quot;State Management&lt;br/&gt;&lt;small&gt;Migration snapshots&lt;br/&gt;Credential stripping&lt;br/&gt;Integrity verification&lt;/small&gt;&quot;]:::nemoclaw
+        end
+
+        subgraph OPENSHELL[&quot;OpenShell&quot;]
+            direction TB
+            GW[&quot;Gateway&lt;br/&gt;&lt;small&gt;Credential store&lt;br/&gt;Inference proxy&lt;br/&gt;Policy engine&lt;br/&gt;Device auth&lt;/small&gt;&quot;]:::openshell
+            OSCLI[&quot;openshell CLI&lt;br/&gt;&lt;small&gt;provider · sandbox&lt;br/&gt;gateway · policy&lt;/small&gt;&quot;]:::openshell
+
+            subgraph SANDBOX[&quot;Sandbox Container 🔒&quot;]
+                direction TB
+                AGENT[&quot;Agent&lt;br/&gt;&lt;small&gt;OpenClaw or any&lt;br/&gt;compatible agent&lt;/small&gt;&quot;]:::agent
+                PLUG[&quot;NemoClaw Plugin&lt;br/&gt;&lt;small&gt;Extends agent with&lt;br/&gt;managed configuration&lt;/small&gt;&quot;]:::sandbox
+            end
+        end
+    end
+
+    USER --&gt;|&quot;nemoclaw onboard&lt;br/&gt;nemoclaw connect&quot;| NCLI
+    USER --&gt;|&quot;Chat messages&quot;| MSGAPI
+
+    NCLI --&gt;|&quot;Orchestrates&quot;| OSCLI
+    BP --&gt;|&quot;Defines sandbox&lt;br/&gt;shape + policies&quot;| SANDBOX
+    MIGRATE --&gt;|&quot;Safe state&lt;br/&gt;transfer&quot;| SANDBOX
+
+    AGENT --&gt;|&quot;Inference requests&lt;br/&gt;&lt;small&gt;no credentials&lt;/small&gt;&quot;| GW
+    GW --&gt;|&quot;Proxied with&lt;br/&gt;credential injected&quot;| INFERENCE
+
+    MSGAPI --&gt;|&quot;Bot messages&quot;| BRIDGE
+    BRIDGE --&gt;|&quot;Relayed as data&lt;br/&gt;via SSH&quot;| AGENT
+
+    AGENT -.-&gt;|&quot;Policy-gated&quot;| INTERNET
+    GW -.-&gt;|&quot;Enforced by&lt;br/&gt;gateway&quot;| INTERNET
+    </pre></section>
 <section id="nemoclaw-plugin">
 <h2>NemoClaw Plugin<a class="headerlink" href="#nemoclaw-plugin" title="Link to this heading">#</a></h2>
 <p>The plugin is a thin TypeScript package that registers an inference provider and the <code class="docutils literal notranslate"><span class="pre">/nemoclaw</span></code> slash command.
@@ -890,10 +958,16 @@ The plugin resolves, verifies, and executes the blueprint as a subprocess.
 The blueprint drives all interactions with the OpenShell CLI.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nemoclaw-blueprint/
 ├── blueprint.yaml                  Manifest — version, profiles, compatibility
-├── orchestrator/
-│   └── runner.py                   CLI runner — plan / apply / status
 ├── policies/
 │   └── openclaw-sandbox.yaml       Default network + filesystem policy
+</pre></div>
+</div>
+<p>The blueprint runtime (TypeScript) lives in the plugin source tree:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nemoclaw/src/blueprint/
+├── runner.ts                       CLI runner — plan / apply / status / rollback
+├── ssrf.ts                         SSRF endpoint validation (IP + DNS checks)
+├── snapshot.ts                     Migration snapshot / restore lifecycle
+├── state.ts                        Persistent run state management
 </pre></div>
 </div>
 <section id="blueprint-lifecycle">
@@ -933,6 +1007,50 @@ OpenShell intercepts them and routes to the configured provider:</p>
 </pre></div>
 </div>
 <p>Refer to <a class="reference internal" href="inference-profiles.html"><span class="std std-doc">Inference Profiles</span></a> for provider configuration details.</p>
+</section>
+<section id="host-side-state-and-config">
+<h2>Host-Side State and Config<a class="headerlink" href="#host-side-state-and-config" title="Link to this heading">#</a></h2>
+<p>NemoClaw keeps its operator-facing state on the host rather than inside the sandbox.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Path</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/credentials.json</span></code></p></td>
+<td><p>Provider credentials saved during onboarding.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/sandboxes.json</span></code></p></td>
+<td><p>Registered sandbox metadata, including the default sandbox selection.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">~/.openclaw/openclaw.json</span></code></p></td>
+<td><p>Host OpenClaw configuration that NemoClaw snapshots or restores during migration flows.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The following environment variables configure optional services and local access.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Variable</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TELEGRAM_BOT_TOKEN</span></code></p></td>
+<td><p>Bot token for the Telegram bridge.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ALLOWED_CHAT_IDS</span></code></p></td>
+<td><p>Comma-separated list of Telegram chat IDs allowed to message the agent.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">CHAT_UI_URL</span></code></p></td>
+<td><p>URL for the optional chat UI endpoint.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For normal setup and reconfiguration, prefer <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> over editing these files by hand.</p>
 </section>
 </section>
 
@@ -985,6 +1103,7 @@ OpenShell intercepts them and routes to the configured provider:</p>
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#system-overview">System Overview</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-plugin">NemoClaw Plugin</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-blueprint">NemoClaw Blueprint</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blueprint-lifecycle">Blueprint Lifecycle</a></li>
@@ -992,6 +1111,7 @@ OpenShell intercepts them and routes to the configured provider:</p>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-environment">Sandbox Environment</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-routing">Inference Routing</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#host-side-state-and-config">Host-Side State and Config</a></li>
 </ul>
   </nav></div>
 
