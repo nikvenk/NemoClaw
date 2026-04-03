@@ -48,6 +48,12 @@ function buildRemediation(): string {
 export function ensureConfigDir(dir: string): void {
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // Enforce 0o700 even if the directory already existed at a weaker mode.
+    // Only tighten permissions — never loosen a more restrictive mode.
+    const stat = fs.statSync(dir);
+    if ((stat.mode & 0o777) !== 0o700 && (stat.mode & 0o077) !== 0) {
+      fs.chmodSync(dir, 0o700);
+    }
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "EACCES") {
       throw new ConfigPermissionError(`Cannot create config directory: ${dir}`, dir, err as Error);
@@ -106,17 +112,18 @@ export function writeConfigFile(filePath: string, data: unknown): void {
  */
 export function readConfigFile<T>(filePath: string, defaultValue: T): T {
   try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
-    }
+    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "EACCES") {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EACCES") {
       throw new ConfigPermissionError(
         `Cannot read config file: ${filePath}`,
         filePath,
         err as Error,
       );
     }
+    // ENOENT (missing file) or corrupt JSON — return default
+    if (code === "ENOENT") return defaultValue;
     // Corrupt JSON or other non-permission error — return default
   }
   return defaultValue;

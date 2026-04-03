@@ -250,7 +250,9 @@ function applyPreset(sandboxName, presetName) {
     return false;
   }
 
-  validatePreset(presetContent, presetName);
+  if (!validatePreset(presetContent, presetName)) {
+    return false;
+  }
 
   const presetEntries = extractPresetEntries(presetContent);
   if (!presetEntries) {

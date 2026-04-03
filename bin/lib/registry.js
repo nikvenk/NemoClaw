@@ -19,7 +19,8 @@ const LOCK_MAX_RETRIES = 120;
  * Writes an owner file with PID for stale-lock detection via process liveness.
  */
 function acquireLock() {
-  fs.mkdirSync(path.dirname(REGISTRY_FILE), { recursive: true, mode: 0o700 });
+  const { ensureConfigDir } = require("./config-io");
+  ensureConfigDir(path.dirname(REGISTRY_FILE));
   const sleepBuf = new Int32Array(new SharedArrayBuffer(4));
   for (let i = 0; i < LOCK_MAX_RETRIES; i++) {
     try {
