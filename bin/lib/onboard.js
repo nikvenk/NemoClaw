@@ -2171,69 +2171,48 @@ async function createSandbox(
     !getMessagingToken("SLACK_BOT_TOKEN")
   ) {
     console.log("");
-    const MESSAGING_CHANNELS = [
-      {
-        name: "telegram",
-        envKey: "TELEGRAM_BOT_TOKEN",
-        label: "Telegram Bot Token",
-        help: "Create a bot via @BotFather on Telegram, then copy the token.",
-      },
-      {
-        name: "discord",
-        envKey: "DISCORD_BOT_TOKEN",
-        label: "Discord Bot Token",
-        help: "Discord Developer Portal → Applications → Bot → Copy token.",
-      },
-      {
-        name: "slack",
-        envKey: "SLACK_BOT_TOKEN",
-        label: "Slack Bot Token",
-        help: "Slack API → Your Apps → OAuth & Permissions → Bot User OAuth Token (xoxb-...).",
-      },
-    ];
-
-    console.log("");
     console.log("  Messaging channels (optional):");
     console.log("  Connect Telegram, Discord, or Slack so your assistant can");
     console.log("  send and receive messages. Tokens are stored securely and");
     console.log("  never exposed inside the sandbox.");
+    console.log("  Press Enter to skip any channel you don't need.");
     console.log("");
-    console.log(`  Available: ${MESSAGING_CHANNELS.map((c) => c.name).join(", ")}`);
-    console.log("");
 
-    const channelAnswer = (
-      await prompt("  Which channels? (comma-separated, or Enter to skip): ")
-    )
-      .trim()
-      .toLowerCase();
-
-    if (channelAnswer) {
-      const selected = channelAnswer
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      for (const ch of selected) {
-        const def = MESSAGING_CHANNELS.find((c) => c.name === ch);
-        if (!def) {
-          console.log(`  Unknown channel: ${ch}`);
-          continue;
-        }
-        console.log("");
-        console.log(`  ${def.help}`);
-        const token = normalizeCredentialValue(
-          await prompt(`  ${def.label}: `, { secret: true }),
-        );
-        if (token) {
-          saveCredential(def.envKey, token);
-          process.env[def.envKey] = token;
-          console.log(`  ✓ Saved`);
-        } else {
-          console.log(`  Skipped ${def.name}`);
-        }
-      }
-      console.log("");
+    // Telegram
+    console.log("  Telegram: Create a bot via @BotFather on Telegram, then copy the token.");
+    const tgInput = normalizeCredentialValue(
+      await prompt("  Telegram Bot Token (Enter to skip): ", { secret: true }),
+    );
+    if (tgInput) {
+      saveCredential("TELEGRAM_BOT_TOKEN", tgInput);
+      process.env.TELEGRAM_BOT_TOKEN = tgInput;
+      console.log("  ✓ Telegram token saved");
     }
+    console.log("");
+
+    // Discord
+    console.log("  Discord: Developer Portal → Applications → Bot → Reset/Copy Token.");
+    const dcInput = normalizeCredentialValue(
+      await prompt("  Discord Bot Token (Enter to skip): ", { secret: true }),
+    );
+    if (dcInput) {
+      saveCredential("DISCORD_BOT_TOKEN", dcInput);
+      process.env.DISCORD_BOT_TOKEN = dcInput;
+      console.log("  ✓ Discord token saved");
+    }
+    console.log("");
+
+    // Slack
+    console.log("  Slack: api.slack.com → Your Apps → OAuth & Permissions → Bot User OAuth Token.");
+    const slInput = normalizeCredentialValue(
+      await prompt("  Slack Bot Token (Enter to skip): ", { secret: true }),
+    );
+    if (slInput) {
+      saveCredential("SLACK_BOT_TOKEN", slInput);
+      process.env.SLACK_BOT_TOKEN = slInput;
+      console.log("  ✓ Slack token saved");
+    }
+    console.log("");
   }
 
   const messagingTokenDefs = [
