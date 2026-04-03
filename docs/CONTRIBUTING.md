@@ -2,6 +2,16 @@
 
 This guide covers how to write, edit, and review documentation for NemoClaw. If you change code that affects user-facing behavior, update the relevant docs in the same PR.
 
+## When to Update Docs
+
+Update documentation when your change:
+
+- Adds, removes, or renames a CLI command or flag.
+- Changes default behavior or configuration.
+- Adds a new feature that users interact with.
+- Fixes a bug that the docs describe incorrectly.
+- Changes an API, protocol, or policy schema.
+
 ## Update Docs with Agent Skills
 
 If you use an AI coding agent (Cursor, Claude Code, Codex, etc.), the repo includes the `update-docs` skill that automates doc work.
@@ -60,7 +70,7 @@ Other useful flags:
 | `--name-map CAT=NAME` | Override a generated skill name (e.g. `--name-map about=overview`). |
 | `--exclude <file>` | Skip specific files (e.g. `--exclude "release-notes.md"`). |
 
-### How the script works
+### How the Script Works
 
 The script reads YAML frontmatter from each doc page to determine its content type (`how_to`, `concept`, `reference`, `get_started`), then groups pages into skills using the `smart` strategy by default.
 Procedure pages (`how_to`, `get_started`) become the main body of the skill.
@@ -71,16 +81,6 @@ Cross-references between doc pages are rewritten as skill-to-skill pointers so a
 MyST/Sphinx directives are converted to standard markdown.
 
 For full usage details and all flags, see the docstring at the top of `scripts/docs-to-skills.py`.
-
-## When to Update Docs
-
-Update documentation when your change:
-
-- Adds, removes, or renames a CLI command or flag.
-- Changes default behavior or configuration.
-- Adds a new feature that users interact with.
-- Fixes a bug that the docs describe incorrectly.
-- Changes an API, protocol, or policy schema.
 
 ## Building Docs Locally
 
