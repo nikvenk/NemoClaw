@@ -490,7 +490,7 @@ Credentials are stored in <code class="docutils literal notranslate"><span class
 The legacy <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code> command is deprecated; use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> instead.</p>
 <p>If you enable Brave Search during onboarding, NemoClaw currently stores the Brave API key in the sandbox’s OpenClaw configuration.
 That means the OpenClaw agent can read the key.
-NemoClaw explored an OpenShell-hosted credential path first, but the current OpenClaw Brave runtime does not consume that path end to end yet.
+NemoClaw explores an OpenShell-hosted credential path first, but the current OpenClaw Brave runtime does not consume that path end to end yet.
 Treat Brave Search as an explicit opt-in and use a dedicated low-privilege Brave key.</p>
 <p>For non-interactive onboarding, you must explicitly accept the third-party software notice:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--non-interactive<span class="w"> </span>--yes-i-accept-third-party-software
