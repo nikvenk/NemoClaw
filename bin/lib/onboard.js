@@ -2046,15 +2046,9 @@ async function preflight() {
   if (host.runtime !== "unknown") {
     console.log(`  ✓ Container runtime: ${host.runtime}`);
   }
-  if (host.isUnsupportedRuntime) {
-    console.warn(
-      "  ! Podman is not a supported OpenShell runtime. NemoClaw will continue, but your experience may vary.",
-    );
-    printRemediationActions(planHostRemediation(host));
-  }
+  // Podman is now supported — no unsupported runtime warning needed.
   if (host.notes.includes("Running under WSL")) {
     console.log("  ⓘ Running under WSL");
-  }
 
   // OpenShell CLI
   let openshellInstall = { localBin: null, futureShellPathHint: null };
