@@ -2656,8 +2656,9 @@ async function createSandbox(
   // Each channel with a userIdEnvKey in MESSAGING_CHANNELS may have a
   // comma-separated list of IDs (e.g. TELEGRAM_ALLOWED_IDS="123,456").
   const messagingAllowedIds = {};
+  const enabledTokenEnvKeys = new Set(messagingTokenDefs.map(({ envKey }) => envKey));
   for (const ch of MESSAGING_CHANNELS) {
-    if (ch.userIdEnvKey && process.env[ch.userIdEnvKey]) {
+    if (enabledTokenEnvKeys.has(ch.envKey) && ch.userIdEnvKey && process.env[ch.userIdEnvKey]) {
       const ids = process.env[ch.userIdEnvKey]
         .split(",")
         .map((s) => s.trim())
