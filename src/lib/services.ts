@@ -265,7 +265,7 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
       `http://localhost:${String(dashboardPort)}`,
     ]);
   } catch {
-    warn("cloudflared not found — no public URL. Install: brev-setup.sh or manually.");
+    warn("cloudflared not found — no public URL. Install cloudflared manually if you need one.");
   }
 
   // Wait for cloudflared URL

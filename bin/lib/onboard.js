@@ -35,12 +35,7 @@ const {
   getProviderSelectionConfig,
   parseGatewayInference,
 } = require("./inference-config");
-const {
-  inferContainerRuntime,
-  isUnsupportedMacosRuntime,
-  isWsl,
-  shouldPatchCoredns,
-} = require("./platform");
+const { inferContainerRuntime, isWsl, shouldPatchCoredns } = require("./platform");
 const { resolveOpenshell } = require("./resolve-openshell");
 const {
   prompt,
@@ -54,7 +49,13 @@ const nim = require("./nim");
 const onboardSession = require("./onboard-session");
 const policies = require("./policies");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
-const { checkPortAvailable, ensureSwap, getMemoryInfo } = require("./preflight");
+const {
+  assessHost,
+  checkPortAvailable,
+  ensureSwap,
+  getMemoryInfo,
+  planHostRemediation,
+} = require("./preflight");
 
 // Typed modules (compiled from src/lib/*.ts → dist/lib/*.js)
 const gatewayState = require("../../dist/lib/gateway-state");
@@ -1915,18 +1916,25 @@ function getResumeConfigConflicts(session, opts = {}) {
   return conflicts;
 }
 
-function isDockerRunning() {
-  try {
-    runCapture("docker info", { ignoreError: false });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function getContainerRuntime() {
   const info = runCapture("docker info 2>/dev/null", { ignoreError: true });
   return inferContainerRuntime(info);
+}
+
+function printRemediationActions(actions) {
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return;
+  }
+
+  console.error("");
+  console.error("  Suggested fix:");
+  console.error("");
+  for (const action of actions) {
+    console.error(`  - ${action.title}: ${action.reason}`);
+    for (const command of action.commands || []) {
+      console.error(`    ${command}`);
+    }
+  }
 }
 
 function isOpenshellInstalled() {
@@ -2091,24 +2099,27 @@ function getNonInteractiveModel(providerKey) {
 async function preflight() {
   step(1, 8, "Preflight checks");
 
-  // Docker
-  if (!isDockerRunning()) {
-    console.error("  Docker is not running. Please start Docker and try again.");
+  const host = assessHost();
+
+  // Docker / runtime
+  if (!host.dockerReachable) {
+    console.error("  Docker is not reachable. Please fix Docker and try again.");
+    printRemediationActions(planHostRemediation(host));
     process.exit(1);
   }
   console.log("  ✓ Docker is running");
 
-  const runtime = getContainerRuntime();
-  if (isUnsupportedMacosRuntime(runtime)) {
-    console.error("  Podman on macOS is not supported by NemoClaw at this time.");
-    console.error(
-      "  OpenShell currently depends on Docker host-gateway behavior that Podman on macOS does not provide.",
-    );
-    console.error("  Use Colima or Docker Desktop on macOS instead.");
-    process.exit(1);
+  if (host.runtime !== "unknown") {
+    console.log(`  ✓ Container runtime: ${host.runtime}`);
   }
-  if (runtime !== "unknown") {
-    console.log(`  ✓ Container runtime: ${runtime}`);
+  if (host.isUnsupportedRuntime) {
+    console.warn(
+      "  ! Podman is not a supported OpenShell runtime. NemoClaw will continue, but your experience may vary.",
+    );
+    printRemediationActions(planHostRemediation(host));
+  }
+  if (host.notes.includes("Running under WSL")) {
+    console.log("  ⓘ Running under WSL");
   }
 
   // OpenShell CLI
@@ -2449,23 +2460,28 @@ async function recoverGatewayRuntime() {
 // ── Step 3: Sandbox ──────────────────────────────────────────────
 
 async function promptValidatedSandboxName() {
-  while (true) {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const nameAnswer = await promptOrDefault(
-      "  Sandbox name (lowercase, numbers, hyphens) [my-assistant]: ",
+      "  Sandbox name (lowercase, starts with letter, hyphens ok) [my-assistant]: ",
       "NEMOCLAW_SANDBOX_NAME",
       "my-assistant",
     );
     const sandboxName = (nameAnswer || "my-assistant").trim().toLowerCase();
 
     // Validate: RFC 1123 subdomain — lowercase alphanumeric and hyphens,
-    // must start and end with alphanumeric (required by Kubernetes/OpenShell)
-    if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sandboxName)) {
+    // must start with a letter (not a digit) to satisfy Kubernetes naming.
+    if (/^[a-z]([a-z0-9-]*[a-z0-9])?$/.test(sandboxName)) {
       return sandboxName;
     }
 
     console.error(`  Invalid sandbox name: '${sandboxName}'`);
-    console.error("  Names must be lowercase, contain only letters, numbers, and hyphens,");
-    console.error("  and must start and end with a letter or number.");
+    if (/^[0-9]/.test(sandboxName)) {
+      console.error("  Names must start with a letter, not a digit.");
+    } else {
+      console.error("  Names must be lowercase, contain only letters, numbers, and hyphens,");
+      console.error("  must start with a letter, and end with a letter or number.");
+    }
 
     // Non-interactive runs cannot re-prompt — abort so the caller can fix the
     // NEMOCLAW_SANDBOX_NAME env var and retry.
@@ -2473,8 +2489,13 @@ async function promptValidatedSandboxName() {
       process.exit(1);
     }
 
-    console.error("  Please try again.\n");
+    if (attempt < MAX_ATTEMPTS - 1) {
+      console.error("  Please try again.\n");
+    }
   }
+
+  console.error("  Too many invalid attempts.");
+  process.exit(1);
 }
 
 // ── Step 5: Sandbox ──────────────────────────────────────────────
