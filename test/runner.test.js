@@ -484,8 +484,8 @@ describe("regression guards", () => {
         path.join(import.meta.dirname, "..", "bin", "nemoclaw.js"),
         "utf-8",
       );
-      expect(src).toContain("`nemoclaw setup-spark` is deprecated.");
-      expect(src).toContain("await onboard(args);");
+      expect(src).toContain("runDeprecatedOnboardAliasCommand");
+      expect(src).toContain('kind: "setup-spark"');
       expect(src).not.toContain('sudo bash "${SCRIPTS}/setup-spark.sh"');
     });
 
