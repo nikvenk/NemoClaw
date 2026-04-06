@@ -229,5 +229,3 @@ If the provider itself needs to change (for example, switching from vLLM to a cl
 - [Inference Options](inference-options.md) for the full list of providers available during onboarding.
 - [Switch Inference Models](switch-inference-providers.md) for runtime model switching.
 - [Quickstart](../get-started/quickstart.md) for first-time installation.
-
-test
