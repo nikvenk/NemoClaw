@@ -33,6 +33,31 @@ function parseModelIds(body: string, itemKeys: string[] = ["id"]): string[] {
     .filter((value): value is string => Boolean(value));
 }
 
+function toModelCatalogFetchResult(
+  result: CurlProbeResult,
+  itemKeys: string[] = ["id"],
+): ModelCatalogFetchResult {
+  if (!result.ok) {
+    return {
+      ok: false,
+      message: result.message,
+      httpStatus: result.httpStatus,
+      curlStatus: result.curlStatus,
+    };
+  }
+
+  try {
+    return { ok: true, ids: parseModelIds(result.body, itemKeys) };
+  } catch (error) {
+    return {
+      ok: false,
+      httpStatus: result.httpStatus,
+      curlStatus: result.curlStatus,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export function fetchNvidiaEndpointModels(
   apiKey: string,
   options: ProviderModelOptions = {},
@@ -49,24 +74,7 @@ export function fetchNvidiaEndpointModels(
       `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`,
       `${buildEndpointUrl}/models`,
     ]);
-    if (!result.ok) {
-      return {
-        ok: false,
-        message: result.message,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-      };
-    }
-    try {
-      return { ok: true, ids: parseModelIds(result.body) };
-    } catch (error) {
-      return {
-        ok: false,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
+    return toModelCatalogFetchResult(result);
   } catch (error) {
     return {
       ok: false,
@@ -93,7 +101,7 @@ export function validateNvidiaEndpointModel(
     };
   }
   if (available.ids.includes(model)) {
-    return { ok: true };
+    return { ok: true, validated: true };
   }
   return {
     ok: false,
@@ -116,24 +124,7 @@ export function fetchOpenAiLikeModels(
       ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
       `${String(endpointUrl).replace(/\/+$/, "")}/models`,
     ]);
-    if (!result.ok) {
-      return {
-        ok: false,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: result.message,
-      };
-    }
-    try {
-      return { ok: true, ids: parseModelIds(result.body) };
-    } catch (error) {
-      return {
-        ok: false,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
+    return toModelCatalogFetchResult(result);
   } catch (error) {
     return {
       ok: false,
@@ -160,24 +151,7 @@ export function fetchAnthropicModels(
       "anthropic-version: 2023-06-01",
       `${String(endpointUrl).replace(/\/+$/, "")}/v1/models`,
     ]);
-    if (!result.ok) {
-      return {
-        ok: false,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: result.message,
-      };
-    }
-    try {
-      return { ok: true, ids: parseModelIds(result.body, ["id", "name"]) };
-    } catch (error) {
-      return {
-        ok: false,
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
+    return toModelCatalogFetchResult(result, ["id", "name"]);
   } catch (error) {
     return {
       ok: false,

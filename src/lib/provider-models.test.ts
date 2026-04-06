@@ -33,6 +33,21 @@ describe("provider model helpers", () => {
     expect(result).toEqual({ ok: true, ids: ["nemotron", "llama"] });
   });
 
+  it("returns explicit validated=true for NVIDIA model matches", () => {
+    const result = validateNvidiaEndpointModel("nemotron", "nvapi-x", {
+      runCurlProbeImpl: () => ({
+        ok: true,
+        httpStatus: 200,
+        curlStatus: 0,
+        body: JSON.stringify({ data: [{ id: "nemotron" }] }),
+        stderr: "",
+        message: "",
+      }),
+    });
+
+    expect(result).toEqual({ ok: true, validated: true });
+  });
+
   it("reports NVIDIA validation failures with the checked endpoint", () => {
     const result = validateNvidiaEndpointModel("missing", "nvapi-x", {
       runCurlProbeImpl: () => ({
