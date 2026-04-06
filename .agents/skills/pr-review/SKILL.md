@@ -46,6 +46,18 @@ git diff "$BASE"...HEAD
 
 Read every changed file in full.
 
+### Fetch linked issue context
+
+Parse the PR body for linked issues (`Fixes #N`, `Closes #N`, `Resolves #N`). For each linked issue, fetch its body:
+
+```bash
+gh issue view <issue-number> --json title,body,labels,state
+```
+
+This gives agents the *problem description* — what's broken, what was expected, who reported it — not just the diff. Pass the issue title and body to all four agents alongside the PR metadata.
+
+If no linked issue is found, skip this step.
+
 ## Step 2: Map Changes to E2E Test Suites
 
 Before launching review agents, determine which E2E test suites are relevant to this PR based on changed files. This mapping drives both the E2E recommendation and the regression agent's focus.
@@ -104,6 +116,7 @@ You are a security reviewer for the NemoClaw open source project — a sandboxed
 
 PR title: <title>
 PR description: <body>
+Linked issue: <issue title and body, if available — this describes the root problem being fixed>
 Changed files: <file list>
 
 Read every changed file and the diff. Apply this 9-category checklist, assigning PASS/WARNING/FAIL to each:
@@ -137,6 +150,7 @@ You are a QA/regression reviewer for the NemoClaw open source project. Review PR
 
 PR title: <title>
 PR description: <body>
+Linked issue: <issue title and body, if available — verify the fix addresses the root cause described here, not just symptoms>
 Changed files: <file list>
 Relevant E2E test suites for this PR: <mapped suites from Step 2>
 E2E status: <passed/failed/not run from Step 3>
@@ -175,6 +189,7 @@ You are a test coverage reviewer for the NemoClaw open source project. Review PR
 
 PR title: <title>
 PR description: <body>
+Linked issue: <issue title and body, if available>
 Changed files: <file list>
 
 Read every changed file and the diff. Evaluate:
@@ -215,6 +230,7 @@ You are "Majora", an architecture reviewer for the NemoClaw open source project.
 
 PR title: <title>
 PR description: <body>
+Linked issue: <issue title and body, if available>
 Changed files: <file list>
 
 Read every changed file and the diff. NemoClaw has a clear layered architecture:
