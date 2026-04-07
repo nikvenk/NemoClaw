@@ -2424,7 +2424,7 @@ preflight.checkPortAvailable = async () => ({ ok: true });
 // User confirms recreation when prompted
 credentials.prompt = async () => "y";
 
-childProcess.spawn = (...args) => {
+const fakeSpawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
@@ -2434,6 +2434,18 @@ childProcess.spawn = (...args) => {
     child.emit("close", 0);
   });
   return child;
+};
+childProcess.spawn = fakeSpawn;
+
+// Also patch spawn inside the compiled sandbox-create-stream module.
+// It imports spawn at load time from "node:child_process", so patching the
+// childProcess object above does not reach it. Patch the cached module
+// directly so streamSandboxCreate (called by createSandbox) doesn't spawn
+// a real bash process that tries to hit a live gateway.
+const sandboxCreateStreamMod = require(${JSON.stringify(path.join(repoRoot, "dist", "lib", "sandbox-create-stream.js"))});
+const _origStreamCreate = sandboxCreateStreamMod.streamSandboxCreate;
+sandboxCreateStreamMod.streamSandboxCreate = (command, env, options = {}) => {
+  return _origStreamCreate(command, env, { ...options, spawnImpl: fakeSpawn });
 };
 
 const { createSandbox } = require(${onboardPath});
