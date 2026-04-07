@@ -34,7 +34,7 @@ describe("lib/version", () => {
     // npm-published tarballs ship with a stale package.json version (0.1.0)
     // and a .version file stamped from the git tag at publish time. The
     // installed CLI must report the .version contents, not the package.json
-    // semver. See https://github.com/NVIDIA/NemoClaw/issues/1239
+    // semver. See issue #1239.
     writeFileSync(join(testDir, "package.json"), JSON.stringify({ version: "0.1.0" }));
     writeFileSync(join(testDir, ".version"), "0.0.2");
     expect(getVersion({ rootDir: testDir })).toBe("0.0.2");
