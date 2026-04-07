@@ -2338,7 +2338,7 @@ async function setupNim(gpu) {
         if (selected.key === "custom") {
           const endpointInput = isNonInteractive()
             ? (process.env.NEMOCLAW_ENDPOINT_URL || "").trim()
-            : await prompt("  OpenAI-compatible base URL (e.g., https://openrouter.ai/api/v1): ");
+            : await prompt("  OpenAI-compatible base URL (e.g., https://openrouter.ai): ");
           const navigation = getNavigationChoice(endpointInput);
           if (navigation === "back") {
             console.log("  Returning to provider selection.");
