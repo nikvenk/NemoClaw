@@ -1564,7 +1564,15 @@ async function preflight() {
     // Ensure the installed version meets the minimum required by install-openshell.sh.
     // The script itself is idempotent — it exits early if the version is already sufficient.
     const currentVersion = getInstalledOpenshellVersion();
-    if (currentVersion) {
+    if (!currentVersion) {
+      console.log("  openshell version could not be determined. Reinstalling...");
+      openshellInstall = installOpenshell();
+      if (!openshellInstall.installed) {
+        console.error("  Failed to reinstall openshell CLI.");
+        console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
+        process.exit(1);
+      }
+    } else {
       const parts = currentVersion.split(".").map(Number);
       const minParts = [0, 0, 24]; // must match MIN_VERSION in scripts/install-openshell.sh
       const needsUpgrade =
