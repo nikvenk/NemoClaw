@@ -29,6 +29,7 @@ import {
   getStableGatewayImageRef,
   isGatewayHealthy,
   classifyValidationFailure,
+  hasResponsesToolCall,
   isLoopbackHostname,
   normalizeProviderBaseUrl,
   parsePolicyPresetEnv,
@@ -160,6 +161,53 @@ describe("onboard helpers", () => {
         message: "HTTP 405: unsupported model",
       }),
     ).toEqual({ kind: "model", retry: "model" });
+  });
+
+  it("detects tool-calling responses payloads conservatively", () => {
+    expect(
+      hasResponsesToolCall(
+        JSON.stringify({
+          output: [
+            {
+              type: "function_call",
+              name: "emit_ok",
+              arguments: '{"value":"OK"}',
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasResponsesToolCall(
+        JSON.stringify({
+          output: [
+            {
+              type: "message",
+              content: [
+                {
+                  type: "function_call",
+                  name: "emit_ok",
+                  arguments: '{"value":"OK"}',
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasResponsesToolCall(
+        JSON.stringify({
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(hasResponsesToolCall("{")).toBe(false);
   });
 
   it("normalizes anthropic-compatible base URLs with a trailing /v1", () => {

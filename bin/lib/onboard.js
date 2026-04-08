@@ -968,40 +968,139 @@ function patchStagedDockerfile(
   fs.writeFileSync(dockerfilePath, dockerfile);
 }
 
-function probeOpenAiLikeEndpoint(endpointUrl, model, apiKey) {
+function parseJsonObject(body) {
+  if (!body) return null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+function hasResponsesToolCall(body) {
+  const parsed = parseJsonObject(body);
+  if (!parsed || !Array.isArray(parsed.output)) return false;
+
+  const stack = [...parsed.output];
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "function_call" || item.type === "tool_call") return true;
+    if (Array.isArray(item.content)) {
+      stack.push(...item.content);
+    }
+  }
+
+  return false;
+}
+
+function shouldRequireResponsesToolCalling(provider) {
+  return (
+    provider === "nvidia-prod" || provider === "gemini-api" || provider === "compatible-endpoint"
+  );
+}
+
+function probeResponsesToolCalling(endpointUrl, model, apiKey) {
+  const result = runCurlProbe([
+    "-sS",
+    ...getCurlTimingArgs(),
+    "-H",
+    "Content-Type: application/json",
+    ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
+    "-d",
+    JSON.stringify({
+      model,
+      input: "Call the emit_ok function with value OK. Do not answer with plain text.",
+      tool_choice: "required",
+      tools: [
+        {
+          type: "function",
+          name: "emit_ok",
+          description: "Returns the probe value for validation.",
+          parameters: {
+            type: "object",
+            properties: {
+              value: { type: "string" },
+            },
+            required: ["value"],
+            additionalProperties: false,
+          },
+        },
+      ],
+    }),
+    `${String(endpointUrl).replace(/\/+$/, "")}/responses`,
+  ]);
+
+  if (!result.ok) {
+    return result;
+  }
+  if (hasResponsesToolCall(result.body)) {
+    return result;
+  }
+  return {
+    ok: false,
+    httpStatus: result.httpStatus,
+    curlStatus: result.curlStatus,
+    body: result.body,
+    stderr: result.stderr,
+    message: `HTTP ${result.httpStatus}: Responses API did not return a tool call`,
+  };
+}
+
+function probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, options = {}) {
+  const responsesProbe =
+    options.requireResponsesToolCalling === true
+      ? {
+          name: "Responses API with tool calling",
+          api: "openai-responses",
+          execute: () => probeResponsesToolCalling(endpointUrl, model, apiKey),
+        }
+      : {
+          name: "Responses API",
+          api: "openai-responses",
+          execute: () =>
+            runCurlProbe([
+              "-sS",
+              ...getCurlTimingArgs(),
+              "-H",
+              "Content-Type: application/json",
+              ...(apiKey
+                ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`]
+                : []),
+              "-d",
+              JSON.stringify({
+                model,
+                input: "Reply with exactly: OK",
+              }),
+              `${String(endpointUrl).replace(/\/+$/, "")}/responses`,
+            ]),
+        };
+
   const probes = [
-    {
-      name: "Responses API",
-      api: "openai-responses",
-      url: `${String(endpointUrl).replace(/\/+$/, "")}/responses`,
-      body: JSON.stringify({
-        model,
-        input: "Reply with exactly: OK",
-      }),
-    },
+    responsesProbe,
     {
       name: "Chat Completions API",
       api: "openai-completions",
-      url: `${String(endpointUrl).replace(/\/+$/, "")}/chat/completions`,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: "Reply with exactly: OK" }],
-      }),
+      execute: () =>
+        runCurlProbe([
+          "-sS",
+          ...getCurlTimingArgs(),
+          "-H",
+          "Content-Type: application/json",
+          ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
+          "-d",
+          JSON.stringify({
+            model,
+            messages: [{ role: "user", content: "Reply with exactly: OK" }],
+          }),
+          `${String(endpointUrl).replace(/\/+$/, "")}/chat/completions`,
+        ]),
     },
   ];
 
   const failures = [];
   for (const probe of probes) {
-    const result = runCurlProbe([
-      "-sS",
-      ...getCurlTimingArgs(),
-      "-H",
-      "Content-Type: application/json",
-      ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
-      "-d",
-      probe.body,
-      probe.url,
-    ]);
+    const result = probe.execute();
     if (result.ok) {
       return { ok: true, api: probe.api, label: probe.name };
     }
@@ -1062,9 +1161,10 @@ async function validateOpenAiLikeSelection(
   credentialEnv = null,
   retryMessage = "Please choose a provider/model again.",
   helpUrl = null,
+  options = {},
 ) {
   const apiKey = credentialEnv ? getCredential(credentialEnv) : "";
-  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey);
+  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, options);
   if (!probe.ok) {
     console.error(`  ${label} endpoint validation failed.`);
     console.error(`  ${probe.message}`);
@@ -1127,7 +1227,9 @@ async function validateCustomOpenAiLikeSelection(
   helpUrl = null,
 ) {
   const apiKey = getCredential(credentialEnv);
-  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey);
+  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, {
+    requireResponsesToolCalling: true,
+  });
   if (probe.ok) {
     console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
     return { ok: true, api: probe.api };
@@ -2597,6 +2699,9 @@ async function setupNim(gpu) {
                   credentialEnv,
                   retryMessage,
                   remoteConfig.helpUrl,
+                  {
+                    requireResponsesToolCalling: shouldRequireResponsesToolCalling(provider),
+                  },
                 );
                 if (validation.ok) {
                   preferredInferenceApi = validation.api;
@@ -2624,6 +2729,9 @@ async function setupNim(gpu) {
               credentialEnv,
               "Please choose a provider/model again.",
               remoteConfig.helpUrl,
+              {
+                requireResponsesToolCalling: shouldRequireResponsesToolCalling(provider),
+              },
             );
             if (validation.ok) {
               preferredInferenceApi = validation.api;
@@ -4227,6 +4335,7 @@ module.exports = {
   setupPoliciesWithSelection,
   summarizeCurlFailure,
   summarizeProbeFailure,
+  hasResponsesToolCall,
   upsertProvider,
   hydrateCredentialEnv,
   pruneKnownHostsEntries,
