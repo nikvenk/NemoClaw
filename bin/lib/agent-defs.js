@@ -193,9 +193,7 @@ function getAgentChoices() {
 /**
  * Resolve the effective agent from CLI flags, env vars, or session state.
  * Priority: explicit flag > env var > session > default ("openclaw").
- * @param {object} opts
- * @param {string|null} opts.agentFlag — --agent CLI flag value
- * @param {object|null} opts.session — Loaded onboard session
+ * @param {{ agentFlag?: string|null, session?: object|null }} [opts]
  * @returns {string} Agent name
  */
 function resolveAgentName({ agentFlag = null, session = null } = {}) {

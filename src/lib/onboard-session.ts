@@ -49,6 +49,7 @@ export interface Session {
   lastStepStarted: string | null;
   lastCompletedStep: string | null;
   failure: SessionFailure | null;
+  agent: string | null;
   sandboxName: string | null;
   provider: string | null;
   model: string | null;
@@ -186,6 +187,7 @@ export function createSession(overrides: Partial<Session> = {}): Session {
     lastStepStarted: overrides.lastStepStarted || null,
     lastCompletedStep: overrides.lastCompletedStep || null,
     failure: overrides.failure || null,
+    agent: overrides.agent || null,
     sandboxName: overrides.sandboxName || null,
     provider: overrides.provider || null,
     model: overrides.model || null,
