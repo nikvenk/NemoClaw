@@ -347,7 +347,7 @@ function updateDocsVersionsJson(version: string): void {
       version: entry.version,
       url: buildDocsVersionUrl(entry.version),
     })),
-  ].slice(0, 5);
+  ].slice(0, 10);
 
   writeFileSync(DOCS_VERSIONS_JSON, `${JSON.stringify(nextEntries, null, 2)}\n`, "utf8");
 }
