@@ -2,6 +2,8 @@
 
 Take one near-mergeable PR and make the smallest safe change to unblock it.
 
+**Default to maintainer salvage.** When a maintainer picks an item from the queue, the assumption is they're doing the work now — rebase, fix conflicts, add missing tests, push. Do not default to "ask the contributor and wait" because that blocks the daily cadence. Only defer to the contributor when the fix requires understanding intent that isn't clear from the diff.
+
 ## Step 1: Gather Context
 
 ```bash
@@ -15,9 +17,9 @@ Also read: maintainer and CodeRabbit comments, linked issues, recent `main` chan
 
 ## Step 2: Assess Fit
 
-**Good candidates:** one or two failing checks with obvious fix, missing test for risky path, mechanical conflict, small correctness fix from review, narrow gate cleanup.
+**Maintainer does it now:** rebase and resolve conflicts, add missing tests for risky code, fix one or two failing checks, apply small correctness fixes from review, narrow gate cleanup.
 
-**Stop and ask:** design change needed, large refactor, multiple subsystems, unclear intent, non-obvious security risk.
+**Defer to contributor only when:** the fix requires a design change the maintainer can't judge from the diff, contributor intent is ambiguous and the wrong guess would change semantics, or the PR spans multiple subsystems the maintainer isn't familiar with.
 
 ## Step 3: Check Out and Reproduce
 
