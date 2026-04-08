@@ -10,7 +10,7 @@
  * Usage: node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/bump-stragglers.ts <from-version> <to-version> [--repo OWNER/REPO]
  */
 
-import { run } from "./shared.ts";
+import { run, parseStringArg } from "./shared.ts";
 
 interface BumpedItem {
   number: number;
@@ -33,8 +33,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   // Create target label if needed
   run("gh", [

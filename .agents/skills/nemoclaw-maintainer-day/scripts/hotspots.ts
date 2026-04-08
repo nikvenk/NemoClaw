@@ -10,7 +10,7 @@
  * Usage: node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/hotspots.ts [--days N] [--repo OWNER/REPO]
  */
 
-import { isRiskyFile, run } from "./shared.ts";
+import { isRiskyFile, run, parseStringArg, parseIntArg } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,10 +109,8 @@ function openPrFileOverlap(repo: string): Map<string, number> {
 
 function main(): void {
   const args = process.argv.slice(2);
-  const daysIdx = args.indexOf("--days");
-  const days = daysIdx >= 0 ? parseInt(args[daysIdx + 1], 10) : 30;
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const days = parseIntArg(args, "--days", 30);
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   process.stderr.write("Collecting git churn...\n");
   const churn = gitChurn(days);

@@ -7,7 +7,7 @@
  * Usage: node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-progress.ts <version> [--repo OWNER/REPO]
  */
 
-import { run } from "./shared.ts";
+import { run, parseStringArg } from "./shared.ts";
 
 interface ProgressItem {
   number: number;
@@ -60,8 +60,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   const shipped = [
     ...queryItems(repo, "pr", version, "merged"),

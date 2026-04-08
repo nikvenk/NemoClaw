@@ -116,3 +116,37 @@ export const PENALTY_CODERABBIT_MAJOR = -80;
 export const PENALTY_BROAD_CI_RED = -60;
 /** Blocked on external admin action (permissions, secrets, etc.) */
 export const PENALTY_MERGE_BLOCKED = -20;
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a string CLI flag from argv. Returns `defaultValue` when the flag is
+ * absent or when the next token is missing / looks like another flag.
+ */
+export function parseStringArg(args: string[], flag: string, defaultValue: string): string {
+  const idx = args.indexOf(flag);
+  if (idx < 0) return defaultValue;
+  const value = args[idx + 1];
+  if (!value || value.startsWith("--")) {
+    process.stderr.write(`[shared] ${flag} requires a value, using default: ${defaultValue}\n`);
+    return defaultValue;
+  }
+  return value;
+}
+
+/**
+ * Parse an integer CLI flag from argv. Returns `defaultValue` when the flag is
+ * absent, the next token is missing, or the value is not a valid integer.
+ */
+export function parseIntArg(args: string[], flag: string, defaultValue: number): number {
+  const idx = args.indexOf(flag);
+  if (idx < 0) return defaultValue;
+  const value = parseInt(args[idx + 1], 10);
+  if (isNaN(value)) {
+    process.stderr.write(`[shared] ${flag} requires a number, using default: ${defaultValue}\n`);
+    return defaultValue;
+  }
+  return value;
+}

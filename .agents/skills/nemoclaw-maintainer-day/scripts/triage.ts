@@ -18,6 +18,8 @@ import { resolve } from "node:path";
 import {
   isRiskyFile,
   run,
+  parseStringArg,
+  parseIntArg,
   SCORE_MERGE_NOW,
   SCORE_REVIEW_READY,
   SCORE_NEAR_MISS,
@@ -388,10 +390,8 @@ function detectHotClusters(
 function main(): void {
   const args = process.argv.slice(2);
   const approvedOnly = args.includes("--approved-only");
-  const limitIdx = args.indexOf("--limit");
-  const limit = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) : 10;
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const limit = parseIntArg(args, "--limit", 10);
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   // 1. Fetch all open PRs via REST (lightweight, paginated, no GraphQL timeout)
   process.stderr.write("Fetching all open PRs via REST...\n");
@@ -402,7 +402,11 @@ function main(): void {
   }
   process.stderr.write(`Found ${prs.length} open PRs. Filtering non-draft candidates...\n`);
 
-  // 2. Filter to non-draft, then enrich top candidates with CI + review data
+  // 2. Filter to non-draft, then enrich top candidates with CI + review data.
+  // NOTE: Enrichment is capped at limit*3 by design — each enrichPr() call is
+  // a separate GitHub API request, so we intentionally limit the blast radius.
+  // Un-enriched PRs will classify as "blocked" (empty checks), which is the
+  // safe default. This is NOT a bug.
   const candidates = prs.filter((pr) => !pr.isDraft);
   const enrichCount = Math.min(candidates.length, limit * 3);
   process.stderr.write(`Enriching ${enrichCount} of ${candidates.length} candidates...\n`);

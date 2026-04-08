@@ -7,7 +7,7 @@
  * Subcommands:
  *   init                          Create state file and .git/info/exclude entry
  *   show                          Print current state
- *   exclude <number> <reason>     Add PR/issue to permanent exclusion list
+ *   exclude <number> <reason>     Add PR to permanent exclusion list (triage only processes PRs)
  *   unexclude <number>            Remove from exclusion list
  *   history <action> <item> <note> Add a history entry
  *   set-queue <json>              Update queue from triage output (pipe JSON to stdin)
@@ -178,7 +178,13 @@ function cmdHistory(action: string, item: string, note: string): void {
 
 function cmdSetQueue(): void {
   const input = readFileSync(0, "utf-8");
-  const triageOutput = JSON.parse(input);
+  let triageOutput: Record<string, unknown>;
+  try {
+    triageOutput = JSON.parse(input);
+  } catch (err) {
+    console.error(`Failed to parse triage JSON from stdin: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
   const state = loadState();
 
   state.queue = {
@@ -193,7 +199,13 @@ function cmdSetQueue(): void {
 
 function cmdSetHotspots(): void {
   const input = readFileSync(0, "utf-8");
-  const hotspotOutput = JSON.parse(input);
+  let hotspotOutput: Record<string, unknown>;
+  try {
+    hotspotOutput = JSON.parse(input);
+  } catch (err) {
+    console.error(`Failed to parse hotspot JSON from stdin: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
   const state = loadState();
 
   state.hotspots = {

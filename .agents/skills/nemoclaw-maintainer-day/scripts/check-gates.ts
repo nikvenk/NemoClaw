@@ -10,7 +10,7 @@
  * Usage: node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/check-gates.ts <pr-number> [--repo OWNER/REPO]
  */
 
-import { isRiskyFile, isTestFile, run, ghJson } from "./shared.ts";
+import { isRiskyFile, isTestFile, run, ghJson, parseStringArg } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -254,8 +254,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   const prData = ghJson([
     "pr", "view", String(prNumber),

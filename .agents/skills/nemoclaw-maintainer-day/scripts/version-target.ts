@@ -10,7 +10,7 @@
  * Usage: node --experimental-strip-types --no-warnings .agents/skills/nemoclaw-maintainer-day/scripts/version-target.ts [--repo OWNER/REPO]
  */
 
-import { run } from "./shared.ts";
+import { run, parseStringArg } from "./shared.ts";
 
 interface Straggler {
   number: number;
@@ -108,8 +108,7 @@ function findStragglers(repo: string, targetVersion: string): Straggler[] {
 
 function main(): void {
   const args = process.argv.slice(2);
-  const repoIdx = args.indexOf("--repo");
-  const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
+  const repo = parseStringArg(args, "--repo", "NVIDIA/NemoClaw");
 
   run("git", ["fetch", "origin", "--tags", "--prune"]);
 
