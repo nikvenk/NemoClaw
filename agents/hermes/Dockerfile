@@ -43,7 +43,8 @@ COPY agents/hermes/plugin/ /opt/nemoclaw-hermes-plugin/
 
 # Copy config generation script and URL-decode proxy
 COPY agents/hermes/generate-config.py /opt/nemoclaw-generate-config.py
-COPY --chmod=755 agents/hermes/decode-proxy.py /opt/nemoclaw-decode-proxy.py
+COPY agents/hermes/decode-proxy.py /opt/nemoclaw-decode-proxy.py
+RUN chmod 755 /opt/nemoclaw-decode-proxy.py
 
 # Copy blueprint (shared infrastructure)
 COPY nemoclaw-blueprint/ /opt/nemoclaw-blueprint/
