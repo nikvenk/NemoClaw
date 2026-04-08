@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Hermes-specific network policy additions.
+# Merged with the shared base policy at sandbox creation time.
+#
+# These rules cover Hermes "phone home" endpoints, PyPI for plugin installs,
+# and binary restrictions for the Hermes CLI.
+#
+# Shared policies (nvidia, github, telegram, discord, claude_code) are in
+# the base policy and apply to all agents.
+
+network_policies:
+  # ── Nous Research — Hermes auth, updates, portal ──────────────
+  nous_research:
+    name: nous_research
+    endpoints:
+      - host: nousresearch.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: hermes-agent.nousresearch.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: api.nousresearch.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+    binaries:
+      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3 }
+
+  # ── PyPI — needed for `pip install` (skill/plugin deps) ──────
+  # Read-only: agents only fetch packages, never publish.
+  pypi:
+    name: pypi
+    endpoints:
+      - host: pypi.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+      - host: files.pythonhosted.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /usr/local/bin/pip3 }
+      - { path: /usr/bin/python3 }
+
+  # ── OpenRouter — Hermes default inference provider ────────────
+  # Needed if the user selects OpenRouter instead of NVIDIA endpoints.
+  openrouter:
+    name: openrouter
+    endpoints:
+      - host: openrouter.ai
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: POST, path: "/api/v1/chat/completions" }
+          - allow: { method: GET, path: "/api/v1/models" }
+          - allow: { method: GET, path: "/api/v1/models/**" }
+    binaries:
+      - { path: /usr/bin/python3 }
+
+# ── Filesystem additions ────────────────────────────────────────
+# These are merged with the base filesystem policy.
+filesystem_policy_additions:
+  read_only:
+    - /sandbox/.hermes              # Immutable config (Landlock enforced)
+  read_write:
+    - /sandbox/.hermes-data         # Writable agent state (symlinked)

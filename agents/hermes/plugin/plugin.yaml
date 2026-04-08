@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# NemoClaw plugin manifest for Hermes Agent.
+# Installed to ~/.hermes/plugins/nemoclaw/ at image build time.
+
+name: nemoclaw
+version: "0.1.0"
+description: "NemoClaw sandbox management for Hermes running inside OpenShell"
+author: "NVIDIA Corporation"
+manifest_version: 1
+
+provides_tools:
+  - nemoclaw_status
+  - nemoclaw_info
+
+provides_hooks:
+  - on_session_start
