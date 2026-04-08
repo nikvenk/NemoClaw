@@ -2200,11 +2200,30 @@ async function createSandbox(
     }
     console.log(`  Using custom Dockerfile: ${fromResolved}`);
   } else if (_selectedAgent?.dockerfilePath) {
-    // Agent-specific Dockerfile — stage with the full repo as context
-    // so COPY paths relative to repo root work.
-    buildCtx = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-build-"));
+    // Agent-specific Dockerfile — build base image if needed, then stage.
     const agentDockerfile = _selectedAgent.dockerfilePath;
-    // Copy the files the agent Dockerfile needs
+    const baseDockerfile = _selectedAgent.dockerfileBasePath;
+
+    if (baseDockerfile) {
+      // Check if the base image exists locally; build if not.
+      const baseImageTag = `ghcr.io/nvidia/nemoclaw/${_selectedAgentName}-sandbox-base:latest`;
+      const checkResult = runCapture(`docker image inspect ${shellQuote(baseImageTag)} 2>&1`, {
+        ignoreError: true,
+      });
+      if (!checkResult) {
+        console.log(`  Building ${_selectedAgentDisplayName} base image (first time only)...`);
+        run(
+          `docker build -f ${shellQuote(baseDockerfile)} -t ${shellQuote(baseImageTag)} ${shellQuote(ROOT)}`,
+          { stdio: ["ignore", "inherit", "inherit"] },
+        );
+        console.log(`  ✓ Base image built: ${baseImageTag}`);
+      } else {
+        console.log(`  Base image exists: ${baseImageTag}`);
+      }
+    }
+
+    // Stage build context — copy repo contents for COPY paths relative to root.
+    buildCtx = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-build-"));
     fs.cpSync(ROOT, buildCtx, {
       recursive: true,
       filter: (src) => {
