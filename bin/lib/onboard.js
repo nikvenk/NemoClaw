@@ -1189,7 +1189,7 @@ async function validateOpenAiLikeSelection(
     }
     return { ok: false, retry };
   }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+  console.log(`  ${probe.label} available — ${_selectedAgentDisplayName} will use ${probe.api}.`);
   return { ok: true, api: probe.api };
 }
 
@@ -1221,7 +1221,7 @@ async function validateAnthropicSelectionWithRetryMessage(
     }
     return { ok: false, retry };
   }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+  console.log(`  ${probe.label} available — ${_selectedAgentDisplayName} will use ${probe.api}.`);
   return { ok: true, api: probe.api };
 }
 
@@ -1237,7 +1237,7 @@ async function validateCustomOpenAiLikeSelection(
     requireResponsesToolCalling: true,
   });
   if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+    console.log(`  ${probe.label} available — ${_selectedAgentDisplayName} will use ${probe.api}.`);
     return { ok: true, api: probe.api };
   }
   console.error(`  ${label} endpoint validation failed.`);
@@ -1268,7 +1268,7 @@ async function validateCustomAnthropicSelection(
   const apiKey = getCredential(credentialEnv);
   const probe = probeAnthropicEndpoint(endpointUrl, model, apiKey);
   if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+    console.log(`  ${probe.label} available — ${_selectedAgentDisplayName} will use ${probe.api}.`);
     return { ok: true, api: probe.api };
   }
   console.error(`  ${label} endpoint validation failed.`);
@@ -3997,14 +3997,14 @@ function printDashboard(sandboxName, model, provider, nimContainer = null) {
   console.log(`  Logs:        nemoclaw ${sandboxName} logs --follow`);
   console.log("");
   if (token) {
-    console.log("  OpenClaw UI (tokenized URL; treat it like a password)");
+    console.log(`  ${_selectedAgentDisplayName} UI (tokenized URL; treat it like a password)`);
     console.log(`  Port ${CONTROL_UI_PORT} must be forwarded before opening this URL.`);
     for (const url of buildControlUiUrls(token)) {
       console.log(`  ${url}`);
     }
   } else {
     note("  Could not read gateway token from the sandbox (download failed).");
-    console.log("  OpenClaw UI");
+    console.log(`  ${_selectedAgentDisplayName} UI`);
     console.log(`  Port ${CONTROL_UI_PORT} must be forwarded before opening this URL.`);
     for (const url of buildControlUiUrls()) {
       console.log(`  ${url}`);
