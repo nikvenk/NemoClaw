@@ -130,28 +130,71 @@ function ghApi(path: string): unknown {
 // ---------------------------------------------------------------------------
 
 function fetchOpenPrs(repo: string, approvedOnly: boolean): PrData[] {
-  const fields = [
-    "number", "title", "url", "author", "additions", "deletions",
-    "changedFiles", "isDraft", "createdAt", "updatedAt",
-    "mergeStateStatus", "reviewDecision", "labels", "statusCheckRollup",
-  ].join(",");
-
+  // Use gh api --paginate with REST for lightweight pagination (no GraphQL timeout).
+  // --jq outputs one JSON object per PR per page; we collect them as NDJSON then parse.
   const out = run("gh", [
-    "pr", "list", "--repo", repo,
-    "--state", "open", "--limit", "50",
-    "--json", fields,
-  ]);
+    "api", "--paginate",
+    `repos/${repo}/pulls?state=open&per_page=100`,
+    "--jq", `.[] | {
+      number, title, url: .html_url,
+      author: {login: .user.login},
+      additions: 0, deletions: 0, changedFiles: 0,
+      isDraft: .draft,
+      createdAt: .created_at, updatedAt: .updated_at,
+      mergeStateStatus: (if .mergeable_state == "dirty" then "DIRTY"
+        elif .mergeable_state == "clean" then "CLEAN"
+        elif .mergeable_state == "blocked" then "BLOCKED"
+        elif .mergeable_state == "unstable" then "UNSTABLE"
+        else "UNKNOWN" end),
+      reviewDecision: "",
+      labels: [.labels[] | {name}],
+      statusCheckRollup: []
+    }`,
+  ], 300_000);
   if (!out) return [];
 
   try {
-    let prs = JSON.parse(out) as PrData[];
+    // Output is NDJSON (one JSON object per line)
+    const prs: PrData[] = [];
+    for (const line of out.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && trimmed.startsWith("{")) {
+        prs.push(JSON.parse(trimmed) as PrData);
+      }
+    }
     if (approvedOnly) {
-      prs = prs.filter((pr) => pr.reviewDecision === "APPROVED");
+      return prs.filter((pr) => pr.reviewDecision === "APPROVED");
     }
     return prs;
   } catch {
     return [];
   }
+}
+
+/**
+ * Enrich a PR with review decision and CI status via GraphQL (per-PR).
+ * Only call this for top candidates — it's one API call per PR.
+ */
+function enrichPr(repo: string, pr: PrData): void {
+  const out = run("gh", [
+    "pr", "view", String(pr.number), "--repo", repo,
+    "--json", "reviewDecision,statusCheckRollup,additions,deletions,changedFiles",
+  ]);
+  if (!out) return;
+  try {
+    const data = JSON.parse(out) as {
+      reviewDecision: string;
+      statusCheckRollup: PrData["statusCheckRollup"];
+      additions: number;
+      deletions: number;
+      changedFiles: number;
+    };
+    pr.reviewDecision = data.reviewDecision ?? "";
+    pr.statusCheckRollup = data.statusCheckRollup ?? [];
+    pr.additions = data.additions;
+    pr.deletions = data.deletions;
+    pr.changedFiles = data.changedFiles;
+  } catch { /* leave as-is */ }
 }
 
 function classifyPr(pr: PrData): ClassifiedPr {
@@ -343,24 +386,24 @@ function main(): void {
   const repoIdx = args.indexOf("--repo");
   const repo = repoIdx >= 0 ? args[repoIdx + 1] : "NVIDIA/NemoClaw";
 
-  // 1. Fetch open PRs (lightweight — no statusCheckRollup yet)
-  // Retry once on transient GitHub GraphQL failures (502/504)
-  process.stderr.write("Fetching open PRs...\n");
-  let prs = fetchOpenPrs(repo, approvedOnly);
-  if (prs.length === 0) {
-    process.stderr.write("First attempt failed, retrying in 3s...\n");
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
-    prs = fetchOpenPrs(repo, approvedOnly);
-  }
-  if (prs.length === 0 && approvedOnly) {
-    process.stderr.write("No approved PRs found, falling back to all open PRs...\n");
-    prs = fetchOpenPrs(repo, false);
-  }
+  // 1. Fetch all open PRs via REST (lightweight, paginated, no GraphQL timeout)
+  process.stderr.write("Fetching all open PRs via REST...\n");
+  const prs = fetchOpenPrs(repo, false);
   if (prs.length === 0) {
     console.error("No open PRs found. GitHub API may be experiencing issues.");
     process.exit(1);
   }
+  process.stderr.write(`Found ${prs.length} open PRs. Filtering non-draft candidates...\n`);
 
+  // 2. Filter to non-draft, then enrich top candidates with CI + review data
+  const candidates = prs.filter((pr) => !pr.isDraft);
+  const enrichCount = Math.min(candidates.length, limit * 3);
+  process.stderr.write(`Enriching ${enrichCount} of ${candidates.length} candidates...\n`);
+  for (let i = 0; i < enrichCount; i++) {
+    enrichPr(repo, candidates[i]);
+  }
+
+  // 3. Classify all PRs (un-enriched ones will be blocked due to empty checks)
   const classified = prs.map(classifyPr);
   process.stderr.write(
     `Classified: ${classified.filter((c) => c.mergeNow).length} merge-now, ` +
