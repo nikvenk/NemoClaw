@@ -305,7 +305,9 @@ else
   tg_token=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('botToken', ''))
+accounts = d.get('telegram', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+print(account.get('botToken', ''))
 " 2>/dev/null || true)
 
   if [ -n "$tg_token" ]; then
@@ -327,7 +329,9 @@ print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('botToken', 
   dc_token=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(d.get('discord', {}).get('accounts', {}).get('main', {}).get('token', ''))
+accounts = d.get('discord', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+print(account.get('token', ''))
 " 2>/dev/null || true)
 
   if [ -n "$dc_token" ]; then
@@ -349,7 +353,9 @@ print(d.get('discord', {}).get('accounts', {}).get('main', {}).get('token', ''))
   tg_enabled=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('enabled', False))
+accounts = d.get('telegram', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+print(account.get('enabled', False))
 " 2>/dev/null || true)
 
   if [ "$tg_enabled" = "True" ]; then
@@ -362,7 +368,9 @@ print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('enabled', F
   dc_enabled=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(d.get('discord', {}).get('accounts', {}).get('main', {}).get('enabled', False))
+accounts = d.get('discord', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+print(account.get('enabled', False))
 " 2>/dev/null || true)
 
   if [ "$dc_enabled" = "True" ]; then
@@ -375,7 +383,9 @@ print(d.get('discord', {}).get('accounts', {}).get('main', {}).get('enabled', Fa
   tg_dm_policy=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('dmPolicy', ''))
+accounts = d.get('telegram', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+print(account.get('dmPolicy', ''))
 " 2>/dev/null || true)
 
   if [ "$tg_dm_policy" = "allowlist" ]; then
@@ -390,7 +400,9 @@ print(d.get('telegram', {}).get('accounts', {}).get('main', {}).get('dmPolicy', 
   tg_allow_from=$(echo "$channel_json" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-ids = d.get('telegram', {}).get('accounts', {}).get('main', {}).get('allowFrom', [])
+accounts = d.get('telegram', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or {}
+ids = account.get('allowFrom', [])
 print(','.join(str(i) for i in ids))
 " 2>/dev/null || true)
 
