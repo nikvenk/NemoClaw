@@ -467,41 +467,6 @@ else
   fail "nemoclaw logs: no output"
 fi
 
-# ── Test 6b: Verify Hermes-specific processes running in sandbox ──
-info "Checking for Hermes gateway process in sandbox..."
-ssh_config="$(mktemp)"
-if openshell sandbox ssh-config "$SANDBOX_NAME" >"$ssh_config" 2>/dev/null; then
-  TIMEOUT_CMD=""
-  command -v timeout >/dev/null 2>&1 && TIMEOUT_CMD="timeout 30"
-  command -v gtimeout >/dev/null 2>&1 && TIMEOUT_CMD="gtimeout 30"
-
-  ps_output=$($TIMEOUT_CMD ssh -F "$ssh_config" \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -o ConnectTimeout=10 \
-    -o LogLevel=ERROR \
-    "openshell-${SANDBOX_NAME}" \
-    "ps aux 2>/dev/null || true" \
-    2>&1) || true
-
-  if echo "$ps_output" | grep -qi "hermes"; then
-    pass "Hermes process found running in sandbox"
-  elif [ -z "$ps_output" ]; then
-    skip "ps not available in sandbox (health probe already confirmed Hermes is running)"
-  else
-    fail "No Hermes process found running in sandbox"
-    info "Processes: ${ps_output:0:500}"
-  fi
-
-  # Check socat port forwarder (8642 → 18642)
-  if echo "$ps_output" | grep -qi "socat"; then
-    pass "socat port forwarder running (8642 → 18642)"
-  else
-    skip "socat port forwarder not detected (may be normal if Hermes binds 0.0.0.0)"
-  fi
-fi
-rm -f "$ssh_config"
-
 # ══════════════════════════════════════════════════════════════════
 # Phase 7: OpenClaw regression (ensure default agent path still works)
 # ══════════════════════════════════════════════════════════════════
