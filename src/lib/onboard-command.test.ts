@@ -21,6 +21,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: true,
       resume: true,
+      recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: true,
     });
@@ -43,6 +44,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: false,
       resume: false,
+      recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: true,
     });
@@ -64,6 +66,7 @@ describe("onboard command", () => {
     expect(runOnboard).toHaveBeenCalledWith({
       nonInteractive: false,
       resume: true,
+      recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: false,
     });
@@ -106,6 +109,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: false,
       resume: true,
+      recreateSandbox: false,
       fromDockerfile: "/tmp/Custom.Dockerfile",
       acceptThirdPartySoftware: false,
     });
