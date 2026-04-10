@@ -117,5 +117,5 @@ The implementation detects unsafe nested quantifiers, bounds input length, and c
 
 ## Next Steps
 
-- See {doc}`/security/best-practices` for NemoClaw's own security controls and risk framework.
-- See {doc}`/security/credential-storage` for how NemoClaw stores and protects provider credentials.
+- Security Best Practices (see the `nemoclaw-user-configure-security` skill) for NemoClaw's own security controls and risk framework.
+- Credential Storage (see the `nemoclaw-user-configure-security` skill) for how NemoClaw stores and protects provider credentials.
