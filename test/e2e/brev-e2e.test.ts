@@ -172,7 +172,9 @@ function waitForSsh(maxAttempts = 40, intervalMs = 5_000) {
       return;
     } catch {
       if (i === maxAttempts) throw new Error(`SSH not ready after ${maxAttempts} attempts (~${Math.round(maxAttempts * (intervalMs + 10_000) / 60_000)} min)`);
+      console.log(`  SSH attempt ${i}/${maxAttempts} failed, retrying in ${intervalMs / 1000}s...`);
       if (i % 5 === 0) {
+        console.log(`  Refreshing brev SSH config...`);
         try {
           brev("refresh");
         } catch {
