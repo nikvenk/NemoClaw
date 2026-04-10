@@ -235,46 +235,106 @@ function parseSystemctlState(value = ""): boolean | null {
   return null;
 }
 
-export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
-  const platform = opts.platform ?? process.platform;
-  const env = opts.env ?? process.env;
-  const runCaptureImpl =
+function createRunCaptureImpl(opts: AssessHostOpts) {
+  return (
     opts.runCaptureImpl ??
     ((command: string, options?: { ignoreError?: boolean }) =>
-      runCapture(command, { ignoreError: options?.ignoreError ?? false }));
-  const readFileImpl = opts.readFileImpl ?? fs.readFileSync;
-  const dockerInstalled =
-    opts.commandExistsImpl?.("docker") ?? commandExists("docker", runCaptureImpl);
-  const nodeInstalled = opts.commandExistsImpl?.("node") ?? commandExists("node", runCaptureImpl);
-  const openshellInstalled =
-    opts.commandExistsImpl?.("openshell") ?? commandExists("openshell", runCaptureImpl);
-  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl);
-  const packageManager = detectPackageManager(runCaptureImpl);
-  const systemctlAvailable = commandExists("systemctl", runCaptureImpl);
+      runCapture(command, { ignoreError: options?.ignoreError ?? false }))
+  );
+}
 
-  let dockerInfoOutput = opts.dockerInfoOutput;
-  let dockerReachable = false;
-  let dockerRunning = false;
+function resolveHostCommandAvailability(
+  opts: AssessHostOpts,
+  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+) {
+  return {
+    dockerInstalled: opts.commandExistsImpl?.("docker") ?? commandExists("docker", runCaptureImpl),
+    nodeInstalled: opts.commandExistsImpl?.("node") ?? commandExists("node", runCaptureImpl),
+    openshellInstalled:
+      opts.commandExistsImpl?.("openshell") ?? commandExists("openshell", runCaptureImpl),
+    systemctlAvailable: commandExists("systemctl", runCaptureImpl),
+  };
+}
+
+function resolveDockerInfoOutput(
+  dockerInstalled: boolean,
+  dockerInfoOutput: string | undefined,
+  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+) {
   if (dockerInstalled && dockerInfoOutput === undefined) {
     dockerInfoOutput = runCaptureImpl("docker info --format '{{json .}}' 2>/dev/null", {
       ignoreError: true,
     });
   }
-  if (dockerInstalled && String(dockerInfoOutput || "").trim()) {
-    dockerReachable = true;
-    dockerRunning = true;
-  }
+  const dockerReachable = dockerInstalled && Boolean(String(dockerInfoOutput || "").trim());
+  const dockerRunning = dockerReachable;
+  return { dockerInfoOutput, dockerReachable, dockerRunning };
+}
 
+function readProcVersion(
+  procVersion: string | undefined,
+  readFileImpl: (filePath: string, encoding: BufferEncoding) => string,
+) {
+  if (procVersion !== undefined) {
+    return procVersion;
+  }
+  try {
+    return readFileImpl("/proc/version", "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function resolveDockerServiceState(
+  platform: NodeJS.Platform,
+  systemctlAvailable: boolean,
+  dockerInstalled: boolean,
+  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+) {
+  if (!(platform === "linux" && systemctlAvailable && dockerInstalled)) {
+    return { dockerServiceActive: null, dockerServiceEnabled: null };
+  }
+  return {
+    dockerServiceActive: parseSystemctlState(
+      runCaptureImpl("systemctl is-active docker", { ignoreError: true }),
+    ),
+    dockerServiceEnabled: parseSystemctlState(
+      runCaptureImpl("systemctl is-enabled docker", { ignoreError: true }),
+    ),
+  };
+}
+
+function buildHostNotes(assessment: HostAssessment) {
+  const notes: string[] = [];
+  if (assessment.isWsl) {
+    notes.push("Running under WSL");
+  }
+  if (assessment.isHeadlessLikely) {
+    notes.push("Headless environment likely");
+  }
+  if (assessment.dockerInfoSummary) {
+    notes.push(`Docker: ${assessment.dockerInfoSummary}`);
+  }
+  return notes;
+}
+
+export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  const runCaptureImpl = createRunCaptureImpl(opts);
+  const readFileImpl = opts.readFileImpl ?? fs.readFileSync;
+  const { dockerInstalled, nodeInstalled, openshellInstalled, systemctlAvailable } =
+    resolveHostCommandAvailability(opts, runCaptureImpl);
+  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl);
+  const packageManager = detectPackageManager(runCaptureImpl);
+
+  const { dockerInfoOutput, dockerReachable, dockerRunning } = resolveDockerInfoOutput(
+    dockerInstalled,
+    opts.dockerInfoOutput,
+    runCaptureImpl,
+  );
   const release = opts.release ?? os.release();
-  const procVersion =
-    opts.procVersion ??
-    (() => {
-      try {
-        return readFileImpl("/proc/version", "utf-8");
-      } catch {
-        return "";
-      }
-    })();
+  const procVersion = readProcVersion(opts.procVersion, readFileImpl);
   let runtime = inferContainerRuntime(dockerInfoOutput);
   if (dockerReachable && runtime === "unknown" && platform === "linux") {
     runtime = "docker";
@@ -283,14 +343,12 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
     ? parseDockerCgroupVersion(dockerInfoOutput)
     : "unknown";
   const dockerDefaultCgroupnsMode = readDockerDefaultCgroupnsMode(readFileImpl);
-  const dockerServiceActive =
-    platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-active docker", { ignoreError: true }))
-      : null;
-  const dockerServiceEnabled =
-    platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-enabled docker", { ignoreError: true }))
-      : null;
+  const { dockerServiceActive, dockerServiceEnabled } = resolveDockerServiceState(
+    platform,
+    systemctlAvailable,
+    dockerInstalled,
+    runCaptureImpl,
+  );
   const assessment: HostAssessment = {
     platform,
     isWsl: detectWsl({ platform, env, release, procVersion }),
@@ -307,135 +365,142 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
     dockerInfoSummary: parseDockerInfoSummary(dockerInfoOutput),
     dockerCgroupVersion,
     dockerDefaultCgroupnsMode,
-    // Current OpenShell sets host cgroupns on its own cluster container.
     requiresHostCgroupnsFix: false,
     isUnsupportedRuntime: runtime === "podman",
     isHeadlessLikely: isHeadlessLikely(env),
     hasNvidiaGpu,
     notes: [],
   };
-
-  if (assessment.isWsl) {
-    assessment.notes.push("Running under WSL");
-  }
-  if (assessment.isHeadlessLikely) {
-    assessment.notes.push("Headless environment likely");
-  }
-  if (assessment.dockerInfoSummary) {
-    assessment.notes.push(`Docker: ${assessment.dockerInfoSummary}`);
-  }
-
+  assessment.notes = buildHostNotes(assessment);
   return assessment;
+}
+
+function getDockerInstallCommand(assessment: HostAssessment): string[] {
+  const installCommands: Record<PackageManager, string> = {
+    apt: "Install Docker Engine, then rerun `nemoclaw onboard`.",
+    dnf: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
+    yum: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
+    brew: "Install Docker Desktop or Colima, then rerun `nemoclaw onboard`.",
+    pacman: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
+    unknown: "Install Docker, then rerun `nemoclaw onboard`.",
+  };
+  return assessment.platform === "darwin"
+    ? ["Install Docker Desktop or Colima, then rerun `nemoclaw onboard`."]
+    : [installCommands[assessment.packageManager ?? "unknown"]];
+}
+
+function createInstallDockerAction(assessment: HostAssessment): RemediationAction {
+  return {
+    id: "install_docker",
+    title: "Install Docker",
+    kind: "manual",
+    reason: "Docker is required before onboarding can create a gateway or sandbox.",
+    commands: getDockerInstallCommand(assessment),
+    blocking: true,
+  };
+}
+
+function createDockerReachabilityAction(assessment: HostAssessment): RemediationAction {
+  const likelyGroupIssue = assessment.platform === "linux" && assessment.dockerServiceActive === true;
+  if (likelyGroupIssue) {
+    return {
+      id: "docker_group_permission",
+      title: "Add user to docker group",
+      kind: "sudo",
+      reason:
+        "Docker is installed and the service is running, but the current user cannot reach the daemon. " +
+        "This usually means your user is not in the docker group.",
+      commands: [
+        "sudo usermod -aG docker $USER",
+        "newgrp docker   # or log out and back in",
+        "nemoclaw onboard",
+      ],
+      blocking: true,
+    };
+  }
+  return {
+    id: "start_docker",
+    title: "Start Docker",
+    kind: "manual",
+    reason: "Docker is installed but NemoClaw could not talk to the Docker daemon.",
+    commands:
+      assessment.platform === "darwin"
+        ? ["Start Docker Desktop or Colima, then rerun `nemoclaw onboard`."]
+        : assessment.systemctlAvailable
+          ? ["sudo systemctl start docker", "nemoclaw onboard"]
+          : ["Start the Docker daemon, then rerun `nemoclaw onboard`."],
+    blocking: true,
+  };
+}
+
+function createUnsupportedRuntimeAction(assessment: HostAssessment): RemediationAction {
+  return {
+    id: "unsupported_runtime_warning",
+    title: "Use a supported Docker runtime if problems appear",
+    kind: "manual",
+    reason:
+      "OpenShell officially documents Docker-based runtimes. Podman may work in some environments, but it is not a supported runtime and behavior may vary.",
+    commands:
+      assessment.platform === "darwin"
+        ? ["If onboarding or sandbox lifecycle fails, switch to Docker Desktop or Colima."]
+        : ["If onboarding or sandbox lifecycle fails, switch to a Docker-supported runtime."],
+    blocking: false,
+  };
+}
+
+function createInstallNodeAction(): RemediationAction {
+  return {
+    id: "install_nodejs",
+    title: "Install Node.js",
+    kind: "manual",
+    reason: "NemoClaw requires Node.js for its CLI and plugin build steps.",
+    commands: ["Run the NemoClaw installer to install Node.js automatically."],
+    blocking: false,
+  };
+}
+
+function createInstallOpenshellAction(): RemediationAction {
+  return {
+    id: "install_openshell",
+    title: "Install OpenShell",
+    kind: "manual",
+    reason: "OpenShell is required before onboarding can create or manage a gateway.",
+    commands: ["Run the NemoClaw installer or `scripts/install-openshell.sh`."],
+    blocking: false,
+  };
+}
+
+function createHeadlessRemoteHintAction(): RemediationAction {
+  return {
+    id: "headless_remote_hint",
+    title: "Review remote/headless UI settings",
+    kind: "info",
+    reason: "Headless Linux hosts often need explicit remote UI handling if you want browser access.",
+    commands: ["Set `CHAT_UI_URL` when remote browser access matters."],
+    blocking: false,
+  };
 }
 
 export function planHostRemediation(assessment: HostAssessment): RemediationAction[] {
   const actions: RemediationAction[] = [];
 
   if (!assessment.dockerInstalled) {
-    const installCommands: Record<PackageManager, string> = {
-      apt: "Install Docker Engine, then rerun `nemoclaw onboard`.",
-      dnf: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
-      yum: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
-      brew: "Install Docker Desktop or Colima, then rerun `nemoclaw onboard`.",
-      pacman: "Install Docker Engine with your package manager, then rerun `nemoclaw onboard`.",
-      unknown: "Install Docker, then rerun `nemoclaw onboard`.",
-    };
-    actions.push({
-      id: "install_docker",
-      title: "Install Docker",
-      kind: "manual",
-      reason: "Docker is required before onboarding can create a gateway or sandbox.",
-      commands:
-        assessment.platform === "darwin"
-          ? ["Install Docker Desktop or Colima, then rerun `nemoclaw onboard`."]
-          : [installCommands[assessment.packageManager ?? "unknown"]],
-      blocking: true,
-    });
+    actions.push(createInstallDockerAction(assessment));
   } else if (!assessment.dockerReachable) {
-    // On Linux, if the systemd service is already active but the daemon is
-    // unreachable, the most likely cause is a permissions / docker-group issue
-    // rather than a stopped service.
-    const likelyGroupIssue =
-      assessment.platform === "linux" && assessment.dockerServiceActive === true;
-
-    if (likelyGroupIssue) {
-      actions.push({
-        id: "docker_group_permission",
-        title: "Add user to docker group",
-        kind: "sudo",
-        reason:
-          "Docker is installed and the service is running, but the current user cannot reach the daemon. " +
-          "This usually means your user is not in the docker group.",
-        commands: [
-          "sudo usermod -aG docker $USER",
-          "newgrp docker   # or log out and back in",
-          "nemoclaw onboard",
-        ],
-        blocking: true,
-      });
-    } else {
-      actions.push({
-        id: "start_docker",
-        title: "Start Docker",
-        kind: "manual",
-        reason: "Docker is installed but NemoClaw could not talk to the Docker daemon.",
-        commands:
-          assessment.platform === "darwin"
-            ? ["Start Docker Desktop or Colima, then rerun `nemoclaw onboard`."]
-            : assessment.systemctlAvailable
-              ? ["sudo systemctl start docker", "nemoclaw onboard"]
-              : ["Start the Docker daemon, then rerun `nemoclaw onboard`."],
-        blocking: true,
-      });
-    }
+    actions.push(createDockerReachabilityAction(assessment));
   }
 
   if (assessment.isUnsupportedRuntime) {
-    actions.push({
-      id: "unsupported_runtime_warning",
-      title: "Use a supported Docker runtime if problems appear",
-      kind: "manual",
-      reason:
-        "OpenShell officially documents Docker-based runtimes. Podman may work in some environments, but it is not a supported runtime and behavior may vary.",
-      commands:
-        assessment.platform === "darwin"
-          ? ["If onboarding or sandbox lifecycle fails, switch to Docker Desktop or Colima."]
-          : ["If onboarding or sandbox lifecycle fails, switch to a Docker-supported runtime."],
-      blocking: false,
-    });
+    actions.push(createUnsupportedRuntimeAction(assessment));
   }
-
   if (!assessment.nodeInstalled) {
-    actions.push({
-      id: "install_nodejs",
-      title: "Install Node.js",
-      kind: "manual",
-      reason: "NemoClaw requires Node.js for its CLI and plugin build steps.",
-      commands: ["Run the NemoClaw installer to install Node.js automatically."],
-      blocking: false,
-    });
+    actions.push(createInstallNodeAction());
   }
-
   if (!assessment.openshellInstalled) {
-    actions.push({
-      id: "install_openshell",
-      title: "Install OpenShell",
-      kind: "manual",
-      reason: "OpenShell is required before onboarding can create or manage a gateway.",
-      commands: ["Run the NemoClaw installer or `scripts/install-openshell.sh`."],
-      blocking: false,
-    });
+    actions.push(createInstallOpenshellAction());
   }
-
   if (assessment.isHeadlessLikely && !assessment.hasNvidiaGpu) {
-    actions.push({
-      id: "headless_remote_hint",
-      title: "Review remote/headless UI settings",
-      kind: "info",
-      reason: "Headless Linux hosts often need explicit remote UI handling if you want browser access.",
-      commands: ["Set `CHAT_UI_URL` when remote browser access matters."],
-      blocking: false,
-    });
+    actions.push(createHeadlessRemoteHintAction());
   }
 
   return actions;
