@@ -545,6 +545,25 @@ Use the provider and model that match the upstream you want to use.</p>
 <p>If the provider itself needs to change, rerun <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
 </section>
 </section>
+<section id="cross-provider-switching">
+<h2>Cross-Provider Switching<a class="headerlink" href="#cross-provider-switching" title="Link to this heading">#</a></h2>
+<p>Switching to a different provider family (for example, from NVIDIA Endpoints to Anthropic) requires updating both the gateway route and the sandbox config.</p>
+<p>Set the gateway route on the host:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>inference<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--provider<span class="w"> </span>anthropic-prod<span class="w"> </span>--model<span class="w"> </span>claude-sonnet-4-6<span class="w"> </span>--no-verify
+</pre></div>
+</div>
+<p>Then set the override env vars and recreate the sandbox so they take effect at startup:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_MODEL_OVERRIDE</span><span class="o">=</span><span class="s2">&quot;anthropic/claude-sonnet-4-6&quot;</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_INFERENCE_API_OVERRIDE</span><span class="o">=</span><span class="s2">&quot;anthropic-messages&quot;</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--resume<span class="w"> </span>--recreate-sandbox
+</pre></div>
+</div>
+<p>The entrypoint patches <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at container startup with the override values.
+No image rebuild is needed.
+Remove the env vars and recreate the sandbox to revert to the original model.</p>
+<p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_API_OVERRIDE</span></code> accepts <code class="docutils literal notranslate"><span class="pre">openai-completions</span></code> (for NVIDIA, OpenAI, Gemini, compatible endpoints) or <code class="docutils literal notranslate"><span class="pre">anthropic-messages</span></code> (for Anthropic and Anthropic-compatible endpoints).
+This variable is only needed when switching between provider families.</p>
+</section>
 <section id="verify-the-active-model">
 <h2>Verify the Active Model<a class="headerlink" href="#verify-the-active-model" title="Link to this heading">#</a></h2>
 <p>Run the status command to confirm the change:</p>
@@ -562,7 +581,9 @@ Use the provider and model that match the upstream you want to use.</p>
 <ul class="simple">
 <li><p>The host keeps provider credentials.</p></li>
 <li><p>The sandbox continues to use <code class="docutils literal notranslate"><span class="pre">inference.local</span></code>.</p></li>
-<li><p>Runtime switching changes the OpenShell route. It does not rewrite your stored credentials.</p></li>
+<li><p>Same-provider model switches take effect immediately via the gateway route alone.</p></li>
+<li><p>Cross-provider switches also require <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_MODEL_OVERRIDE</span></code> (and <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_API_OVERRIDE</span></code>) plus a sandbox recreate so the entrypoint patches the config at startup.</p></li>
+<li><p>Overrides are applied at container startup. Changing or removing env vars requires a sandbox recreate to take effect.</p></li>
 </ul>
 </section>
 <section id="related-topics">
@@ -631,6 +652,7 @@ Use the provider and model that match the upstream you want to use.</p>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#compatible-endpoints">Compatible Endpoints</a></li>
 </ul>
 </li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-provider-switching">Cross-Provider Switching</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verify-the-active-model">Verify the Active Model</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#notes">Notes</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-topics">Related Topics</a></li>

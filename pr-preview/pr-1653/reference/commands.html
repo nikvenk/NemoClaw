@@ -496,7 +496,8 @@
 -->
 <section class="tex2jax_ignore mathjax_ignore" id="commands">
 <h1>Commands<a class="headerlink" href="#commands" title="Link to this heading">#</a></h1>
-<p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> CLI is the primary interface for managing NemoClaw sandboxes. It is installed when you run <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span> <span class="pre">-g</span> <span class="pre">nemoclaw</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> CLI is the primary interface for managing NemoClaw sandboxes.
+It is installed automatically by the installer (<code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">-fsSL</span> <span class="pre">https://www.nvidia.com/nemoclaw.sh</span> <span class="pre">|</span> <span class="pre">bash</span></code>).</p>
 <section id="nemoclaw-slash-command">
 <h2><code class="docutils literal notranslate"><span class="pre">/nemoclaw</span></code> Slash Command<a class="headerlink" href="#nemoclaw-slash-command" title="Link to this heading">#</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">/nemoclaw</span></code> slash command is available inside the OpenClaw chat interface for quick actions:</p>
@@ -579,6 +580,10 @@ Treat Brave Search as an explicit opt-in and use a dedicated low-privilege Brave
 <p>The wizard prompts for a sandbox name.
 Names must follow RFC 1123 subdomain rules: lowercase alphanumeric characters and hyphens only, and must start and end with an alphanumeric character.
 Uppercase letters are automatically lowercased.</p>
+<p>If you enable Discord during onboarding, the wizard can also prompt for a Discord Server ID, whether the bot should reply only to <code class="docutils literal notranslate"><span class="pre">&#64;mentions</span></code> or to all messages in that server, and an optional Discord User ID.
+NemoClaw bakes those values into the sandbox image as Discord guild workspace config so the bot can respond in the selected server, not just in DMs.
+If you leave the Discord User ID blank, the guild config omits the user allowlist and any member of the configured server can message the bot.
+Guild responses remain mention-gated by default unless you opt into all-message replies.</p>
 <p>Before creating the gateway, the wizard runs preflight checks.
 It verifies that Docker is reachable, warns on untested runtimes such as Podman, and prints host remediation guidance when prerequisites are missing.</p>
 <section id="from-dockerfile">
@@ -656,8 +661,26 @@ Back up your workspace first by following the instructions at <a class="referenc
 <section id="nemoclaw-name-policy-add">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-add</span></code><a class="headerlink" href="#nemoclaw-name-policy-add" title="Link to this heading">#</a></h3>
 <p>Add a policy preset to a sandbox.
-Presets extend the baseline network policy with additional endpoints.</p>
+Presets extend the baseline network policy with additional endpoints.
+Before applying, the command shows which endpoints the preset would open and prompts for confirmation.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add
+</pre></div>
+</div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--dry-run</span></code></p></td>
+<td><p>Preview the endpoints a preset would open without applying changes</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--dry-run</span></code> to audit a preset before applying it:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--dry-run
 </pre></div>
 </div>
 </section>
@@ -733,6 +756,35 @@ Use <code class="docutils literal notranslate"><span class="pre">--sandbox</span
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--output</span> <span class="pre">PATH</span></code></p></td>
 <td><p>Write diagnostics tarball to the given path</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="nemoclaw-credentials-list">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">list</span></code><a class="headerlink" href="#nemoclaw-credentials-list" title="Link to this heading">#</a></h3>
+<p>List the names of all credentials stored in <code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/credentials.json</span></code>.
+Values are not printed.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>list
+</pre></div>
+</div>
+</section>
+<section id="nemoclaw-credentials-reset-key">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code><a class="headerlink" href="#nemoclaw-credentials-reset-key" title="Link to this heading">#</a></h3>
+<p>Remove a stored credential by name.
+After removal, re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> re-prompts for that key.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>reset<span class="w"> </span>NVIDIA_API_KEY
+</pre></div>
+</div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--yes</span></code>, <code class="docutils literal notranslate"><span class="pre">-y</span></code></p></td>
+<td><p>Skip the confirmation prompt</p></td>
 </tr>
 </tbody>
 </table>
@@ -847,6 +899,8 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-status"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-setup-spark"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup-spark</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-debug"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">debug</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">list</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-reset-key"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#legacy-nemoclaw-setup">Legacy <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code></a></li>
 </ul>

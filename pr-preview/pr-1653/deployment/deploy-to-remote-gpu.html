@@ -583,6 +583,20 @@ If you disable device auth for a remote deployment, any device that can reach th
 Avoid this on internet-reachable or shared-network deployments.</p>
 </div>
 </section>
+<section id="proxy-configuration">
+<h2>Proxy Configuration<a class="headerlink" href="#proxy-configuration" title="Link to this heading">#</a></h2>
+<p>NemoClaw routes sandbox traffic through a gateway proxy that defaults to <code class="docutils literal notranslate"><span class="pre">10.200.0.1:3128</span></code>.
+If your network requires a different proxy, set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PROXY_HOST</span></code> and <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PROXY_PORT</span></code> before onboarding:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_PROXY_HOST</span><span class="o">=</span>proxy.example.com
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_PROXY_PORT</span><span class="o">=</span><span class="m">8080</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>These values are baked into the sandbox image at build time.
+Only alphanumeric characters, dots, hyphens, and colons are accepted for the host.
+The port must be numeric (0-65535).
+Changing the proxy after onboarding requires re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+</section>
 <section id="gpu-configuration">
 <h2>GPU Configuration<a class="headerlink" href="#gpu-configuration" title="Link to this heading">#</a></h2>
 <p>The deploy script uses the <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_GPU</span></code> environment variable to select the GPU type.
@@ -659,6 +673,7 @@ Set this variable before running <code class="docutils literal notranslate"><spa
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#monitor-the-remote-sandbox">Monitor the Remote Sandbox</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verify-inference">Verify Inference</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#remote-dashboard-access">Remote Dashboard Access</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#proxy-configuration">Proxy Configuration</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gpu-configuration">GPU Configuration</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-topics">Related Topics</a></li>
 </ul>

@@ -544,6 +544,16 @@ If you see a Docker connection error, start the Docker daemon:</p>
 </div>
 <p>On macOS with Docker Desktop, open the Docker Desktop application and wait for it to finish starting before retrying.</p>
 </section>
+<section id="docker-permission-denied-on-linux">
+<h3>Docker permission denied on Linux<a class="headerlink" href="#docker-permission-denied-on-linux" title="Link to this heading">#</a></h3>
+<p>On Linux, if the Docker daemon is running but you see “permission denied” errors, your user may not be in the <code class="docutils literal notranslate"><span class="pre">docker</span></code> group.
+Add your user and activate the group in the current shell:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>usermod<span class="w"> </span>-aG<span class="w"> </span>docker<span class="w"> </span><span class="nv">$USER</span>
+<span class="gp">$ </span>newgrp<span class="w"> </span>docker
+</pre></div>
+</div>
+<p>Then retry <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+</section>
 <section id="macos-first-run-failures">
 <h3>macOS first-run failures<a class="headerlink" href="#macos-first-run-failures" title="Link to this heading">#</a></h3>
 <p>The two most common first-run failures on macOS are missing developer tools and Docker connection errors.</p>
@@ -702,6 +712,12 @@ Check the active provider and endpoint:</p>
 </div>
 <p>If the endpoint is correct but requests still fail, check for network policy rules that may block the connection.
 Then verify the credential and base URL for the provider you selected during onboarding.</p>
+<p>For local providers (Ollama, vLLM, NIM), the default timeout is 180 seconds.
+If large prompts still cause timeouts, increase it with <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_LOCAL_INFERENCE_TIMEOUT</span></code> before re-running onboard:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_LOCAL_INFERENCE_TIMEOUT</span><span class="o">=</span><span class="m">300</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
 </section>
 <section id="nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox">
 <h3><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox<a class="headerlink" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox" title="Link to this heading">#</a></h3>
@@ -718,6 +734,8 @@ NemoClaw bakes channel entries into <code class="docutils literal notranslate"><
 <p>As a result, commands that try to rewrite the baked config from inside the sandbox, including <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code>, cannot repair Discord, Telegram, or Slack channel entries in place.</p>
 <p>If your Discord channel config is wrong, rerun onboarding so NemoClaw rebuilds the sandbox image with the correct messaging selection.
 Do not treat a failed <code class="docutils literal notranslate"><span class="pre">doctor</span> <span class="pre">--fix</span></code> run as proof that the Discord gateway path itself is broken.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span></code> reports that it moved Telegram single-account values under <code class="docutils literal notranslate"><span class="pre">channels.telegram.accounts.default</span></code>, rerun onboarding and rebuild the sandbox rather than trying to patch <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> in place.
+Current NemoClaw rebuilds bake Telegram in the account-based layout and set Telegram group chats to <code class="docutils literal notranslate"><span class="pre">groupPolicy:</span> <span class="pre">open</span></code>, which avoids the empty <code class="docutils literal notranslate"><span class="pre">groupAllowFrom</span></code> warning path for default group-chat access.</p>
 </section>
 <section id="discord-bot-logs-in-but-the-channel-still-does-not-work">
 <h3>Discord bot logs in, but the channel still does not work<a class="headerlink" href="#discord-bot-logs-in-but-the-channel-still-does-not-work" title="Link to this heading">#</a></h3>
@@ -747,6 +765,24 @@ If logs show errors such as <code class="docutils literal notranslate"><span cla
 <li><p>inspect gateway logs and blocked requests with <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code></p></li>
 <li><p>treat the failure as a native Discord gateway problem, not as a bridge startup problem</p></li>
 </ul>
+</section>
+<section id="sandbox-lost-after-gateway-restart">
+<h3>Sandbox lost after gateway restart<a class="headerlink" href="#sandbox-lost-after-gateway-restart" title="Link to this heading">#</a></h3>
+<p>Sandboxes created with OpenShell versions older than 0.0.24 can become unreachable after a gateway restart because SSH secrets were not persisted.
+Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> automatically upgrades OpenShell to 0.0.24 or later during the preflight check.
+After the upgrade, recreate the sandbox with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+</section>
+<section id="agent-cannot-reach-external-hosts-through-a-proxy">
+<h3>Agent cannot reach external hosts through a proxy<a class="headerlink" href="#agent-cannot-reach-external-hosts-through-a-proxy" title="Link to this heading">#</a></h3>
+<p>NemoClaw uses a default proxy address of <code class="docutils literal notranslate"><span class="pre">10.200.0.1:3128</span></code> (the OpenShell-injected gateway).
+If your environment uses a different proxy, set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PROXY_HOST</span></code> and <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PROXY_PORT</span></code> before onboarding:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_PROXY_HOST</span><span class="o">=</span>proxy.example.com
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_PROXY_PORT</span><span class="o">=</span><span class="m">8080</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>These are build-time settings baked into the sandbox image.
+Changing them after onboarding requires re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> to rebuild the image.</p>
 </section>
 <section id="agent-cannot-reach-an-external-host">
 <h3>Agent cannot reach an external host<a class="headerlink" href="#agent-cannot-reach-an-external-host" title="Link to this heading">#</a></h3>
@@ -830,6 +866,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#node-js-version-is-too-old">Node.js version is too old</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#image-push-fails-with-out-of-memory-errors">Image push fails with out-of-memory errors</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-is-not-running">Docker is not running</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-permission-denied-on-linux">Docker permission denied on Linux</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#macos-first-run-failures">macOS first-run failures</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#permission-errors-during-installation">Permission errors during installation</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#npm-install-fails-with-permission-errors">npm install fails with permission errors</a></li>
@@ -852,6 +889,8 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox"><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-doctor-fix-cannot-repair-discord-channel-config-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> cannot repair Discord channel config inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#discord-bot-logs-in-but-the-channel-still-does-not-work">Discord bot logs in, but the channel still does not work</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-lost-after-gateway-restart">Sandbox lost after gateway restart</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-external-hosts-through-a-proxy">Agent cannot reach external hosts through a proxy</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-an-external-host">Agent cannot reach an external host</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blueprint-run-failed">Blueprint run failed</a></li>
 </ul>
