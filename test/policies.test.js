@@ -584,6 +584,14 @@ describe("policies", () => {
       }
     });
 
+    it("messaging REST presets do not pin deprecated tls termination", () => {
+      for (const name of ["discord", "slack", "telegram"]) {
+        const content = policies.loadPreset(name);
+        expect(content).toBeTruthy();
+        expect(content.includes("tls: terminate")).toBe(false);
+      }
+    });
+
     it("package-manager presets include binaries section", () => {
       // Without binaries, the proxy can't match pip/npm traffic to the policy
       // and returns 403.
