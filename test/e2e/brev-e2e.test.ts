@@ -413,6 +413,19 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       );
       console.log(`[${elapsed()}] Code synced`);
 
+      // The full E2E test (test-full-e2e.sh) runs install.sh --non-interactive
+      // which handles Node.js, OpenShell, NemoClaw install, and onboard from
+      // scratch. Skip the dep install, plugin build, npm link, and onboard
+      // steps — they'd all be redone by install.sh and waste ~10 min.
+      const needsBeforeAllSetup = TEST_SUITE !== "full";
+
+      if (!needsBeforeAllSetup) {
+        console.log(
+          `[${elapsed()}] Skipping beforeAll setup (TEST_SUITE=full — install.sh handles everything)`,
+        );
+      }
+
+      if (needsBeforeAllSetup) {
       // Re-install deps for our branch (most already cached by launchable).
       // Use `npm install` instead of `npm ci` because the rsync'd branch code
       // may have a package.json/package-lock.json that are slightly out of sync
@@ -455,19 +468,6 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       );
       console.log(`[${elapsed()}] nemoclaw CLI linked`);
 
-      // The full E2E test (test-full-e2e.sh) immediately destroys any sandbox
-      // in Phase 0, then runs install.sh which creates its own from scratch.
-      // Skip the beforeAll onboard for that suite — it would be thrown away
-      // and wastes ~6 min of image build + upload time.
-      const needsBeforeAllSandbox = TEST_SUITE !== "full";
-
-      if (!needsBeforeAllSandbox) {
-        console.log(
-          `[${elapsed()}] Skipping beforeAll onboard (TEST_SUITE=full — test does its own)`,
-        );
-      }
-
-      if (needsBeforeAllSandbox) {
         // Run onboard in the background. The `nemoclaw onboard` process hangs
         // after sandbox creation because `openshell sandbox create` keeps a
         // long-lived SSH connection to the sandbox entrypoint, and the dashboard
@@ -620,7 +620,7 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
           { timeout: 15_000 },
         );
         console.log(`[${elapsed()}] Registry written, onboard workaround complete`);
-      } // end if (needsBeforeAllSandbox)
+      } // end if (needsBeforeAllSetup)
     }
 
     // Verify sandbox registry (only when beforeAll created a sandbox)
