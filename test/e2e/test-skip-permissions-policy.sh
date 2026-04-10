@@ -256,20 +256,11 @@ else
   fail "[EGRESS] npm ping failed (exit $npm_exit)"
 fi
 
-# 4b: curl api.github.com through the proxy (bug reporter's exact target)
-# openshell sandbox exec doesn't source the entrypoint's proxy env, so we
-# read the proxy config from the sandbox and pass it explicitly.
+# 4b: curl api.github.com (bug reporter's exact target)
+# With protocol: rest + access: full, traffic goes through the L7 proxy's
+# normal TLS-termination path — no special proxy env needed.
 info "[EGRESS] Testing curl https://api.github.com/ via openshell sandbox exec..."
-proxy_url=$(openshell sandbox exec -n "$SANDBOX_NAME" -- \
-  sh -c 'cat /tmp/nemoclaw-proxy-env.sh 2>/dev/null | grep "^export HTTPS_PROXY=" | head -1 | sed "s/export HTTPS_PROXY=//" | tr -d \"' \
-  2>/dev/null) || true
-if [ -z "$proxy_url" ]; then
-  proxy_url="http://10.200.0.1:3128"
-  info "Could not read proxy from sandbox, using default: $proxy_url"
-fi
-
 egress_response=$(openshell sandbox exec -n "$SANDBOX_NAME" -- \
-  env "HTTPS_PROXY=$proxy_url" "https_proxy=$proxy_url" \
   curl -s --connect-timeout 15 -o /dev/null -w '%{http_code}' \
   https://api.github.com/ 2>&1) || true
 

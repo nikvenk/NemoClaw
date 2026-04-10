@@ -40,12 +40,18 @@ network_policies:
     endpoints:
       - host: api.anthropic.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: statsig.anthropic.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: sentry.io
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   nvidia:
@@ -53,9 +59,13 @@ network_policies:
     endpoints:
       - host: integrate.api.nvidia.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: inference-api.nvidia.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   github:
@@ -63,9 +73,13 @@ network_policies:
     endpoints:
       - host: github.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: api.github.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   clawhub:
@@ -73,6 +87,8 @@ network_policies:
     endpoints:
       - host: clawhub.ai
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   openclaw_api:
@@ -80,6 +96,8 @@ network_policies:
     endpoints:
       - host: openclaw.ai
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   openclaw_docs:
@@ -87,6 +105,8 @@ network_policies:
     endpoints:
       - host: docs.openclaw.ai
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   npm_registry:
@@ -94,9 +114,13 @@ network_policies:
     endpoints:
       - host: registry.npmjs.org
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: registry.yarnpkg.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   # ── Messaging endpoints ──
@@ -106,6 +130,8 @@ network_policies:
     endpoints:
       - host: api.telegram.org
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   discord:
@@ -113,15 +139,23 @@ network_policies:
     endpoints:
       - host: discord.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: gateway.discord.gg
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: cdn.discordapp.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: media.discordapp.net
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   slack:
@@ -129,18 +163,28 @@ network_policies:
     endpoints:
       - host: slack.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: api.slack.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: hooks.slack.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: wss-primary.slack.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: wss-backup.slack.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   # ── Third-party services ──
@@ -150,18 +194,28 @@ network_policies:
     endpoints:
       - host: formulae.brew.sh
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: ghcr.io
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: raw.githubusercontent.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: objects.githubusercontent.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: pkg-containers.githubusercontent.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   jira:
@@ -169,12 +223,18 @@ network_policies:
     endpoints:
       - host: "*.atlassian.net"
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: api.atlassian.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: auth.atlassian.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   outlook:
@@ -182,15 +242,23 @@ network_policies:
     endpoints:
       - host: outlook.office365.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: outlook.office.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: graph.microsoft.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: login.microsoftonline.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   huggingface:
@@ -198,12 +266,18 @@ network_policies:
     endpoints:
       - host: huggingface.co
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: cdn-lfs.huggingface.co
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
       - host: router.huggingface.co
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
 
   brave:
@@ -211,4 +285,6 @@ network_policies:
     endpoints:
       - host: api.search.brave.com
         port: 443
+        protocol: rest
+        enforcement: enforce
         access: full
