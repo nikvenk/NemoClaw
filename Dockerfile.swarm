@@ -39,5 +39,8 @@ COPY --from=hermes /sandbox/.hermes-data/ /sandbox/.hermes-data/
 RUN chown -R sandbox:sandbox /sandbox/.hermes /sandbox/.hermes-data
 
 # ── Swarm bus sidecar ─────────────────────────────────────────
-COPY scripts/nemoclaw-swarm-bus.py /usr/local/lib/nemoclaw/nemoclaw-swarm-bus.py
-RUN chmod +x /usr/local/lib/nemoclaw/nemoclaw-swarm-bus.py
+# Placed in the sandbox-writable nemoclaw dir so the bus can also be injected
+# at runtime by add-agent for non-swarm images.
+COPY scripts/nemoclaw-swarm-bus.py /sandbox/.nemoclaw/swarm/nemoclaw-swarm-bus.py
+RUN chmod +x /sandbox/.nemoclaw/swarm/nemoclaw-swarm-bus.py \
+ && chown -R sandbox:sandbox /sandbox/.nemoclaw

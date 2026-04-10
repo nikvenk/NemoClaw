@@ -29,7 +29,7 @@ const {
 const { createInstanceMessagingProviders, parseMessagingFlags } = require("./swarm-messaging");
 const { mergeAgentPolicyAdditions } = require("./policies");
 const { SWARM_BUS_LOG } = require("./swarm-manifest");
-const path = require("path");
+const { SWARM_BUS_SCRIPT } = require("./swarm-bus-script");
 
 export interface AddAgentOptions {
   sandboxName: string;
@@ -213,36 +213,34 @@ export async function addAgent(opts: AddAgentOptions): Promise<AgentInstance | n
     `curl -sf http://127.0.0.1:${SWARM_BUS_PORT}/health 2>/dev/null | head -c 50`,
   );
   if (!busHealthCheck || !busHealthCheck.includes("ok")) {
-    // Bus not running — deploy and start it
-    // First, check if the script is baked into the image
-    const busScriptPath = "/usr/local/lib/nemoclaw/nemoclaw-swarm-bus.py";
-    const busScriptCheck = sandboxExecCapture(
-      sandboxName,
-      `test -f ${busScriptPath} && echo found`,
-    );
-    if (!busScriptCheck || !busScriptCheck.includes("found")) {
-      // Script not in image — inject it from the host
-      const hostScript = path.resolve(__dirname, "../../scripts/nemoclaw-swarm-bus.py");
-      if (fs.existsSync(hostScript)) {
-        const scriptContent = fs.readFileSync(hostScript, "utf8");
-        const encoded = Buffer.from(scriptContent).toString("base64");
-        sandboxExec(sandboxName, [
-          `mkdir -p /usr/local/lib/nemoclaw`,
-          `printf '%s' '${encoded}' | base64 -d > ${busScriptPath}`,
-          `chmod +x ${busScriptPath}`,
-        ].join(" && "));
-      }
-    }
+    // Bus not running — deploy the embedded script and start it.
+    // The script is embedded in swarm-bus-script.ts so it works regardless
+    // of how/where nemoclaw was installed (npm link, global install, etc.).
+    // Deploy into /sandbox/.nemoclaw/ which is writable by the sandbox user.
+    const busScriptPath = "/sandbox/.nemoclaw/swarm/nemoclaw-swarm-bus.py";
+    const scriptB64 = Buffer.from(SWARM_BUS_SCRIPT).toString("base64");
 
-    // Start the bus as a background process
-    sandboxExec(sandboxName, [
+    // Deploy: create dir, decode script, make executable — single exec call
+    const deployResult = sandboxExecCapture(sandboxName, [
       `mkdir -p /sandbox/.nemoclaw/swarm`,
-      `nohup python3 ${busScriptPath} --port ${SWARM_BUS_PORT} --log-file ${SWARM_BUS_LOG} > /tmp/swarm-bus.log 2>&1 &`,
+      `printf '%s' '${scriptB64}' | base64 -d > ${busScriptPath}`,
+      `chmod +x ${busScriptPath}`,
+      `python3 -c "import sys; print(f'python={sys.version}')" 2>&1`,
+      `wc -c < ${busScriptPath}`,
+      `echo deploy=done`,
     ].join(" && "));
+    console.log(`  Bus deploy: ${(deployResult || "no output").trim()}`);
 
-    // Wait briefly for the bus to start
+    // Start the bus as a background process.
+    // Use setsid to fully detach from the exec session so the process
+    // survives after openshell sandbox exec returns.
+    sandboxExec(sandboxName,
+      `setsid python3 ${busScriptPath} --port ${SWARM_BUS_PORT} --log-file ${SWARM_BUS_LOG} </dev/null > /tmp/swarm-bus.log 2>&1 &`,
+    );
+
+    // Wait for the bus to start (poll health endpoint)
     let busReady = false;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
       sandboxExec(sandboxName, "sleep 1", { suppressOutput: true });
       const check = sandboxExecCapture(
         sandboxName,
@@ -256,7 +254,12 @@ export async function addAgent(opts: AddAgentOptions): Promise<AgentInstance | n
     if (busReady) {
       console.log(`  Swarm bus started on port ${SWARM_BUS_PORT}`);
     } else {
-      console.log(`  Warning: swarm bus may not have started (check /tmp/swarm-bus.log in sandbox)`);
+      // Dump diagnostics so CI logs show what went wrong
+      const busLog = sandboxExecCapture(sandboxName,
+        `cat /tmp/swarm-bus.log 2>/dev/null | tail -20; echo '---'; ls -la ${busScriptPath} 2>&1; echo '---'; ps aux 2>/dev/null | grep swarm-bus | grep -v grep || echo 'no process'`,
+      );
+      console.log(`  Warning: swarm bus failed to start. Diagnostics:`);
+      console.log(`  ${(busLog || "no diagnostics").trim().split("\n").join("\n  ")}`);
     }
   } else {
     console.log(`  Swarm bus already running on port ${SWARM_BUS_PORT}`);

@@ -353,14 +353,24 @@ fi
 
 section "Phase 11: Swarm bus health"
 
-BUS_HEALTH=$(openshell sandbox exec --name "$SANDBOX_NAME" -- curl -sf http://127.0.0.1:19100/health 2>/dev/null)
+# Use piped-bash for all sandbox exec calls to avoid argument parsing issues
+# with complex curl commands (headers, JSON data, special characters).
+bus_exec() {
+  echo "$1" | openshell sandbox exec --name "$SANDBOX_NAME" -- bash 2>/dev/null
+}
+
+BUS_HEALTH=$(bus_exec 'curl -sf http://127.0.0.1:19100/health')
 if echo "$BUS_HEALTH" | grep -q '"ok"'; then
   pass "Swarm bus /health returns ok"
 else
-  fail "Swarm bus /health not responding: $BUS_HEALTH"
+  # Dump diagnostics if bus isn't running
+  info "Bus health response: $BUS_HEALTH"
+  BUS_DIAG=$(bus_exec 'cat /tmp/swarm-bus.log 2>/dev/null | tail -10; echo "---"; ps aux 2>/dev/null | grep swarm-bus | grep -v grep || echo "no process"; echo "---"; ls -la /sandbox/.nemoclaw/swarm/ 2>/dev/null')
+  info "Bus diagnostics: $BUS_DIAG"
+  fail "Swarm bus /health not responding"
 fi
 
-BUS_AGENTS=$(openshell sandbox exec --name "$SANDBOX_NAME" -- curl -sf http://127.0.0.1:19100/agents 2>/dev/null)
+BUS_AGENTS=$(bus_exec 'curl -sf http://127.0.0.1:19100/agents')
 if echo "$BUS_AGENTS" | python3 -c "import json,sys; d=json.load(sys.stdin); assert len(d.get('agents',[])) >= 2" 2>/dev/null; then
   pass "Bus /agents reports 2+ agents"
 else
@@ -373,11 +383,7 @@ fi
 section "Phase 12: Message send and receive"
 
 # Send a test message from openclaw-0
-SEND_RESULT=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  curl -sf -X POST http://127.0.0.1:19100/send \
-  -H 'Content-Type: application/json' \
-  -d '{"from":"openclaw-0","to":"openclaw-1","content":"hello from e2e test"}' \
-  2>/dev/null)
+SEND_RESULT=$(bus_exec 'curl -sf -X POST http://127.0.0.1:19100/send -H "Content-Type: application/json" -d "{\"from\":\"openclaw-0\",\"to\":\"openclaw-1\",\"content\":\"hello from e2e test\"}"')
 
 if echo "$SEND_RESULT" | grep -q '"from"'; then
   pass "POST /send accepted message"
@@ -386,8 +392,7 @@ else
 fi
 
 # Poll messages and verify our test message is present
-POLL_RESULT=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  curl -sf 'http://127.0.0.1:19100/messages' 2>/dev/null)
+POLL_RESULT=$(bus_exec 'curl -sf http://127.0.0.1:19100/messages')
 
 if echo "$POLL_RESULT" | grep -q "hello from e2e test"; then
   pass "GET /messages contains test message"
@@ -419,11 +424,7 @@ fi
 section "Phase 13: Broadcast message"
 
 # Send a broadcast (no 'to' field)
-BCAST_RESULT=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  curl -sf -X POST http://127.0.0.1:19100/send \
-  -H 'Content-Type: application/json' \
-  -d '{"from":"openclaw-0","content":"broadcast ping from e2e"}' \
-  2>/dev/null)
+BCAST_RESULT=$(bus_exec 'curl -sf -X POST http://127.0.0.1:19100/send -H "Content-Type: application/json" -d "{\"from\":\"openclaw-0\",\"content\":\"broadcast ping from e2e\"}"')
 
 if echo "$BCAST_RESULT" | python3 -c "
 import json, sys
@@ -437,8 +438,7 @@ else
 fi
 
 # Verify both messages are in the log
-MSG_COUNT=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  curl -sf 'http://127.0.0.1:19100/messages' 2>/dev/null \
+MSG_COUNT=$(bus_exec 'curl -sf http://127.0.0.1:19100/messages' \
   | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))" 2>/dev/null)
 
 if [ -n "$MSG_COUNT" ] && [ "$MSG_COUNT" -ge 2 ]; then
@@ -451,8 +451,8 @@ fi
 
 section "Phase 14: JSONL persistence"
 
-JSONL_LINES=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  wc -l /sandbox/.nemoclaw/swarm/messages.jsonl 2>/dev/null | awk '{print $1}')
+JSONL_LINES=$(bus_exec 'wc -l < /sandbox/.nemoclaw/swarm/messages.jsonl')
+JSONL_LINES=$(echo "$JSONL_LINES" | tr -d '[:space:]')
 
 if [ -n "$JSONL_LINES" ] && [ "$JSONL_LINES" -ge 2 ]; then
   pass "JSONL log has $JSONL_LINES lines (>= 2 expected)"
@@ -461,14 +461,13 @@ else
 fi
 
 # Verify JSONL is valid (each line parses as JSON)
-JSONL_VALID=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
-  python3 -c "
+JSONL_VALID=$(bus_exec 'python3 -c "
 import json
-with open('/sandbox/.nemoclaw/swarm/messages.jsonl') as f:
+with open(\"/sandbox/.nemoclaw/swarm/messages.jsonl\") as f:
     for i, line in enumerate(f):
         json.loads(line.strip())
-    print(f'valid:{i+1}')
-" 2>/dev/null)
+    print(f\"valid:{i+1}\")
+"')
 
 if echo "$JSONL_VALID" | grep -q "valid:"; then
   pass "All JSONL lines are valid JSON"
