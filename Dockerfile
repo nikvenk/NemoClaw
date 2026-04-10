@@ -1,100 +1,55 @@
 # NemoClaw sandbox image — OpenClaw + NemoClaw plugin inside OpenShell
+#
+# Layers PR-specific code (plugin, blueprint, config, startup script) on top
+# of the pre-built base image from GHCR. The base image contains all the
+# expensive, rarely-changing layers (apt, gosu, users, openclaw CLI).
+#
+# For local builds without GHCR access, build the base first:
+#   docker build -f Dockerfile.base -t ghcr.io/nvidia/nemoclaw/sandbox-base:latest .
+
+# Global ARG — must be declared before the first FROM to be visible
+# to all FROM directives. Can be overridden via --build-arg.
+ARG BASE_IMAGE=ghcr.io/nvidia/nemoclaw/sandbox-base:latest
 
 # Stage 1: Build TypeScript plugin from source
 FROM node:22-slim@sha256:4f77a690f2f8946ab16fe1e791a3ac0667ae1c3575c3e4d0d4589e9ed5bfaf3d AS builder
-COPY nemoclaw/package.json nemoclaw/tsconfig.json /opt/nemoclaw/
+ENV NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
+COPY nemoclaw/package.json nemoclaw/package-lock.json nemoclaw/tsconfig.json /opt/nemoclaw/
 COPY nemoclaw/src/ /opt/nemoclaw/src/
 WORKDIR /opt/nemoclaw
-RUN npm install && npm run build
+RUN npm ci && npm run build
 
-# Stage 2: Runtime image
-FROM node:22-slim@sha256:4f77a690f2f8946ab16fe1e791a3ac0667ae1c3575c3e4d0d4589e9ed5bfaf3d
+# Stage 2: Runtime image — pull cached base from GHCR
+FROM ${BASE_IMAGE}
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3=3.11.2-1+b1 \
-        python3-pip=23.0.1+dfsg-1 \
-        python3-venv=3.11.2-1+b1 \
-        curl=7.88.1-10+deb12u14 \
-        git=1:2.39.5-0+deb12u3 \
-        ca-certificates=20230311+deb12u1 \
-        iproute2=6.1.0-3 \
-        iptables=1.8.9-2 \
+# Harden: remove unnecessary build tools and network probes from base image (#830)
+RUN (apt-get remove --purge -y gcc gcc-12 g++ g++-12 cpp cpp-12 make \
+        netcat-openbsd netcat-traditional ncat 2>/dev/null || true) \
+    && apt-get autoremove --purge -y \
     && rm -rf /var/lib/apt/lists/*
 
-# gosu for privilege separation (gateway vs sandbox user).
-# Install from GitHub release with checksum verification instead of
-# Debian bookworm's ancient 1.14 (2020). Pinned to 1.19 (2025-09).
-# hadolint ignore=DL4006
-RUN arch="$(dpkg --print-architecture)" \
-    && case "$arch" in \
-        amd64) gosu_asset="gosu-amd64"; gosu_sha256="52c8749d0142edd234e9d6bd5237dff2d81e71f43537e2f4f66f75dd4b243dd0" ;; \
-        arm64) gosu_asset="gosu-arm64"; gosu_sha256="3a8ef022d82c0bc4a98bcb144e77da714c25fcfa64dccc57f6aba7ae47ff1a44" ;; \
-        *) echo "Unsupported architecture for gosu: $arch" >&2; exit 1 ;; \
-    esac \
-    && curl -fsSL -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.19/${gosu_asset}" \
-    && echo "${gosu_sha256}  /usr/local/bin/gosu" | sha256sum -c - \
-    && chmod +x /usr/local/bin/gosu \
-    && gosu --version
-
-# Create sandbox user (matches OpenShell convention) and gateway user.
-# The gateway runs as 'gateway' so the 'sandbox' user (agent) cannot
-# kill it or restart it with a tampered HOME/config.
-RUN groupadd -r gateway && useradd -r -g gateway -d /sandbox -s /usr/sbin/nologin gateway \
-    && groupadd -r sandbox && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbox \
-    && mkdir -p /sandbox/.nemoclaw \
-    && chown -R sandbox:sandbox /sandbox
-
-# Split .openclaw into immutable config dir + writable state dir.
-# The policy makes /sandbox/.openclaw read-only via Landlock, so the agent
-# cannot modify openclaw.json, auth tokens, or CORS settings.  Writable
-# state (agents, plugins, etc.) lives in .openclaw-data, reached via symlinks.
-# Ref: https://github.com/NVIDIA/NemoClaw/issues/514
-RUN mkdir -p /sandbox/.openclaw-data/agents/main/agent \
-        /sandbox/.openclaw-data/extensions \
-        /sandbox/.openclaw-data/workspace \
-        /sandbox/.openclaw-data/skills \
-        /sandbox/.openclaw-data/hooks \
-        /sandbox/.openclaw-data/identity \
-        /sandbox/.openclaw-data/devices \
-        /sandbox/.openclaw-data/canvas \
-        /sandbox/.openclaw-data/cron \
-    && mkdir -p /sandbox/.openclaw \
-    && ln -s /sandbox/.openclaw-data/agents /sandbox/.openclaw/agents \
-    && ln -s /sandbox/.openclaw-data/extensions /sandbox/.openclaw/extensions \
-    && ln -s /sandbox/.openclaw-data/workspace /sandbox/.openclaw/workspace \
-    && ln -s /sandbox/.openclaw-data/skills /sandbox/.openclaw/skills \
-    && ln -s /sandbox/.openclaw-data/hooks /sandbox/.openclaw/hooks \
-    && ln -s /sandbox/.openclaw-data/identity /sandbox/.openclaw/identity \
-    && ln -s /sandbox/.openclaw-data/devices /sandbox/.openclaw/devices \
-    && ln -s /sandbox/.openclaw-data/canvas /sandbox/.openclaw/canvas \
-    && ln -s /sandbox/.openclaw-data/cron /sandbox/.openclaw/cron \
-    && touch /sandbox/.openclaw-data/update-check.json \
-    && ln -s /sandbox/.openclaw-data/update-check.json /sandbox/.openclaw/update-check.json \
-    && chown -R sandbox:sandbox /sandbox/.openclaw /sandbox/.openclaw-data
-
-# Install OpenClaw CLI + PyYAML for inline Python scripts in e2e tests
-RUN npm install -g openclaw@2026.3.11 \
-    && pip3 install --no-cache-dir --break-system-packages "pyyaml==6.0.3"
 
 # Copy built plugin and blueprint into the sandbox
 COPY --from=builder /opt/nemoclaw/dist/ /opt/nemoclaw/dist/
 COPY nemoclaw/openclaw.plugin.json /opt/nemoclaw/
-COPY nemoclaw/package.json /opt/nemoclaw/
+COPY nemoclaw/package.json nemoclaw/package-lock.json /opt/nemoclaw/
 COPY nemoclaw-blueprint/ /opt/nemoclaw-blueprint/
 
 # Install runtime dependencies only (no devDependencies, no build step)
 WORKDIR /opt/nemoclaw
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
-# Set up blueprint for local resolution
+# Set up blueprint for local resolution.
+# Blueprints are immutable at runtime; DAC protection (root ownership) is applied
+# later since /sandbox/.nemoclaw is Landlock read_write for plugin state (#804).
 RUN mkdir -p /sandbox/.nemoclaw/blueprints/0.1.0 \
     && cp -r /opt/nemoclaw-blueprint/* /sandbox/.nemoclaw/blueprints/0.1.0/
 
 # Copy startup script
 COPY scripts/nemoclaw-start.sh /usr/local/bin/nemoclaw-start
-RUN chmod +x /usr/local/bin/nemoclaw-start
+RUN chmod 755 /usr/local/bin/nemoclaw-start
 
 # Build args for config that varies per deployment.
 # nemoclaw onboard passes these at image build time.
@@ -105,9 +60,27 @@ ARG CHAT_UI_URL=http://127.0.0.1:18789
 ARG NEMOCLAW_INFERENCE_BASE_URL=https://inference.local/v1
 ARG NEMOCLAW_INFERENCE_API=openai-completions
 ARG NEMOCLAW_INFERENCE_COMPAT_B64=e30=
+ARG NEMOCLAW_WEB_CONFIG_B64=e30=
+# Base64-encoded JSON list of messaging channel names to pre-configure
+# (e.g. ["discord","telegram"]). Channels are added with placeholder tokens
+# so the L7 proxy can rewrite them at egress. Default: empty list.
+ARG NEMOCLAW_MESSAGING_CHANNELS_B64=W10=
+# Base64-encoded JSON map of channel→allowed sender IDs for DM allowlisting
+# (e.g. {"telegram":["123456789"]}). Channels with IDs get dmPolicy=allowlist;
+# channels without IDs keep the OpenClaw default (pairing). Default: empty map.
+ARG NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=e30=
+# Set to "1" to disable device-pairing auth (development/headless only).
+# Default: "0" (device auth enabled — secure by default).
+ARG NEMOCLAW_DISABLE_DEVICE_AUTH=0
 # Unique per build to ensure each image gets a fresh auth token.
 # Pass --build-arg NEMOCLAW_BUILD_ID=$(date +%s) to bust the cache.
 ARG NEMOCLAW_BUILD_ID=default
+# Sandbox egress proxy host/port. Defaults match the OpenShell-injected
+# gateway (10.200.0.1:3128). Operators on non-default networks can override
+# at sandbox creation time by exporting NEMOCLAW_PROXY_HOST / NEMOCLAW_PROXY_PORT
+# before running `nemoclaw onboard`. See #1409.
+ARG NEMOCLAW_PROXY_HOST=10.200.0.1
+ARG NEMOCLAW_PROXY_PORT=3128
 
 # SECURITY: Promote build-args to env vars so the Python script reads them
 # via os.environ, never via string interpolation into Python source code.
@@ -118,7 +91,13 @@ ENV NEMOCLAW_MODEL=${NEMOCLAW_MODEL} \
     CHAT_UI_URL=${CHAT_UI_URL} \
     NEMOCLAW_INFERENCE_BASE_URL=${NEMOCLAW_INFERENCE_BASE_URL} \
     NEMOCLAW_INFERENCE_API=${NEMOCLAW_INFERENCE_API} \
-    NEMOCLAW_INFERENCE_COMPAT_B64=${NEMOCLAW_INFERENCE_COMPAT_B64}
+    NEMOCLAW_INFERENCE_COMPAT_B64=${NEMOCLAW_INFERENCE_COMPAT_B64} \
+    NEMOCLAW_WEB_CONFIG_B64=${NEMOCLAW_WEB_CONFIG_B64} \
+    NEMOCLAW_MESSAGING_CHANNELS_B64=${NEMOCLAW_MESSAGING_CHANNELS_B64} \
+    NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=${NEMOCLAW_MESSAGING_ALLOWED_IDS_B64} \
+    NEMOCLAW_DISABLE_DEVICE_AUTH=${NEMOCLAW_DISABLE_DEVICE_AUTH} \
+    NEMOCLAW_PROXY_HOST=${NEMOCLAW_PROXY_HOST} \
+    NEMOCLAW_PROXY_PORT=${NEMOCLAW_PROXY_PORT}
 
 WORKDIR /sandbox
 USER sandbox
@@ -138,10 +117,18 @@ primary_model_ref = os.environ['NEMOCLAW_PRIMARY_MODEL_REF']; \
 inference_base_url = os.environ['NEMOCLAW_INFERENCE_BASE_URL']; \
 inference_api = os.environ['NEMOCLAW_INFERENCE_API']; \
 inference_compat = json.loads(base64.b64decode(os.environ['NEMOCLAW_INFERENCE_COMPAT_B64']).decode('utf-8')); \
+web_config = json.loads(base64.b64decode(os.environ.get('NEMOCLAW_WEB_CONFIG_B64', 'e30=') or 'e30=').decode('utf-8')); \
+msg_channels = json.loads(base64.b64decode(os.environ.get('NEMOCLAW_MESSAGING_CHANNELS_B64', 'W10=') or 'W10=').decode('utf-8')); \
+_allowed_ids = json.loads(base64.b64decode(os.environ.get('NEMOCLAW_MESSAGING_ALLOWED_IDS_B64', 'e30=') or 'e30=').decode('utf-8')); \
+_token_keys = {'discord': 'token', 'telegram': 'botToken', 'slack': 'botToken'}; \
+_env_keys = {'discord': 'DISCORD_BOT_TOKEN', 'telegram': 'TELEGRAM_BOT_TOKEN', 'slack': 'SLACK_BOT_TOKEN'}; \
+_ch_cfg = {ch: {'accounts': {'main': {_token_keys[ch]: f'openshell:resolve:env:{_env_keys[ch]}', 'enabled': True, **({'dmPolicy': 'allowlist', 'allowFrom': _allowed_ids[ch]} if ch in _allowed_ids and _allowed_ids[ch] else {})}}} for ch in msg_channels if ch in _token_keys}; \
 parsed = urlparse(chat_ui_url); \
 chat_origin = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme and parsed.netloc else 'http://127.0.0.1:18789'; \
 origins = ['http://127.0.0.1:18789']; \
 origins = list(dict.fromkeys(origins + [chat_origin])); \
+disable_device_auth = os.environ.get('NEMOCLAW_DISABLE_DEVICE_AUTH', '') == '1'; \
+allow_insecure = parsed.scheme == 'http'; \
 providers = { \
     provider_key: { \
         'baseUrl': inference_base_url, \
@@ -153,18 +140,32 @@ providers = { \
 config = { \
     'agents': {'defaults': {'model': {'primary': primary_model_ref}}}, \
     'models': {'mode': 'merge', 'providers': providers}, \
-    'channels': {'defaults': {'configWrites': False}}, \
+    'channels': dict({'defaults': {'configWrites': False}}, **_ch_cfg), \
     'gateway': { \
         'mode': 'local', \
         'controlUi': { \
-            'allowInsecureAuth': True, \
-            'dangerouslyDisableDeviceAuth': True, \
+            'allowInsecureAuth': allow_insecure, \
+            'dangerouslyDisableDeviceAuth': disable_device_auth, \
             'allowedOrigins': origins, \
         }, \
         'trustedProxies': ['127.0.0.1', '::1'], \
         'auth': {'token': secrets.token_hex(32)} \
     } \
 }; \
+config.update({ \
+    'tools': { \
+        'web': { \
+            'search': { \
+                'enabled': True, \
+                'provider': 'brave', \
+                **({'apiKey': web_config.get('apiKey', '')} if web_config.get('apiKey', '') else {}) \
+            }, \
+            'fetch': { \
+                'enabled': bool(web_config.get('fetchEnabled', True)) \
+            } \
+        } \
+    } \
+} if web_config.get('provider') == 'brave' else {}); \
 path = os.path.expanduser('~/.openclaw/openclaw.json'); \
 json.dump(config, open(path, 'w'), indent=2); \
 os.chmod(path, 0o600)"
@@ -185,7 +186,30 @@ RUN openclaw doctor --fix > /dev/null 2>&1 || true \
 # The writable state lives in .openclaw-data, reached via the symlinks.
 # hadolint ignore=DL3002
 USER root
+
+# Ensure .openclaw-data subdirs and symlinks exist for logs, credentials, and
+# sandbox. These are defined in Dockerfile.base but the GHCR base image may
+# not have been rebuilt yet. Idempotent — harmless once the base catches up.
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/804
+RUN mkdir -p /sandbox/.openclaw-data/logs \
+        /sandbox/.openclaw-data/credentials \
+        /sandbox/.openclaw-data/sandbox \
+    && chown sandbox:sandbox /sandbox/.openclaw-data/logs \
+        /sandbox/.openclaw-data/credentials \
+        /sandbox/.openclaw-data/sandbox \
+    && for dir in logs credentials sandbox; do \
+        if [ -L "/sandbox/.openclaw/$dir" ]; then true; \
+        elif [ -e "/sandbox/.openclaw/$dir" ]; then \
+            cp -a "/sandbox/.openclaw/$dir/." "/sandbox/.openclaw-data/$dir/" 2>/dev/null || true; \
+            rm -rf "/sandbox/.openclaw/$dir"; \
+            ln -s "/sandbox/.openclaw-data/$dir" "/sandbox/.openclaw/$dir"; \
+        else \
+            ln -s "/sandbox/.openclaw-data/$dir" "/sandbox/.openclaw/$dir"; \
+        fi; \
+    done
+
 RUN chown root:root /sandbox/.openclaw \
+    && rm -rf /root/.npm /sandbox/.npm \
     && find /sandbox/.openclaw -mindepth 1 -maxdepth 1 -exec chown -h root:root {} + \
     && chmod 755 /sandbox/.openclaw \
     && chmod 444 /sandbox/.openclaw/openclaw.json
@@ -197,7 +221,27 @@ RUN sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash
     && chmod 444 /sandbox/.openclaw/.config-hash \
     && chown root:root /sandbox/.openclaw/.config-hash
 
+# DAC-protect .nemoclaw directory: /sandbox/.nemoclaw is Landlock read_write
+# (for plugin state/config), but the parent and blueprints are immutable at
+# runtime. Root ownership on the parent prevents the agent from renaming or
+# replacing the root-owned blueprints directory. Only state/, migration/,
+# snapshots/, and config.json are sandbox-owned for runtime writes.
+# Sticky bit (1755): OpenShell's prepare_filesystem() chowns read_write paths
+# to run_as_user at sandbox start, flipping this dir to sandbox:sandbox.
+# The sticky bit survives the chown and prevents the sandbox user from
+# renaming or deleting root-owned entries (blueprints/).
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/804
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/1607
+RUN chown root:root /sandbox/.nemoclaw \
+    && chmod 1755 /sandbox/.nemoclaw \
+    && chown -R root:root /sandbox/.nemoclaw/blueprints \
+    && chmod -R 755 /sandbox/.nemoclaw/blueprints \
+    && mkdir -p /sandbox/.nemoclaw/state /sandbox/.nemoclaw/migration /sandbox/.nemoclaw/snapshots /sandbox/.nemoclaw/staging \
+    && chown sandbox:sandbox /sandbox/.nemoclaw/state /sandbox/.nemoclaw/migration /sandbox/.nemoclaw/snapshots /sandbox/.nemoclaw/staging \
+    && touch /sandbox/.nemoclaw/config.json \
+    && chown sandbox:sandbox /sandbox/.nemoclaw/config.json
+
 # Entrypoint runs as root to start the gateway as the gateway user,
 # then drops to sandbox for agent commands. See nemoclaw-start.sh.
 ENTRYPOINT ["/usr/local/bin/nemoclaw-start"]
-CMD []
+CMD ["/bin/bash"]
