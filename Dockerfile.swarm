@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Multi-agent swarm image — merges both independent base images.
+#
+# Both bases are built from their own Dockerfiles and remain fully
+# independent. This image pulls artifacts from each via multi-stage
+# COPY. Changes to either base are picked up automatically on rebuild;
+# neither base knows about or depends on the other.
+#
+# Usage:
+#   docker build -f Dockerfile.swarm -t nemoclaw-swarm-base .
+#   nemoclaw onboard --from Dockerfile.swarm
+#
+# Future: `add-agent` could download and install agent software at
+# runtime instead of requiring it baked into the image.
+
+ARG OPENCLAW_BASE=ghcr.io/nvidia/nemoclaw/sandbox-base:latest
+ARG HERMES_BASE=ghcr.io/nvidia/nemoclaw/hermes-sandbox-base:latest
+
+# ── Pull both independent bases ──────────────────────────────────
+FROM ${HERMES_BASE} AS hermes
+FROM ${OPENCLAW_BASE}
+
+# ── Merge Hermes-specific artifacts from the Hermes base ─────────
+# socat + its runtime dependency libwrap (Hermes port forwarding)
+COPY --from=hermes /usr/bin/socat /usr/bin/socat
+COPY --from=hermes /usr/lib/*/libwrap.so* /usr/lib/
+
+# Hermes agent binary + Python packages
+COPY --from=hermes /usr/local/bin/hermes /usr/local/bin/hermes
+COPY --from=hermes /usr/local/lib/python3.11/dist-packages/ /usr/local/lib/python3.11/dist-packages/
+
+# Hermes directory tree (immutable config + writable state symlinks)
+COPY --from=hermes /sandbox/.hermes/ /sandbox/.hermes/
+COPY --from=hermes /sandbox/.hermes-data/ /sandbox/.hermes-data/
+
+# Fix ownership after COPY (COPY resets to root)
+RUN chown -R sandbox:sandbox /sandbox/.hermes /sandbox/.hermes-data
