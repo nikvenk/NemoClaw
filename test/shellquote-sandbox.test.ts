@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 describe("sandboxName shell quoting in onboard.js", () => {
   const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox.ts"),
+    path.join(import.meta.dirname, "..", "src", "lib", "onboard", "sandbox.ts"),
     "utf-8",
   );
 

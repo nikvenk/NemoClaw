@@ -12,15 +12,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const ONBOARD_TS = path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts");
+const ONBOARD_TS = path.join(import.meta.dirname, "..", "src", "lib", "onboard", "index.ts");
 const ONBOARD_PROVIDER_TS = path.join(
   import.meta.dirname,
   "..",
   "src",
   "lib",
-  "onboard-provider.ts",
+  "onboard",
+  "provider.ts",
 );
-const ONBOARD_SANDBOX_TS = path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox.ts");
+const ONBOARD_SANDBOX_TS = path.join(
+  import.meta.dirname,
+  "..",
+  "src",
+  "lib",
+  "onboard",
+  "sandbox.ts",
+);
 const RUNNER_TS = path.join(import.meta.dirname, "..", "nemoclaw", "src", "blueprint", "runner.ts");
 
 function readOnboardSources() {

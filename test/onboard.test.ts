@@ -1736,7 +1736,7 @@ const { setupInference } = require(${onboardPath});
 
   it("uses split curl timeout args and does not mislabel curl usage errors as timeouts", () => {
     const onboardSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "index.ts"),
       "utf-8",
     );
     const probeSource = fs.readFileSync(
@@ -1756,7 +1756,7 @@ const { setupInference } = require(${onboardPath});
 
   it("suppresses expected provider-create AlreadyExists noise when update succeeds", () => {
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-provider.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "provider.ts"),
       "utf-8",
     );
 
@@ -1769,7 +1769,7 @@ const { setupInference } = require(${onboardPath});
 
   it("starts the sandbox step before prompting for the sandbox name", () => {
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-flow.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "flow.ts"),
       "utf-8",
     );
 
@@ -1781,11 +1781,11 @@ const { setupInference } = require(${onboardPath});
 
   it("prints numbered step headers even when onboarding skips resumed steps", () => {
     const flowSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-flow.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "flow.ts"),
       "utf-8",
     );
     const sharedSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-shared.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "shared.ts"),
       "utf-8",
     );
 
@@ -1804,7 +1804,7 @@ const { setupInference } = require(${onboardPath});
 
   it("delegates sandbox-create progress streaming to the extracted helper module", () => {
     const onboardSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "index.ts"),
       "utf-8",
     );
     const { streamSandboxCreate } = require("../dist/lib/sandbox-create-stream");
@@ -4212,7 +4212,7 @@ const { createSandbox } = require(${onboardPath});
 
   it("re-prompts on invalid sandbox names instead of exiting in interactive mode", () => {
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard", "sandbox.ts"),
       "utf-8",
     );
     // Extract the promptValidatedSandboxName function body

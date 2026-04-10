@@ -13,7 +13,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const ONBOARD_GATEWAY = path.join(ROOT, "src/lib/onboard-gateway.ts");
+const ONBOARD_GATEWAY = path.join(ROOT, "src/lib/onboard/gateway.ts");
 
 describe("gateway cleanup: Docker volumes removed on failure (#17)", () => {
   it("onboard.js: destroyGateway() removes Docker volumes", () => {

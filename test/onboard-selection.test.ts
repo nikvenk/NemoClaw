@@ -1983,7 +1983,7 @@ const { setupNim } = require(${onboardPath});
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-build-noninteractive-"));
     const fakeBin = path.join(tmpDir, "bin");
     const scriptPath = path.join(tmpDir, "build-noninteractive-check.js");
-    const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard-core.js"));
+    const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard", "index.js"));
     const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
 
