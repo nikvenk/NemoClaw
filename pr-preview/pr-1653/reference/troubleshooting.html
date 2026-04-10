@@ -741,11 +741,11 @@ Current NemoClaw rebuilds bake Telegram in the account-based layout and set Tele
 <h3>Discord bot logs in, but the channel still does not work<a class="headerlink" href="#discord-bot-logs-in-but-the-channel-still-does-not-work" title="Link to this heading">#</a></h3>
 <p>Separate the problem into two parts:</p>
 <ol class="arabic">
-<li><p><strong>Baked config and provider wiring</strong></p>
+<li><p>Baked config and provider wiring</p>
 <p>Check that onboarding selected Discord and that the sandbox was created with the Discord messaging provider attached.
 If Discord was skipped during onboarding, rerun onboarding and select Discord again.</p>
 </li>
-<li><p><strong>Native Discord gateway path</strong></p>
+<li><p>Native Discord gateway path</p>
 <p>Successful login alone does not prove that Discord works end to end.
 Discord also needs a working gateway connection to <code class="docutils literal notranslate"><span class="pre">gateway.discord.gg</span></code>.
 If logs show errors such as <code class="docutils literal notranslate"><span class="pre">getaddrinfo</span> <span class="pre">EAI_AGAIN</span> <span class="pre">gateway.discord.gg</span></code>, repeated reconnect loops, or a <code class="docutils literal notranslate"><span class="pre">400</span></code> response while probing the gateway path, the problem is usually in the native gateway/proxy path rather than in the baked config.</p>
