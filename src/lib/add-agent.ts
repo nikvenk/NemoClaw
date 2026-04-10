@@ -220,7 +220,7 @@ export async function addAgent(opts: AddAgentOptions): Promise<AgentInstance | n
   // Build launch command with port and config overrides
   let launchCmd: string;
   if (agentType === "openclaw") {
-    launchCmd = `cd ${configDir} && nohup ${gatewayCmd} --port ${port} > /tmp/${instanceId}.log 2>&1 &`;
+    launchCmd = `OPENCLAW_STATE_DIR=${configDir} OPENCLAW_CONFIG_PATH=${configDir}/openclaw.json nohup ${gatewayCmd} --port ${port} > /tmp/${instanceId}.log 2>&1 &`;
   } else if (agentType === "hermes") {
     const decodeProxyPort = 3129 + instanceIndex;
     launchCmd = [

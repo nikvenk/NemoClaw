@@ -56,6 +56,13 @@ export function buildInstanceSetupScript(opts: {
   }
   lines.push("");
 
+  // Set ownership BEFORE config generation — the config scripts (cp, python3)
+  // need write access to the directories they create files in
+  lines.push(`chown -R sandbox:sandbox ${dataDir}`);
+  lines.push(`chown -R sandbox:sandbox ${configDir}`);
+  lines.push(`chmod 755 ${configDir}`);
+  lines.push("");
+
   // Generate config based on agent type
   if (agentDef.name === "openclaw") {
     lines.push(...buildOpenClawConfig(configDir, port, inferenceEndpoint, model));
@@ -66,33 +73,26 @@ export function buildInstanceSetupScript(opts: {
     lines.push(...buildGenericConfig(configDir, port, inferenceEndpoint, model, agentDef.name));
   }
 
-  lines.push("");
-
-  // Set ownership (sandbox user for data, root for config)
-  lines.push(`chown -R sandbox:sandbox ${dataDir}`);
-  lines.push(`chmod 755 ${configDir}`);
-
   return { setupScript: lines.join("\n") };
 }
 
-function buildOpenClawConfig(configDir: string, port: number, endpoint: string, model: string): string[] {
-  const config = {
-    gateway: { port },
-    providers: [
-      {
-        name: "nemoclaw-inference",
-        type: "openai",
-        baseUrl: endpoint,
-        models: [model],
-      },
-    ],
-    defaultModel: model,
-  };
-  const json = JSON.stringify(config, null, 2);
+function buildOpenClawConfig(configDir: string, port: number, _endpoint: string, _model: string): string[] {
+  // Copy the primary's openclaw.json and patch port + auth token for the new
+  // instance. Generating from scratch doesn't work because OpenClaw validates
+  // the full schema and rejects unknown keys.
+  const token = `swarm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   return [
-    `cat > ${configDir}/openclaw.json <<'NEMOCLAW_CONFIG_EOF'`,
-    json,
-    "NEMOCLAW_CONFIG_EOF",
+    `cp /sandbox/.openclaw/openclaw.json ${configDir}/openclaw.json`,
+    `chmod 644 ${configDir}/openclaw.json`,
+    `python3 -c "`,
+    `import json, sys`,
+    `cfg = json.load(open('${configDir}/openclaw.json'))`,
+    `cfg.setdefault('gateway', {})`,
+    `cfg['gateway'].setdefault('controlUi', {})`,
+    `cfg['gateway']['controlUi']['allowedOrigins'] = ['http://127.0.0.1:${port}']`,
+    `cfg['gateway']['auth'] = {'token': '${token}'}`,
+    `json.dump(cfg, open('${configDir}/openclaw.json', 'w'), indent=2)`,
+    `"`,
     `sha256sum ${configDir}/openclaw.json | awk '{print $1}' > ${configDir}/.config-hash`,
   ];
 }
