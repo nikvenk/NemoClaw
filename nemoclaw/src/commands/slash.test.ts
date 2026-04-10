@@ -46,6 +46,16 @@ vi.mock("../memory/typed-provider.js", () => ({
   }),
 }));
 
+const mockMemoryConfig = vi.hoisted(() => ({
+  loadMemoryConfig: vi.fn(),
+  saveMemoryConfig: vi.fn(),
+  hasMemoryInstructions: vi.fn(),
+  injectMemoryInstructions: vi.fn(),
+  removeMemoryInstructions: vi.fn(),
+}));
+
+vi.mock("../memory/config.js", () => mockMemoryConfig);
+
 // ---------------------------------------------------------------------------
 // Mock node:fs for slashMemoryMigrate
 // ---------------------------------------------------------------------------
@@ -135,6 +145,8 @@ describe("commands/slash", () => {
     mockProvider.migrate.mockReturnValue({ imported: 0, skipped: 0 });
     mockedExistsSync.mockReturnValue(false);
     mockedReadFileSync.mockReturnValue("");
+    mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+    mockMemoryConfig.hasMemoryInstructions.mockReturnValue(false);
   });
 
   // -------------------------------------------------------------------------
@@ -496,6 +508,117 @@ describe("commands/slash", () => {
       mockedReadFileSync.mockReturnValue("   ");
       const result = handleSlashCommand(makeCtx("memory migrate"), makeApi());
       expect(result.text).toContain("Nothing to migrate");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // memory stats — mode display
+  // -------------------------------------------------------------------------
+
+  describe("memory stats mode", () => {
+    it("shows default mode", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+      const result = handleSlashCommand(makeCtx("memory"), makeApi());
+      expect(result.text).toContain("Mode: default");
+    });
+
+    it("shows typed-index mode with date", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({
+        mode: "typed-index",
+        enabledAt: "2026-04-10",
+      });
+      const result = handleSlashCommand(makeCtx("memory"), makeApi());
+      expect(result.text).toContain("Mode: typed-index");
+      expect(result.text).toContain("since 2026-04-10");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // memory enable
+  // -------------------------------------------------------------------------
+
+  describe("memory enable", () => {
+    it("enables typed-index and injects AGENTS.md instructions", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+      const result = handleSlashCommand(makeCtx("memory enable"), makeApi());
+      expect(result.text).toContain("Typed Memory Index Enabled");
+      expect(result.text).toContain("Memory instructions injected");
+      expect(mockMemoryConfig.injectMemoryInstructions).toHaveBeenCalled();
+      expect(mockMemoryConfig.saveMemoryConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "typed-index" }),
+      );
+    });
+
+    it("returns already-enabled when mode is typed-index", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "typed-index" });
+      const result = handleSlashCommand(makeCtx("memory enable"), makeApi());
+      expect(result.text).toContain("already enabled");
+      expect(mockMemoryConfig.injectMemoryInstructions).not.toHaveBeenCalled();
+    });
+
+    it("auto-migrates existing flat MEMORY.md on enable", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue("- Some flat memory entry\n- Another entry\n");
+      mockProvider.migrate.mockReturnValue({ imported: 2, skipped: 0 });
+
+      const result = handleSlashCommand(makeCtx("memory enable"), makeApi());
+      expect(result.text).toContain("Migrated existing MEMORY.md");
+      expect(result.text).toContain("2 imported");
+      expect(mockProvider.migrate).toHaveBeenCalled();
+    });
+
+    it("does not migrate when MEMORY.md already has typed index", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue("| Topic | Type | Updated |\n|---|---|---|\n");
+
+      const result = handleSlashCommand(makeCtx("memory enable"), makeApi());
+      expect(result.text).toContain("Typed Memory Index Enabled");
+      expect(result.text).not.toContain("Migrated");
+      expect(mockProvider.migrate).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // memory disable
+  // -------------------------------------------------------------------------
+
+  describe("memory disable", () => {
+    it("disables typed-index and removes AGENTS.md instructions", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "typed-index" });
+      const result = handleSlashCommand(makeCtx("memory disable"), makeApi());
+      expect(result.text).toContain("Typed Memory Index Disabled");
+      expect(result.text).toContain("instructions removed");
+      expect(mockMemoryConfig.removeMemoryInstructions).toHaveBeenCalled();
+      expect(mockMemoryConfig.saveMemoryConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "default" }),
+      );
+    });
+
+    it("returns already-disabled when mode is default", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "default" });
+      const result = handleSlashCommand(makeCtx("memory disable"), makeApi());
+      expect(result.text).toContain("already disabled");
+      expect(mockMemoryConfig.removeMemoryInstructions).not.toHaveBeenCalled();
+    });
+
+    it("mentions topic files are preserved", () => {
+      mockMemoryConfig.loadMemoryConfig.mockReturnValue({ mode: "typed-index" });
+      const result = handleSlashCommand(makeCtx("memory disable"), makeApi());
+      expect(result.text).toContain("still on disk");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // help includes enable/disable
+  // -------------------------------------------------------------------------
+
+  describe("help includes enable/disable", () => {
+    it("lists enable and disable in help text", () => {
+      const result = handleSlashCommand(makeCtx(), makeApi());
+      expect(result.text).toContain("memory enable");
+      expect(result.text).toContain("memory disable");
     });
   });
 });

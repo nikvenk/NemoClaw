@@ -27,6 +27,12 @@ import {
 } from "../memory/index.js";
 import { isValidMemoryType, type MemoryType } from "../memory/index.js";
 import { TypedMemoryProvider } from "../memory/typed-provider.js";
+import {
+  loadMemoryConfig,
+  saveMemoryConfig,
+  injectMemoryInstructions,
+  removeMemoryInstructions,
+} from "../memory/config.js";
 
 export function handleSlashCommand(
   ctx: PluginCommandContext,
@@ -65,6 +71,8 @@ function slashHelp(): PluginCommandResult {
       "  `memory search`   - Search topics: `/nemoclaw memory search <query>`",
       "  `memory list`     - List entries: `/nemoclaw memory list [--type <type>]`",
       "  `memory migrate`  - Migrate flat MEMORY.md to typed index",
+      "  `memory enable`   - Enable typed memory index (injects AGENTS.md instructions)",
+      "  `memory disable`  - Disable typed memory index (removes AGENTS.md instructions)",
       "",
       "For full management use the NemoClaw CLI:",
       "  `nemoclaw <name> status`",
@@ -148,17 +156,23 @@ function slashMemoryRouter(args: string[]): PluginCommandResult {
       return slashMemoryList(provider, args);
     case "migrate":
       return slashMemoryMigrate(provider);
+    case "enable":
+      return slashMemoryEnable(provider);
+    case "disable":
+      return slashMemoryDisable();
     default:
       return slashMemoryStats(provider);
   }
 }
 
 function slashMemoryStats(provider: TypedMemoryProvider): PluginCommandResult {
+  const config = loadMemoryConfig();
   const stats = provider.stats();
 
   const lines = [
     "**Memory Stats**",
     "",
+    `Mode: ${config.mode}${config.enabledAt ? ` (since ${config.enabledAt})` : ""}`,
     `Index entries: ${String(stats.indexEntryCount)}${stats.indexOverCap ? ` (over ${String(INDEX_SOFT_CAP)} soft cap!)` : ""}`,
     `Index lines: ${String(stats.indexLineCount)}`,
     `Topic files: ${String(stats.topicCount)}`,
@@ -279,6 +293,64 @@ function slashMemoryMigrate(provider: TypedMemoryProvider): PluginCommandResult 
       "",
       `Imported: ${String(result.imported)}`,
       `Skipped: ${String(result.skipped)}`,
+    ].join("\n"),
+  };
+}
+
+function slashMemoryEnable(provider: TypedMemoryProvider): PluginCommandResult {
+  const config = loadMemoryConfig();
+  if (config.mode === "typed-index") {
+    return { text: "Typed memory index is already enabled." };
+  }
+
+  // Inject instructions into AGENTS.md
+  injectMemoryInstructions();
+
+  // Save config
+  saveMemoryConfig({ mode: "typed-index", enabledAt: new Date().toISOString().slice(0, 10) });
+
+  // Check if flat MEMORY.md exists and offer migration
+  const lines = [
+    "**Typed Memory Index Enabled**",
+    "",
+    "Memory instructions injected into AGENTS.md.",
+    "The agent will now use the index-then-load pattern.",
+  ];
+
+  if (existsSync(MEMORY_INDEX_PATH)) {
+    const content = readFileSync(MEMORY_INDEX_PATH, "utf-8");
+    if (content.trim() && !content.includes("| Topic | Type | Updated |")) {
+      const result = provider.migrate(content);
+      lines.push(
+        "",
+        `Migrated existing MEMORY.md: ${String(result.imported)} imported, ${String(result.skipped)} skipped.`,
+      );
+    }
+  }
+
+  return { text: lines.join("\n") };
+}
+
+function slashMemoryDisable(): PluginCommandResult {
+  const config = loadMemoryConfig();
+  if (config.mode === "default") {
+    return { text: "Typed memory index is already disabled. Using default memory." };
+  }
+
+  // Remove instructions from AGENTS.md
+  removeMemoryInstructions();
+
+  // Save config
+  saveMemoryConfig({ mode: "default" });
+
+  return {
+    text: [
+      "**Typed Memory Index Disabled**",
+      "",
+      "Memory instructions removed from AGENTS.md.",
+      "The agent will use OpenClaw's default memory behavior.",
+      "",
+      "Topic files are still on disk and can be re-enabled at any time.",
     ].join("\n"),
   };
 }
