@@ -26,7 +26,6 @@ filesystem_policy:
     - /tmp
     - /dev/null
     - /sandbox/.openclaw-data
-    - /sandbox/.hermes-data
     - /sandbox/.nemoclaw
 
 landlock:
@@ -219,19 +218,6 @@ network_policies:
         port: 443
         access: full
       - host: router.huggingface.co
-        port: 443
-        access: full
-
-  nous_research:
-    name: nous_research
-    endpoints:
-      - host: nousresearch.com
-        port: 443
-        access: full
-      - host: hermes-agent.nousresearch.com
-        port: 443
-        access: full
-      - host: api.nousresearch.com
         port: 443
         access: full
 
