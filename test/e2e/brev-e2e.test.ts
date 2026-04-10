@@ -165,13 +165,13 @@ function sshEnv(cmd, { timeout = 600_000, stream = false } = {}) {
   return ssh(`${envPrefix} && ${cmd}`, { timeout, stream });
 }
 
-function waitForSsh(maxAttempts = 90, intervalMs = 5_000) {
+function waitForSsh(maxAttempts = 40, intervalMs = 5_000) {
   for (let i = 1; i <= maxAttempts; i++) {
     try {
       ssh("echo ok", { timeout: 10_000 });
       return;
     } catch {
-      if (i === maxAttempts) throw new Error(`SSH not ready after ${maxAttempts} attempts`);
+      if (i === maxAttempts) throw new Error(`SSH not ready after ${maxAttempts} attempts (~${Math.round(maxAttempts * (intervalMs + 10_000) / 60_000)} min)`);
       if (i % 5 === 0) {
         try {
           brev("refresh");
