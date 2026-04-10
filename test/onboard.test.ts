@@ -108,6 +108,9 @@ describe("onboard helpers", () => {
   });
 
   it("uses explicit messaging selections for policy suggestions when provided", () => {
+    const originalTelegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
+    const originalDiscordBotToken = process.env.DISCORD_BOT_TOKEN;
+    const originalSlackBotToken = process.env.SLACK_BOT_TOKEN;
     process.env.TELEGRAM_BOT_TOKEN = "telegram-token";
     process.env.DISCORD_BOT_TOKEN = "discord-token";
     process.env.SLACK_BOT_TOKEN = "slack-token";
@@ -125,9 +128,12 @@ describe("onboard helpers", () => {
         "discord",
       ]);
     } finally {
-      delete process.env.TELEGRAM_BOT_TOKEN;
-      delete process.env.DISCORD_BOT_TOKEN;
-      delete process.env.SLACK_BOT_TOKEN;
+      if (originalTelegramBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = originalTelegramBotToken;
+      if (originalDiscordBotToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+      else process.env.DISCORD_BOT_TOKEN = originalDiscordBotToken;
+      if (originalSlackBotToken === undefined) delete process.env.SLACK_BOT_TOKEN;
+      else process.env.SLACK_BOT_TOKEN = originalSlackBotToken;
     }
   });
 

@@ -309,12 +309,12 @@ Current NemoClaw rebuilds bake Telegram in the account-based layout and set Tele
 
 Separate the problem into two parts:
 
-1. **Baked config and provider wiring**
+1. Baked config and provider wiring
 
    Check that onboarding selected Discord and that the sandbox was created with the Discord messaging provider attached.
    If Discord was skipped during onboarding, rerun onboarding and select Discord again.
 
-1. **Native Discord gateway path**
+1. Native Discord gateway path
 
    Successful login alone does not prove that Discord works end to end.
    Discord also needs a working gateway connection to `gateway.discord.gg`.

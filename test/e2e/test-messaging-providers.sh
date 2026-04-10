@@ -522,8 +522,6 @@ info "Discord gateway probe: ${dc_gateway:0:300}"
 
 if echo "$dc_gateway" | grep -q "MESSAGE "; then
   pass "M13b: Native Discord gateway returned a WebSocket message"
-elif echo "$dc_gateway" | grep -q "OPEN"; then
-  pass "M13b: Native Discord gateway opened a WebSocket session"
 elif echo "$dc_gateway" | grep -qiE "EAI_AGAIN|getaddrinfo"; then
   if [ "$STRICT_DISCORD_GATEWAY" = "1" ]; then
     fail "M13b: Native Discord gateway hit DNS resolution failure (${dc_gateway:0:200})"
@@ -550,6 +548,14 @@ elif echo "$dc_gateway" | grep -q "ERROR"; then
   else
     skip "M13b: Native Discord gateway probe failed (${dc_gateway:0:200})"
   fi
+elif echo "$dc_gateway" | grep -q "CLOSE"; then
+  if [ "$STRICT_DISCORD_GATEWAY" = "1" ]; then
+    fail "M13b: Native Discord gateway probe closed abnormally (${dc_gateway:0:200})"
+  else
+    skip "M13b: Native Discord gateway probe closed abnormally (${dc_gateway:0:200})"
+  fi
+elif echo "$dc_gateway" | grep -q "OPEN"; then
+  pass "M13b: Native Discord gateway opened a WebSocket session"
 else
   if [ "$STRICT_DISCORD_GATEWAY" = "1" ]; then
     fail "M13b: Native Discord gateway probe returned an unclassified result (${dc_gateway:0:200})"

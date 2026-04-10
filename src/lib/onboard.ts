@@ -179,6 +179,8 @@ const REMOTE_PROVIDER_CONFIG = {
   },
 };
 
+const DISCORD_SNOWFLAKE_RE = /^[0-9]{17,19}$/;
+
 // Non-interactive mode: set by --non-interactive flag or env var.
 // When active, all prompts use env var overrides or sensible defaults.
 let NON_INTERACTIVE = false;
@@ -2507,6 +2509,16 @@ async function createSandbox(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+    for (const serverId of serverIds) {
+      if (!DISCORD_SNOWFLAKE_RE.test(serverId)) {
+        console.warn(`  Warning: Discord server ID '${serverId}' does not look like a snowflake.`);
+      }
+    }
+    for (const userId of userIds) {
+      if (!DISCORD_SNOWFLAKE_RE.test(userId)) {
+        console.warn(`  Warning: Discord user ID '${userId}' does not look like a snowflake.`);
+      }
+    }
     const requireMention = process.env.DISCORD_REQUIRE_MENTION !== "0";
     for (const serverId of serverIds) {
       discordGuilds[serverId] = {
@@ -3627,7 +3639,7 @@ async function setupMessagingChannels() {
         }
       }
     }
-    if (ch.requireMentionEnvKey && process.env[ch.serverIdEnvKey || ""]) {
+    if (ch.requireMentionEnvKey && ch.serverIdEnvKey && process.env[ch.serverIdEnvKey]) {
       const existingRequireMention = process.env[ch.requireMentionEnvKey];
       if (existingRequireMention === "0" || existingRequireMention === "1") {
         const mode = existingRequireMention === "0" ? "all messages" : "@mentions only";
@@ -3679,7 +3691,9 @@ function getSuggestedPolicyPresets({ enabledChannels = null, webSearchConfig = n
     }
     if (getCredential(envKey) || process.env[envKey]) {
       suggestions.push(channel);
-      console.log(`  Auto-detected: ${envKey} -> suggesting ${channel} preset`);
+      if (process.stdout.isTTY && !isNonInteractive() && process.env.CI !== "true") {
+        console.log(`  Auto-detected: ${envKey} -> suggesting ${channel} preset`);
+      }
     }
   };
 
