@@ -611,63 +611,162 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
   }
 }
 
-// eslint-disable-next-line complexity
+function buildRecoveredLookup(retried, recovery) {
+  return { ...retried, recoveredGateway: true, recoveryVia: recovery.via || null };
+}
+
+function classifyPostRecoveryLookup(lookup, recovery) {
+  const latestLifecycle = getNamedGatewayLifecycleState();
+  const latestStatus = stripAnsi(latestLifecycle.status || "");
+  if (/No gateway configured/i.test(latestStatus)) {
+    return {
+      state: "gateway_missing_after_restart",
+      output: latestLifecycle.status || lookup.output,
+    };
+  }
+  if (
+    /Connection refused|client error \(Connect\)|tcp connect error/i.test(latestStatus) &&
+    /Gateway:\s+nemoclaw/i.test(latestStatus)
+  ) {
+    return {
+      state: "gateway_unreachable_after_restart",
+      output: latestLifecycle.status || lookup.output,
+    };
+  }
+  if (
+    recovery.after?.state === "named_unreachable" ||
+    recovery.before?.state === "named_unreachable"
+  ) {
+    return {
+      state: "gateway_unreachable_after_restart",
+      output: recovery.after?.status || recovery.before?.status || lookup.output,
+    };
+  }
+  return { ...lookup, gatewayRecoveryFailed: true };
+}
+
 async function getReconciledSandboxGatewayState(sandboxName) {
-  let lookup = getSandboxGatewayState(sandboxName);
-  if (lookup.state === "present") {
+  const lookup = getSandboxGatewayState(sandboxName);
+  if (lookup.state === "present" || lookup.state === "missing") {
     return lookup;
   }
-  if (lookup.state === "missing") {
+  if (lookup.state !== "gateway_error") {
     return lookup;
   }
 
-  if (lookup.state === "gateway_error") {
-    const recovery = await recoverNamedGatewayRuntime();
-    if (recovery.recovered) {
-      const retried = getSandboxGatewayState(sandboxName);
-      if (retried.state === "present" || retried.state === "missing") {
-        return { ...retried, recoveredGateway: true, recoveryVia: recovery.via || null };
-      }
-      if (/handshake verification failed/i.test(retried.output)) {
-        return {
-          state: "identity_drift",
-          output: retried.output,
-          recoveredGateway: true,
-          recoveryVia: recovery.via || null,
-        };
-      }
-      return { ...retried, recoveredGateway: true, recoveryVia: recovery.via || null };
-    }
-    const latestLifecycle = getNamedGatewayLifecycleState();
-    const latestStatus = stripAnsi(latestLifecycle.status || "");
-    if (/No gateway configured/i.test(latestStatus)) {
-      return {
-        state: "gateway_missing_after_restart",
-        output: latestLifecycle.status || lookup.output,
-      };
-    }
-    if (
-      /Connection refused|client error \(Connect\)|tcp connect error/i.test(latestStatus) &&
-      /Gateway:\s+nemoclaw/i.test(latestStatus)
-    ) {
-      return {
-        state: "gateway_unreachable_after_restart",
-        output: latestLifecycle.status || lookup.output,
-      };
-    }
-    if (
-      recovery.after?.state === "named_unreachable" ||
-      recovery.before?.state === "named_unreachable"
-    ) {
-      return {
-        state: "gateway_unreachable_after_restart",
-        output: recovery.after?.status || recovery.before?.status || lookup.output,
-      };
-    }
-    return { ...lookup, gatewayRecoveryFailed: true };
+  const recovery = await recoverNamedGatewayRuntime();
+  if (!recovery.recovered) {
+    return classifyPostRecoveryLookup(lookup, recovery);
   }
 
-  return lookup;
+  const retried = getSandboxGatewayState(sandboxName);
+  if (retried.state === "present" || retried.state === "missing") {
+    return buildRecoveredLookup(retried, recovery);
+  }
+  if (/handshake verification failed/i.test(retried.output)) {
+    return {
+      state: "identity_drift",
+      output: retried.output,
+      recoveredGateway: true,
+      recoveryVia: recovery.via || null,
+    };
+  }
+  return buildRecoveredLookup(retried, recovery);
+}
+
+function clearMissingSandboxState(sandboxName) {
+  registry.removeSandbox(sandboxName);
+  const session = onboardSession.loadSession();
+  if (session && session.sandboxName === sandboxName) {
+    onboardSession.updateSession((s) => {
+      s.sandboxName = null;
+      return s;
+    });
+  }
+}
+
+function printMissingSandboxError(sandboxName) {
+  clearMissingSandboxState(sandboxName);
+  console.error(`  Sandbox '${sandboxName}' is not present in the live OpenShell gateway.`);
+  console.error("  Removed stale local registry entry.");
+  console.error(
+    "  Run `nemoclaw list` to confirm the remaining sandboxes, or `nemoclaw onboard` to create a new one.",
+  );
+}
+
+function printIdentityDriftError(lookup, sandboxName) {
+  console.error(
+    `  Sandbox '${sandboxName}' is recorded locally, but the gateway trust material rotated after restart.`,
+  );
+  if (lookup.output) {
+    console.error(lookup.output);
+  }
+  console.error(
+    "  Existing sandbox connections cannot be reattached safely after this gateway identity change.",
+  );
+  console.error(
+    "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
+  );
+}
+
+function printGatewayUnreachableError(lookup, sandboxName) {
+  console.error(
+    `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
+  );
+  if (lookup.output) {
+    console.error(lookup.output);
+  }
+  console.error(
+    "  Retry `openshell gateway start --name nemoclaw` and verify `openshell status` is healthy before reconnecting.",
+  );
+  console.error(
+    "  If the gateway never becomes healthy, rebuild the gateway and then recreate the affected sandbox.",
+  );
+}
+
+function printGatewayMissingError(lookup, sandboxName) {
+  console.error(
+    `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
+  );
+  if (lookup.output) {
+    console.error(lookup.output);
+  }
+  console.error(
+    "  Start the gateway again with `openshell gateway start --name nemoclaw` before retrying.",
+  );
+  console.error(
+    "  If the gateway had to be rebuilt from scratch, recreate the affected sandbox afterward.",
+  );
+}
+
+function printUnknownSandboxError(lookup, sandboxName) {
+  console.error(`  Unable to verify sandbox '${sandboxName}' against the live OpenShell gateway.`);
+  if (lookup.output) {
+    console.error(lookup.output);
+  }
+  printGatewayLifecycleHint(lookup.output, sandboxName);
+  console.error("  Check `openshell status` and the active gateway, then retry.");
+}
+
+function handleUnavailableSandboxLookup(lookup, sandboxName) {
+  switch (lookup.state) {
+    case "missing":
+      printMissingSandboxError(sandboxName);
+      break;
+    case "identity_drift":
+      printIdentityDriftError(lookup, sandboxName);
+      break;
+    case "gateway_unreachable_after_restart":
+      printGatewayUnreachableError(lookup, sandboxName);
+      break;
+    case "gateway_missing_after_restart":
+      printGatewayMissingError(lookup, sandboxName);
+      break;
+    default:
+      printUnknownSandboxError(lookup, sandboxName);
+      break;
+  }
+  process.exit(1);
 }
 
 async function ensureLiveSandboxOrExit(sandboxName) {
@@ -675,74 +774,7 @@ async function ensureLiveSandboxOrExit(sandboxName) {
   if (lookup.state === "present") {
     return lookup;
   }
-  if (lookup.state === "missing") {
-    registry.removeSandbox(sandboxName);
-    const session = onboardSession.loadSession();
-    if (session && session.sandboxName === sandboxName) {
-      onboardSession.updateSession((s) => {
-        s.sandboxName = null;
-        return s;
-      });
-    }
-    console.error(`  Sandbox '${sandboxName}' is not present in the live OpenShell gateway.`);
-    console.error("  Removed stale local registry entry.");
-    console.error(
-      "  Run `nemoclaw list` to confirm the remaining sandboxes, or `nemoclaw onboard` to create a new one.",
-    );
-    process.exit(1);
-  }
-  if (lookup.state === "identity_drift") {
-    console.error(
-      `  Sandbox '${sandboxName}' is recorded locally, but the gateway trust material rotated after restart.`,
-    );
-    if (lookup.output) {
-      console.error(lookup.output);
-    }
-    console.error(
-      "  Existing sandbox connections cannot be reattached safely after this gateway identity change.",
-    );
-    console.error(
-      "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
-    );
-    process.exit(1);
-  }
-  if (lookup.state === "gateway_unreachable_after_restart") {
-    console.error(
-      `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
-    );
-    if (lookup.output) {
-      console.error(lookup.output);
-    }
-    console.error(
-      "  Retry `openshell gateway start --name nemoclaw` and verify `openshell status` is healthy before reconnecting.",
-    );
-    console.error(
-      "  If the gateway never becomes healthy, rebuild the gateway and then recreate the affected sandbox.",
-    );
-    process.exit(1);
-  }
-  if (lookup.state === "gateway_missing_after_restart") {
-    console.error(
-      `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
-    );
-    if (lookup.output) {
-      console.error(lookup.output);
-    }
-    console.error(
-      "  Start the gateway again with `openshell gateway start --name nemoclaw` before retrying.",
-    );
-    console.error(
-      "  If the gateway had to be rebuilt from scratch, recreate the affected sandbox afterward.",
-    );
-    process.exit(1);
-  }
-  console.error(`  Unable to verify sandbox '${sandboxName}' against the live OpenShell gateway.`);
-  if (lookup.output) {
-    console.error(lookup.output);
-  }
-  printGatewayLifecycleHint(lookup.output, sandboxName);
-  console.error("  Check `openshell status` and the active gateway, then retry.");
-  process.exit(1);
+  handleUnavailableSandboxLookup(lookup, sandboxName);
 }
 
 function printOldLogsCompatibilityGuidance(installedVersion = null) {
@@ -926,76 +958,94 @@ function uninstall(args) {
   });
 }
 
+function printCredentialsHelp() {
+  console.log("");
+  console.log("  Usage: nemoclaw credentials <subcommand>");
+  console.log("");
+  console.log("  Subcommands:");
+  console.log("    list                  List stored credential keys (values are not printed)");
+  console.log("    reset <KEY> [--yes]   Remove a stored credential so onboard re-prompts");
+  console.log("");
+  console.log("  Stored at ~/.nemoclaw/credentials.json (mode 600)");
+  console.log("");
+}
+
+function printCredentialKeys() {
+  const keys = listCredentialKeys();
+  if (keys.length === 0) {
+    console.log("  No stored credentials.");
+    return;
+  }
+  console.log("  Stored credentials:");
+  for (const key of keys) {
+    console.log(`    ${key}`);
+  }
+}
+
+function validateCredentialResetArgs(args) {
+  const key = args[1];
+  if (!key || key.startsWith("-")) {
+    console.error("  Usage: nemoclaw credentials reset <KEY> [--yes]");
+    console.error("  Run 'nemoclaw credentials list' to see stored keys.");
+    process.exit(1);
+  }
+  const extraArgs = args.slice(2).filter((arg) => arg !== "--yes" && arg !== "-y");
+  if (extraArgs.length > 0) {
+    console.error(`  Unknown argument(s) for credentials reset: ${extraArgs.join(", ")}`);
+    console.error("  Usage: nemoclaw credentials reset <KEY> [--yes]");
+    process.exit(1);
+  }
+  if (!listCredentialKeys().includes(key)) {
+    console.error(`  No stored credential found for '${key}'.`);
+    process.exit(1);
+  }
+  return key;
+}
+
+async function confirmCredentialReset(key, args) {
+  const skipPrompt = args.includes("--yes") || args.includes("-y");
+  if (skipPrompt) {
+    return true;
+  }
+  const answer = (await askPrompt(`  Remove stored credential '${key}'? [y/N]: `))
+    .trim()
+    .toLowerCase();
+  if (answer !== "y" && answer !== "yes") {
+    console.log("  Cancelled.");
+    return false;
+  }
+  return true;
+}
+
+function removeStoredCredentialOrExit(key) {
+  const removed = deleteCredential(key);
+  if (removed) {
+    console.log(`  Removed '${key}' from ~/.nemoclaw/credentials.json`);
+    console.log("  Re-run 'nemoclaw onboard' to enter a new value.");
+    return;
+  }
+  console.error(`  No stored credential found for '${key}'.`);
+  process.exit(1);
+}
+
 async function credentialsCommand(args) {
   const sub = args[0];
   if (!sub || sub === "help" || sub === "--help" || sub === "-h") {
-    console.log("");
-    console.log("  Usage: nemoclaw credentials <subcommand>");
-    console.log("");
-    console.log("  Subcommands:");
-    console.log("    list                  List stored credential keys (values are not printed)");
-    console.log("    reset <KEY> [--yes]   Remove a stored credential so onboard re-prompts");
-    console.log("");
-    console.log("  Stored at ~/.nemoclaw/credentials.json (mode 600)");
-    console.log("");
+    printCredentialsHelp();
     return;
   }
 
   if (sub === "list") {
-    const keys = listCredentialKeys();
-    if (keys.length === 0) {
-      console.log("  No stored credentials.");
-      return;
-    }
-    console.log("  Stored credentials:");
-    for (const k of keys) {
-      console.log(`    ${k}`);
-    }
+    printCredentialKeys();
     return;
   }
 
   if (sub === "reset") {
-    const key = args[1];
-    // Validate that <KEY> is a real positional argument, not a flag like
-    // `--yes` that the user passed without a key. Without this guard, the
-    // missing-key path would mistakenly look up '--yes' as a credential.
-    if (!key || key.startsWith("-")) {
-      console.error("  Usage: nemoclaw credentials reset <KEY> [--yes]");
-      console.error("  Run 'nemoclaw credentials list' to see stored keys.");
-      process.exit(1);
+    const key = validateCredentialResetArgs(args);
+    if (!(await confirmCredentialReset(key, args))) {
+      return;
     }
-    // Reject unknown trailing arguments to keep scripted use predictable.
-    const extraArgs = args.slice(2).filter((arg) => arg !== "--yes" && arg !== "-y");
-    if (extraArgs.length > 0) {
-      console.error(`  Unknown argument(s) for credentials reset: ${extraArgs.join(", ")}`);
-      console.error("  Usage: nemoclaw credentials reset <KEY> [--yes]");
-      process.exit(1);
-    }
-    // Only consult the persisted credentials file — getCredential() falls back
-    // to process.env, which would let an env-only key pass this check even
-    // though there is nothing on disk to delete.
-    if (!listCredentialKeys().includes(key)) {
-      console.error(`  No stored credential found for '${key}'.`);
-      process.exit(1);
-    }
-    const skipPrompt = args.includes("--yes") || args.includes("-y");
-    if (!skipPrompt) {
-      const answer = (await askPrompt(`  Remove stored credential '${key}'? [y/N]: `))
-        .trim()
-        .toLowerCase();
-      if (answer !== "y" && answer !== "yes") {
-        console.log("  Cancelled.");
-        return;
-      }
-    }
-    const removed = deleteCredential(key);
-    if (removed) {
-      console.log(`  Removed '${key}' from ~/.nemoclaw/credentials.json`);
-      console.log("  Re-run 'nemoclaw onboard' to enter a new value.");
-    } else {
-      console.error(`  No stored credential found for '${key}'.`);
-      process.exit(1);
-    }
+    removeStoredCredentialOrExit(key);
     return;
   }
 
@@ -1043,131 +1093,178 @@ async function sandboxConnect(sandboxName, { dangerouslySkipPermissions = false 
   exitWithSpawnResult(result);
 }
 
-// eslint-disable-next-line complexity
+function printSandboxSummary(sb, live) {
+  if (!sb) return;
+  console.log("");
+  console.log(`  Sandbox: ${sb.name}`);
+  console.log(`    Model:    ${(live && live.model) || sb.model || "unknown"}`);
+  console.log(`    Provider: ${(live && live.provider) || sb.provider || "unknown"}`);
+  console.log(`    GPU:      ${sb.gpuEnabled ? "yes" : "no"}`);
+  console.log(`    Policies: ${(sb.policies || []).join(", ") || "none"}`);
+  if (sb.dangerouslySkipPermissions) {
+    console.log(`    Permissions: dangerously-skip-permissions (open)`);
+  }
+}
+
+function clearSandboxFromSessionIfRecorded(sandboxName) {
+  registry.removeSandbox(sandboxName);
+  const session = onboardSession.loadSession();
+  if (session && session.sandboxName === sandboxName) {
+    onboardSession.updateSession((s) => {
+      s.sandboxName = null;
+      return s;
+    });
+  }
+}
+
+function printPresentSandboxLookup(lookup) {
+  console.log("");
+  if (lookup.recoveredGateway) {
+    console.log(
+      `  Recovered NemoClaw gateway runtime via ${lookup.recoveryVia || "gateway reattach"}.`,
+    );
+    console.log("");
+  }
+  console.log(lookup.output);
+}
+
+function printMissingSandboxLookup(sandboxName) {
+  clearSandboxFromSessionIfRecorded(sandboxName);
+  console.log("");
+  console.log(`  Sandbox '${sandboxName}' is not present in the live OpenShell gateway.`);
+  console.log("  Removed stale local registry entry.");
+}
+
+function printIdentityDriftSandboxLookup(lookup, sandboxName) {
+  console.log("");
+  console.log(
+    `  Sandbox '${sandboxName}' is recorded locally, but the gateway trust material rotated after restart.`,
+  );
+  if (lookup.output) {
+    console.log(lookup.output);
+  }
+  console.log(
+    "  Existing sandbox connections cannot be reattached safely after this gateway identity change.",
+  );
+  console.log(
+    "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
+  );
+}
+
+function printGatewayUnreachableSandboxLookup(lookup, sandboxName) {
+  console.log("");
+  console.log(
+    `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
+  );
+  if (lookup.output) {
+    console.log(lookup.output);
+  }
+  console.log(
+    "  Retry `openshell gateway start --name nemoclaw` and verify `openshell status` is healthy before reconnecting.",
+  );
+  console.log(
+    "  If the gateway never becomes healthy, rebuild the gateway and then recreate the affected sandbox.",
+  );
+}
+
+function printGatewayMissingSandboxLookup(lookup, sandboxName) {
+  console.log("");
+  console.log(
+    `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
+  );
+  if (lookup.output) {
+    console.log(lookup.output);
+  }
+  console.log(
+    "  Start the gateway again with `openshell gateway start --name nemoclaw` before retrying.",
+  );
+  console.log(
+    "  If the gateway had to be rebuilt from scratch, recreate the affected sandbox afterward.",
+  );
+}
+
+function printUnknownSandboxLookup(lookup, sandboxName) {
+  console.log("");
+  console.log(`  Could not verify sandbox '${sandboxName}' against the live OpenShell gateway.`);
+  if (lookup.output) {
+    console.log(lookup.output);
+  }
+  printGatewayLifecycleHint(lookup.output, sandboxName, console.log);
+}
+
+function printSandboxLookup(lookup, sandboxName) {
+  switch (lookup.state) {
+    case "present":
+      printPresentSandboxLookup(lookup);
+      break;
+    case "missing":
+      printMissingSandboxLookup(sandboxName);
+      break;
+    case "identity_drift":
+      printIdentityDriftSandboxLookup(lookup, sandboxName);
+      break;
+    case "gateway_unreachable_after_restart":
+      printGatewayUnreachableSandboxLookup(lookup, sandboxName);
+      break;
+    case "gateway_missing_after_restart":
+      printGatewayMissingSandboxLookup(lookup, sandboxName);
+      break;
+    default:
+      printUnknownSandboxLookup(lookup, sandboxName);
+      break;
+  }
+}
+
+function printSandboxProcessHealth(sandboxName, lookup) {
+  if (lookup.state !== "present") {
+    return;
+  }
+  const processCheck = checkAndRecoverSandboxProcesses(sandboxName, { quiet: true });
+  if (!processCheck.checked) {
+    return;
+  }
+  const _sa = agentRuntime.getSessionAgent(sandboxName);
+  const _saName = agentRuntime.getAgentDisplayName(_sa);
+  if (processCheck.wasRunning) {
+    console.log(`    ${_saName}: ${G}running${R}`);
+    return;
+  }
+  if (processCheck.recovered) {
+    console.log(`    ${_saName}: ${G}recovered${R} (gateway restarted after sandbox restart)`);
+    return;
+  }
+  console.log(`    ${_saName}: ${_RD}not running${R}`);
+  console.log("");
+  console.log(`  The sandbox is alive but the ${_saName} gateway process is not running.`);
+  console.log("  This typically happens after a gateway restart (e.g., laptop close/open).");
+  console.log("");
+  console.log("  To recover, run:");
+  console.log(`    ${D}nemoclaw ${sandboxName} connect${R}  (auto-recovers on connect)`);
+  console.log("  Or manually inside the sandbox:");
+  console.log(`    ${D}${agentRuntime.getGatewayCommand(_sa)}${R}`);
+}
+
+function printSandboxNimHealth(sb, sandboxName) {
+  const nimStat =
+    sb && sb.nimContainer ? nim.nimStatusByName(sb.nimContainer) : nim.nimStatus(sandboxName);
+  console.log(`    NIM:      ${nimStat.running ? `running (${nimStat.container})` : "not running"}`);
+  if (nimStat.running) {
+    console.log(`    Healthy:  ${nimStat.healthy ? "yes" : "no"}`);
+  }
+  console.log("");
+}
+
 async function sandboxStatus(sandboxName) {
   const sb = registry.getSandbox(sandboxName);
   const live = parseGatewayInference(
     captureOpenshell(["inference", "get"], { ignoreError: true }).output,
   );
-  if (sb) {
-    console.log("");
-    console.log(`  Sandbox: ${sb.name}`);
-    console.log(`    Model:    ${(live && live.model) || sb.model || "unknown"}`);
-    console.log(`    Provider: ${(live && live.provider) || sb.provider || "unknown"}`);
-    console.log(`    GPU:      ${sb.gpuEnabled ? "yes" : "no"}`);
-    console.log(`    Policies: ${(sb.policies || []).join(", ") || "none"}`);
-    if (sb.dangerouslySkipPermissions) {
-      console.log(`    Permissions: dangerously-skip-permissions (open)`);
-    }
-  }
+  printSandboxSummary(sb, live);
 
   const lookup = await getReconciledSandboxGatewayState(sandboxName);
-  if (lookup.state === "present") {
-    console.log("");
-    if (lookup.recoveredGateway) {
-      console.log(
-        `  Recovered NemoClaw gateway runtime via ${lookup.recoveryVia || "gateway reattach"}.`,
-      );
-      console.log("");
-    }
-    console.log(lookup.output);
-  } else if (lookup.state === "missing") {
-    registry.removeSandbox(sandboxName);
-    const session = onboardSession.loadSession();
-    if (session && session.sandboxName === sandboxName) {
-      onboardSession.updateSession((s) => {
-        s.sandboxName = null;
-        return s;
-      });
-    }
-    console.log("");
-    console.log(`  Sandbox '${sandboxName}' is not present in the live OpenShell gateway.`);
-    console.log("  Removed stale local registry entry.");
-  } else if (lookup.state === "identity_drift") {
-    console.log("");
-    console.log(
-      `  Sandbox '${sandboxName}' is recorded locally, but the gateway trust material rotated after restart.`,
-    );
-    if (lookup.output) {
-      console.log(lookup.output);
-    }
-    console.log(
-      "  Existing sandbox connections cannot be reattached safely after this gateway identity change.",
-    );
-    console.log(
-      "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
-    );
-  } else if (lookup.state === "gateway_unreachable_after_restart") {
-    console.log("");
-    console.log(
-      `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
-    );
-    if (lookup.output) {
-      console.log(lookup.output);
-    }
-    console.log(
-      "  Retry `openshell gateway start --name nemoclaw` and verify `openshell status` is healthy before reconnecting.",
-    );
-    console.log(
-      "  If the gateway never becomes healthy, rebuild the gateway and then recreate the affected sandbox.",
-    );
-  } else if (lookup.state === "gateway_missing_after_restart") {
-    console.log("");
-    console.log(
-      `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
-    );
-    if (lookup.output) {
-      console.log(lookup.output);
-    }
-    console.log(
-      "  Start the gateway again with `openshell gateway start --name nemoclaw` before retrying.",
-    );
-    console.log(
-      "  If the gateway had to be rebuilt from scratch, recreate the affected sandbox afterward.",
-    );
-  } else {
-    console.log("");
-    console.log(`  Could not verify sandbox '${sandboxName}' against the live OpenShell gateway.`);
-    if (lookup.output) {
-      console.log(lookup.output);
-    }
-    printGatewayLifecycleHint(lookup.output, sandboxName, console.log);
-  }
-
-  // OpenClaw process health inside the sandbox
-  if (lookup.state === "present") {
-    const processCheck = checkAndRecoverSandboxProcesses(sandboxName, { quiet: true });
-    if (processCheck.checked) {
-      const _sa = agentRuntime.getSessionAgent(sandboxName);
-      const _saName = agentRuntime.getAgentDisplayName(_sa);
-      if (processCheck.wasRunning) {
-        console.log(`    ${_saName}: ${G}running${R}`);
-      } else if (processCheck.recovered) {
-        console.log(`    ${_saName}: ${G}recovered${R} (gateway restarted after sandbox restart)`);
-      } else {
-        console.log(`    ${_saName}: ${_RD}not running${R}`);
-        console.log("");
-        console.log(`  The sandbox is alive but the ${_saName} gateway process is not running.`);
-        console.log("  This typically happens after a gateway restart (e.g., laptop close/open).");
-        console.log("");
-        console.log("  To recover, run:");
-        console.log(`    ${D}nemoclaw ${sandboxName} connect${R}  (auto-recovers on connect)`);
-        console.log("  Or manually inside the sandbox:");
-        console.log(`    ${D}${agentRuntime.getGatewayCommand(_sa)}${R}`);
-      }
-    }
-  }
-
-  // NIM health
-  const nimStat =
-    sb && sb.nimContainer ? nim.nimStatusByName(sb.nimContainer) : nim.nimStatus(sandboxName);
-  console.log(
-    `    NIM:      ${nimStat.running ? `running (${nimStat.container})` : "not running"}`,
-  );
-  if (nimStat.running) {
-    console.log(`    Healthy:  ${nimStat.healthy ? "yes" : "no"}`);
-  }
-  console.log("");
+  printSandboxLookup(lookup, sandboxName);
+  printSandboxProcessHealth(sandboxName, lookup);
+  printSandboxNimHealth(sb, sandboxName);
 }
 
 function sandboxLogs(sandboxName, follow) {
@@ -1269,40 +1366,53 @@ function cleanupSandboxServices(sandboxName) {
   }
 }
 
-async function sandboxDestroy(sandboxName, args = []) {
+async function confirmSandboxDestroy(sandboxName, args = []) {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
-  if (!skipConfirm) {
-    const answer = await askPrompt(
-      `  ${YW}Destroy sandbox '${sandboxName}'?${R} This cannot be undone. [y/N]: `,
-    );
-    if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
-      console.log("  Cancelled.");
-      return;
-    }
+  if (skipConfirm) {
+    return true;
   }
+  const answer = await askPrompt(
+    `  ${YW}Destroy sandbox '${sandboxName}'?${R} This cannot be undone. [y/N]: `,
+  );
+  if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
+    console.log("  Cancelled.");
+    return false;
+  }
+  return true;
+}
 
+function stopSandboxNim(sandboxName) {
   console.log(`  Stopping NIM for '${sandboxName}'...`);
-  const sb = registry.getSandbox(sandboxName);
-  if (sb && sb.nimContainer) nim.stopNimContainerByName(sb.nimContainer);
-  else nim.stopNimContainer(sandboxName);
+  const sandbox = registry.getSandbox(sandboxName);
+  if (sandbox && sandbox.nimContainer) {
+    nim.stopNimContainerByName(sandbox.nimContainer);
+    return;
+  }
+  nim.stopNimContainer(sandboxName);
+}
 
-  cleanupSandboxServices(sandboxName);
-
+function runSandboxDelete(sandboxName) {
   console.log(`  Deleting sandbox '${sandboxName}'...`);
   const deleteResult = runOpenshell(["sandbox", "delete", sandboxName], {
     ignoreError: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const { output: deleteOutput, alreadyGone } = getSandboxDeleteOutcome(deleteResult);
+  return { deleteResult, deleteOutput, alreadyGone };
+}
 
-  if (deleteResult.status !== 0 && !alreadyGone) {
-    if (deleteOutput) {
-      console.error(`  ${deleteOutput}`);
-    }
-    console.error(`  Failed to destroy sandbox '${sandboxName}'.`);
-    process.exit(deleteResult.status || 1);
+function exitOnSandboxDeleteFailure(deleteResult, deleteOutput, sandboxName) {
+  if (deleteResult.status === 0) {
+    return;
   }
+  if (deleteOutput) {
+    console.error(`  ${deleteOutput}`);
+  }
+  console.error(`  Failed to destroy sandbox '${sandboxName}'.`);
+  process.exit(deleteResult.status || 1);
+}
 
+function clearDestroyedSandboxSessionState(sandboxName) {
   const removed = registry.removeSandbox(sandboxName);
   const session = onboardSession.loadSession();
   if (session && session.sandboxName === sandboxName) {
@@ -1311,6 +1421,10 @@ async function sandboxDestroy(sandboxName, args = []) {
       return s;
     });
   }
+  return removed;
+}
+
+function cleanupLastSandboxGateway(deleteResult, alreadyGone, removed) {
   if (
     (deleteResult.status === 0 || alreadyGone) &&
     removed &&
@@ -1319,6 +1433,23 @@ async function sandboxDestroy(sandboxName, args = []) {
   ) {
     cleanupGatewayAfterLastSandbox();
   }
+}
+
+async function sandboxDestroy(sandboxName, args = []) {
+  if (!(await confirmSandboxDestroy(sandboxName, args))) {
+    return;
+  }
+
+  stopSandboxNim(sandboxName);
+  cleanupSandboxServices(sandboxName);
+
+  const { deleteResult, deleteOutput, alreadyGone } = runSandboxDelete(sandboxName);
+  if (deleteResult.status !== 0 && !alreadyGone) {
+    exitOnSandboxDeleteFailure(deleteResult, deleteOutput, sandboxName);
+  }
+
+  const removed = clearDestroyedSandboxSessionState(sandboxName);
+  cleanupLastSandboxGateway(deleteResult, alreadyGone, removed);
   if (alreadyGone) {
     console.log(`  Sandbox '${sandboxName}' was already absent from the live gateway.`);
   }
@@ -1327,8 +1458,7 @@ async function sandboxDestroy(sandboxName, args = []) {
 
 // ── Help ─────────────────────────────────────────────────────────
 
-function help() {
-  console.log(`
+const HELP_TEXT = `
   ${B}${G}NemoClaw${R}  ${D}v${getVersion()}${R}
   ${D}Deploy more secure, always-on AI assistants with a single command.${R}
 
@@ -1377,126 +1507,146 @@ function help() {
   ${D}Powered by NVIDIA OpenShell · Nemotron · Agent Toolkit
   Credentials saved in ~/.nemoclaw/credentials.json (mode 600)${R}
   ${D}https://www.nvidia.com/nemoclaw${R}
-`);
+`;
+
+function help() {
+  console.log(HELP_TEXT);
+}
+
+function printVersion() {
+  console.log(`nemoclaw v${getVersion()}`);
+}
+
+async function handleGlobalCommand(cmd, args) {
+  switch (cmd) {
+    case "onboard":
+      await onboard(args);
+      return true;
+    case "setup":
+      await setup(args);
+      return true;
+    case "setup-spark":
+      await setupSpark(args);
+      return true;
+    case "deploy":
+      await deploy(args[0]);
+      return true;
+    case "start":
+      await start();
+      return true;
+    case "stop":
+      stop();
+      return true;
+    case "status":
+      showStatus();
+      return true;
+    case "debug":
+      debug(args);
+      return true;
+    case "uninstall":
+      uninstall(args);
+      return true;
+    case "credentials":
+      await credentialsCommand(args);
+      return true;
+    case "list":
+      await listSandboxes();
+      return true;
+    case "--version":
+    case "-v":
+      printVersion();
+      return true;
+    default:
+      help();
+      return true;
+  }
+}
+
+async function handleSandboxCommand(cmd, args) {
+  const sandbox = registry.getSandbox(cmd);
+  if (!sandbox) {
+    return false;
+  }
+  validateName(cmd, "sandbox name");
+  const action = args[0] || "connect";
+  const actionArgs = args.slice(1);
+
+  switch (action) {
+    case "connect":
+      await sandboxConnect(cmd, {
+        dangerouslySkipPermissions: actionArgs.includes("--dangerously-skip-permissions"),
+      });
+      return true;
+    case "status":
+      await sandboxStatus(cmd);
+      return true;
+    case "logs":
+      sandboxLogs(cmd, actionArgs.includes("--follow"));
+      return true;
+    case "policy-add":
+      await sandboxPolicyAdd(cmd, actionArgs);
+      return true;
+    case "policy-list":
+      sandboxPolicyList(cmd);
+      return true;
+    case "destroy":
+      await sandboxDestroy(cmd, actionArgs);
+      return true;
+    default:
+      console.error(`  Unknown action: ${action}`);
+      console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, destroy`);
+      process.exit(1);
+  }
+}
+
+async function handleRecoveredConnectCommand(cmd, args) {
+  if (args[0] !== "connect") {
+    return false;
+  }
+  validateName(cmd, "sandbox name");
+  await recoverRegistryEntries({ requestedSandboxName: cmd });
+  if (registry.getSandbox(cmd)) {
+    await sandboxConnect(cmd);
+    return true;
+  }
+  return false;
+}
+
+function printUnknownCommandSuggestion(cmd) {
+  console.error(`  Unknown command: ${cmd}`);
+  console.error("");
+  const allNames = registry.listSandboxes().sandboxes.map((sandbox) => sandbox.name);
+  if (allNames.length > 0) {
+    console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
+    console.error(`  Try: nemoclaw <sandbox-name> connect`);
+    console.error("");
+  }
+  console.error(`  Run 'nemoclaw help' for usage.`);
+  process.exit(1);
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────
 
 const [cmd, ...args] = process.argv.slice(2);
 
-// eslint-disable-next-line complexity
 (async () => {
-  // No command → help
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
     help();
     return;
   }
 
-  // Global commands
   if (GLOBAL_COMMANDS.has(cmd)) {
-    switch (cmd) {
-      case "onboard":
-        await onboard(args);
-        break;
-      case "setup":
-        await setup(args);
-        break;
-      case "setup-spark":
-        await setupSpark(args);
-        break;
-      case "deploy":
-        await deploy(args[0]);
-        break;
-      case "start":
-        await start();
-        break;
-      case "stop":
-        stop();
-        break;
-      case "status":
-        showStatus();
-        break;
-      case "debug":
-        debug(args);
-        break;
-      case "uninstall":
-        uninstall(args);
-        break;
-      case "credentials":
-        await credentialsCommand(args);
-        break;
-      case "list":
-        await listSandboxes();
-        break;
-      case "--version":
-      case "-v": {
-        console.log(`nemoclaw v${getVersion()}`);
-        break;
-      }
-      default:
-        help();
-        break;
-    }
+    await handleGlobalCommand(cmd, args);
     return;
   }
 
-  // Sandbox-scoped commands: nemoclaw <name> <action>
-  const sandbox = registry.getSandbox(cmd);
-  if (sandbox) {
-    validateName(cmd, "sandbox name");
-    const action = args[0] || "connect";
-    const actionArgs = args.slice(1);
-
-    switch (action) {
-      case "connect":
-        await sandboxConnect(cmd, {
-          dangerouslySkipPermissions: actionArgs.includes("--dangerously-skip-permissions"),
-        });
-        break;
-      case "status":
-        await sandboxStatus(cmd);
-        break;
-      case "logs":
-        sandboxLogs(cmd, actionArgs.includes("--follow"));
-        break;
-      case "policy-add":
-        await sandboxPolicyAdd(cmd, actionArgs);
-        break;
-      case "policy-list":
-        sandboxPolicyList(cmd);
-        break;
-      case "destroy":
-        await sandboxDestroy(cmd, actionArgs);
-        break;
-      default:
-        console.error(`  Unknown action: ${action}`);
-        console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, destroy`);
-        process.exit(1);
-    }
+  if (await handleSandboxCommand(cmd, args)) {
     return;
   }
 
-  if (args[0] === "connect") {
-    validateName(cmd, "sandbox name");
-    await recoverRegistryEntries({ requestedSandboxName: cmd });
-    if (registry.getSandbox(cmd)) {
-      await sandboxConnect(cmd);
-      return;
-    }
+  if (await handleRecoveredConnectCommand(cmd, args)) {
+    return;
   }
 
-  // Unknown command — suggest
-  console.error(`  Unknown command: ${cmd}`);
-  console.error("");
-
-  // Check if it looks like a sandbox name with missing action
-  const allNames = registry.listSandboxes().sandboxes.map((s) => s.name);
-  if (allNames.length > 0) {
-    console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
-    console.error(`  Try: nemoclaw <sandbox-name> connect`);
-    console.error("");
-  }
-
-  console.error(`  Run 'nemoclaw help' for usage.`);
-  process.exit(1);
+  printUnknownCommandSuggestion(cmd);
 })();
