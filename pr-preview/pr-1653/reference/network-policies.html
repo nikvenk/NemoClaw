@@ -551,16 +551,6 @@ Landlock LSM enforcement applies on a best-effort basis.</p>
 <td><p><code class="docutils literal notranslate"><span class="pre">/usr/local/bin/claude</span></code>, <code class="docutils literal notranslate"><span class="pre">/usr/local/bin/openclaw</span></code></p></td>
 <td><p>All methods</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">github</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">github.com:443</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">/usr/bin/gh</span></code>, <code class="docutils literal notranslate"><span class="pre">/usr/bin/git</span></code></p></td>
-<td><p>All methods, all paths</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">github_rest_api</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">api.github.com:443</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">/usr/bin/gh</span></code></p></td>
-<td><p>GET, POST, PATCH, PUT, DELETE</p></td>
-</tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">clawhub</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">clawhub.ai:443</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">/usr/local/bin/openclaw</span></code>, <code class="docutils literal notranslate"><span class="pre">/usr/local/bin/node</span></code></p></td>
@@ -585,6 +575,12 @@ Landlock LSM enforcement applies on a best-effort basis.</p>
 </table>
 </div>
 <p>All endpoints use TLS termination and are enforced at port 443.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>GitHub access (<code class="docutils literal notranslate"><span class="pre">github.com</span></code>, <code class="docutils literal notranslate"><span class="pre">api.github.com</span></code>) is not included in the baseline policy.
+Apply the <code class="docutils literal notranslate"><span class="pre">github</span></code> preset during onboarding if your agent needs GitHub access.
+See <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize the Network Policy</span></a>.</p>
+</div>
 </section>
 <section id="inference">
 <h3>Inference<a class="headerlink" href="#inference" title="Link to this heading">#</a></h3>

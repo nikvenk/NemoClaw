@@ -1078,7 +1078,7 @@ If someone replaces a binary while the sandbox runs, the hash mismatch triggers 
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Default</p></td>
-<td><p>Each endpoint restricts access to specific binaries. For example, only <code class="docutils literal notranslate"><span class="pre">/usr/bin/gh</span></code> and <code class="docutils literal notranslate"><span class="pre">/usr/bin/git</span></code> can reach <code class="docutils literal notranslate"><span class="pre">github.com</span></code>. Binary paths support glob patterns (<code class="docutils literal notranslate"><span class="pre">*</span></code> matches one path component, <code class="docutils literal notranslate"><span class="pre">**</span></code> matches recursively).</p></td>
+<td><p>Each endpoint restricts access to specific binaries. For example, the <code class="docutils literal notranslate"><span class="pre">github</span></code> preset restricts access so only <code class="docutils literal notranslate"><span class="pre">/usr/bin/gh</span></code> and <code class="docutils literal notranslate"><span class="pre">/usr/bin/git</span></code> can reach <code class="docutils literal notranslate"><span class="pre">github.com</span></code>. Binary paths support glob patterns (<code class="docutils literal notranslate"><span class="pre">*</span></code> matches one path component, <code class="docutils literal notranslate"><span class="pre">**</span></code> matches recursively).</p></td>
 </tr>
 <tr class="row-odd"><td><p>What you can change</p></td>
 <td><p>Add binaries to an endpoint entry, or omit the <code class="docutils literal notranslate"><span class="pre">binaries</span></code> field to allow any executable.</p></td>
@@ -1183,33 +1183,41 @@ The <code class="docutils literal notranslate"><span class="pre">protocol</span>
 </tr>
 </thead>
 <tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">brave</span></code></p></td>
+<td><p>Brave Search API.</p></td>
+<td><p>Agent can issue search queries.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">brew</span></code></p></td>
+<td><p>Homebrew (Linuxbrew) package manager.</p></td>
+<td><p>Allows installing arbitrary Homebrew packages, which may contain malicious code.</p></td>
+</tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">discord</span></code></p></td>
 <td><p>Discord REST API, WebSocket gateway, CDN.</p></td>
 <td><p>CDN endpoint (<code class="docutils literal notranslate"><span class="pre">cdn.discordapp.com</span></code>) allows GET to any path. WebSocket uses <code class="docutils literal notranslate"><span class="pre">access:</span> <span class="pre">full</span></code> (no inspection).</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">docker</span></code></p></td>
-<td><p>Docker Hub, NVIDIA container registry.</p></td>
-<td><p>Allows pulling arbitrary container images into the sandbox.</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">github</span></code></p></td>
+<td><p>GitHub and GitHub REST API.</p></td>
+<td><p>Gives agent read/write access to repositories and issues via <code class="docutils literal notranslate"><span class="pre">gh</span></code> and <code class="docutils literal notranslate"><span class="pre">git</span></code>.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">huggingface</span></code></p></td>
-<td><p>Hugging Face model registry.</p></td>
-<td><p>Allows downloading arbitrary models and datasets.</p></td>
+<td><p>Hugging Face Hub (download-only) and inference router.</p></td>
+<td><p>Allows downloading arbitrary models and datasets. POST is restricted to the inference router only.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">jira</span></code></p></td>
 <td><p>Atlassian Jira API.</p></td>
 <td><p>Gives agent read/write access to project issues and comments.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">npm</span></code></p></td>
-<td><p>npm and Yarn registries.</p></td>
-<td><p>Allows installing arbitrary npm packages, which may contain malicious code.</p></td>
+<td><p>npm and Yarn registries (GET-only).</p></td>
+<td><p>Allows installing arbitrary npm packages, which may contain malicious code. Publishing is blocked.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">outlook</span></code></p></td>
 <td><p>Microsoft 365, Outlook.</p></td>
 <td><p>Gives agent access to email.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pypi</span></code></p></td>
-<td><p>Python Package Index.</p></td>
-<td><p>Allows installing arbitrary Python packages, which may contain malicious code.</p></td>
+<td><p>Python Package Index (GET and HEAD only).</p></td>
+<td><p>Allows installing arbitrary Python packages, which may contain malicious code. Publishing is blocked.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">slack</span></code></p></td>
 <td><p>Slack API, Socket Mode, webhooks.</p></td>
