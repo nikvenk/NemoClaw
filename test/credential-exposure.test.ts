@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const ONBOARD_TS = path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts");
+const ONBOARD_TS = path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts");
 const ONBOARD_PROVIDER_TS = path.join(
   import.meta.dirname,
   "..",

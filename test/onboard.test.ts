@@ -1736,7 +1736,7 @@ const { setupInference } = require(${onboardPath});
 
   it("uses split curl timeout args and does not mislabel curl usage errors as timeouts", () => {
     const onboardSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts"),
       "utf-8",
     );
     const probeSource = fs.readFileSync(
@@ -1769,7 +1769,7 @@ const { setupInference } = require(${onboardPath});
 
   it("starts the sandbox step before prompting for the sandbox name", () => {
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-flow.ts"),
       "utf-8",
     );
 
@@ -1780,8 +1780,8 @@ const { setupInference } = require(${onboardPath});
   });
 
   it("prints numbered step headers even when onboarding skips resumed steps", () => {
-    const onboardSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+    const flowSource = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-flow.ts"),
       "utf-8",
     );
     const sharedSource = fs.readFileSync(
@@ -1795,16 +1795,16 @@ const { setupInference } = require(${onboardPath});
       /function skippedStepMessage\(stepName, detail, reason = "resume"\)/,
     );
     assert.match(sharedSource, /step\(stepInfo\.number, 8, stepInfo\.title\);/);
-    assert.match(onboardSource, /skippedStepMessage\("openclaw", sandboxName\)/);
+    assert.match(flowSource, /skippedStepMessage\("openclaw", sandboxName\)/);
     assert.match(
-      onboardSource,
+      flowSource,
       /skippedStepMessage\("policies", \(recordedPolicyPresets \|\| \[\]\)\.join\(", "\)\)/,
     );
   });
 
   it("delegates sandbox-create progress streaming to the extracted helper module", () => {
     const onboardSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-core.ts"),
       "utf-8",
     );
     const { streamSandboxCreate } = require("../dist/lib/sandbox-create-stream");
