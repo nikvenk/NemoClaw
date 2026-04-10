@@ -94,7 +94,7 @@ Each topic file has a `type` field that categorizes the memory entry:
 |---|---|
 | `user` | Preferences, habits, and context about the user. |
 | `project` | Project structure, conventions, and tooling choices. |
-| `decision` | Architectural or design decisions with rationale. |
+| `feedback` | Guidance on how to approach work, corrections, and confirmations. |
 | `reference` | Frequently-referenced facts, APIs, or commands. |
 
 **Daily notes vs curated memory:**

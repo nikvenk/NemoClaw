@@ -9,7 +9,7 @@ import YAML from "yaml";
 // Types
 // ---------------------------------------------------------------------------
 
-export type MemoryType = "user" | "project" | "decision" | "reference";
+export type MemoryType = "user" | "project" | "feedback" | "reference";
 
 export interface MemoryIndexEntry {
   slug: string;
@@ -43,7 +43,7 @@ export interface MemoryStats {
 // Constants
 // ---------------------------------------------------------------------------
 
-export const MEMORY_TYPES: readonly MemoryType[] = ["user", "project", "decision", "reference"];
+export const MEMORY_TYPES: readonly MemoryType[] = ["user", "project", "feedback", "reference"];
 
 export const INDEX_SOFT_CAP = 200;
 export const TOPIC_SOFT_CAP = 500;
@@ -221,7 +221,7 @@ export function getMemoryStats(
   const topicsByType: Record<MemoryType, number> = {
     user: 0,
     project: 0,
-    decision: 0,
+    feedback: 0,
     reference: 0,
   };
   for (const entry of index.entries) {

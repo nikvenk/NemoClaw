@@ -306,7 +306,7 @@ describe("memory/index", () => {
     it("round-trips with loadMemoryIndex", () => {
       const original: MemoryIndex = {
         entries: [
-          makeEntry({ slug: "a", title: "Alpha", type: "decision", updatedAt: "2026-03-20" }),
+          makeEntry({ slug: "a", title: "Alpha", type: "feedback", updatedAt: "2026-03-20" }),
           makeEntry({ slug: "b", title: "Beta", type: "project", updatedAt: "2026-03-18" }),
         ],
       };
@@ -346,15 +346,15 @@ describe("memory/index", () => {
 
   describe("saveTopic", () => {
     it("writes topic file with frontmatter", () => {
-      const fm = makeFrontmatter({ name: "new-topic", type: "decision" });
-      saveTopic("new-topic", fm, "\nDecision rationale.\n", TOPICS_PATH);
+      const fm = makeFrontmatter({ name: "new-topic", type: "feedback" });
+      saveTopic("new-topic", fm, "\nFeedback rationale.\n", TOPICS_PATH);
 
       const content = store.get(topicPath("new-topic"));
       if (content === undefined) throw new Error("expected file");
       expect(content).toContain("---");
       expect(content).toContain("name: new-topic");
-      expect(content).toContain("type: decision");
-      expect(content).toContain("Decision rationale.");
+      expect(content).toContain("type: feedback");
+      expect(content).toContain("Feedback rationale.");
     });
 
     it("creates topics directory if missing", () => {
@@ -429,7 +429,7 @@ describe("memory/index", () => {
         entries: [
           makeEntry({ slug: "a", type: "user" }),
           makeEntry({ slug: "b", type: "user" }),
-          makeEntry({ slug: "c", type: "decision" }),
+          makeEntry({ slug: "c", type: "feedback" }),
         ],
       };
       saveMemoryIndex(index, INDEX_PATH);
@@ -438,7 +438,7 @@ describe("memory/index", () => {
       const stats = getMemoryStats(INDEX_PATH, TOPICS_PATH);
       expect(stats.indexEntryCount).toBe(3);
       expect(stats.topicsByType.user).toBe(2);
-      expect(stats.topicsByType.decision).toBe(1);
+      expect(stats.topicsByType.feedback).toBe(1);
       expect(stats.topicsByType.project).toBe(0);
       expect(stats.topicsByType.reference).toBe(0);
     });

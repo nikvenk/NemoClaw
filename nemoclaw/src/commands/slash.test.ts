@@ -20,7 +20,7 @@ vi.mock("../memory/index.js", () => ({
   getMemoryStats: vi.fn(),
   INDEX_SOFT_CAP: 200,
   TOPIC_SOFT_CAP: 500,
-  MEMORY_TYPES: ["user", "project", "decision", "reference"],
+  MEMORY_TYPES: ["user", "project", "feedback", "reference"],
 }));
 
 import { handleSlashCommand } from "./slash.js";
@@ -86,7 +86,7 @@ describe("commands/slash", () => {
       indexLineCount: 0,
       indexOverCap: false,
       topicCount: 0,
-      topicsByType: { user: 0, project: 0, decision: 0, reference: 0 },
+      topicsByType: { user: 0, project: 0, feedback: 0, reference: 0 },
       oversizedTopics: [],
     } satisfies MemoryStats);
   });
@@ -281,7 +281,7 @@ describe("commands/slash", () => {
         indexLineCount: 12,
         indexOverCap: false,
         topicCount: 5,
-        topicsByType: { user: 2, project: 1, decision: 1, reference: 1 },
+        topicsByType: { user: 2, project: 1, feedback: 1, reference: 1 },
         oversizedTopics: [],
       });
       const result = handleSlashCommand(makeCtx("memory"), makeApi());
@@ -296,7 +296,7 @@ describe("commands/slash", () => {
         indexLineCount: 210,
         indexOverCap: true,
         topicCount: 201,
-        topicsByType: { user: 201, project: 0, decision: 0, reference: 0 },
+        topicsByType: { user: 201, project: 0, feedback: 0, reference: 0 },
         oversizedTopics: [],
       });
       const result = handleSlashCommand(makeCtx("memory"), makeApi());
@@ -309,7 +309,7 @@ describe("commands/slash", () => {
         indexLineCount: 8,
         indexOverCap: false,
         topicCount: 2,
-        topicsByType: { user: 1, project: 1, decision: 0, reference: 0 },
+        topicsByType: { user: 1, project: 1, feedback: 0, reference: 0 },
         oversizedTopics: ["big-topic", "huge-topic"],
       });
       const result = handleSlashCommand(makeCtx("memory"), makeApi());
