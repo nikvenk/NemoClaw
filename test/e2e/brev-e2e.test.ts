@@ -413,24 +413,13 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       );
       console.log(`[${elapsed()}] Code synced`);
 
-      // The full E2E test (test-full-e2e.sh) runs install.sh --non-interactive
-      // which handles Node.js, OpenShell, NemoClaw install, and onboard from
-      // scratch. Skip the dep install, plugin build, npm link, and onboard
-      // steps — they'd all be redone by install.sh and waste ~10 min.
-      const needsBeforeAllSetup = TEST_SUITE !== "full";
-
-      if (!needsBeforeAllSetup) {
-        console.log(
-          `[${elapsed()}] Skipping beforeAll setup (TEST_SUITE=full — install.sh handles everything)`,
-        );
-      }
-
-      if (needsBeforeAllSetup) {
       // Re-install deps for our branch (most already cached by launchable).
       // Use `npm install` instead of `npm ci` because the rsync'd branch code
       // may have a package.json/package-lock.json that are slightly out of sync
       // (e.g. new transitive deps). npm install is more forgiving and still
       // benefits from the launchable's pre-cached node_modules.
+      // Always run this even for TEST_SUITE=full — it primes the cache so
+      // install.sh's npm install is a fast no-op.
       console.log(`[${elapsed()}] Running npm install to sync dependencies...`);
       ssh(
         [
@@ -443,6 +432,18 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       );
       console.log(`[${elapsed()}] Dependencies synced`);
 
+      // When TEST_SUITE=full, test-full-e2e.sh runs install.sh which handles
+      // plugin build, npm link, and onboard from scratch. Skip those steps
+      // to avoid ~8 min of redundant work.
+      const needsBeforeAllSetup = TEST_SUITE !== "full";
+
+      if (!needsBeforeAllSetup) {
+        console.log(
+          `[${elapsed()}] Skipping plugin build, npm link, and onboard (TEST_SUITE=full — install.sh handles it)`,
+        );
+      }
+
+      if (needsBeforeAllSetup) {
       // Rebuild TS plugin for our branch (reinstall plugin deps in case they changed)
       console.log(`[${elapsed()}] Building TypeScript plugin...`);
       ssh(
