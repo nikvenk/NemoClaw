@@ -1780,17 +1780,24 @@ const { setupInference } = require(${onboardPath});
   });
 
   it("prints numbered step headers even when onboarding skips resumed steps", () => {
-    const source = fs.readFileSync(
+    const onboardSource = fs.readFileSync(
       path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
       "utf-8",
     );
+    const sharedSource = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-shared.ts"),
+      "utf-8",
+    );
 
-    assert.match(source, /const ONBOARD_STEP_INDEX = \{/);
-    assert.match(source, /function skippedStepMessage\(stepName, detail, reason = "resume"\)/);
-    assert.match(source, /step\(stepInfo\.number, 8, stepInfo\.title\);/);
-    assert.match(source, /skippedStepMessage\("openclaw", sandboxName\)/);
+    assert.match(sharedSource, /const ONBOARD_STEP_INDEX = \{/);
     assert.match(
-      source,
+      sharedSource,
+      /function skippedStepMessage\(stepName, detail, reason = "resume"\)/,
+    );
+    assert.match(sharedSource, /step\(stepInfo\.number, 8, stepInfo\.title\);/);
+    assert.match(onboardSource, /skippedStepMessage\("openclaw", sandboxName\)/);
+    assert.match(
+      onboardSource,
       /skippedStepMessage\("policies", \(recordedPolicyPresets \|\| \[\]\)\.join\(", "\)\)/,
     );
   });

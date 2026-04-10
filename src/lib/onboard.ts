@@ -81,29 +81,8 @@ const { createOnboardProviderHelpers } = require("./onboard-provider");
 const { createOnboardProviderValidationHelpers } = require("./onboard-provider-validation");
 const { createOnboardSandboxHelpers } = require("./onboard-sandbox");
 const { createOnboardSelectionHelpers } = require("./onboard-selection");
+const { createOnboardSharedHelpers } = require("./onboard-shared");
 const { createOnboardWebSearchHelpers } = require("./onboard-web-search");
-
-/**
- * Create a temp file inside a directory with a cryptographically random name.
- * Uses fs.mkdtempSync (OS-level mkdtemp) to avoid predictable filenames that
- * could be exploited via symlink attacks on shared /tmp.
- * Ref: https://github.com/NVIDIA/NemoClaw/issues/1093
- */
-function secureTempFile(prefix, ext = "") {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
-  return path.join(dir, `${prefix}${ext}`);
-}
-
-/**
- * Safely remove a mkdtemp-created directory.  Guards against accidentally
- * deleting the system temp root if a caller passes os.tmpdir() itself.
- */
-function cleanupTempDir(filePath, expectedPrefix) {
-  const parentDir = path.dirname(filePath);
-  if (parentDir !== os.tmpdir() && path.basename(parentDir).startsWith(`${expectedPrefix}-`)) {
-    fs.rmSync(parentDir, { recursive: true, force: true });
-  }
-}
 
 const EXPERIMENTAL = process.env.NEMOCLAW_EXPERIMENTAL === "1";
 const USE_COLOR = !process.env.NO_COLOR && !!process.stdout.isTTY;
@@ -194,29 +173,35 @@ const DISCORD_SNOWFLAKE_RE = /^[0-9]{17,19}$/;
 let NON_INTERACTIVE = false;
 let RECREATE_SANDBOX = false;
 
-function isNonInteractive() {
-  return NON_INTERACTIVE || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
-}
-
-function isRecreateSandbox() {
-  return RECREATE_SANDBOX || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
-}
-
-function note(message) {
-  console.log(`${DIM}${message}${RESET}`);
-}
-
-// Prompt wrapper: returns env var value or default in non-interactive mode,
-// otherwise prompts the user interactively.
-async function promptOrDefault(question, envVar, defaultValue) {
-  if (isNonInteractive()) {
-    const val = envVar ? process.env[envVar] : null;
-    const result = val || defaultValue;
-    note(`  [non-interactive] ${question.trim()} → ${result}`);
-    return result;
-  }
-  return prompt(question);
-}
+const {
+  cleanupTempDir,
+  encodeDockerJsonArg,
+  exitOnboardFromPrompt,
+  getNavigationChoice,
+  getRequestedModelHint,
+  getRequestedProviderHint,
+  getRequestedSandboxNameHint,
+  getResumeConfigConflicts,
+  getResumeSandboxConflict,
+  hydrateCredentialEnv,
+  isAffirmativeAnswer,
+  isNonInteractive,
+  isRecreateSandbox,
+  note,
+  promptOrDefault,
+  secureTempFile,
+  skippedStepMessage,
+  startRecordedStep,
+  step,
+} = createOnboardSharedHelpers({
+  DIM,
+  RESET,
+  getCredential,
+  getNonInteractiveFlag: () => NON_INTERACTIVE,
+  getRecreateSandboxFlag: () => RECREATE_SANDBOX,
+  onboardSession,
+  prompt,
+});
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -235,12 +220,6 @@ const {
  * Preserves blank lines and comments. Returns the cleaned string.
  */
 const { streamSandboxCreate } = sandboxCreateStream;
-
-function step(n, total, msg) {
-  console.log("");
-  console.log(`  [${n}/${total}] ${msg}`);
-  console.log(`  ${"─".repeat(50)}`);
-}
 
 function getInstalledOpenshellVersion(versionOutput = null) {
   const output = String(versionOutput ?? runCapture("openshell -V", { ignoreError: true })).trim();
@@ -334,31 +313,7 @@ const {
   formatEnvAssignment,
   parsePolicyPresetEnv,
 } = urlUtils;
-
-function hydrateCredentialEnv(envName) {
-  if (!envName) return null;
-  const value = getCredential(envName);
-  if (value) {
-    process.env[envName] = value;
-  }
-  return value || null;
-}
-
 const { getCurlTimingArgs, summarizeCurlFailure, summarizeProbeFailure, runCurlProbe } = httpProbe;
-
-function getNavigationChoice(value = "") {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase();
-  if (normalized === "back") return "back";
-  if (normalized === "exit" || normalized === "quit") return "exit";
-  return null;
-}
-
-function exitOnboardFromPrompt() {
-  console.log("  Exiting onboarding.");
-  process.exit(1);
-}
 
 const { getTransportRecoveryMessage, getProbeRecovery } = validationRecovery;
 
@@ -504,18 +459,6 @@ const {
   validateLocalProvider,
   validateOllamaModel,
 });
-
-function encodeDockerJsonArg(value) {
-  return Buffer.from(JSON.stringify(value || {}), "utf8").toString("base64");
-}
-
-function isAffirmativeAnswer(value) {
-  return ["y", "yes"].includes(
-    String(value || "")
-      .trim()
-      .toLowerCase(),
-  );
-}
 
 const {
   configureWebSearch,
@@ -714,112 +657,6 @@ const { validateAnthropicModel, validateOpenAiLikeModel } = providerModels;
 const { shouldIncludeBuildContextPath, copyBuildContextDir, printSandboxCreateRecoveryHints } =
   buildContext;
 // classifySandboxCreateFailure — see validation import above
-
-function getRequestedSandboxNameHint() {
-  const raw = process.env.NEMOCLAW_SANDBOX_NAME;
-  if (typeof raw !== "string") return null;
-  const normalized = raw.trim().toLowerCase();
-  return normalized || null;
-}
-
-function getResumeSandboxConflict(session) {
-  const requestedSandboxName = getRequestedSandboxNameHint();
-  if (!requestedSandboxName || !session?.sandboxName) {
-    return null;
-  }
-  return requestedSandboxName !== session.sandboxName
-    ? { requestedSandboxName, recordedSandboxName: session.sandboxName }
-    : null;
-}
-
-function getRequestedProviderHint(nonInteractive = isNonInteractive()) {
-  return nonInteractive ? getNonInteractiveProvider() : null;
-}
-
-function getRequestedModelHint(nonInteractive = isNonInteractive()) {
-  if (!nonInteractive) return null;
-  const providerKey = getRequestedProviderHint(nonInteractive) || "cloud";
-  return getNonInteractiveModel(providerKey);
-}
-
-function getEffectiveProviderName(providerKey) {
-  if (!providerKey) return null;
-  if (REMOTE_PROVIDER_CONFIG[providerKey]) {
-    return REMOTE_PROVIDER_CONFIG[providerKey].providerName;
-  }
-
-  switch (providerKey) {
-    case "nim-local":
-      return "nvidia-nim";
-    case "ollama":
-      return "ollama-local";
-    case "vllm":
-      return "vllm-local";
-    default:
-      return providerKey;
-  }
-}
-
-function getResumeConfigConflicts(session, opts = {}) {
-  const conflicts = [];
-  const nonInteractive = opts.nonInteractive ?? isNonInteractive();
-
-  const sandboxConflict = getResumeSandboxConflict(session);
-  if (sandboxConflict) {
-    conflicts.push({
-      field: "sandbox",
-      requested: sandboxConflict.requestedSandboxName,
-      recorded: sandboxConflict.recordedSandboxName,
-    });
-  }
-
-  const requestedProvider = getRequestedProviderHint(nonInteractive);
-  const effectiveRequestedProvider = getEffectiveProviderName(requestedProvider);
-  if (
-    effectiveRequestedProvider &&
-    session?.provider &&
-    effectiveRequestedProvider !== session.provider
-  ) {
-    conflicts.push({
-      field: "provider",
-      requested: effectiveRequestedProvider,
-      recorded: session.provider,
-    });
-  }
-
-  const requestedModel = getRequestedModelHint(nonInteractive);
-  if (requestedModel && session?.model && requestedModel !== session.model) {
-    conflicts.push({
-      field: "model",
-      requested: requestedModel,
-      recorded: session.model,
-    });
-  }
-
-  const requestedFrom = opts.fromDockerfile ? path.resolve(opts.fromDockerfile) : null;
-  const recordedFrom = session?.metadata?.fromDockerfile
-    ? path.resolve(session.metadata.fromDockerfile)
-    : null;
-  if (requestedFrom !== recordedFrom) {
-    conflicts.push({
-      field: "fromDockerfile",
-      requested: requestedFrom,
-      recorded: recordedFrom,
-    });
-  }
-
-  const requestedAgent = opts.agent || process.env.NEMOCLAW_AGENT || null;
-  const recordedAgent = session?.agent || null;
-  if (requestedAgent && recordedAgent && requestedAgent !== recordedAgent) {
-    conflicts.push({
-      field: "agent",
-      requested: requestedAgent,
-      recorded: recordedAgent,
-    });
-  }
-
-  return conflicts;
-}
 
 function getContainerRuntime() {
   const info = runCapture("docker info 2>/dev/null", { ignoreError: true });
@@ -1408,38 +1245,6 @@ const {
   step,
   waitForSandboxReady,
 });
-
-function startRecordedStep(stepName, updates = {}) {
-  onboardSession.markStepStarted(stepName);
-  if (Object.keys(updates).length > 0) {
-    onboardSession.updateSession((session) => {
-      if (typeof updates.sandboxName === "string") session.sandboxName = updates.sandboxName;
-      if (typeof updates.provider === "string") session.provider = updates.provider;
-      if (typeof updates.model === "string") session.model = updates.model;
-      return session;
-    });
-  }
-}
-
-const ONBOARD_STEP_INDEX = {
-  preflight: { number: 1, title: "Preflight checks" },
-  gateway: { number: 2, title: "Starting OpenShell gateway" },
-  provider_selection: { number: 3, title: "Configuring inference (NIM)" },
-  inference: { number: 4, title: "Setting up inference provider" },
-  messaging: { number: 5, title: "Messaging channels" },
-  sandbox: { number: 6, title: "Creating sandbox" },
-  openclaw: { number: 7, title: "Setting up OpenClaw inside sandbox" },
-  policies: { number: 8, title: "Policy presets" },
-};
-
-function skippedStepMessage(stepName, detail, reason = "resume") {
-  const stepInfo = ONBOARD_STEP_INDEX[stepName];
-  if (stepInfo) {
-    step(stepInfo.number, 8, stepInfo.title);
-  }
-  const prefix = reason === "reuse" ? "[reuse]" : "[resume]";
-  console.log(`  ${prefix} Skipping ${stepName}${detail ? ` (${detail})` : ""}`);
-}
 
 // ── Main ─────────────────────────────────────────────────────────
 
