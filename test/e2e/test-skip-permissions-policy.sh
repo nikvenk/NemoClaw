@@ -46,7 +46,6 @@ fi
 
 PASS=0
 FAIL=0
-SKIP=0
 TOTAL=0
 
 pass() {
@@ -58,11 +57,6 @@ fail() {
   ((FAIL++))
   ((TOTAL++))
   printf '\033[31m  FAIL: %s\033[0m\n' "$1"
-}
-skip() {
-  ((SKIP++))
-  ((TOTAL++))
-  printf '\033[33m  SKIP: %s\033[0m\n' "$1"
 }
 section() {
   echo ""
@@ -240,53 +234,42 @@ fi
 # ══════════════════════════════════════════════════════════════════
 section "Phase 4: Verify sandbox egress"
 
-# The permissive policy uses `access: full` (CONNECT tunnel, no L7 filtering).
-# This opens the sandbox *firewall* for direct connections — the HTTP CONNECT
-# proxy (HTTPS_PROXY) does not handle `access: full` tunnels; that's expected
-# and documented (see 05-network-policy.sh NEMOCLAW_E2E_CURL_NOPROXY).
+# All sandbox traffic routes through the OpenShell proxy (HTTPS_PROXY).
+# When the policy is Pending (the bug), the proxy rejects everything
+# with 403 Forbidden. When Active, it allows CONNECT tunnels for
+# `access: full` endpoints.
 #
-# Test strategy:
-#   4a: openshell sandbox exec — matches the bug reporter's exact repro command
-#       Uses --noproxy '*' to test the firewall path, not the HTTP proxy.
-#   4b: npm ping via sandbox exec — application-level proof that egress works
-#       (proven pattern from 05-network-policy.sh).
-#
-# When the policy is Pending (the bug), BOTH fail because the firewall has no
-# active rules — all traffic is blocked. When Active, both succeed.
+# Uses `openshell sandbox exec` — the same command the bug reporter used.
 
-# 4a: curl api.github.com via openshell sandbox exec (bug reporter's exact command)
-info "[EGRESS] Testing curl https://api.github.com/ via openshell sandbox exec..."
-egress_response=$(openshell sandbox exec -n "$SANDBOX_NAME" -- \
-  curl --noproxy '*' -s --connect-timeout 10 -o /dev/null -w '%{http_code}' \
-  https://api.github.com/ 2>&1) || true
-
-egress_code=$(echo "$egress_response" | tr -d '\r' | tail -1)
-if [ "$egress_code" = "200" ]; then
-  pass "[EGRESS] curl https://api.github.com/ returned HTTP 200"
-elif [ "$egress_code" = "403" ]; then
-  fail "[EGRESS] curl https://api.github.com/ returned 403 — firewall policy NOT active"
-  info "This is the exact symptom from the bug report"
-elif echo "$egress_code" | grep -qE '^[23][0-9][0-9]$'; then
-  pass "[EGRESS] curl https://api.github.com/ returned HTTP $egress_code (egress works)"
-else
-  fail "[EGRESS] curl https://api.github.com/ returned '$egress_code' — egress blocked"
-  info "Full response: ${egress_response:0:500}"
-fi
-
-# 4b: npm ping via sandbox exec — proves application-level egress to registry.npmjs.org
+# 4a: npm ping — application-level proof that egress works through the proxy
 info "[EGRESS] Testing npm ping from inside sandbox..."
 npm_result=$(openshell sandbox exec -n "$SANDBOX_NAME" -- \
-  env NO_PROXY='*' npm ping --silent 2>&1) || true
+  npm ping --silent 2>&1) || true
 npm_exit=$?
 
 if [ "$npm_exit" -eq 0 ]; then
-  pass "[EGRESS] npm ping succeeded (registry.npmjs.org reachable)"
+  pass "[EGRESS] npm ping succeeded (registry.npmjs.org reachable through proxy)"
 elif echo "$npm_result" | grep -qi "403\|BLOCKED\|ECONNREFUSED"; then
-  fail "[EGRESS] npm ping failed — egress blocked: ${npm_result:0:200}"
+  fail "[EGRESS] npm ping failed — proxy rejected traffic: ${npm_result:0:200}"
 else
-  # npm ping can fail for non-policy reasons (DNS, npm config); don't hard-fail
   info "npm ping exited $npm_exit: ${npm_result:0:200}"
-  skip "[EGRESS] npm ping — inconclusive (exit $npm_exit, not a policy 403)"
+  fail "[EGRESS] npm ping failed (exit $npm_exit)"
+fi
+
+# 4b: curl api.github.com through the proxy (bug reporter's exact target)
+info "[EGRESS] Testing curl https://api.github.com/ via openshell sandbox exec..."
+egress_response=$(openshell sandbox exec -n "$SANDBOX_NAME" -- \
+  curl -s --connect-timeout 15 -o /dev/null -w '%{http_code}' \
+  https://api.github.com/ 2>&1) || true
+
+egress_code=$(echo "$egress_response" | tr -d '\r' | tail -1)
+if echo "$egress_code" | grep -qE '^[23][0-9][0-9]$'; then
+  pass "[EGRESS] curl https://api.github.com/ returned HTTP $egress_code"
+elif [ "$egress_code" = "403" ]; then
+  fail "[EGRESS] curl https://api.github.com/ returned 403 Forbidden from proxy"
+else
+  info "curl returned code '$egress_code': ${egress_response:0:500}"
+  fail "[EGRESS] curl https://api.github.com/ failed (code $egress_code)"
 fi
 
 # ══════════════════════════════════════════════════════════════════
@@ -312,7 +295,7 @@ echo "========================================"
 echo "  Skip-Permissions Policy E2E Results:"
 echo "    Passed:  $PASS"
 echo "    Failed:  $FAIL"
-echo "    Skipped: $SKIP"
+echo ""
 echo "    Total:   $TOTAL"
 echo "========================================"
 
