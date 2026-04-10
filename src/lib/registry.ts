@@ -6,6 +6,16 @@ import path from "node:path";
 
 import { readConfigFile, writeConfigFile } from "./config-io";
 
+export interface AgentInstance {
+  instanceId: string;
+  agentType: string;
+  port: number;
+  configDir: string;
+  dataDir: string;
+  addedAt: string;
+  primary: boolean;
+}
+
 export interface SandboxEntry {
   name: string;
   createdAt?: string;
@@ -15,6 +25,7 @@ export interface SandboxEntry {
   gpuEnabled?: boolean;
   policies?: string[];
   agent?: string | null;
+  agents?: AgentInstance[] | null;
   dangerouslySkipPermissions?: boolean;
 }
 
@@ -218,4 +229,48 @@ export function clearAll(): void {
   withLock(() => {
     save({ sandboxes: {}, defaultSandbox: null });
   });
+}
+
+/**
+ * Return the agents array for a sandbox. If the sandbox only has the legacy
+ * `agent` string field (pre-swarm), synthesize a single-entry array so
+ * callers always get a consistent shape.
+ */
+export function getAgentInstances(name: string): AgentInstance[] {
+  const sb = getSandbox(name);
+  if (!sb) return [];
+  if (sb.agents && sb.agents.length > 0) return sb.agents;
+  if (!sb.agent) return [];
+  return [
+    {
+      instanceId: `${sb.agent}-0`,
+      agentType: sb.agent,
+      port: 0,
+      configDir: "",
+      dataDir: "",
+      addedAt: sb.createdAt || "",
+      primary: true,
+    },
+  ];
+}
+
+/** Append an agent instance to the sandbox's agents array. */
+export function addAgentInstance(sandboxName: string, instance: AgentInstance): boolean {
+  return withLock(() => {
+    const data = load();
+    const sb = data.sandboxes[sandboxName];
+    if (!sb) return false;
+    if (!sb.agents) {
+      sb.agents = [];
+    }
+    sb.agents.push(instance);
+    save(data);
+    return true;
+  });
+}
+
+/** Count existing instances of a given agent type in a sandbox. */
+export function nextInstanceIndex(sandboxName: string, agentType: string): number {
+  const instances = getAgentInstances(sandboxName);
+  return instances.filter((a) => a.agentType === agentType).length;
 }

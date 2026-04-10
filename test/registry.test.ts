@@ -335,3 +335,140 @@ describe("advisory file locking", () => {
     expect(defaultSandbox).toBe(null);
   });
 });
+
+describe("swarm agent instances", () => {
+  it("getAgentInstances returns empty array for nonexistent sandbox", () => {
+    expect(registry.getAgentInstances("nope")).toEqual([]);
+  });
+
+  it("getAgentInstances synthesizes from legacy agent field", () => {
+    registry.registerSandbox({ name: "legacy", agent: "openclaw" });
+    const instances = registry.getAgentInstances("legacy");
+    expect(instances).toHaveLength(1);
+    expect(instances[0].instanceId).toBe("openclaw-0");
+    expect(instances[0].agentType).toBe("openclaw");
+    expect(instances[0].primary).toBe(true);
+  });
+
+  it("getAgentInstances returns empty when no agent and no agents", () => {
+    registry.registerSandbox({ name: "bare" });
+    expect(registry.getAgentInstances("bare")).toEqual([]);
+  });
+
+  it("getAgentInstances returns agents array when present", () => {
+    registry.registerSandbox({ name: "swarm", agent: "openclaw" });
+    registry.addAgentInstance("swarm", {
+      instanceId: "openclaw-0",
+      agentType: "openclaw",
+      port: 18789,
+      configDir: "/sandbox/.openclaw",
+      dataDir: "/sandbox/.openclaw-data",
+      addedAt: "2026-04-10T00:00:00Z",
+      primary: true,
+    });
+    const instances = registry.getAgentInstances("swarm");
+    expect(instances).toHaveLength(1);
+    expect(instances[0].port).toBe(18789);
+  });
+
+  it("addAgentInstance appends to agents array", () => {
+    registry.registerSandbox({ name: "multi", agent: "openclaw" });
+    registry.addAgentInstance("multi", {
+      instanceId: "openclaw-0",
+      agentType: "openclaw",
+      port: 18789,
+      configDir: "/sandbox/.openclaw",
+      dataDir: "/sandbox/.openclaw-data",
+      addedAt: "2026-04-10T00:00:00Z",
+      primary: true,
+    });
+    registry.addAgentInstance("multi", {
+      instanceId: "openclaw-1",
+      agentType: "openclaw",
+      port: 18790,
+      configDir: "/sandbox/.openclaw-1",
+      dataDir: "/sandbox/.openclaw-1-data",
+      addedAt: "2026-04-10T00:01:00Z",
+      primary: false,
+    });
+    const instances = registry.getAgentInstances("multi");
+    expect(instances).toHaveLength(2);
+    expect(instances[0].instanceId).toBe("openclaw-0");
+    expect(instances[1].instanceId).toBe("openclaw-1");
+    expect(instances[1].port).toBe(18790);
+  });
+
+  it("addAgentInstance returns false for nonexistent sandbox", () => {
+    expect(
+      registry.addAgentInstance("nope", {
+        instanceId: "x-0",
+        agentType: "x",
+        port: 9999,
+        configDir: "/sandbox/.x",
+        dataDir: "/sandbox/.x-data",
+        addedAt: "2026-04-10T00:00:00Z",
+        primary: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("addAgentInstance persists to disk", () => {
+    registry.registerSandbox({ name: "disk" });
+    registry.addAgentInstance("disk", {
+      instanceId: "hermes-0",
+      agentType: "hermes",
+      port: 8642,
+      configDir: "/sandbox/.hermes-0",
+      dataDir: "/sandbox/.hermes-0-data",
+      addedAt: "2026-04-10T00:00:00Z",
+      primary: false,
+    });
+    const data = JSON.parse(fs.readFileSync(regFile, "utf-8"));
+    expect(data.sandboxes.disk.agents).toHaveLength(1);
+    expect(data.sandboxes.disk.agents[0].instanceId).toBe("hermes-0");
+  });
+
+  it("nextInstanceIndex counts existing instances of a type", () => {
+    registry.registerSandbox({ name: "count", agent: "openclaw" });
+    registry.addAgentInstance("count", {
+      instanceId: "openclaw-0",
+      agentType: "openclaw",
+      port: 18789,
+      configDir: "/sandbox/.openclaw",
+      dataDir: "/sandbox/.openclaw-data",
+      addedAt: "2026-04-10T00:00:00Z",
+      primary: true,
+    });
+    registry.addAgentInstance("count", {
+      instanceId: "openclaw-1",
+      agentType: "openclaw",
+      port: 18790,
+      configDir: "/sandbox/.openclaw-1",
+      dataDir: "/sandbox/.openclaw-1-data",
+      addedAt: "2026-04-10T00:01:00Z",
+      primary: false,
+    });
+    expect(registry.nextInstanceIndex("count", "openclaw")).toBe(2);
+    expect(registry.nextInstanceIndex("count", "hermes")).toBe(0);
+  });
+
+  it("nextInstanceIndex returns 0 for nonexistent sandbox", () => {
+    expect(registry.nextInstanceIndex("nope", "openclaw")).toBe(0);
+  });
+
+  it("agents array coexists with legacy agent field", () => {
+    registry.registerSandbox({ name: "compat", agent: "openclaw" });
+    registry.addAgentInstance("compat", {
+      instanceId: "openclaw-0",
+      agentType: "openclaw",
+      port: 18789,
+      configDir: "/sandbox/.openclaw",
+      dataDir: "/sandbox/.openclaw-data",
+      addedAt: "2026-04-10T00:00:00Z",
+      primary: true,
+    });
+    const sb = registry.getSandbox("compat");
+    expect(sb.agent).toBe("openclaw");
+    expect(sb.agents).toHaveLength(1);
+  });
+});
