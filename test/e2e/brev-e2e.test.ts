@@ -653,7 +653,10 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       return;
     }
     if (!deleteBrevInstance(INSTANCE_NAME)) {
-      throw new Error(`Failed to delete Brev instance "${INSTANCE_NAME}" during test cleanup`);
+      console.warn(
+        `⚠️  Failed to delete Brev instance "${INSTANCE_NAME}" during cleanup. ` +
+        `Delete it manually: brev delete ${INSTANCE_NAME}`,
+      );
     }
   });
 
