@@ -242,7 +242,7 @@ export const SWARM_RELAY_SCRIPT = `#!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """Swarm bridge relay - delivers bus messages to agents and posts replies."""
-import argparse, json, os, subprocess, sys, time
+import argparse, json, os, queue as _queue_mod, subprocess, sys, threading, time
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -386,10 +386,55 @@ def deliver_hermes(agent, message):
             time.sleep(3)
     return None, "no text after 3 attempts"
 
+class AgentWorker:
+    """Per-agent delivery thread. Messages to the same agent are serial; different agents run in parallel."""
+    def __init__(self, agent_id, bus_url):
+        self.agent_id = agent_id
+        self.bus_url = bus_url
+        self._q = _queue_mod.Queue()
+        self._thread = threading.Thread(target=self._run, daemon=True, name=f"worker-{agent_id}")
+        self._thread.start()
+
+    def enqueue(self, agent, msg):
+        self._q.put((agent, msg))
+
+    def _run(self):
+        while True:
+            agent, msg = self._q.get()
+            try:
+                self._deliver(agent, msg)
+            except Exception as e:
+                log(f"worker {self.agent_id} error: {e}")
+            self._q.task_done()
+
+    def _deliver(self, agent, msg):
+        target = self.agent_id
+        agent_type = agent.get("agentType", "openclaw")
+        config_dir = agent.get("configDir", "")
+        log(f"delivering {msg['from']} -> {target} ({agent_type})")
+        if agent_type == "openclaw":
+            reply_text, error = deliver_openclaw(agent, msg, config_dir)
+        elif agent_type == "hermes":
+            reply_text, error = deliver_hermes(agent, msg)
+        else:
+            reply_text = None
+            error = f"unsupported agent type: {agent_type}"
+        if reply_text:
+            cleaned = reply_text.replace("NO_REPLY", "").strip()
+            if cleaned and len(cleaned) > 5:
+                bus_send(self.bus_url, target, msg["from"], cleaned)
+                log(f"reply posted: {target} -> {msg['from']} ({len(cleaned)} chars)")
+            else:
+                log(f"reply suppressed (stop signal): {target} -> {msg['from']}")
+        elif error:
+            bus_send(self.bus_url, RELAY_ID, msg["from"], f"[relay] delivery to {target} failed: {error}")
+            log(f"delivery failed: {error}")
+
 def relay_loop(bus_url, poll_interval):
     last_ts = ""
     manifest = None
     delivered = set()
+    workers = {}
     log(f"started (bus={bus_url}, poll={poll_interval}s)")
     while True:
         manifest = read_manifest() or manifest
@@ -420,27 +465,9 @@ def relay_loop(bus_url, poll_interval):
             delivered.add(msg_key)
             if len(delivered) > 1000:
                 delivered = set(list(delivered)[-500:])
-            agent_type = agent.get("agentType", "openclaw")
-            config_dir = agent.get("configDir", "")
-            log(f"delivering {msg['from']} -> {target} ({agent_type})")
-            if agent_type == "openclaw":
-                reply_text, error = deliver_openclaw(agent, msg, config_dir)
-            elif agent_type == "hermes":
-                reply_text, error = deliver_hermes(agent, msg)
-            else:
-                reply_text = None
-                error = f"unsupported agent type: {agent_type}"
-            if reply_text:
-                # Strip NO_REPLY / stop signals that kill the conversation loop
-                cleaned = reply_text.replace("NO_REPLY", "").strip()
-                if cleaned and len(cleaned) > 5:
-                    bus_send(bus_url, target, msg["from"], cleaned)
-                    log(f"reply posted: {target} -> {msg['from']} ({len(cleaned)} chars)")
-                else:
-                    log(f"reply suppressed (stop signal): {target} -> {msg['from']}")
-            elif error:
-                bus_send(bus_url, RELAY_ID, msg["from"], f"[relay] delivery to {target} failed: {error}")
-                log(f"delivery failed: {error}")
+            if target not in workers:
+                workers[target] = AgentWorker(target, bus_url)
+            workers[target].enqueue(agent, msg)
         for msg in data.get("messages", []):
             ts = msg.get("timestamp", "")
             if ts > last_ts:
