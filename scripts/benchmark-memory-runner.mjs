@@ -208,7 +208,7 @@ if (results.length >= 2 && results[0].indexTokens >= results[0].flatTokens) {
 
 const lines = [];
 
-lines.push("# Memory Benchmark Report");
+lines.push("# Typed Memory Index Benchmark");
 lines.push("");
 lines.push(`**Environment:** NemoClaw sandbox container`);
 lines.push(`**Tokenizer:** tiktoken cl100k_base (GPT-4 / Claude-class models)`);

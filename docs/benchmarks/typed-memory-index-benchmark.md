@@ -1,4 +1,4 @@
-# Memory Benchmark Report
+# Typed Memory Index Benchmark
 
 **Environment:** NemoClaw sandbox container
 **Tokenizer:** tiktoken cl100k_base (GPT-4 / Claude-class models)
