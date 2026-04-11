@@ -2,53 +2,60 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Narration clips for the benchmark demo video.
+# Each clip is timed to fit its demo section exactly.
+#
+# Demo section windows:
+#   Intro:          8.0s
+#   Context table: 19.5s
+#   Crossover:      6.0s
+#   Session table: 20.5s
+#   Takeaways:     16.0s
+#   Total:         70.0s
+
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 AUDIO="$DIR/audio/benchmark"
 VOICE="Samantha"
-RATE=170
+RATE=185
 
 rm -rf "$AUDIO"
 mkdir -p "$AUDIO"
 
 echo "Generating benchmark narration clips..."
 
-# 1. Intro (3s)
+# 1. Intro — must fit in 8s
 say -v "$VOICE" -r "$RATE" -o "$AUDIO/01-intro.aiff" \
-  "Here's the performance case for the typed memory index. [[slnc 300]]
-We measured everything with tiktoken, the same tokenizer used by GPT-4 and Claude-class models. [[slnc 300]]
-All benchmarks ran inside the NemoClaw sandbox container against real filesystem operations."
+  "Flat versus typed index. Measured with tiktoken inside the NemoClaw sandbox."
 
-# 2. Context window table (8s)
+# 2. Context window table — must fit in 19.5s
 say -v "$VOICE" -r "$RATE" -o "$AUDIO/02-context.aiff" \
-  "First, the static cost. This is what the agent loads into its context window at the start of every session. [[slnc 400]]
-At ten entries, the flat file is six hundred seventy-four tokens. The typed index is three hundred thirty-seven. That's a fifty percent reduction, even at small scale. [[slnc 400]]
-As we scale up, the savings stabilize around fifty-nine percent. [[slnc 300]]
-At ten thousand entries, the flat file is six hundred sixty-eight thousand tokens. That's half a context window, gone. The typed index uses two hundred seventy-two thousand. [[slnc 300]]
-That frees nearly four hundred thousand tokens for actual conversation."
+  "Context window tokens. This is what the agent loads every session. [[slnc 300]]
+At ten entries, fifty percent savings. [[slnc 200]]
+At a thousand entries, fifty-nine percent. [[slnc 200]]
+At ten thousand, the flat file burns six hundred sixty-eight thousand tokens. The typed index uses two seventy-two thousand. [[slnc 200]]
+Fifty-nine percent less."
 
-# 3. Crossover (2s)
+# 3. Crossover — must fit in 6s
 say -v "$VOICE" -r "$RATE" -o "$AUDIO/03-crossover.aiff" \
-  "The crossover point is at about ten entries. Below that, the index table headers cost more than the flat content. [[slnc 300]]
-Above ten entries, the typed index wins. And the gap only grows."
+  "Crossover at about ten entries. Below that, flat is smaller."
 
-# 4. Session cost (8s)
+# 4. Session cost — must fit in 20.5s
 say -v "$VOICE" -r "$RATE" -o "$AUDIO/04-session.aiff" \
-  "Now the honest part. The typed index saves on context loading, but the agent pays a cost every time it reads a topic. Each tool call adds about eighty tokens of overhead. [[slnc 400]]
-This table shows total session cost at different read patterns. [[slnc 300]]
-If the agent reads zero topics, savings match the context window numbers. [[slnc 300]]
-If the agent reads three topics per session, we still save fifty-two percent at a hundred entries, and fifty-eight percent at a thousand. [[slnc 300]]
-Even in the worst case, reading ten topics per session, the typed index uses fewer total tokens at fifty entries and above. [[slnc 300]]
-At five hundred entries and ten reads, the savings are fifty-five percent."
+  "Now the honest part. Each tool call costs eighty tokens. [[slnc 200]]
+Green means the typed index is cheaper. Red means it costs more. [[slnc 300]]
+At ten entries with ten reads, the typed index is worse. [[slnc 200]]
+But at fifty entries, it already wins. [[slnc 200]]
+At a thousand entries, even heavy usage saves fifty-seven percent."
 
-# 5. Key takeaways (4s)
+# 5. Takeaways — must fit in 16s
 say -v "$VOICE" -r "$RATE" -o "$AUDIO/05-takeaways.aiff" \
-  "So the bottom line. [[slnc 300]]
-Fifty-nine percent context savings at scale, measured with a real tokenizer. [[slnc 300]]
-The crossover is at ten entries, which agents hit in the first day. [[slnc 300]]
-Even with heavy topic loading, the typed index wins at fifty entries. [[slnc 300]]
-And these are real numbers from the sandbox container. Run npm run benchmark memory to reproduce them yourself."
+  "Bottom line. [[slnc 200]]
+Fifty-nine percent context savings at scale. [[slnc 200]]
+Crossover at ten entries, which agents hit day one. [[slnc 200]]
+Even with ten reads per session, typed index wins at fifty entries. [[slnc 200]]
+All real numbers. Run npm run benchmark memory to reproduce."
 
 echo "Converting to wav..."
 for f in "$AUDIO"/*.aiff; do
