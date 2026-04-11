@@ -551,6 +551,93 @@ else
   fail "Bridge delivery did not produce an agent reply within 60s"
 fi
 
+# ── Phase 17: Two-round agent conversation ───────────────────────
+
+section "Phase 17: Two-round conversation"
+
+info "openclaw-0 (rebel) starts conversation with openclaw-1 (processor)"
+bus_exec 'curl -sf -X POST http://127.0.0.1:19100/send -H "Content-Type: application/json" -d "{\"from\":\"openclaw-0\",\"to\":\"openclaw-1\",\"content\":\"I am Agent Zero. Tell me your name and ask me one question. Keep it under 20 words.\"}"' >/dev/null
+
+# Wait for round 1 reply from openclaw-1
+ROUND1_OK=false
+for i in $(seq 1 25); do
+  sleep 3
+  R1_TEXT=$(bus_exec 'curl -sf http://127.0.0.1:19100/messages' | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+msgs = data.get('messages', [])
+replies = [m for m in msgs if m.get('from') == 'openclaw-1' and m.get('to') == 'openclaw-0'
+           and 'Agent Zero' not in m.get('content', '')]
+if replies:
+    print(replies[-1].get('content', '')[:300])
+" 2>/dev/null)
+  if [ -n "$R1_TEXT" ]; then
+    ROUND1_OK=true
+    break
+  fi
+  info "  round 1 waiting... (${i}/25)"
+done
+
+if [ "$ROUND1_OK" = "true" ]; then
+  pass "Round 1: openclaw-1 replied"
+  info "Round 1 reply: $R1_TEXT"
+else
+  RELAY_LOG=$(bus_exec 'tail -10 /tmp/swarm-relay.log 2>/dev/null')
+  info "Relay log: $RELAY_LOG"
+  fail "Round 1: no reply from openclaw-1 within 75s"
+fi
+
+# Wait for round 2 reply from openclaw-0 (relay delivers openclaw-1's reply to openclaw-0)
+ROUND2_OK=false
+if [ "$ROUND1_OK" = "true" ]; then
+  info "Waiting for round 2: openclaw-0 responds to openclaw-1's question..."
+  for i in $(seq 1 25); do
+    sleep 3
+    R2_TEXT=$(bus_exec 'curl -sf http://127.0.0.1:19100/messages' | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+msgs = data.get('messages', [])
+# openclaw-0 replies back to openclaw-1 — but skip the initial prompt
+r0_to_r1 = [m for m in msgs if m.get('from') == 'openclaw-0' and m.get('to') == 'openclaw-1']
+if len(r0_to_r1) >= 2:
+    print(r0_to_r1[-1].get('content', '')[:300])
+" 2>/dev/null)
+    if [ -n "$R2_TEXT" ]; then
+      ROUND2_OK=true
+      break
+    fi
+    info "  round 2 waiting... (${i}/25)"
+  done
+fi
+
+if [ "$ROUND2_OK" = "true" ]; then
+  pass "Round 2: openclaw-0 replied to openclaw-1's question"
+  info "Round 2 reply: $R2_TEXT"
+else
+  RELAY_LOG=$(bus_exec 'tail -10 /tmp/swarm-relay.log 2>/dev/null')
+  info "Relay log: $RELAY_LOG"
+  if [ "$ROUND1_OK" = "true" ]; then
+    fail "Round 2: no reply from openclaw-0 within 75s"
+  fi
+fi
+
+# Verify conversation structure on the bus
+CONV_COUNT=$(bus_exec 'curl -sf http://127.0.0.1:19100/messages' | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+msgs = data.get('messages', [])
+agent_msgs = [m for m in msgs if m.get('from') in ('openclaw-0', 'openclaw-1')
+              and m.get('to') in ('openclaw-0', 'openclaw-1')]
+print(len(agent_msgs))
+" 2>/dev/null)
+CONV_COUNT=$(echo "$CONV_COUNT" | tr -d '[:space:]')
+
+if [ -n "$CONV_COUNT" ] && [ "$CONV_COUNT" -ge 3 ]; then
+  pass "Conversation has $CONV_COUNT agent messages (>= 3 expected)"
+else
+  fail "Conversation only has $CONV_COUNT agent messages (expected >= 3)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""
