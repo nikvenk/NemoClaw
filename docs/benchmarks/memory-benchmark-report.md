@@ -3,6 +3,11 @@
 **Generated:** 2026-04-11
 **Environment:** NemoClaw sandbox container
 **Tokenizer:** tiktoken cl100k_base (GPT-4 / Claude-class models)
+**Branch:** `aniket/feat-typed-memory-index`
+
+## How to Try It
+
+Check out the `aniket/feat-typed-memory-index` branch, build the plugin (`cd nemoclaw && npm install && npm run build`), and rebuild your sandbox image (`podman build -t nemoclaw-production -f Dockerfile .`). Once your sandbox is running with the updated plugin, type `/nemoclaw memory enable` in the OpenClaw chat. That's it — the agent switches to the typed index, gains three memory tools (`nemoclaw_memory_save`, `nemoclaw_memory_read`, `nemoclaw_memory_search`), and starts saving ~59% of context tokens at scale. Typed memory is disabled by default; the agent uses OpenClaw's standard flat MEMORY.md until you opt in. To switch back, type `/nemoclaw memory disable` — topic files stay on disk, nothing is lost. To reproduce the benchmark numbers below, run `npm run benchmark:memory` (requires Podman).
 
 ## Context Window Tokens (Static Cost)
 
