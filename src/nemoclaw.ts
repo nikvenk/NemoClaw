@@ -1249,6 +1249,32 @@ function cleanupSandboxServices(sandboxName, { stopHostServices = false } = {}) 
   }
 }
 
+async function sandboxObserve(sandboxName, args = []) {
+  const { observe } = require("./lib/observe");
+
+  const follow = args.includes("--follow") || args.includes("-f");
+
+  let since;
+  const sinceIdx = args.indexOf("--since");
+  if (sinceIdx !== -1 && args[sinceIdx + 1]) {
+    since = args[sinceIdx + 1];
+  }
+
+  let last;
+  const lastIdx = args.indexOf("--last");
+  const nIdx = args.indexOf("-n");
+  const lIdx = lastIdx !== -1 ? lastIdx : nIdx;
+  if (lIdx !== -1 && args[lIdx + 1]) {
+    last = parseInt(args[lIdx + 1], 10);
+    if (isNaN(last) || last < 1) {
+      console.error("  --last / -n must be a positive integer");
+      process.exit(1);
+    }
+  }
+
+  await observe({ sandboxName, follow, since, last });
+}
+
 async function sandboxAddAgent(sandboxName, args = []) {
   const { addAgent } = require("./lib/add-agent");
 
@@ -1349,6 +1375,11 @@ function help() {
     nemoclaw <name> status           Sandbox health + NIM status
     nemoclaw <name> logs ${D}[--follow]${R}  Stream sandbox logs
     nemoclaw <name> destroy          Stop NIM + delete sandbox ${D}(--yes to skip prompt)${R}
+
+  ${G}Swarm:${R}
+    nemoclaw <name> add-agent        Add an agent instance ${D}--agent <type>${R}
+    nemoclaw <name> observe          Show swarm conversation log
+                                     ${D}[--follow|-f] [--last|-n <count>] [--since <timestamp>]${R}
 
   ${G}Policy Presets:${R}
     nemoclaw <name> policy-add       Add a network or filesystem policy preset ${D}(--dry-run to preview)${R}
@@ -1477,9 +1508,12 @@ const [cmd, ...args] = process.argv.slice(2);
       case "add-agent":
         await sandboxAddAgent(cmd, actionArgs);
         break;
+      case "observe":
+        await sandboxObserve(cmd, actionArgs);
+        break;
       default:
         console.error(`  Unknown action: ${action}`);
-        console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, add-agent, destroy`);
+        console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, add-agent, observe, destroy`);
         process.exit(1);
     }
     return;
