@@ -2775,15 +2775,25 @@ async function createSandbox(
           fs.writeFileSync(importScript, [
             "#!/bin/sh",
             'CTR=$(find /var/lib/rancher/k3s/data -name ctr -type f 2>/dev/null | head -1)',
+            '[ -z "$CTR" ] && CTR=ctr',
+            'SOCK=/run/k3s/containerd/containerd.sock',
+            'if [ "$1" = "list" ]; then',
+            '  exec "$CTR" -a "$SOCK" -n k8s.io images list 2>&1 | grep -i nemoclaw || echo "(no nemoclaw images)"',
+            'fi',
             'TAR=/opt/nemoclaw/sandbox-image.tar',
-            '[ -x "$CTR" ] && exec "$CTR" -a /run/k3s/containerd/containerd.sock -n k8s.io images import "$TAR"',
-            'exec k3s ctr images import "$TAR"',
+            'exec "$CTR" -a "$SOCK" -n k8s.io images import "$TAR"',
           ].join("\n") + "\n");
           fs.chmodSync(importScript, 0o755);
           const importResult = run(
             `openshell-vm --name ${shellQuote(GATEWAY_NAME)} exec -- /opt/nemoclaw/import-image.sh`,
             { ignoreError: true },
           );
+          // Debug: list images in containerd to verify the ref
+          const listResult = runCapture(
+            `openshell-vm --name ${shellQuote(GATEWAY_NAME)} exec -- /opt/nemoclaw/import-image.sh list`,
+            { ignoreError: true },
+          );
+          if (listResult) console.log(`  Containerd images: ${listResult.slice(0, 300)}`);
           if (importResult.status === 0) {
             // Clean up the tar inside the VM rootfs
             try { fs.unlinkSync(vmTarPath); } catch { /* best effort */ }
