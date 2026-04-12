@@ -1686,7 +1686,12 @@ async function ensureNamedCredential(envName, label, helpUrl = null) {
   return replaceNamedCredential(envName, label, helpUrl);
 }
 
-function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
+function waitForSandboxReady(sandboxName, attempts = null, delaySeconds = 2) {
+  // VM backend: pods take longer to stabilize (image unpacking, init containers)
+  if (attempts === null) {
+    const sess = onboardSession.loadSession();
+    attempts = sess?.gatewayBackend === "vm" ? 30 : 10;
+  }
   for (let i = 0; i < attempts; i += 1) {
     const podPhase = runCaptureOpenshell(
       [
