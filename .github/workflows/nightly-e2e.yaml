@@ -344,6 +344,9 @@ jobs:
           echo "=== memory ==="
           free -h
           echo ""
+          echo "=== sandbox pod logs ==="
+          openshell-vm --name nemoclaw exec -- sh -c 'for ns in openshell agent-sandbox-system; do for p in $(kubectl -n $ns get pods -o name 2>/dev/null); do echo "--- $ns/$p ---"; kubectl -n $ns logs $p --all-containers --tail=20 2>&1 || true; echo "--- describe ---"; kubectl -n $ns describe $p 2>&1 | tail -30 || true; done; done' 2>&1 | head -100 || echo "(exec failed)"
+          echo ""
           echo "=== VM console log ==="
           find ~/.local/share/openshell -name '*console*' -exec echo "--- {} ---" \; -exec tail -30 {} \; 2>/dev/null || echo "(not found)"
 
