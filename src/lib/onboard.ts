@@ -2774,14 +2774,20 @@ async function createSandbox(
           const importScript = path.join(rootfsDir, "opt", "nemoclaw", "import-image.sh");
           fs.writeFileSync(importScript, [
             "#!/bin/sh",
-            'CTR=$(find /var/lib/rancher/k3s/data -name ctr -type f 2>/dev/null | head -1)',
-            '[ -z "$CTR" ] && CTR=ctr',
+            "# Find the k3s-bundled ctr binary",
+            'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"',
+            'for d in /var/lib/rancher/k3s/data/*/bin; do',
+            '  [ -d "$d" ] && export PATH="$d:$PATH"',
+            "done",
             'SOCK=/run/k3s/containerd/containerd.sock',
             'if [ "$1" = "list" ]; then',
-            '  exec "$CTR" -a "$SOCK" -n k8s.io images list 2>&1 | grep -i nemoclaw || echo "(no nemoclaw images)"',
+            '  ctr -a "$SOCK" -n k8s.io images list 2>&1 | grep -i nemoclaw || echo "(no nemoclaw images)"',
+            '  exit',
             'fi',
             'TAR=/opt/nemoclaw/sandbox-image.tar',
-            'exec "$CTR" -a "$SOCK" -n k8s.io images import "$TAR"',
+            'echo "PATH=$PATH"',
+            'echo "ctr=$(command -v ctr 2>&1)"',
+            'ctr -a "$SOCK" -n k8s.io images import "$TAR" 2>&1',
           ].join("\n") + "\n");
           fs.chmodSync(importScript, 0o755);
           const importResult = run(
