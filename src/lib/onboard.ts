@@ -4835,7 +4835,19 @@ async function onboard(opts = {}) {
             sleep(2);
           }
           if (sandboxOk) {
-            console.log(`  ✓ Gateway recovered, sandbox '${sandboxName}' is ready`);
+            // Wait for the inference route to be re-established after
+            // gateway restart. The openshell server needs a few seconds
+            // to reconcile providers and routes from persisted k3s state.
+            console.log(`  ✓ Sandbox '${sandboxName}' is ready — waiting for inference route...`);
+            for (let j = 0; j < 15; j++) {
+              const inference = runCaptureOpenshell(["inference", "get"], { ignoreError: true });
+              if (inference && inference.includes("inference.local")) {
+                console.log("  ✓ Gateway recovered, inference route active");
+                process.exit(0);
+              }
+              sleep(2);
+            }
+            console.log("  ✓ Gateway recovered (inference route may still be initializing)");
             process.exit(0);
           }
           console.log("  Gateway recovered but sandbox not ready — falling through to re-onboard...");
