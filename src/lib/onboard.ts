@@ -2130,7 +2130,7 @@ async function startVmGatewayProcess({ exitOnFailure = true } = {}) {
   // the init script doesn't mount the mqueue filesystem. runc needs
   // /dev/mqueue to create container sandboxes — without it k3s pods fail
   // with "error mounting mqueue: no such device".
-  const prepResult = spawnSync("openshell-vm", ["prepare-rootfs", "--name", GATEWAY_NAME], {
+  const prepResult = spawnSync("openshell-vm", ["--name", GATEWAY_NAME, "prepare-rootfs"], {
     cwd: ROOT,
     env: vmEnv,
     encoding: "utf-8",
