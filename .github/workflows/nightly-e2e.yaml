@@ -313,6 +313,10 @@ jobs:
           echo ""
           echo "=== CPU virtualization ==="
           grep -cE 'vmx|svm' /proc/cpuinfo || echo "No hardware virt flags (nested virt may still work)"
+          echo ""
+          echo "=== Grant KVM access ==="
+          sudo usermod -aG kvm "$USER"
+          sudo chmod 666 /dev/kvm
 
       - name: Run VM backend E2E test
         env:
