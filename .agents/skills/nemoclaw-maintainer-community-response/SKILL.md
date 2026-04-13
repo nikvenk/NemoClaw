@@ -50,17 +50,35 @@ Map the item to one of the situations in the guide:
 
 If the situation is ambiguous, ask: "Is this a closure, a needs-info, a routing decision, or something else?"
 
-## Step 4: Recommend an Action
+## Step 4: Recommend an Action and Project Status
 
-State the recommended action clearly before drafting:
+State the recommended action and **project status** clearly before drafting. The project status field must be set on every item — do not leave it as "Done" by default.
+
+**Actions:**
 
 | Action | When |
 |---|---|
 | `comment` | Post a reply, leave open (triage ack, needs-info first contact, redirect to Discussions) |
-| `close` | Close with label only, no comment needed |
-| `close + comment` | Close with label AND post the drafted comment |
+| `close` | Close with comment |
 | `request changes` | PR needs revision — post comment, leave open |
 | `escalate` | Security report that should go through PSIRT — do not respond publicly |
+
+**Project status mapping (NemoClaw Development Tracker):**
+
+| Situation | Project Status |
+|---|---|
+| Won't fix | `Won't Fix` |
+| Out of scope / needs design | `Won't Fix` |
+| Duplicate / superseded PR | `Duplicate` |
+| Feature request (backlog) | `Backlog` |
+| Feature request (active) | `In Progress` |
+| Needs review / poorly designed PR | `Needs Review` |
+| Triage acknowledgment (confirmed, backlogged) | `Backlog` |
+| Needs info (first contact or close) | `No Status` |
+| Completed / merged | `Done` |
+| NVQA-tracked item | `NVQA` |
+
+Always present as: **Action:** `close` · **Project status:** `Won't Fix`
 
 ## Step 5: Draft the Response
 
@@ -78,7 +96,7 @@ Write the response following the template from the guide. Apply these rules:
 
 Show the user:
 
-1. **Recommended action** (e.g., `close + comment`, label: `status: won't-fix`)
+1. **Recommended action and project status** (e.g., `close` · project status: `Won't Fix`)
 2. **Draft response** (ready to paste into GitHub)
 3. Any follow-up note (e.g., "add the label before closing")
 
