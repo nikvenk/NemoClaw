@@ -295,19 +295,23 @@ that these backends do not emit.
 
 NemoClaw now tests streaming events during the `/v1/responses` probe and falls
 back to `/v1/chat/completions` automatically.
-If you onboarded before this check was added, switch the API path on an existing
-sandbox:
+If you onboarded before this check was added, re-run onboarding so the wizard
+re-probes the endpoint and bakes the correct API path into the image:
 
 ```console
-$ export NEMOCLAW_INFERENCE_API_OVERRIDE=openai-completions
-$ nemoclaw onboard --resume --recreate-sandbox
+$ nemoclaw onboard
 ```
 
-To force `/v1/chat/completions` during a fresh onboard, set `NEMOCLAW_PREFERRED_API`:
+To force `/v1/chat/completions` without re-probing, set `NEMOCLAW_PREFERRED_API`:
 
 ```console
 $ NEMOCLAW_PREFERRED_API=openai-completions nemoclaw onboard
 ```
+
+Do not rely on `NEMOCLAW_INFERENCE_API_OVERRIDE` alone — it patches the config
+at container startup but does not update the Dockerfile ARG baked into the
+image.
+A fresh `nemoclaw onboard` is the reliable fix.
 
 ### `NEMOCLAW_DISABLE_DEVICE_AUTH=1` does not change an existing sandbox
 

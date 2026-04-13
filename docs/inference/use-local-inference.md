@@ -152,10 +152,10 @@ It works in both interactive and non-interactive mode.
 |---|---|---|
 | `NEMOCLAW_PREFERRED_API` | `openai-completions`, `chat-completions` | unset (auto-detect) |
 
-If you already onboarded and the sandbox is failing at runtime, you can switch
-the API path without re-running the full onboard wizard.
-Refer to [Switch Inference Models](switch-inference-providers.md) for the
-`NEMOCLAW_INFERENCE_API_OVERRIDE` approach.
+If you already onboarded and the sandbox is failing at runtime, re-run
+`nemoclaw onboard` to re-probe the endpoint and bake the correct API path
+into the image.
+Refer to [Switch Inference Models](switch-inference-providers.md) for details.
 
 ## Anthropic-Compatible Server
 

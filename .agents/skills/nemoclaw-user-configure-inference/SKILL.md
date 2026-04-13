@@ -132,16 +132,30 @@ If the provider itself needs to change, rerun `nemoclaw onboard`.
 
 If onboarding selected `/v1/responses` but the agent fails at runtime (for
 example, because the backend does not emit the streaming events OpenClaw
-requires), you can switch to `/v1/chat/completions` without a full re-onboard:
+requires), re-run onboarding so the wizard re-probes the endpoint and bakes
+the correct API path into the image:
 
 ```console
-$ export NEMOCLAW_INFERENCE_API_OVERRIDE=openai-completions
-$ nemoclaw onboard --resume --recreate-sandbox
+$ nemoclaw onboard
 ```
 
-The entrypoint patches `openclaw.json` at container startup.
-No image rebuild is needed.
-Remove the env var and recreate the sandbox to revert to the original API path.
+Select the same provider and endpoint again.
+The updated streaming probe will detect incomplete `/v1/responses` support
+and select `/v1/chat/completions` automatically.
+
+To force `/v1/chat/completions` without re-probing, set `NEMOCLAW_PREFERRED_API`
+before onboarding:
+
+```console
+$ NEMOCLAW_PREFERRED_API=openai-completions nemoclaw onboard
+```
+
+> **Note:** `NEMOCLAW_INFERENCE_API_OVERRIDE` patches the config at container startup but
+> does not update the Dockerfile ARG baked into the image.
+> If you recreate the sandbox without the override env var, the image reverts to
+> the original API path.
+> A fresh `nemoclaw onboard` is the reliable fix because it updates both the
+> session and the baked image.
 
 ## Step 2: Cross-Provider Switching
 
@@ -318,10 +332,10 @@ It works in both interactive and non-interactive mode.
 |---|---|---|
 | `NEMOCLAW_PREFERRED_API` | `openai-completions`, `chat-completions` | unset (auto-detect) |
 
-If you already onboarded and the sandbox is failing at runtime, you can switch
-the API path without re-running the full onboard wizard.
-Refer to Switch Inference Models (see the `nemoclaw-user-configure-inference` skill) for the
-`NEMOCLAW_INFERENCE_API_OVERRIDE` approach.
+If you already onboarded and the sandbox is failing at runtime, re-run
+`nemoclaw onboard` to re-probe the endpoint and bake the correct API path
+into the image.
+Refer to Switch Inference Models (see the `nemoclaw-user-configure-inference` skill) for details.
 
 ## Step 7: Anthropic-Compatible Server
 
