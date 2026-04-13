@@ -6,6 +6,7 @@ const { execFileSync, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { DASHBOARD_PORT } = require("./lib/ports");
 
 // ---------------------------------------------------------------------------
 // Color / style — respects NO_COLOR and non-TTY environments.
@@ -92,7 +93,7 @@ const REMOTE_UNINSTALL_URL = buildVersionedUninstallUrl(getVersion());
 let OPENSHELL_BIN = null;
 const MIN_LOGS_OPENSHELL_VERSION = "0.0.7";
 const NEMOCLAW_GATEWAY_NAME = "nemoclaw";
-const DASHBOARD_FORWARD_PORT = "18789";
+const DASHBOARD_FORWARD_PORT = String(DASHBOARD_PORT);
 
 function getOpenshellBinary() {
   if (!OPENSHELL_BIN) {
@@ -214,7 +215,7 @@ function executeSandboxCommand(sandboxName, command) {
 
 /**
  * Check whether the OpenClaw gateway process is running inside the sandbox.
- * Uses the gateway's HTTP endpoint (port 18789) as the source of truth,
+ * Uses the gateway's HTTP endpoint (dashboard port) as the source of truth,
  * since the gateway runs as a separate user and pgrep may not see it.
  * Returns true (running), false (stopped), or null (cannot determine).
  */
@@ -249,7 +250,7 @@ function recoverSandboxProcesses(sandboxName) {
       "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
       // Re-check liveness before touching anything — another caller may have
       // already recovered the gateway between our initial check and now (TOCTOU).
-      "if curl -sf --max-time 3 http://127.0.0.1:18789/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;",
+      `if curl -sf --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
       // Clean stale lock files from the previous run (gateway checks these)
       "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
       // Clean stale temp files from the previous run
@@ -990,6 +991,18 @@ async function sandboxConnect(sandboxName, { dangerouslySkipPermissions = false 
     policies.applyPermissivePolicy(sandboxName);
   }
   checkAndRecoverSandboxProcesses(sandboxName);
+  // Print a one-shot hint before dropping the user into the sandbox
+  // shell so a fresh user knows the first thing to type. Without this,
+  // `nemoclaw <name> connect` lands on a bare bash prompt and users
+  // ask "now what?" — see #465. Suppress the hint when stdout isn't a
+  // TTY so scripted callers don't get noise in their pipelines.
+  if (process.stdout.isTTY && !["1", "true"].includes(String(process.env.NEMOCLAW_NO_CONNECT_HINT || ""))) {
+    console.log("");
+    console.log(`  ${G}✓${R} Connecting to sandbox '${sandboxName}'`);
+    console.log(`  ${D}Inside the sandbox, run \`openclaw tui\` to start chatting with the agent.${R}`);
+    console.log(`  ${D}Type \`exit\` (or Ctrl-D) to return to the host shell.${R}`);
+    console.log("");
+  }
   const result = spawnSync(getOpenshellBinary(), ["sandbox", "connect", sandboxName], {
     stdio: "inherit",
     cwd: ROOT,
@@ -1240,9 +1253,10 @@ function cleanupSandboxServices(sandboxName, { stopHostServices = false } = {}) 
 async function sandboxDestroy(sandboxName, args = []) {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
   if (!skipConfirm) {
-    const answer = await askPrompt(
-      `  ${YW}Destroy sandbox '${sandboxName}'?${R} This cannot be undone. [y/N]: `,
-    );
+    console.log(`  ${YW}Destroy sandbox '${sandboxName}'?${R}`);
+    console.log("  This will permanently delete the sandbox and all workspace files inside it.");
+    console.log("  This cannot be undone.");
+    const answer = await askPrompt("  Type 'yes' to confirm, or press Enter to cancel [y/N]: ");
     if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
       console.log("  Cancelled.");
       return;
