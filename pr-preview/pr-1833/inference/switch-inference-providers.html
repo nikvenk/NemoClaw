@@ -584,7 +584,7 @@ session and the baked image.</p>
 </pre></div>
 </div>
 <p>The entrypoint patches <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at container startup with the override values.
-No image rebuild is needed.
+You do not need to rebuild the image.
 Remove the env vars and recreate the sandbox to revert to the original model.</p>
 <p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_API_OVERRIDE</span></code> accepts <code class="docutils literal notranslate"><span class="pre">openai-completions</span></code> (for NVIDIA, OpenAI, Gemini, compatible endpoints) or <code class="docutils literal notranslate"><span class="pre">anthropic-messages</span></code> (for Anthropic and Anthropic-compatible endpoints).
 This variable is only needed when switching between provider families.</p>
