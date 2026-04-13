@@ -118,4 +118,4 @@ All NemoClaw commands run inside WSL, not in PowerShell.
 
 ## Troubleshooting
 
-For Windows-specific troubleshooting, see the [Windows Subsystem for Linux section](windows-wsl-2) in the Troubleshooting guide.
+For Windows-specific troubleshooting, see the [Windows Subsystem for Linux section](../reference/troubleshooting.md#windows-subsystem-for-linux) in the Troubleshooting guide.
