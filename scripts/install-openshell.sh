@@ -36,6 +36,9 @@ info "Detected $OS_LABEL ($ARCH_LABEL)"
 # Minimum version required for sandbox persistence across gateway restarts
 # (deterministic k3s node name + workspace PVC: NVIDIA/OpenShell#739, #488)
 MIN_VERSION="0.0.24"
+# Maximum version validated for this NemoClaw release. Newer OpenShell builds
+# may change sandbox semantics; upgrade NemoClaw before upgrading past this.
+MAX_VERSION="0.0.26"
 
 version_gte() {
   # Returns 0 (true) if $1 >= $2 — portable, no sort -V (BSD compat)
@@ -54,7 +57,10 @@ version_gte() {
 if command -v openshell >/dev/null 2>&1; then
   INSTALLED_VERSION="$(openshell --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo '0.0.0')"
   if version_gte "$INSTALLED_VERSION" "$MIN_VERSION"; then
-    info "openshell already installed: $INSTALLED_VERSION (>= $MIN_VERSION)"
+    if ! version_gte "$MAX_VERSION" "$INSTALLED_VERSION"; then
+      fail "openshell $INSTALLED_VERSION is above the maximum ($MAX_VERSION) supported by this NemoClaw release. Upgrade NemoClaw first."
+    fi
+    info "openshell already installed: $INSTALLED_VERSION (>= $MIN_VERSION, <= $MAX_VERSION)"
     exit 0
   fi
   warn "openshell $INSTALLED_VERSION is below minimum $MIN_VERSION — upgrading..."
