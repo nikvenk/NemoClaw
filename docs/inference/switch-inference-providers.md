@@ -73,6 +73,21 @@ $ openshell inference set --provider compatible-anthropic-endpoint --model <mode
 
 If the provider itself needs to change, rerun `nemoclaw onboard`.
 
+#### Switching from Responses API to Chat Completions
+
+If onboarding selected `/v1/responses` but the agent fails at runtime (for
+example, because the backend does not emit the streaming events OpenClaw
+requires), you can switch to `/v1/chat/completions` without a full re-onboard:
+
+```console
+$ export NEMOCLAW_INFERENCE_API_OVERRIDE=openai-completions
+$ nemoclaw onboard --resume --recreate-sandbox
+```
+
+The entrypoint patches `openclaw.json` at container startup.
+No image rebuild is needed.
+Remove the env var and recreate the sandbox to revert to the original API path.
+
 ## Cross-Provider Switching
 
 Switching to a different provider family (for example, from NVIDIA Endpoints to Anthropic) requires updating both the gateway route and the sandbox config.

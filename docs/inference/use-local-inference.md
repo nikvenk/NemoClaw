@@ -130,6 +130,33 @@ $ NEMOCLAW_PROVIDER=custom \
 | `NEMOCLAW_MODEL` | Model ID as reported by the server. |
 | `COMPATIBLE_API_KEY` | API key for the endpoint. Use any non-empty value if authentication is not required. |
 
+### Forcing Chat Completions API
+
+Some OpenAI-compatible servers (such as SGLang) expose `/v1/responses` but do
+not emit the granular streaming events that OpenClaw requires.
+NemoClaw tests streaming events during onboarding and falls back to
+`/v1/chat/completions` automatically when it detects incomplete streaming.
+
+If you need to bypass the `/v1/responses` probe entirely, set
+`NEMOCLAW_PREFERRED_API` before running onboard:
+
+```console
+$ NEMOCLAW_PREFERRED_API=openai-completions nemoclaw onboard
+```
+
+This variable tells the wizard to skip the `/v1/responses` probe and use
+`/v1/chat/completions` directly.
+It works in both interactive and non-interactive mode.
+
+| Variable | Values | Default |
+|---|---|---|
+| `NEMOCLAW_PREFERRED_API` | `openai-completions`, `chat-completions` | unset (auto-detect) |
+
+If you already onboarded and the sandbox is failing at runtime, you can switch
+the API path without re-running the full onboard wizard.
+Refer to [Switch Inference Models](switch-inference-providers.md) for the
+`NEMOCLAW_INFERENCE_API_OVERRIDE` approach.
+
 ## Anthropic-Compatible Server
 
 If your local server implements the Anthropic Messages API (`/v1/messages`), choose **Other Anthropic-compatible endpoint** during onboarding instead.

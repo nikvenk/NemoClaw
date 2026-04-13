@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 // Import from compiled dist/ so coverage is attributed correctly.
 import {
   classifyValidationFailure,
@@ -12,6 +12,7 @@ import {
   isNvcfFunctionNotFoundForAccount,
   nvcfFunctionNotFoundMessage,
   shouldSkipResponsesProbe,
+  shouldForceCompletionsApi,
 } from "../../dist/lib/validation";
 
 describe("classifyValidationFailure", () => {
@@ -220,5 +221,47 @@ describe("shouldSkipResponsesProbe", () => {
     expect(shouldSkipResponsesProbe("anthropic-api")).toBe(false);
     expect(shouldSkipResponsesProbe("compatible-endpoint")).toBe(false);
     expect(shouldSkipResponsesProbe("")).toBe(false);
+  });
+});
+
+describe("shouldForceCompletionsApi", () => {
+  const ORIGINAL = process.env.NEMOCLAW_PREFERRED_API;
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env.NEMOCLAW_PREFERRED_API;
+    } else {
+      process.env.NEMOCLAW_PREFERRED_API = ORIGINAL;
+    }
+  });
+
+  it("returns true when NEMOCLAW_PREFERRED_API is openai-completions", () => {
+    process.env.NEMOCLAW_PREFERRED_API = "openai-completions";
+    expect(shouldForceCompletionsApi()).toBe(true);
+  });
+
+  it("returns true for the chat-completions alias", () => {
+    process.env.NEMOCLAW_PREFERRED_API = "chat-completions";
+    expect(shouldForceCompletionsApi()).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    process.env.NEMOCLAW_PREFERRED_API = "OpenAI-Completions";
+    expect(shouldForceCompletionsApi()).toBe(true);
+  });
+
+  it("returns false when unset", () => {
+    delete process.env.NEMOCLAW_PREFERRED_API;
+    expect(shouldForceCompletionsApi()).toBe(false);
+  });
+
+  it("returns false for openai-responses", () => {
+    process.env.NEMOCLAW_PREFERRED_API = "openai-responses";
+    expect(shouldForceCompletionsApi()).toBe(false);
+  });
+
+  it("returns false for empty string", () => {
+    process.env.NEMOCLAW_PREFERRED_API = "";
+    expect(shouldForceCompletionsApi()).toBe(false);
   });
 });

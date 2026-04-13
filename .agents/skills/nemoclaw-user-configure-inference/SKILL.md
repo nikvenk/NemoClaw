@@ -128,6 +128,21 @@ $ openshell inference set --provider compatible-anthropic-endpoint --model <mode
 
 If the provider itself needs to change, rerun `nemoclaw onboard`.
 
+#### Switching from Responses API to Chat Completions
+
+If onboarding selected `/v1/responses` but the agent fails at runtime (for
+example, because the backend does not emit the streaming events OpenClaw
+requires), you can switch to `/v1/chat/completions` without a full re-onboard:
+
+```console
+$ export NEMOCLAW_INFERENCE_API_OVERRIDE=openai-completions
+$ nemoclaw onboard --resume --recreate-sandbox
+```
+
+The entrypoint patches `openclaw.json` at container startup.
+No image rebuild is needed.
+Remove the env var and recreate the sandbox to revert to the original API path.
+
 ## Step 2: Cross-Provider Switching
 
 Switching to a different provider family (for example, from NVIDIA Endpoints to Anthropic) requires updating both the gateway route and the sandbox config.
@@ -280,6 +295,33 @@ $ NEMOCLAW_PROVIDER=custom \
 | `NEMOCLAW_ENDPOINT_URL` | Base URL of the local server. |
 | `NEMOCLAW_MODEL` | Model ID as reported by the server. |
 | `COMPATIBLE_API_KEY` | API key for the endpoint. Use any non-empty value if authentication is not required. |
+
+### Forcing Chat Completions API
+
+Some OpenAI-compatible servers (such as SGLang) expose `/v1/responses` but do
+not emit the granular streaming events that OpenClaw requires.
+NemoClaw tests streaming events during onboarding and falls back to
+`/v1/chat/completions` automatically when it detects incomplete streaming.
+
+If you need to bypass the `/v1/responses` probe entirely, set
+`NEMOCLAW_PREFERRED_API` before running onboard:
+
+```console
+$ NEMOCLAW_PREFERRED_API=openai-completions nemoclaw onboard
+```
+
+This variable tells the wizard to skip the `/v1/responses` probe and use
+`/v1/chat/completions` directly.
+It works in both interactive and non-interactive mode.
+
+| Variable | Values | Default |
+|---|---|---|
+| `NEMOCLAW_PREFERRED_API` | `openai-completions`, `chat-completions` | unset (auto-detect) |
+
+If you already onboarded and the sandbox is failing at runtime, you can switch
+the API path without re-running the full onboard wizard.
+Refer to Switch Inference Models (see the `nemoclaw-user-configure-inference` skill) for the
+`NEMOCLAW_INFERENCE_API_OVERRIDE` approach.
 
 ## Step 7: Anthropic-Compatible Server
 

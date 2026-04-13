@@ -495,7 +495,7 @@ function hydrateCredentialEnv(envName) {
   return value || null;
 }
 
-const { getCurlTimingArgs, summarizeCurlFailure, summarizeProbeFailure, runCurlProbe } = httpProbe;
+const { getCurlTimingArgs, summarizeCurlFailure, summarizeProbeFailure, runCurlProbe, runStreamingEventProbe } = httpProbe;
 
 function getNavigationChoice(value = "") {
   const normalized = String(value || "")
@@ -523,6 +523,7 @@ const {
   isNvcfFunctionNotFoundForAccount,
   nvcfFunctionNotFoundMessage,
   shouldSkipResponsesProbe,
+  shouldForceCompletionsApi,
 } = validation;
 
 // validateNvidiaApiKeyValue — see validation import above
@@ -1196,6 +1197,37 @@ function probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, options = {}) {
   for (const probe of probes) {
     const result = probe.execute();
     if (result.ok) {
+      // Streaming event validation — catch backends like SGLang that return
+      // valid non-streaming responses but emit incomplete SSE events in
+      // streaming mode. Only run for /responses probes on custom endpoints
+      // where probeStreaming was requested.
+      if (probe.api === "openai-responses" && options.probeStreaming === true) {
+        const streamResult = runStreamingEventProbe([
+          "-sS",
+          ...getValidationProbeCurlArgs(),
+          "-H",
+          "Content-Type: application/json",
+          ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
+          "-d",
+          JSON.stringify({
+            model,
+            input: "Reply with exactly: OK",
+            stream: true,
+          }),
+          `${String(endpointUrl).replace(/\/+$/, "")}/responses`,
+        ]);
+        if (!streamResult.ok) {
+          console.log(`  ℹ ${streamResult.message}`);
+          failures.push({
+            name: probe.name + " (streaming)",
+            httpStatus: 0,
+            curlStatus: 0,
+            message: streamResult.message,
+            body: "",
+          });
+          continue;
+        }
+      }
       return { ok: true, api: probe.api, label: probe.name };
     }
     // Preserve the raw response body alongside the summarized message so the
@@ -1344,6 +1376,8 @@ async function validateCustomOpenAiLikeSelection(
   const apiKey = getCredential(credentialEnv);
   const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, {
     requireResponsesToolCalling: true,
+    skipResponsesProbe: shouldForceCompletionsApi(),
+    probeStreaming: true,
   });
   if (probe.ok) {
     console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
