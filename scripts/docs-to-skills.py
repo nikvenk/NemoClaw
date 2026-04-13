@@ -978,6 +978,8 @@ def generate_skill(
                 for item_line in cleaned.split("\n"):
                     stripped = item_line.strip()
                     if stripped.startswith("- "):
+                        if prereq_items and not prereq_items[-1].startswith("- "):
+                            prereq_items.append("")
                         norm = stripped.lower().strip("- .")
                         if norm not in seen_prereqs:
                             seen_prereqs.add(norm)
