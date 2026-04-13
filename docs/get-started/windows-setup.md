@@ -28,7 +28,6 @@ Linux and macOS users do not need this page and can go directly to the Quickstar
 
 :::{note}
 This guide has been tested on x86-64.
-The installation process may differ on Windows on Arm (WoA).
 :::
 
 ## Prerequisites

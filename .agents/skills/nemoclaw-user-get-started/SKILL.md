@@ -100,7 +100,6 @@ Complete these steps before following the Quickstart (see the `nemoclaw-user-get
 Linux and macOS users do not need this page and can go directly to the Quickstart.
 
 > **Note:** This guide has been tested on x86-64.
-> The installation process may differ on Windows on Arm (WoA).
 
 ## Step 4: Enable WSL 2
 
