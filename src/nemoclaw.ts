@@ -1647,6 +1647,11 @@ async function sandboxRebuild(sandboxName, args = []) {
       console.log(`  ${D}Post-upgrade structure check skipped (doctor returned ${doctorResult?.status ?? "null"})${R}`);
     }
   }
+  // Hermes: no explicit post-restore step needed. Hermes's SessionDB._init_schema()
+  // auto-migrates state.db (SQLite) on first connection via sequential ALTER TABLE
+  // migrations (idempotent, schema_version tracked). ensure_hermes_home() repairs
+  // missing directories implicitly. The NemoClaw plugin's skill cache refreshes on
+  // on_session_start. Gateway startup is non-fatal if state.db migration fails.
 
   // Step 7: Update registry with new version
   registry.updateSandbox(sandboxName, {
