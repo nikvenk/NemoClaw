@@ -62,9 +62,9 @@ State the recommended action and **project status** clearly before drafting. The
 | `comment` | Post a reply, leave open (triage ack, needs-info first contact, redirect to Discussions) |
 | `close` | Close with comment |
 | `request changes` | PR needs revision — post comment, leave open |
-| `comment + label` | Post comment AND apply a label (e.g., rebase nudge → apply `status: needs-info`) |
+| `comment + label` | Post comment AND apply a label (e.g., rebase nudge → apply `status: rebase`) |
 | `escalate` | Security report that should go through PSIRT — do not respond publicly |
-| `rebase nudge` | PR has merge conflicts or is significantly out of date — post comment asking author to rebase, apply `status: needs-info` |
+| `rebase nudge` | PR has merge conflicts or is significantly out of date — post comment asking author to rebase, apply `status: rebase` |
 
 **Project status mapping (NemoClaw Development Tracker):**
 
@@ -101,12 +101,12 @@ Write the response following the template from the guide. Apply these rules:
 - Write in second person, direct address to the contributor.
 - Warm but specific — generic phrases without substance read as dismissive.
 - Never reference internal systems, roadmap items, or org decisions that shouldn't be public.
-- **PRs requiring rebase or author check-in:** After posting the comment, always apply `status: needs-info` via:
+- **PRs requiring rebase:** After posting the comment, always apply `status: rebase` via:
   ```bash
-  gh pr edit <number> --repo NVIDIA/NemoClaw --add-label "status: needs-info"
+  gh pr edit <number> --repo NVIDIA/NemoClaw --add-label "status: rebase"
   ```
-  This ensures stale PRs are surfaced for follow-up and treated consistently with the 7-day needs-info closure policy.
-- **Same contributor on multiple PRs needing rebase:** If the contributor who owns this PR also has another open PR that needs a rebase, note it in the comment — suggest a joint rebase on both at once. Example addition: "Note this is from the same contributor as #[N] — a joint rebase on both would be ideal." Apply `status: needs-info` to both PRs. Check for contributor overlap before sending any rebase nudge.
+  This keeps rebase-blocked PRs distinct from needs-info PRs and surfaces them for follow-up separately.
+- **Same contributor on multiple PRs needing rebase:** If the contributor who owns this PR also has another open PR that needs a rebase, note it in the comment — suggest a joint rebase on both at once. Example addition: "Note this is from the same contributor as #[N] — a joint rebase on both would be ideal." Apply `status: rebase` to both PRs. Check for contributor overlap before sending any rebase nudge.
 
 ## Step 6: Present for Approval
 
