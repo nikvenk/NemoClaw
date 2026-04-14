@@ -85,6 +85,7 @@ const GLOBAL_COMMANDS = new Set([
   "debug",
   "uninstall",
   "credentials",
+  "backup-all",
   "help",
   "--help",
   "-h",
@@ -1660,9 +1661,14 @@ async function sandboxRebuild(sandboxName, args = []) {
   log(`Registry updated: agentVersion=${agentDef.expectedVersion}`);
 
   console.log("");
-  console.log(`  ${G}\u2713${R} Sandbox '${sandboxName}' rebuilt successfully`);
-  if (versionCheck.expectedVersion) {
-    console.log(`    Now running: ${agentName} v${versionCheck.expectedVersion}`);
+  if (restore.success) {
+    console.log(`  ${G}\u2713${R} Sandbox '${sandboxName}' rebuilt successfully`);
+    if (versionCheck.expectedVersion) {
+      console.log(`    Now running: ${agentName} v${versionCheck.expectedVersion}`);
+    }
+  } else {
+    console.log(`  ${YW}\u26a0${R} Sandbox '${sandboxName}' rebuilt but state restore was incomplete`);
+    console.log(`    Backup available at: ${backup.manifest.backupPath}`);
   }
 }
 

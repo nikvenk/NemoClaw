@@ -2830,7 +2830,7 @@ async function createSandbox(
     name: sandboxName,
     gpuEnabled: !!gpu,
     agent: agent ? agent.name : null,
-    agentVersion: effectiveAgent.expectedVersion || null,
+    agentVersion: fromDockerfile ? null : (effectiveAgent.expectedVersion || null),
     dangerouslySkipPermissions: dangerouslySkipPermissions || undefined,
   });
 

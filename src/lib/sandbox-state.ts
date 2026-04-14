@@ -136,6 +136,24 @@ function sanitizeBackupDirectory(dirPath: string): void {
           try { require("node:fs").unlinkSync(fullPath); } catch { /* best effort */ }
         } else if (entry.name.endsWith(".json")) {
           sanitizeConfigFile(fullPath);
+        } else if (entry.name === ".env" || entry.name.endsWith(".env")) {
+          // Strip credential lines from .env files (KEY=value format).
+          // Hermes stores API keys in .env alongside config.yaml.
+          try {
+            const envContent = readFileSync(fullPath, "utf-8");
+            const filtered = envContent
+              .split("\n")
+              .map((line) => {
+                const key = line.split("=")[0]?.trim().toUpperCase() || "";
+                if (/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/.test(key)) {
+                  return `${line.split("=")[0]}=[STRIPPED_BY_MIGRATION]`;
+                }
+                return line;
+              })
+              .join("\n");
+            writeFileSync(fullPath, filtered);
+            chmodSync(fullPath, 0o600);
+          } catch { /* best effort */ }
         }
       }
     }
@@ -185,6 +203,7 @@ export function backupSandboxState(sandboxName: string): BackupResult {
   const failedDirs: string[] = [];
 
   if (stateDirs.length === 0) {
+    _log("WARNING: Agent manifest declares no state_dirs — nothing to back up");
     writeManifest(backupPath, manifest);
     return { success: true, manifest, backedUpDirs, failedDirs };
   }
