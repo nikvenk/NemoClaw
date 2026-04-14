@@ -1674,6 +1674,97 @@ async function sandboxRebuild(sandboxName, args = []) {
 
 // ── Pre-upgrade backup ───────────────────────────────────────────
 
+// ── Snapshot ─────────────────────────────────────────────────────
+
+function sandboxSnapshot(sandboxName, subArgs) {
+  const subcommand = subArgs[0] || "help";
+  switch (subcommand) {
+    case "create": {
+      const isLive = captureOpenshell(["sandbox", "list"], { ignoreError: true });
+      const liveNames = parseLiveSandboxNames(isLive.output || "");
+      if (!liveNames.has(sandboxName)) {
+        console.error(`  Sandbox '${sandboxName}' is not running. Cannot create snapshot.`);
+        process.exit(1);
+      }
+      console.log(`  Creating snapshot of '${sandboxName}'...`);
+      const result = sandboxState.backupSandboxState(sandboxName);
+      if (result.success) {
+        console.log(`  ${G}\u2713${R} Snapshot created (${result.backedUpDirs.length} directories)`);
+        console.log(`    ${result.manifest.backupPath}`);
+      } else {
+        console.error("  Snapshot failed.");
+        if (result.failedDirs.length > 0) {
+          console.error(`  Failed directories: ${result.failedDirs.join(", ")}`);
+        }
+        process.exit(1);
+      }
+      break;
+    }
+    case "list": {
+      const backups = sandboxState.listBackups(sandboxName);
+      if (backups.length === 0) {
+        console.log(`  No snapshots found for '${sandboxName}'.`);
+        return;
+      }
+      console.log(`  Snapshots for '${sandboxName}':`);
+      console.log("");
+      for (const b of backups) {
+        const dirs = b.stateDirs?.length || 0;
+        const version = b.agentVersion || "unknown";
+        console.log(`    ${b.timestamp}  ${D}(${dirs} dirs, agent v${version})${R}`);
+        console.log(`      ${b.backupPath}`);
+      }
+      console.log("");
+      console.log(`  ${backups.length} snapshot(s). Restore with:`);
+      console.log(`    nemoclaw ${sandboxName} snapshot restore [timestamp]`);
+      break;
+    }
+    case "restore": {
+      const timestamp = subArgs[1] || null;
+      let backupPath;
+      if (timestamp) {
+        const all = sandboxState.listBackups(sandboxName);
+        const match = all.find((b) => b.timestamp === timestamp || b.backupPath.includes(timestamp));
+        if (!match) {
+          console.error(`  No snapshot matching '${timestamp}' found for '${sandboxName}'.`);
+          console.error("  Run: nemoclaw " + sandboxName + " snapshot list");
+          process.exit(1);
+        }
+        backupPath = match.backupPath;
+      } else {
+        const latest = sandboxState.getLatestBackup(sandboxName);
+        if (!latest) {
+          console.error(`  No snapshots found for '${sandboxName}'.`);
+          process.exit(1);
+        }
+        backupPath = latest.backupPath;
+        console.log(`  Using latest snapshot: ${latest.timestamp}`);
+      }
+      console.log(`  Restoring snapshot into '${sandboxName}'...`);
+      const result = sandboxState.restoreSandboxState(sandboxName, backupPath);
+      if (result.success) {
+        console.log(`  ${G}\u2713${R} Restored ${result.restoredDirs.length} directories`);
+      } else {
+        console.error(`  Restore failed.`);
+        if (result.restoredDirs.length > 0) {
+          console.error(`  Partial: ${result.restoredDirs.join(", ")}`);
+        }
+        if (result.failedDirs.length > 0) {
+          console.error(`  Failed: ${result.failedDirs.join(", ")}`);
+        }
+        process.exit(1);
+      }
+      break;
+    }
+    default:
+      console.log(`  Usage:`);
+      console.log(`    nemoclaw ${sandboxName} snapshot create          Create a snapshot`);
+      console.log(`    nemoclaw ${sandboxName} snapshot list            List available snapshots`);
+      console.log(`    nemoclaw ${sandboxName} snapshot restore [ts]    Restore from a snapshot`);
+      break;
+  }
+}
+
 /**
  * Back up all registered sandboxes. Called by install.sh before upgrading
  * NemoClaw or OpenShell so sandbox state is recoverable if the upgrade
@@ -1738,6 +1829,9 @@ function help() {
     nemoclaw <name> connect          Shell into a running sandbox
     nemoclaw <name> status           Sandbox health + NIM status
     nemoclaw <name> logs ${D}[--follow]${R}  Stream sandbox logs
+    nemoclaw <name> snapshot create   Create a snapshot of sandbox state
+    nemoclaw <name> snapshot list     List available snapshots
+    nemoclaw <name> snapshot restore  Restore state from a snapshot ${D}([timestamp] for specific)${R}
     nemoclaw <name> rebuild          Upgrade sandbox to current agent version ${D}(--yes to skip prompt)${R}
     nemoclaw <name> destroy          Stop NIM + delete sandbox ${D}(--yes to skip prompt)${R}
 
@@ -1886,9 +1980,12 @@ const [cmd, ...args] = process.argv.slice(2);
       case "rebuild":
         await sandboxRebuild(cmd, actionArgs);
         break;
+      case "snapshot":
+        sandboxSnapshot(cmd, actionArgs);
+        break;
       default:
         console.error(`  Unknown action: ${action}`);
-        console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, skill, rebuild, destroy`);
+        console.error(`  Valid actions: connect, status, logs, policy-add, policy-list, skill, snapshot, rebuild, destroy`);
         process.exit(1);
     }
     return;
