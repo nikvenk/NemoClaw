@@ -2,15 +2,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Hermes rebuild upgrade E2E — same scenario as NVBug 6076156 but for Hermes:
+# Hermes rebuild upgrade E2E — same upgrade scenario as OpenClaw but for Hermes:
 #
-#   1. Build a Hermes base image with an OLDER version (v2026.3.0)
-#   2. Onboard a sandbox with --agent hermes using that old image
-#   3. Write marker files into Hermes state dirs
-#   4. Run `nemoclaw <name> rebuild --yes`
-#   5. Verify marker files survived the rebuild
-#   6. Verify the sandbox now reports the CURRENT Hermes version
-#   7. Verify no credentials leaked into the local backup
+#   1. Install NemoClaw (install.sh)
+#   2. Build a Hermes base image with an OLDER version (v2026.3.12)
+#   3. Build a minimal Hermes sandbox image (no current-Dockerfile patches)
+#   4. Create sandbox via openshell directly
+#   5. Write marker files into Hermes state dirs
+#   6. Restore the current Hermes base image
+#   7. Run `nemoclaw <name> rebuild --yes`
+#   8. Verify marker files survived + version upgraded
 #
 # Prerequisites:
 #   - Docker running
@@ -20,7 +21,6 @@
 #   NEMOCLAW_NON_INTERACTIVE=1             — required
 #   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 — required
 #   NVIDIA_API_KEY                         — required
-#   NEMOCLAW_SANDBOX_NAME                  — sandbox name (default: e2e-rebuild-hm)
 
 set -euo pipefail
 
@@ -29,7 +29,7 @@ OLD_HERMES_VERSION="v2026.3.12"
 MARKER_FILE="/sandbox/.hermes-data/memories/rebuild-marker.txt"
 MARKER_CONTENT="REBUILD_HM_E2E_$(date +%s)"
 REGISTRY_FILE="$HOME/.nemoclaw/sandboxes.json"
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SESSION_FILE="$HOME/.nemoclaw/onboard-session.json"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,12 +47,49 @@ info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 [ -n "${NVIDIA_API_KEY:-}" ] || fail "NVIDIA_API_KEY is required"
 [ "${NEMOCLAW_NON_INTERACTIVE:-}" = "1" ] || fail "NEMOCLAW_NON_INTERACTIVE=1 is required"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 info "Hermes rebuild upgrade E2E (old: ${OLD_HERMES_VERSION}, sandbox: ${SANDBOX_NAME})"
 
-# ── Step 1: Build old Hermes base image ─────────────────────────────
-info "Step 1: Building Hermes base image with ${OLD_HERMES_VERSION}..."
+# ── Phase 1: Install NemoClaw ───────────────────────────────────────
+info "Phase 1: Installing NemoClaw via install.sh..."
+
+export NEMOCLAW_NON_INTERACTIVE=1
+export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
+export NEMOCLAW_SANDBOX_NAME="${SANDBOX_NAME}"
+export NEMOCLAW_RECREATE_SANDBOX=1
+export NEMOCLAW_AGENT=hermes
+
+INSTALL_LOG="/tmp/nemoclaw-e2e-install.log"
+bash "${REPO_ROOT}/install.sh" --non-interactive >"$INSTALL_LOG" 2>&1 || true
+
+# Source shell profile to pick up nvm/PATH changes
+if [ -f "$HOME/.bashrc" ]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.bashrc" 2>/dev/null || true
+fi
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$NVM_DIR/nvm.sh"
+fi
+if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+command -v nemoclaw >/dev/null 2>&1 || fail "nemoclaw not found on PATH after install"
+command -v openshell >/dev/null 2>&1 || fail "openshell not found on PATH after install"
+pass "NemoClaw installed"
+
+# Destroy the sandbox that install.sh created — we'll make our own old one
+nemoclaw "${SANDBOX_NAME}" destroy --yes 2>/dev/null || true
+
+# ── Phase 2: Build old Hermes base image ───────────────────────────
+info "Phase 2: Building Hermes base image with ${OLD_HERMES_VERSION}..."
 
 OLD_BASE_TAG="nemoclaw-hermes-old-base:e2e-rebuild"
+
 docker build \
   --build-arg "HERMES_VERSION=${OLD_HERMES_VERSION}" \
   -f "${REPO_ROOT}/agents/hermes/Dockerfile.base" \
@@ -62,88 +99,110 @@ docker build \
 
 pass "Old Hermes base image built (${OLD_HERMES_VERSION})"
 
-# ── Step 2: Build Hermes sandbox image from old base ────────────────
-info "Step 2: Building Hermes sandbox image from old base..."
+# ── Phase 3: Create old sandbox via openshell ───────────────────────
+info "Phase 3: Creating sandbox with old Hermes via openshell..."
 
-OLD_SANDBOX_TAG="nemoclaw-hermes-old-sandbox:e2e-rebuild"
-docker build \
-  --build-arg "BASE_IMAGE=${OLD_BASE_TAG}" \
-  -f "${REPO_ROOT}/agents/hermes/Dockerfile" \
-  -t "${OLD_SANDBOX_TAG}" \
-  "${REPO_ROOT}" \
-  || fail "Failed to build old Hermes sandbox image"
+# Build a minimal Dockerfile — NOT the full agents/hermes/Dockerfile which
+# patches files that may not exist in the old Hermes version.
+TESTDIR=$(mktemp -d)
+cat >"${TESTDIR}/Dockerfile" <<DOCKERFILE
+FROM ${OLD_BASE_TAG}
+USER sandbox
+WORKDIR /sandbox
+RUN mkdir -p /sandbox/.hermes-data/memories \
+             /sandbox/.hermes-data/sessions \
+             /sandbox/.hermes-data/workspace \
+    && echo '{}' > /sandbox/.hermes-data/config.yaml
+CMD ["/bin/bash"]
+DOCKERFILE
 
-# Verify old version baked in
-OLD_VERSION_CHECK=$(docker run --rm "${OLD_SANDBOX_TAG}" hermes --version 2>/dev/null || true)
-info "Old Hermes image version: ${OLD_VERSION_CHECK}"
+openshell sandbox create --name "${SANDBOX_NAME}" --from "${TESTDIR}/Dockerfile"
+rm -rf "${TESTDIR}"
 
-pass "Old Hermes sandbox image built"
+# Wait for Ready
+for _i in $(seq 1 30); do
+  if openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready"; then
+    break
+  fi
+  sleep 5
+done
+openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready" || fail "Sandbox did not become Ready"
 
-# ── Step 3: Onboard with old Hermes image ───────────────────────────
-info "Step 3: Onboarding sandbox with old Hermes image..."
+pass "Old Hermes sandbox created"
 
-export NEMOCLAW_NON_INTERACTIVE=1
-export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
-export NEMOCLAW_RECREATE_SANDBOX=1
-export NEMOCLAW_AGENT=hermes
+# ── Phase 4: Write markers + register ───────────────────────────────
+info "Phase 4: Writing markers and registering sandbox..."
 
-# Tag the old image as the expected GHCR name so onboard picks it up
-docker tag "${OLD_SANDBOX_TAG}" "ghcr.io/nvidia/nemoclaw/hermes-sandbox-base:latest"
-
-nemoclaw onboard \
-  --sandbox-name "$SANDBOX_NAME" \
-  --agent hermes \
-  --non-interactive \
-  --accept-third-party-software \
-  --recreate-sandbox \
-  || fail "Onboard with old Hermes image failed"
-
-pass "Hermes sandbox created with old version"
-
-# ── Step 4: Write marker files ──────────────────────────────────────
-info "Step 4: Writing marker files into Hermes state dirs..."
-
-openshell sandbox exec "$SANDBOX_NAME" -- \
+openshell sandbox exec --name "${SANDBOX_NAME}" -- \
   sh -c "mkdir -p /sandbox/.hermes-data/memories && echo '${MARKER_CONTENT}' > ${MARKER_FILE}" \
   || fail "Failed to write marker file"
 
-VERIFY=$(openshell sandbox exec "$SANDBOX_NAME" -- cat "$MARKER_FILE" 2>/dev/null || true)
-[ "$VERIFY" = "$MARKER_CONTENT" ] || fail "Marker verification failed"
+VERIFY=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- cat "${MARKER_FILE}" 2>/dev/null || true)
+[ "$VERIFY" = "${MARKER_CONTENT}" ] || fail "Marker verification failed"
 
-pass "Marker file written and verified"
+# Register in NemoClaw registry
+python3 -c "
+import json
+reg = {'sandboxes': {'${SANDBOX_NAME}': {
+    'name': '${SANDBOX_NAME}',
+    'createdAt': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+    'model': 'nvidia/nemotron-3-super-120b-a12b',
+    'provider': 'nvidia-prod',
+    'gpuEnabled': False,
+    'policies': [],
+    'policyTier': None,
+    'agent': 'hermes',
+    'agentVersion': '2026.3.12'
+}}, 'defaultSandbox': '${SANDBOX_NAME}'}
+with open('${REGISTRY_FILE}', 'w') as f:
+    json.dump(reg, f, indent=2)
 
-# ── Step 5: Rebuild ─────────────────────────────────────────────────
-info "Step 5: Running rebuild..."
+sess_path = '${SESSION_FILE}'
+try:
+    with open(sess_path) as f:
+        sess = json.load(f)
+except Exception:
+    sess = {}
+sess['sandboxName'] = '${SANDBOX_NAME}'
+sess['agent'] = 'hermes'
+sess['status'] = 'complete'
+with open(sess_path, 'w') as f:
+    json.dump(sess, f, indent=2)
+print('Registry and session updated')
+"
 
-# Restore the current Hermes base image so rebuild picks up the new version
+pass "Markers written, sandbox registered"
+
+# ── Phase 5: Restore current Hermes base image ─────────────────────
+info "Phase 5: Building current Hermes base image..."
+
 docker build \
   -f "${REPO_ROOT}/agents/hermes/Dockerfile.base" \
   -t "ghcr.io/nvidia/nemoclaw/hermes-sandbox-base:latest" \
   "${REPO_ROOT}" \
-  || fail "Failed to rebuild current Hermes base image"
+  || fail "Failed to build current Hermes base image"
 
-nemoclaw "$SANDBOX_NAME" rebuild --yes \
-  || fail "Rebuild failed"
+pass "Current Hermes base image built"
+
+# ── Phase 6: Rebuild ────────────────────────────────────────────────
+info "Phase 6: Running nemoclaw rebuild..."
+
+nemoclaw "${SANDBOX_NAME}" rebuild --yes || fail "Rebuild failed"
 
 pass "Rebuild completed"
 
-# ── Step 6: Verify marker files survived ────────────────────────────
-info "Step 6: Verifying marker files survived..."
+# ── Phase 7: Verify ─────────────────────────────────────────────────
+info "Phase 7: Verifying results..."
 
-RESTORED=$(openshell sandbox exec "$SANDBOX_NAME" -- cat "$MARKER_FILE" 2>/dev/null || true)
-if [ "$RESTORED" = "$MARKER_CONTENT" ]; then
+# Marker file survived
+RESTORED=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- cat "${MARKER_FILE}" 2>/dev/null || true)
+if [ "$RESTORED" = "${MARKER_CONTENT}" ]; then
   pass "Marker file survived rebuild"
 else
   fail "Marker file lost: got '${RESTORED}', expected '${MARKER_CONTENT}'"
 fi
 
-# ── Step 7: Verify version upgraded ─────────────────────────────────
-info "Step 7: Verifying Hermes version upgraded..."
-
-NEW_VERSION=$(openshell sandbox exec "$SANDBOX_NAME" -- hermes --version 2>/dev/null || true)
-info "New Hermes version: ${NEW_VERSION}"
-
-# Check registry
+# Registry updated
 REGISTRY_VERSION=$(python3 -c "
 import json
 with open('${REGISTRY_FILE}') as f:
@@ -151,19 +210,16 @@ with open('${REGISTRY_FILE}') as f:
 sb = data.get('sandboxes', {}).get('${SANDBOX_NAME}', {})
 print(sb.get('agentVersion', 'null'))
 " 2>/dev/null || echo "error")
-
-if [ "$REGISTRY_VERSION" != "null" ] && [ "$REGISTRY_VERSION" != "error" ]; then
+if [ "$REGISTRY_VERSION" != "null" ] && [ "$REGISTRY_VERSION" != "2026.3.12" ]; then
   pass "Registry agentVersion updated to ${REGISTRY_VERSION}"
 else
   fail "Registry agentVersion not updated: ${REGISTRY_VERSION}"
 fi
 
-# ── Step 8: Check backup for credentials ────────────────────────────
-info "Step 8: Checking backup for leaked credentials..."
-
-BACKUP_DIR="$HOME/.nemoclaw/rebuild-backups/$SANDBOX_NAME"
+# No credentials in backup
+BACKUP_DIR="$HOME/.nemoclaw/rebuild-backups/${SANDBOX_NAME}"
 if [ -d "$BACKUP_DIR" ]; then
-  CRED_LEAKS=$(find "$BACKUP_DIR" -name "*.json" -name "*.yaml" -exec grep -l "nvapi-\|sk-\|Bearer " {} \; 2>/dev/null || true)
+  CRED_LEAKS=$(find "$BACKUP_DIR" \( -name "*.json" -o -name "*.yaml" \) -exec grep -l "nvapi-\|sk-\|Bearer " {} \; 2>/dev/null || true)
   if [ -z "$CRED_LEAKS" ]; then
     pass "No credentials in backup"
   else
@@ -173,8 +229,8 @@ fi
 
 # ── Cleanup ─────────────────────────────────────────────────────────
 info "Cleaning up..."
-nemoclaw "$SANDBOX_NAME" destroy --yes 2>/dev/null || true
-docker rmi "${OLD_BASE_TAG}" "${OLD_SANDBOX_TAG}" 2>/dev/null || true
+nemoclaw "${SANDBOX_NAME}" destroy --yes 2>/dev/null || true
+docker rmi "${OLD_BASE_TAG}" 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}Hermes rebuild upgrade E2E passed.${NC}"

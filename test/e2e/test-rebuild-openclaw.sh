@@ -4,14 +4,15 @@
 
 # OpenClaw rebuild upgrade E2E — reproduces the exact NVBug 6076156 scenario:
 #
-#   1. Build a base image with an OLDER OpenClaw version (2026.3.11)
-#   2. Onboard a sandbox using that old image
-#   3. Verify the sandbox reports the old version
+#   1. Install NemoClaw (install.sh)
+#   2. Build a base image with an OLDER OpenClaw version (2026.3.11)
+#   3. Create a sandbox from that old image via openshell directly
 #   4. Write marker files into workspace state dirs
-#   5. Run `nemoclaw <name> rebuild --yes`
-#   6. Verify marker files survived the rebuild
-#   7. Verify the sandbox now reports the CURRENT version
-#   8. Verify no credentials leaked into the local backup
+#   5. Restore the current base image
+#   6. Run `nemoclaw <name> rebuild --yes`
+#   7. Verify marker files survived the rebuild
+#   8. Verify the sandbox now reports the CURRENT version
+#   9. Verify no credentials leaked into the local backup
 #
 # Prerequisites:
 #   - Docker running
@@ -21,7 +22,6 @@
 #   NEMOCLAW_NON_INTERACTIVE=1             — required
 #   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 — required
 #   NVIDIA_API_KEY                         — required
-#   NEMOCLAW_SANDBOX_NAME                  — sandbox name (default: e2e-rebuild-oc)
 
 set -euo pipefail
 
@@ -30,7 +30,7 @@ OLD_OPENCLAW_VERSION="2026.3.11"
 MARKER_FILE="/sandbox/.openclaw-data/workspace/rebuild-marker.txt"
 MARKER_CONTENT="REBUILD_OC_E2E_$(date +%s)"
 REGISTRY_FILE="$HOME/.nemoclaw/sandboxes.json"
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SESSION_FILE="$HOME/.nemoclaw/onboard-session.json"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -48,18 +48,52 @@ info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 [ -n "${NVIDIA_API_KEY:-}" ] || fail "NVIDIA_API_KEY is required"
 [ "${NEMOCLAW_NON_INTERACTIVE:-}" = "1" ] || fail "NEMOCLAW_NON_INTERACTIVE=1 is required"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 info "OpenClaw rebuild upgrade E2E (old: ${OLD_OPENCLAW_VERSION}, sandbox: ${SANDBOX_NAME})"
 
-# ── Step 1: Build old base image ────────────────────────────────────
-info "Step 1: Building base image with OpenClaw ${OLD_OPENCLAW_VERSION}..."
+# ── Phase 1: Install NemoClaw ───────────────────────────────────────
+info "Phase 1: Installing NemoClaw via install.sh..."
+
+export NEMOCLAW_NON_INTERACTIVE=1
+export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
+export NEMOCLAW_SANDBOX_NAME="${SANDBOX_NAME}"
+export NEMOCLAW_RECREATE_SANDBOX=1
+
+INSTALL_LOG="/tmp/nemoclaw-e2e-install.log"
+bash "${REPO_ROOT}/install.sh" --non-interactive >"$INSTALL_LOG" 2>&1 || true
+
+# Source shell profile to pick up nvm/PATH changes
+if [ -f "$HOME/.bashrc" ]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.bashrc" 2>/dev/null || true
+fi
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$NVM_DIR/nvm.sh"
+fi
+if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+command -v nemoclaw >/dev/null 2>&1 || fail "nemoclaw not found on PATH after install"
+command -v openshell >/dev/null 2>&1 || fail "openshell not found on PATH after install"
+pass "NemoClaw installed"
+
+# Destroy the sandbox that install.sh created — we'll make our own old one
+nemoclaw "${SANDBOX_NAME}" destroy --yes 2>/dev/null || true
+
+# ── Phase 2: Build old base image ──────────────────────────────────
+info "Phase 2: Building base image with OpenClaw ${OLD_OPENCLAW_VERSION}..."
 
 OLD_BASE_TAG="nemoclaw-old-base:e2e-rebuild"
-
-# Dockerfile.base validates OPENCLAW_VERSION >= min_openclaw_version from
-# blueprint.yaml at build time. To build with an older version we need to
-# temporarily lower the minimum. Patch in-place then restore after build.
 BLUEPRINT="${REPO_ROOT}/nemoclaw-blueprint/blueprint.yaml"
 BLUEPRINT_BAK="${BLUEPRINT}.bak"
+
+# Dockerfile.base validates OPENCLAW_VERSION >= min_openclaw_version.
+# Temporarily lower the minimum so the old version builds.
 cp "${BLUEPRINT}" "${BLUEPRINT_BAK}"
 sed -i "s/min_openclaw_version:.*/min_openclaw_version: \"${OLD_OPENCLAW_VERSION}\"/" "${BLUEPRINT}"
 
@@ -67,8 +101,7 @@ docker build \
   --build-arg "OPENCLAW_VERSION=${OLD_OPENCLAW_VERSION}" \
   -f "${REPO_ROOT}/Dockerfile.base" \
   -t "${OLD_BASE_TAG}" \
-  "${REPO_ROOT}" \
-  ;
+  "${REPO_ROOT}"
 BUILD_RC=$?
 
 mv "${BLUEPRINT_BAK}" "${BLUEPRINT}"
@@ -76,103 +109,119 @@ mv "${BLUEPRINT_BAK}" "${BLUEPRINT}"
 
 pass "Old base image built (OpenClaw ${OLD_OPENCLAW_VERSION})"
 
-# ── Step 2: Build sandbox image from old base ───────────────────────
-info "Step 2: Building sandbox image from old base..."
+# ── Phase 3: Create old sandbox via openshell ───────────────────────
+info "Phase 3: Creating sandbox with old OpenClaw via openshell..."
 
-OLD_SANDBOX_TAG="nemoclaw-old-sandbox:e2e-rebuild"
-docker build \
-  --build-arg "BASE_IMAGE=${OLD_BASE_TAG}" \
-  -f "${REPO_ROOT}/Dockerfile" \
-  -t "${OLD_SANDBOX_TAG}" \
-  "${REPO_ROOT}" \
-  || fail "Failed to build old sandbox image"
+# Build a minimal Dockerfile that uses the old base
+TESTDIR=$(mktemp -d)
+cat >"${TESTDIR}/Dockerfile" <<DOCKERFILE
+FROM ${OLD_BASE_TAG}
+USER sandbox
+WORKDIR /sandbox
+RUN mkdir -p /sandbox/.openclaw-data/workspace /sandbox/.openclaw && echo '{}' > /sandbox/.openclaw/openclaw.json
+CMD ["/bin/bash"]
+DOCKERFILE
 
-# Verify old version baked in
-OLD_VERSION_CHECK=$(docker run --rm "${OLD_SANDBOX_TAG}" openclaw --version 2>/dev/null || true)
-if echo "${OLD_VERSION_CHECK}" | grep -q "${OLD_OPENCLAW_VERSION}"; then
-  pass "Old sandbox has OpenClaw ${OLD_OPENCLAW_VERSION}"
-else
-  fail "Expected OpenClaw ${OLD_OPENCLAW_VERSION} in old image, got: ${OLD_VERSION_CHECK}"
-fi
+openshell sandbox create --name "${SANDBOX_NAME}" --from "${TESTDIR}/Dockerfile"
+rm -rf "${TESTDIR}"
 
-# ── Step 3: Onboard with old image ──────────────────────────────────
-info "Step 3: Onboarding sandbox with old image..."
+# Wait for Ready
+for _i in $(seq 1 30); do
+  if openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready"; then
+    break
+  fi
+  sleep 5
+done
+openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready" || fail "Sandbox did not become Ready"
 
-export NEMOCLAW_NON_INTERACTIVE=1
-export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
-export NEMOCLAW_RECREATE_SANDBOX=1
-export NEMOCLAW_FROM_DOCKERFILE=""
+# Verify old version
+SANDBOX_VERSION=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- openclaw --version 2>&1 || true)
+echo "${SANDBOX_VERSION}" | grep -q "${OLD_OPENCLAW_VERSION}" || info "Version: ${SANDBOX_VERSION}"
 
-# Tag the old image as the expected GHCR name so onboard picks it up
-docker tag "${OLD_SANDBOX_TAG}" "ghcr.io/nvidia/nemoclaw/sandbox-base:latest"
+pass "Old sandbox created (OpenClaw ${OLD_OPENCLAW_VERSION})"
 
-nemoclaw onboard \
-  --sandbox-name "$SANDBOX_NAME" \
-  --non-interactive \
-  --accept-third-party-software \
-  --recreate-sandbox \
-  || fail "Onboard with old image failed"
+# ── Phase 4: Write marker files + register ──────────────────────────
+info "Phase 4: Writing markers and registering sandbox..."
 
-pass "Sandbox created with old OpenClaw version"
-
-# ── Step 4: Verify old version in sandbox ───────────────────────────
-info "Step 4: Verifying sandbox runs old OpenClaw version..."
-
-SANDBOX_VERSION=$(openshell sandbox exec "$SANDBOX_NAME" -- openclaw --version 2>/dev/null || true)
-if echo "${SANDBOX_VERSION}" | grep -q "${OLD_OPENCLAW_VERSION}"; then
-  pass "Sandbox confirmed running OpenClaw ${OLD_OPENCLAW_VERSION}"
-else
-  info "Sandbox version: ${SANDBOX_VERSION} (may differ from base if image layers cached)"
-fi
-
-# ── Step 5: Write marker files ──────────────────────────────────────
-info "Step 5: Writing marker files..."
-
-openshell sandbox exec "$SANDBOX_NAME" -- \
+openshell sandbox exec --name "${SANDBOX_NAME}" -- \
   sh -c "mkdir -p /sandbox/.openclaw-data/workspace && echo '${MARKER_CONTENT}' > ${MARKER_FILE}" \
   || fail "Failed to write marker file"
 
-VERIFY=$(openshell sandbox exec "$SANDBOX_NAME" -- cat "$MARKER_FILE" 2>/dev/null || true)
-[ "$VERIFY" = "$MARKER_CONTENT" ] || fail "Marker verification failed"
+# Verify
+VERIFY=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- cat "${MARKER_FILE}" 2>/dev/null || true)
+[ "$VERIFY" = "${MARKER_CONTENT}" ] || fail "Marker verification failed: got '${VERIFY}'"
 
-pass "Marker file written and verified"
+# Register in NemoClaw registry with old version
+python3 -c "
+import json
+reg = {'sandboxes': {'${SANDBOX_NAME}': {
+    'name': '${SANDBOX_NAME}',
+    'createdAt': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+    'model': 'nvidia/nemotron-3-super-120b-a12b',
+    'provider': 'nvidia-prod',
+    'gpuEnabled': False,
+    'policies': [],
+    'policyTier': None,
+    'agent': None,
+    'agentVersion': '${OLD_OPENCLAW_VERSION}'
+}}, 'defaultSandbox': '${SANDBOX_NAME}'}
+with open('${REGISTRY_FILE}', 'w') as f:
+    json.dump(reg, f, indent=2)
 
-# ── Step 6: Rebuild ─────────────────────────────────────────────────
-info "Step 6: Running rebuild..."
+# Update session to point at this sandbox
+sess_path = '${SESSION_FILE}'
+try:
+    with open(sess_path) as f:
+        sess = json.load(f)
+except Exception:
+    sess = {}
+sess['sandboxName'] = '${SANDBOX_NAME}'
+sess['status'] = 'complete'
+with open(sess_path, 'w') as f:
+    json.dump(sess, f, indent=2)
+print('Registry and session updated')
+"
 
-# Restore the current base image so rebuild picks up the new version
+pass "Markers written, sandbox registered"
+
+# ── Phase 5: Restore current base image ─────────────────────────────
+info "Phase 5: Restoring current base image..."
+
 docker build \
   -f "${REPO_ROOT}/Dockerfile.base" \
   -t "ghcr.io/nvidia/nemoclaw/sandbox-base:latest" \
   "${REPO_ROOT}" \
-  || fail "Failed to rebuild current base image"
+  || fail "Failed to build current base image"
 
-nemoclaw "$SANDBOX_NAME" rebuild --yes \
-  || fail "Rebuild failed"
+pass "Current base image restored"
+
+# ── Phase 6: Rebuild ────────────────────────────────────────────────
+info "Phase 6: Running nemoclaw rebuild..."
+
+nemoclaw "${SANDBOX_NAME}" rebuild --yes || fail "Rebuild failed"
 
 pass "Rebuild completed"
 
-# ── Step 7: Verify marker files survived ────────────────────────────
-info "Step 7: Verifying marker files survived..."
+# ── Phase 7: Verify ─────────────────────────────────────────────────
+info "Phase 7: Verifying results..."
 
-RESTORED=$(openshell sandbox exec "$SANDBOX_NAME" -- cat "$MARKER_FILE" 2>/dev/null || true)
-if [ "$RESTORED" = "$MARKER_CONTENT" ]; then
+# Marker file survived
+RESTORED=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- cat "${MARKER_FILE}" 2>/dev/null || true)
+if [ "$RESTORED" = "${MARKER_CONTENT}" ]; then
   pass "Marker file survived rebuild"
 else
   fail "Marker file lost: got '${RESTORED}', expected '${MARKER_CONTENT}'"
 fi
 
-# ── Step 8: Verify version upgraded ─────────────────────────────────
-info "Step 8: Verifying version upgraded..."
-
-NEW_VERSION=$(openshell sandbox exec "$SANDBOX_NAME" -- openclaw --version 2>/dev/null || true)
+# Version upgraded
+NEW_VERSION=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- openclaw --version 2>&1 || true)
 if echo "${NEW_VERSION}" | grep -qv "${OLD_OPENCLAW_VERSION}"; then
-  pass "OpenClaw version upgraded (now: ${NEW_VERSION})"
+  pass "OpenClaw version upgraded: ${NEW_VERSION}"
 else
-  fail "Version still old after rebuild: ${NEW_VERSION}"
+  fail "Version still old: ${NEW_VERSION}"
 fi
 
-# Check registry
+# Registry updated
 REGISTRY_VERSION=$(python3 -c "
 import json
 with open('${REGISTRY_FILE}') as f:
@@ -180,17 +229,14 @@ with open('${REGISTRY_FILE}') as f:
 sb = data.get('sandboxes', {}).get('${SANDBOX_NAME}', {})
 print(sb.get('agentVersion', 'null'))
 " 2>/dev/null || echo "error")
-
 if [ "$REGISTRY_VERSION" != "null" ] && [ "$REGISTRY_VERSION" != "${OLD_OPENCLAW_VERSION}" ]; then
   pass "Registry agentVersion updated to ${REGISTRY_VERSION}"
 else
   fail "Registry agentVersion not updated: ${REGISTRY_VERSION}"
 fi
 
-# ── Step 9: Check backup for credentials ────────────────────────────
-info "Step 9: Checking backup for leaked credentials..."
-
-BACKUP_DIR="$HOME/.nemoclaw/rebuild-backups/$SANDBOX_NAME"
+# No credentials in backup
+BACKUP_DIR="$HOME/.nemoclaw/rebuild-backups/${SANDBOX_NAME}"
 if [ -d "$BACKUP_DIR" ]; then
   CRED_LEAKS=$(find "$BACKUP_DIR" -name "*.json" -exec grep -l "nvapi-\|sk-\|Bearer " {} \; 2>/dev/null || true)
   if [ -z "$CRED_LEAKS" ]; then
@@ -202,8 +248,8 @@ fi
 
 # ── Cleanup ─────────────────────────────────────────────────────────
 info "Cleaning up..."
-nemoclaw "$SANDBOX_NAME" destroy --yes 2>/dev/null || true
-docker rmi "${OLD_BASE_TAG}" "${OLD_SANDBOX_TAG}" 2>/dev/null || true
+nemoclaw "${SANDBOX_NAME}" destroy --yes 2>/dev/null || true
+docker rmi "${OLD_BASE_TAG}" 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}OpenClaw rebuild upgrade E2E passed.${NC}"

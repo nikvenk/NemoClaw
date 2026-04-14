@@ -1528,7 +1528,7 @@ async function sandboxRebuild(sandboxName, args = []) {
   // Step 1: Ensure sandbox is live for backup
   const isLive = captureOpenshell(["sandbox", "list"], { ignoreError: true });
   const liveNames = parseLiveSandboxNames(isLive.output || "");
-  if (!liveNames.includes(sandboxName)) {
+  if (!liveNames.has(sandboxName)) {
     console.error(`  Sandbox '${sandboxName}' is not running. Cannot back up state.`);
     console.error("  Start it first or recreate with `nemoclaw onboard --recreate-sandbox`.");
     process.exit(1);
@@ -1558,12 +1558,20 @@ async function sandboxRebuild(sandboxName, args = []) {
   // Step 4: Recreate via onboard --resume
   console.log("");
   console.log("  Creating new sandbox with current image...");
+
+  // Force the sandbox name so onboard recreates with the same name.
+  // Update the session to point at this sandbox and set env var as fallback.
+  onboardSession.updateSession((s) => {
+    s.sandboxName = sandboxName;
+    return s;
+  });
+  process.env.NEMOCLAW_SANDBOX_NAME = sandboxName;
+
   const { onboard } = require("./lib/onboard");
   await onboard({
     resume: true,
     nonInteractive: true,
     recreateSandbox: true,
-    sandboxNameOverride: sandboxName,
   });
 
   // Step 5: Restore
