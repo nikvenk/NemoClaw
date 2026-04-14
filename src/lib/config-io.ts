@@ -7,15 +7,29 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { shellQuote } from "./runner";
+
 function buildRemediation(): string {
   const home = process.env.HOME || os.homedir();
   const nemoclawDir = path.join(home, ".nemoclaw");
+  const backupDir = `${nemoclawDir}.backup.${process.pid}`;
+  const recoveryHome = path.join(os.tmpdir(), `nemoclaw-home-${process.getuid?.() ?? "user"}`);
+
   return [
-    "  To fix, run one of:",
+    "  To fix, try one of these recovery paths:",
     "",
-    `    sudo chown -R $(whoami) ${nemoclawDir}`,
-    "    # or, if the directory was created by another user:",
-    `    sudo rm -rf ${nemoclawDir} && nemoclaw onboard`,
+    "    # If you can use sudo, repair the existing config directory:",
+    `    sudo chown -R $(whoami) ${shellQuote(nemoclawDir)}`,
+    "    # or recreate it if it was created by another user:",
+    `    sudo rm -rf ${shellQuote(nemoclawDir)} && nemoclaw onboard`,
+    "",
+    "    # If sudo is unavailable, move the bad config aside from a writable HOME:",
+    `    mv ${shellQuote(nemoclawDir)} ${shellQuote(backupDir)} && nemoclaw onboard`,
+    "    # or, if you already own the directory, remove it without sudo:",
+    `    rm -rf ${shellQuote(nemoclawDir)} && nemoclaw onboard`,
+    "",
+    "    # If HOME itself is not writable, start NemoClaw with a writable HOME:",
+    `    mkdir -p ${shellQuote(recoveryHome)} && HOME=${shellQuote(recoveryHome)} nemoclaw onboard`,
     "",
     "  This usually happens when NemoClaw was first run with sudo",
     "  or the config directory was created by a different user.",
