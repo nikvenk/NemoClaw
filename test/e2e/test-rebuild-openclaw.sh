@@ -54,12 +54,25 @@ info "OpenClaw rebuild upgrade E2E (old: ${OLD_OPENCLAW_VERSION}, sandbox: ${SAN
 info "Step 1: Building base image with OpenClaw ${OLD_OPENCLAW_VERSION}..."
 
 OLD_BASE_TAG="nemoclaw-old-base:e2e-rebuild"
+
+# Dockerfile.base validates OPENCLAW_VERSION >= min_openclaw_version from
+# blueprint.yaml at build time. To build with an older version we need to
+# temporarily lower the minimum. Patch in-place then restore after build.
+BLUEPRINT="${REPO_ROOT}/nemoclaw-blueprint/blueprint.yaml"
+BLUEPRINT_BAK="${BLUEPRINT}.bak"
+cp "${BLUEPRINT}" "${BLUEPRINT_BAK}"
+sed -i "s/min_openclaw_version:.*/min_openclaw_version: \"${OLD_OPENCLAW_VERSION}\"/" "${BLUEPRINT}"
+
 docker build \
   --build-arg "OPENCLAW_VERSION=${OLD_OPENCLAW_VERSION}" \
   -f "${REPO_ROOT}/Dockerfile.base" \
   -t "${OLD_BASE_TAG}" \
   "${REPO_ROOT}" \
-  || fail "Failed to build old base image"
+  ;
+BUILD_RC=$?
+
+mv "${BLUEPRINT_BAK}" "${BLUEPRINT}"
+[ "$BUILD_RC" -eq 0 ] || fail "Failed to build old base image"
 
 pass "Old base image built (OpenClaw ${OLD_OPENCLAW_VERSION})"
 

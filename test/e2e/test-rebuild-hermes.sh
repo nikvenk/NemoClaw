@@ -25,7 +25,7 @@
 set -euo pipefail
 
 SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-e2e-rebuild-hm}"
-OLD_HERMES_VERSION="v2026.3.0"
+OLD_HERMES_VERSION="v2026.3.12"
 MARKER_FILE="/sandbox/.hermes-data/memories/rebuild-marker.txt"
 MARKER_CONTENT="REBUILD_HM_E2E_$(date +%s)"
 REGISTRY_FILE="$HOME/.nemoclaw/sandboxes.json"
