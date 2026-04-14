@@ -71,7 +71,7 @@ If their PR directly influenced the merged implementation, be specific:
 
 If someone submitted a PR to fix a vulnerability — regardless of whether the fix merged — acknowledge the finding explicitly:
 
-> Thanks for identifying and reporting this. The fix went through our [coordinated disclosure process](../SECURITY.md), but we want to recognize that you spotted this and brought it to our attention. That's a real contribution.
+> Thanks for identifying and reporting this. The fix went through our [coordinated disclosure process](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md), but we want to recognize that you spotted this and brought it to our attention. That's a real contribution.
 
 NVIDIA's SECURITY.md notes that acknowledgement is offered under the coordinated vulnerability disclosure policy. Maintainers should treat this as a commitment, not a courtesy — make sure credit is given.
 
@@ -218,10 +218,10 @@ Two distinct situations require different responses.
 
 ## 10. References
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — scope, PR process, commit conventions
-- [SECURITY.md](../SECURITY.md) — vulnerability disclosure; direct reporters here, not GitHub issues
-- [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) — all community interactions are governed by this
-- [Bug report template](../.github/ISSUE_TEMPLATE/bug_report.yml) — what we ask contributors to provide
+- [CONTRIBUTING.md](https://github.com/NVIDIA/NemoClaw/blob/main/CONTRIBUTING.md) — scope, PR process, commit conventions
+- [SECURITY.md](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md) — vulnerability disclosure; direct reporters here, not GitHub issues
+- [CODE_OF_CONDUCT.md](https://github.com/NVIDIA/NemoClaw/blob/main/CODE_OF_CONDUCT.md) — all community interactions are governed by this
+- [Bug report template](https://github.com/NVIDIA/NemoClaw/blob/main/.github/ISSUE_TEMPLATE/bug_report.yml) — what we ask contributors to provide
 
 ---
 

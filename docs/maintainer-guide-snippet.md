@@ -33,7 +33,7 @@ status: active
 | Outside project design/scope | `status: out-of-scope` |
 | Good idea, needs a proposal first | `status: needs-design` |
 
-> Thanks for raising this. After review, we're closing as **[label]** because [one sentence]. See [CONTRIBUTING.md](../CONTRIBUTING.md) for scope guidance. We appreciate you taking the time.
+> Thanks for raising this. After review, we're closing as **[label]** because [one sentence]. See [CONTRIBUTING.md](https://github.com/NVIDIA/NemoClaw/blob/main/CONTRIBUTING.md) for scope guidance. We appreciate you taking the time.
 
 ---
 
@@ -45,7 +45,7 @@ Comment on the closed PR before you merge:
 
 **Security PRs:** Always acknowledge the finding explicitly, even when the fix went through PSIRT:
 
-> Thanks for identifying this. The fix followed our [coordinated disclosure process](../SECURITY.md), but your report is a real contribution and we want to recognize it.
+> Thanks for identifying this. The fix followed our [coordinated disclosure process](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md), but your report is a real contribution and we want to recognize it.
 
 ---
 
@@ -115,7 +115,7 @@ If you'll miss a window — post an update before it lapses.
 
 ---
 
-*Full guide: [docs/maintainer-guide.md](maintainer-guide.md) · Scope: [CONTRIBUTING.md](../CONTRIBUTING.md) · Security: [SECURITY.md](../SECURITY.md)*
+*Full guide: [docs/maintainer-guide.md](maintainer-guide.md) · Scope: [CONTRIBUTING.md](https://github.com/NVIDIA/NemoClaw/blob/main/CONTRIBUTING.md) · Security: [SECURITY.md](https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md)*
 
 ---
 

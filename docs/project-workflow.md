@@ -174,7 +174,7 @@ When processing a new incoming issue:
 ---
 
 *Maintainer community response guide: [docs/maintainer-guide.md](maintainer-guide.md)*
-*Skill reference: [.agents/skills/nemoclaw-maintainer-community-response/SKILL.md](../.agents/skills/nemoclaw-maintainer-community-response/SKILL.md)*
+*Skill reference: [.agents/skills/nemoclaw-maintainer-community-response/SKILL.md](https://github.com/NVIDIA/NemoClaw/blob/main/.agents/skills/nemoclaw-maintainer-community-response/SKILL.md)*
 
 ---
 
