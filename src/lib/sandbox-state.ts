@@ -143,6 +143,13 @@ function sanitizeBackupDirectory(dirPath: string): void {
   walk(dirPath);
 }
 
+// ── Logging ────────────────────────────────────────────────────────
+
+const _verbose = () => process.env.NEMOCLAW_REBUILD_VERBOSE === "1";
+function _log(msg: string): void {
+  if (_verbose()) console.error(`  [sandbox-state ${new Date().toISOString()}] ${msg}`);
+}
+
 // ── Backup ─────────────────────────────────────────────────────────
 
 /**
@@ -155,6 +162,7 @@ export function backupSandboxState(sandboxName: string): BackupResult {
   const agent = loadAgent(agentName);
   const writableDir = agent.configPaths.writableDir;
   const stateDirs = agent.stateDirs;
+  _log(`backupSandboxState: agent=${agentName}, writableDir=${writableDir}, stateDirs=[${stateDirs.join(",")}]`);
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = path.join(REBUILD_BACKUPS_DIR, sandboxName, timestamp);
@@ -182,10 +190,13 @@ export function backupSandboxState(sandboxName: string): BackupResult {
   }
 
   // SSH+tar single-roundtrip download
+  _log("Getting SSH config via openshell sandbox ssh-config");
   const sshConfig = getSshConfig(sandboxName);
   if (!sshConfig) {
+    _log("FAILED: Could not get SSH config");
     return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs] };
   }
+  _log(`SSH config obtained (${sshConfig.length} bytes)`);
 
   const configFile = writeTempSshConfig(sshConfig);
   try {
@@ -194,28 +205,34 @@ export function backupSandboxState(sandboxName: string): BackupResult {
     const existCheckCmd = stateDirs
       .map((d) => `[ -d "${writableDir}/${d}" ] && echo "${d}"`)
       .join("; ");
+    _log(`Checking existing dirs via SSH: ${existCheckCmd.substring(0, 100)}...`);
     const existResult = spawnSync(
       "ssh",
       [...sshArgs(configFile, sandboxName), existCheckCmd],
       { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },
     );
+    _log(`Dir check: exit=${existResult.status}, stdout=${(existResult.stdout || "").trim().substring(0, 200)}, stderr=${(existResult.stderr || "").trim().substring(0, 200)}`);
     const existingDirs = (existResult.stdout || "")
       .trim()
       .split("\n")
       .filter((d) => d.length > 0);
+    _log(`Existing dirs in sandbox: [${existingDirs.join(",")}] (${existingDirs.length}/${stateDirs.length})`);
 
     if (existingDirs.length === 0) {
+      _log("No dirs to back up");
       writeManifest(backupPath, manifest);
       return { success: true, manifest, backedUpDirs, failedDirs };
     }
 
     // Download via SSH+tar
     const tarCmd = `tar -cf - -C ${writableDir} ${existingDirs.join(" ")}`;
+    _log(`Downloading via SSH+tar: ${tarCmd}`);
     const result = spawnSync(
       "ssh",
       [...sshArgs(configFile, sandboxName), tarCmd],
       { stdio: ["ignore", "pipe", "pipe"], timeout: 120000, maxBuffer: 256 * 1024 * 1024 },
     );
+    _log(`SSH+tar download: exit=${result.status}, stdout=${result.stdout ? result.stdout.length + " bytes" : "null"}, stderr=${(result.stderr?.toString() || "").substring(0, 200)}`);
 
     if (result.status === 0 && result.stdout && result.stdout.length > 0) {
       // Extract tar locally
@@ -259,8 +276,10 @@ export function restoreSandboxState(
   sandboxName: string,
   backupPath: string,
 ): RestoreResult {
+  _log(`restoreSandboxState: sandbox=${sandboxName}, backupPath=${backupPath}`);
   const manifest = readManifest(backupPath);
   if (!manifest) {
+    _log("FAILED: Could not read rebuild-manifest.json");
     return { success: false, restoredDirs: [], failedDirs: ["manifest"] };
   }
 
@@ -272,13 +291,17 @@ export function restoreSandboxState(
   const localDirs = manifest.stateDirs.filter((d) =>
     existsSync(path.join(backupPath, d)),
   );
+  _log(`Local backup dirs: [${localDirs.join(",")}] (${localDirs.length}/${manifest.stateDirs.length})`);
 
   if (localDirs.length === 0) {
+    _log("No dirs to restore");
     return { success: true, restoredDirs, failedDirs };
   }
 
+  _log("Getting SSH config for restore");
   const sshConfig = getSshConfig(sandboxName);
   if (!sshConfig) {
+    _log("FAILED: Could not get SSH config for restore");
     return { success: false, restoredDirs, failedDirs: [...localDirs] };
   }
 

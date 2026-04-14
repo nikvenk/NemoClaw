@@ -39,9 +39,18 @@ NC='\033[0m'
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 fail() {
   echo -e "${RED}[FAIL]${NC} $1" >&2
+  echo -e "${YELLOW}[DIAG]${NC} --- Failure diagnostics ---" >&2
+  echo -e "${YELLOW}[DIAG]${NC} Registry: $(cat "${REGISTRY_FILE}" 2>/dev/null || echo 'not found')" >&2
+  echo -e "${YELLOW}[DIAG]${NC} Session: $(cat "${SESSION_FILE}" 2>/dev/null || echo 'not found')" >&2
+  echo -e "${YELLOW}[DIAG]${NC} Sandboxes: $(openshell sandbox list 2>&1 || echo 'openshell unavailable')" >&2
+  echo -e "${YELLOW}[DIAG]${NC} Docker: $(docker ps --format '{{.Names}} {{.Image}} {{.Status}}' 2>&1 | head -5)" >&2
+  echo -e "${YELLOW}[DIAG]${NC} --- End diagnostics ---" >&2
   exit 1
 }
 info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+diag() { echo -e "${YELLOW}[DIAG]${NC} $1"; }
+
+export NEMOCLAW_REBUILD_VERBOSE=1
 
 # ── Preflight ───────────────────────────────────────────────────────
 [ -n "${NVIDIA_API_KEY:-}" ] || fail "NVIDIA_API_KEY is required"
@@ -82,8 +91,10 @@ command -v nemoclaw >/dev/null 2>&1 || fail "nemoclaw not found on PATH after in
 command -v openshell >/dev/null 2>&1 || fail "openshell not found on PATH after install"
 pass "NemoClaw installed"
 
-# Destroy the sandbox that install.sh created — we'll make our own old one
-nemoclaw "${SANDBOX_NAME}" destroy --yes 2>/dev/null || true
+# Delete the sandbox that install.sh created — we'll make our own old one.
+# Use openshell directly to preserve the 'nemoclaw' gateway for the rebuild.
+openshell sandbox delete "${SANDBOX_NAME}" 2>/dev/null || true
+diag "Deleted Phase 1 sandbox, gateway preserved: $(docker ps --filter name=openshell --format '{{.Names}} {{.Status}}' 2>/dev/null)"
 
 # ── Phase 2: Build old Hermes base image ───────────────────────────
 info "Phase 2: Building Hermes base image with ${OLD_HERMES_VERSION}..."
@@ -116,7 +127,7 @@ RUN mkdir -p /sandbox/.hermes-data/memories \
 CMD ["/bin/bash"]
 DOCKERFILE
 
-openshell sandbox create --name "${SANDBOX_NAME}" --from "${TESTDIR}/Dockerfile" --no-tty -- true
+openshell sandbox create --name "${SANDBOX_NAME}" --from "${TESTDIR}/Dockerfile" --gateway nemoclaw --no-tty -- true
 rm -rf "${TESTDIR}"
 
 # Wait for Ready
@@ -187,7 +198,14 @@ pass "Current Hermes base image built"
 # ── Phase 6: Rebuild ────────────────────────────────────────────────
 info "Phase 6: Running nemoclaw rebuild..."
 
-nemoclaw "${SANDBOX_NAME}" rebuild --yes || fail "Rebuild failed"
+diag "Pre-rebuild state:"
+diag "  Registry: $(python3 -c "import json; d=json.load(open('${REGISTRY_FILE}')); print(json.dumps({k: {'agent': v.get('agent'), 'agentVersion': v.get('agentVersion')} for k,v in d.get('sandboxes',{}).items()}))" 2>/dev/null)"
+diag "  Session: $(python3 -c "import json; s=json.load(open('${SESSION_FILE}')); print(f'name={s.get(\"sandboxName\")} status={s.get(\"status\")} resumable={s.get(\"resumable\")} agent={s.get(\"agent\")} provider={s.get(\"provider\")}')" 2>/dev/null)"
+diag "  Live sandboxes: $(openshell sandbox list 2>&1 | grep -v NAME || echo none)"
+diag "  Gateway: $(docker ps --filter name=openshell --format '{{.Names}} {{.Status}}' 2>/dev/null || echo 'not running')"
+
+diag "Calling: nemoclaw ${SANDBOX_NAME} rebuild --yes --verbose"
+nemoclaw "${SANDBOX_NAME}" rebuild --yes --verbose || fail "Rebuild failed"
 
 pass "Rebuild completed"
 

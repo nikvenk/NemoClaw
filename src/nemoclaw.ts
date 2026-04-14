@@ -1482,7 +1482,13 @@ async function sandboxDestroy(sandboxName, args = []) {
 
 // ── Rebuild ──────────────────────────────────────────────────────
 
+function _rebuildLog(msg) {
+  console.error(`  ${D}[rebuild ${new Date().toISOString()}] ${msg}${R}`);
+}
+
 async function sandboxRebuild(sandboxName, args = []) {
+  const verbose = args.includes("--verbose") || args.includes("-v") || process.env.NEMOCLAW_REBUILD_VERBOSE === "1";
+  const log = verbose ? _rebuildLog : () => {};
   const skipConfirm = args.includes("--yes") || args.includes("--force");
   const sb = registry.getSandbox(sandboxName);
   if (!sb) {
@@ -1526,8 +1532,11 @@ async function sandboxRebuild(sandboxName, args = []) {
   }
 
   // Step 1: Ensure sandbox is live for backup
+  log("Checking sandbox liveness: openshell sandbox list");
   const isLive = captureOpenshell(["sandbox", "list"], { ignoreError: true });
+  log(`openshell sandbox list exit=${isLive.status}, output=${(isLive.output || "").substring(0, 200)}`);
   const liveNames = parseLiveSandboxNames(isLive.output || "");
+  log(`Live sandboxes: ${Array.from(liveNames).join(", ") || "(none)"}`);
   if (!liveNames.has(sandboxName)) {
     console.error(`  Sandbox '${sandboxName}' is not running. Cannot back up state.`);
     console.error("  Start it first or recreate with `nemoclaw onboard --recreate-sandbox`.");
@@ -1536,7 +1545,9 @@ async function sandboxRebuild(sandboxName, args = []) {
 
   // Step 2: Backup
   console.log("  Backing up sandbox state...");
+  log(`Agent type: ${sb.agent || "openclaw"}, stateDirs from manifest`);
   const backup = sandboxState.backupSandboxState(sandboxName);
+  log(`Backup result: success=${backup.success}, backed=${backup.backedUpDirs.join(",")}, failed=${backup.failedDirs.join(",")}`);
   if (!backup.success) {
     console.error("  Failed to back up sandbox state.");
     if (backup.backedUpDirs.length > 0) {
@@ -1556,20 +1567,24 @@ async function sandboxRebuild(sandboxName, args = []) {
   // nulls session.sandboxName — both break the immediate onboard --resume.
   console.log("  Deleting old sandbox...");
   const sbMeta = registry.getSandbox(sandboxName);
+  log(`Registry entry: agent=${sbMeta?.agent}, agentVersion=${sbMeta?.agentVersion}, nimContainer=${sbMeta?.nimContainer}`);
   if (sbMeta && sbMeta.nimContainer) nim.stopNimContainerByName(sbMeta.nimContainer);
   else nim.stopNimContainer(sandboxName);
 
+  log(`Running: openshell sandbox delete ${sandboxName}`);
   const deleteResult = runOpenshell(["sandbox", "delete", sandboxName], {
     ignoreError: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const { alreadyGone } = getSandboxDeleteOutcome(deleteResult);
+  log(`Delete result: exit=${deleteResult.status}, alreadyGone=${alreadyGone}`);
   if (deleteResult.status !== 0 && !alreadyGone) {
     console.error("  Failed to delete sandbox. Aborting rebuild.");
     console.error("  State backup is preserved at: " + backup.manifest.backupPath);
     process.exit(deleteResult.status || 1);
   }
   registry.removeSandbox(sandboxName);
+  log(`Registry after remove: ${JSON.stringify(registry.listSandboxes().sandboxes.map(s => s.name))}`);
   console.log(`  ${G}\u2713${R} Old sandbox deleted`);
 
   // Step 4: Recreate via onboard --resume
@@ -1578,6 +1593,9 @@ async function sandboxRebuild(sandboxName, args = []) {
 
   // Force the sandbox name so onboard recreates with the same name.
   // Mark session resumable and point at this sandbox; set env var as fallback.
+  const sessionBefore = onboardSession.loadSession();
+  log(`Session before update: sandboxName=${sessionBefore?.sandboxName}, status=${sessionBefore?.status}, resumable=${sessionBefore?.resumable}, provider=${sessionBefore?.provider}, model=${sessionBefore?.model}`);
+
   onboardSession.updateSession((s) => {
     s.sandboxName = sandboxName;
     s.resumable = true;
@@ -1586,6 +1604,11 @@ async function sandboxRebuild(sandboxName, args = []) {
   });
   process.env.NEMOCLAW_SANDBOX_NAME = sandboxName;
 
+  const sessionAfter = onboardSession.loadSession();
+  log(`Session after update: sandboxName=${sessionAfter?.sandboxName}, status=${sessionAfter?.status}, resumable=${sessionAfter?.resumable}, provider=${sessionAfter?.provider}, model=${sessionAfter?.model}`);
+  log(`Env: NEMOCLAW_SANDBOX_NAME=${process.env.NEMOCLAW_SANDBOX_NAME}, NEMOCLAW_RECREATE_SANDBOX=${process.env.NEMOCLAW_RECREATE_SANDBOX}`);
+  log("Calling onboard({ resume: true, nonInteractive: true, recreateSandbox: true })");
+
   const { onboard } = require("./lib/onboard");
   await onboard({
     resume: true,
@@ -1593,10 +1616,14 @@ async function sandboxRebuild(sandboxName, args = []) {
     recreateSandbox: true,
   });
 
+  log("onboard() returned successfully");
+
   // Step 5: Restore
   console.log("");
   console.log("  Restoring workspace state...");
+  log(`Restoring from: ${backup.manifest.backupPath} into sandbox: ${sandboxName}`);
   const restore = sandboxState.restoreSandboxState(sandboxName, backup.manifest.backupPath);
+  log(`Restore result: success=${restore.success}, restored=${restore.restoredDirs.join(",")}, failed=${restore.failedDirs.join(",")}`);
   if (!restore.success) {
     console.error(`  Partial restore: ${restore.restoredDirs.join(", ") || "none"}`);
     console.error(`  Failed: ${restore.failedDirs.join(", ")}`);
@@ -1610,6 +1637,7 @@ async function sandboxRebuild(sandboxName, args = []) {
   registry.updateSandbox(sandboxName, {
     agentVersion: agentDef.expectedVersion || null,
   });
+  log(`Registry updated: agentVersion=${agentDef.expectedVersion}`);
 
   console.log("");
   console.log(`  ${G}\u2713${R} Sandbox '${sandboxName}' rebuilt successfully`);
