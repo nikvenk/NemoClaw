@@ -376,6 +376,72 @@ $ nemoclaw <name> logs
 
 Use `--follow` to stream logs in real time while debugging.
 
+(windows-wsl-2)=
+
+## Windows Subsystem for Linux
+
+For environment setup steps, see Windows Prerequisites (see the `nemoclaw-user-get-started` skill).
+
+### `wsl --install --no-distribution` returns Forbidden (403)
+
+Check your network connectivity.
+If you are behind a VPN, try reconnecting or switching to a different network.
+
+### `wsl -d Ubuntu` says "There is no distribution with the supplied name"
+
+The Ubuntu package was installed with `--no-launch` but never registered.
+Run `ubuntu.exe install --root` from PowerShell to register it, or reinstall without `--no-launch`:
+
+```console
+$ wsl --unregister Ubuntu
+$ wsl --install -d Ubuntu
+```
+
+### `docker info` fails inside WSL
+
+Confirm that Docker Desktop is running and that WSL integration is enabled for Ubuntu (Settings > Resources > WSL integration).
+Then restart WSL:
+
+```console
+$ wsl --shutdown
+$ wsl -d Ubuntu
+$ docker info
+```
+
+### Ollama inference fails or hangs in WSL
+
+Ollama configures context length based on your hardware.
+On some GPUs (for example RTX 3500), the default context length is not sufficient for OpenClaw.
+Force a larger context length:
+
+```console
+$ pkill -f 'ollama serve'
+$ OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
+
+Verify that Ollama inference works:
+
+```console
+$ echo "Hello" | ollama run <model-id>
+```
+
+Replace `<model-id>` with the model you selected during onboarding (for example `qwen3.5:4b`).
+
+If `ollama serve` fails with `Error: listen tcp 127.0.0.1:11434: bind: address already in use`, check whether Ollama is configured for automatic startup:
+
+```console
+$ sudo systemctl status ollama
+```
+
+If it is active, stop it first, then start with the custom context length:
+
+```console
+$ sudo systemctl stop ollama
+$ OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
+
+For additional troubleshooting, see the Quickstart (see the `nemoclaw-user-get-started` skill) and Windows Setup (see the `nemoclaw-user-get-started` skill) pages.
+
 ## Podman
 
 Podman is not a tested runtime.
