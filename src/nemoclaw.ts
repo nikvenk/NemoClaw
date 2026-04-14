@@ -1632,8 +1632,23 @@ async function sandboxRebuild(sandboxName, args = []) {
     console.log(`  ${G}\u2713${R} State restored (${restore.restoredDirs.length} directories)`);
   }
 
-  // Step 6: Update registry with new version
+  // Step 6: Post-restore agent-specific migration
   const agentDef = agent ? require("./lib/agent-defs").loadAgent(agent.name) : require("./lib/agent-defs").loadAgent("openclaw");
+  if (agentDef.name === "openclaw") {
+    // openclaw doctor --fix validates and repairs directory structure.
+    // Idempotent and safe — catches structural changes between OpenClaw versions
+    // (new symlinks, new data dirs, etc.) that the restored state may be missing.
+    log("Running openclaw doctor --fix inside sandbox for post-upgrade structure repair");
+    const doctorResult = executeSandboxCommand(sandboxName, "openclaw doctor --fix");
+    log(`doctor --fix: exit=${doctorResult?.status}, stdout=${(doctorResult?.stdout || "").substring(0, 200)}`);
+    if (doctorResult && doctorResult.status === 0) {
+      console.log(`  ${G}\u2713${R} Post-upgrade structure check passed`);
+    } else {
+      console.log(`  ${D}Post-upgrade structure check skipped (doctor returned ${doctorResult?.status ?? "null"})${R}`);
+    }
+  }
+
+  // Step 7: Update registry with new version
   registry.updateSandbox(sandboxName, {
     agentVersion: agentDef.expectedVersion || null,
   });
