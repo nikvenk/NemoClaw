@@ -35,7 +35,7 @@ A reference for maintainers and the community response skill. Covers project boa
 
 ### Promotion Flow
 
-```
+```text
 No Status → Backlog → In Progress → Done
                 ↓
            Won't Fix (declined)
@@ -44,6 +44,7 @@ No Status → Backlog → In Progress → Done
 ```
 
 **Rules:**
+
 - Items only leave `No Status` when a maintainer has reviewed them.
 - Items only leave `Backlog` when explicitly approved for a release cycle.
 - Do not set `Backlog` in a community response — that implies maintainer approval. Set `No Status` for new incoming items.

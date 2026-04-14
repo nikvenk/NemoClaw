@@ -25,7 +25,7 @@ status: active
 
 ---
 
-### Closing Won't Fix / Out of Scope
+## Closing Won't Fix / Out of Scope
 
 | Reason | Label |
 |---|---|
@@ -37,7 +37,7 @@ status: active
 
 ---
 
-### When Your Merge Supersedes Another PR
+## When Your Merge Supersedes Another PR
 
 Comment on the closed PR before you merge:
 
@@ -49,7 +49,7 @@ Comment on the closed PR before you merge:
 
 ---
 
-### Rejecting a Poorly Designed PR
+## Rejecting a Poorly Designed PR
 
 1. **Acknowledge intent** — one sentence on what they were solving
 2. **Name the specific problem** — don't say "not quite right," say why
@@ -59,7 +59,7 @@ Comment on the closed PR before you merge:
 
 ---
 
-### Closing Duplicates
+## Closing Duplicates
 
 > Thanks for the report. This is a duplicate of #[N] — all discussion is happening there. Closing in favor of the original thread. Feel free to add context or subscribe to #[N] to follow along.
 
@@ -67,7 +67,7 @@ Comment on the closed PR before you merge:
 
 ---
 
-### Feature Requests
+## Feature Requests
 
 > Thanks for the suggestion. We've noted this and will review it — we'll update this issue if it moves forward. We don't have a timeline to share yet.
 
@@ -79,19 +79,19 @@ Comment on the closed PR before you merge:
 
 ---
 
-### Redirecting to Discussions
+## Redirecting to Discussions
 
 > This looks like a great topic for an open conversation rather than a bug or feature request. I've moved this to Discussions here: [link]. Closing the issue to keep the tracker focused on actionable items.
 
 ---
 
-### Triage Acknowledgment
+## Triage Acknowledgment
 
 > Thanks for the detailed report — we've confirmed this and added it to our backlog. We don't have a timeline to share yet, but we've got it on our radar. We'll update this issue when work begins.
 
 ---
 
-### Needs Info
+## Needs Info
 
 **First contact** — label `status: needs-info`, leave open:
 
@@ -103,7 +103,7 @@ Comment on the closed PR before you merge:
 
 ---
 
-### Response Time Commitments
+## Response Time Commitments
 
 | Situation | Target |
 |---|---|
