@@ -107,7 +107,7 @@ export async function restoreIntoSandbox(
   // (don't fail the restore if the chown fails) so a future runtime
   // that already gets ownership right doesn't trip on a missing
   // chown binary or a tightened exec policy. See #1229.
-  await execa(
+  const chownResult = await execa(
     "openshell",
     [
       "sandbox",
@@ -121,6 +121,11 @@ export async function restoreIntoSandbox(
     ],
     { reject: false },
   );
+  if (chownResult.exitCode !== 0) {
+    console.debug(
+      `chown in sandbox ${sandboxName} exited ${String(chownResult.exitCode)}: ${chownResult.stderr}`,
+    );
+  }
   return true;
 }
 
