@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { shellQuote } from "./runner";
+import { shellQuote } from "./shell-quote";
 
 function buildRemediation(): string {
   const home = process.env.HOME || os.homedir();
