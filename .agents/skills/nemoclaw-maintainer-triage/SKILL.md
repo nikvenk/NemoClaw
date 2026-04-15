@@ -13,6 +13,18 @@ AI-assisted label suggestion for issues and PRs. Reads live triage instructions,
 
 ---
 
+## Step 0: Fetch Live Labels
+
+Before reading the triage instructions, fetch the current label list from the repo:
+
+```bash
+gh label list --repo NVIDIA/NemoClaw --limit 100 --json name | jq -r '.[].name' | sort
+```
+
+Keep this list in context. Only suggest labels that appear in it. If a label from the triage instructions is not in the list, skip it and note the discrepancy.
+
+---
+
 ## Step 1: Read Triage Instructions
 
 Before suggesting any labels, read the live instructions:
@@ -57,7 +69,7 @@ In batch mode, work through items one at a time — present each suggestion and 
 
 For each item, apply the rules from `triage-instructions.md` and present:
 
-**Action:** `label` · **Suggested labels:** `bug`, `Platform: MacOS`
+**Action:** `label` · **Suggested labels:** `bug`, `Platform: macOS`
 **Reason:** One sentence from the instructions.
 **Triage comment (optional):**
 > Comment text here.
@@ -79,7 +91,7 @@ Apply labels:
 
 ```bash
 # Issue:
-gh issue edit <number> --repo NVIDIA/NemoClaw --add-label "bug,Platform: MacOS"
+gh issue edit <number> --repo NVIDIA/NemoClaw --add-label "<label1>,<label2>"
 
 # PR:
 gh pr edit <number> --repo NVIDIA/NemoClaw --add-label "enhancement: inference"
@@ -104,7 +116,7 @@ Use the absolute path — this file lives in the daily-rhythm activity folder so
 ```markdown
 ### [ISSUE|PR] NVIDIA/NemoClaw#<number> — <title>
 **Date:** YYYY-MM-DD
-**Labels applied:** bug, Platform: MacOS
+**Labels applied:** [labels applied]
 **Comment posted:** yes | no
 
 ---
