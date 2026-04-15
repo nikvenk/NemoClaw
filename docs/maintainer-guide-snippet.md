@@ -99,7 +99,7 @@ Comment on the closed PR before you merge:
 
 **Day 7 — warning** (no response yet):
 
-> Just a heads-up — we haven't heard back yet. If this is still affecting you, please share [repeat specific ask]. We'll close this in 7 days if we don't hear back.
+> We haven't heard back yet. If this is still affecting you, please share [repeat specific ask]. We'll close this in 7 days if we don't hear back.
 
 **Day 14 — close:**
 
@@ -111,7 +111,7 @@ Comment on the closed PR before you merge:
 
 **Day 7 — warning** (no rebase yet):
 
-> Just a heads-up — this PR still needs a rebase. Please rebase against `main` within the next 7 days.
+> This PR still needs a rebase. Please rebase against `main` within the next 7 days.
 
 **Day 14 — close:**
 

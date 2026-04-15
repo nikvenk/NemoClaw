@@ -212,7 +212,7 @@ Three-stage flow — label, warn, close.
 
 **Situation 2 — 7 days, no response (warning):**
 
-> Just a heads-up — we haven't heard back yet on the information we requested. If this is still affecting you, please share [repeat specific ask] and we'll keep the investigation going. We'll close this in 7 days if we don't hear back.
+> We haven't heard back yet on the information we requested. If this is still affecting you, please share [repeat specific ask] and we'll keep the investigation going. We'll close this in 7 days if we don't hear back.
 
 **Action:** Post comment only — do not close yet.
 
@@ -238,7 +238,7 @@ Same three-stage flow applies to PRs labeled `status: rebase`.
 
 **Stage 2 — 7 days, no rebase (warning):**
 
-> Just a heads-up — this PR still needs a rebase before we can review it. If you're planning to update it, please rebase against `main` within the next 7 days. Happy to help if you run into conflicts.
+> This PR still needs a rebase before we can review it. If you're planning to update it, please rebase against `main` within the next 7 days. Happy to help if you run into conflicts.
 
 **Action:** Post comment only — do not close yet.
 
