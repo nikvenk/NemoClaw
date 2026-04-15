@@ -318,6 +318,14 @@ function shieldsStatus(sandboxName: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Query — check whether shields are currently down
+// ---------------------------------------------------------------------------
+
+function isShieldsDown(): boolean {
+  return loadShieldsState().shieldsDown === true;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -325,6 +333,7 @@ export {
   shieldsDown,
   shieldsUp,
   shieldsStatus,
+  isShieldsDown,
   parseDuration,
   MAX_TIMEOUT_SECONDS,
   DEFAULT_TIMEOUT_SECONDS,

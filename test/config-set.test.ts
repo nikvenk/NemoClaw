@@ -3,8 +3,20 @@
 
 import { describe, it, expect } from "vitest";
 
-// Import the pure helper functions from the compiled output
+// Build must run before these tests (imports from dist/)
 const { extractDotpath, setDotpath, validateUrlValue, resolveAgentConfig } = require("../dist/lib/sandbox-config");
+const shields = require("../dist/lib/shields");
+
+describe("shields gate", () => {
+  it("isShieldsDown returns false when no state file exists", () => {
+    // No state file = shields are up (default safe state)
+    expect(shields.isShieldsDown()).toBe(false);
+  });
+
+  it("exports isShieldsDown as a function", () => {
+    expect(typeof shields.isShieldsDown).toBe("function");
+  });
+});
 
 describe("resolveAgentConfig", () => {
   it("returns openclaw defaults for unknown sandbox", () => {
