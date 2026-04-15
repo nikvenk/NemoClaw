@@ -24,7 +24,7 @@ Central reference for how NemoClaw is managed, triaged, reviewed, and shipped. T
 
 ## 1. Sprint Cadence and Themes
 
-NemoClaw ships on a **patch-per-week cadence** by default. A sprint maps to one or more patch versions and is optionally anchored to a theme.
+NemoClaw runs **2-week sprints**, each closing with a release. A sprint is optionally anchored to a theme.
 
 ### Defining a sprint theme
 
@@ -35,25 +35,25 @@ A theme is a sentence that describes the focus for the period: "Reliability: red
 **Sprint kickoff checklist:**
 
 1. Open the milestone with start and end dates
-2. Set the version target for the sprint (e.g., `v0.0.24`)
+2. Set the release tag target for the sprint (e.g., `v0.0.24`)
 3. Move approved backlog items matching the theme to `In Progress`
 4. Ensure each item in the milestone has an owner or is unassigned-but-claimed
 
 ### Sprint review
 
-The evening skill generates a handoff summary after each day's work. At sprint close, the on-call maintainer reviews the milestone: close shipped items, bump open items to the next milestone, note what slipped and why.
+At sprint close, the TPM runs the `nemoclaw-maintainer-evening` skill to generate a handoff summary and bump open items to the next sprint. The engineering maintainer then reviews the milestone: close shipped items, note what slipped and why, and cut the release tag.
 
 ---
 
 ## 2. Version Strategy
 
-| Bump | When | Required |
+| Tag type | When | Required |
 |---|---|---|
 | **Patch** (`v0.0.x`) | Bug fixes, small enhancements, dependency bumps | Default — no changelog entry required |
 | **Minor** (`v0.x.0`) | New user-facing capabilities, breaking config changes | Changelog entry + docs update in same PR |
 | **Major** (`vx.0.0`) | API contract changes, significant architecture shifts | Design doc in Discussions + advance notice to users |
 
-**Straggler policy:** Items labeled for a version that did not ship are automatically bumped to the next patch version by the evening skill. Do not manually reassign version labels for individual stragglers — let the automation handle it.
+**Straggler policy:** Items labeled for a version that did not ship are automatically bumped to the next version by the `nemoclaw-maintainer-evening` skill. Do not manually reassign version labels for individual stragglers — let the automation handle it.
 
 **Breaking change policy:**
 
@@ -74,7 +74,7 @@ Feature requests arrive as `No Status` in Enhancement Parking — unreviewed, wi
 - Non-trivial value: not already solved by a workaround users can apply themselves
 - Maintainer has explicitly reviewed and approved it — never promote automatically
 
-**Refinement cadence:** The on-call maintainer scans Enhancement Parking once per week and promotes or closes items. Items that have been in `No Status` for more than 60 days with no activity are candidates for closure.
+**Refinement cadence:** The `nemoclaw-maintainer-triage` skill scans unlabeled items daily and applies initial labels. Promotion from `No Status` to `Backlog` is a TPM decision — review the Enhancement Parking board and promote or close items at sprint kickoff. Items in `No Status` for 60+ days with no activity are candidates for closure.
 
 **No timeline at Backlog state.** A timeline is only set when an item moves to `In Progress` and a sprint milestone is assigned.
 
@@ -133,19 +133,20 @@ These complement the hard gates in `MERGE-GATE.md` and apply across all PRs.
 
 | Role | Responsibilities |
 |---|---|
-| **On-call** | Runs morning/day/evening skills daily; first responder for new issues and PRs; merges ready PRs; cuts patch tags |
+| **TPM** | Runs `nemoclaw-maintainer-morning` and `nemoclaw-maintainer-evening` skills daily; first responder for new issues and PRs; manages sprint milestones and Enhancement Parking |
+| **Engineering maintainer** | Runs auto-merges via `nemoclaw-maintainer-day`; cuts release tags; owns PR review queue and merge decisions |
 | **Area owner: security** | Reviews PRs flagged for security sweep; approves PSIRT escalations |
 | **Area owner: docs** | Reviews doc-only PRs and doc sections in feature PRs |
 | **Area owner: testing** | Reviews test coverage gaps; approves CI changes |
 | **Area owner: integrations** | Reviews PRs touching integration adapters (Slack, Discord, etc.) |
 
-**Rotation:** Defined externally by the team. The on-call maintainer hands off context via the evening skill's handoff summary — not Slack threads.
+**Rotation:** Defined externally by the team. The TPM hands off context via the `nemoclaw-maintainer-evening` skill's handoff summary — not Slack threads.
 
 **Decision authority:**
 
-- On-call can merge PRs and close issues unilaterally
-- Minor version bumps require a second maintainer to acknowledge the changelog entry
-- Major version bumps require a second maintainer sign-off and a Discussions thread open for at least 7 days
+- Engineering maintainer can merge PRs and close issues unilaterally
+- Minor release tags require a second maintainer to acknowledge the changelog entry
+- Major release tags require a second maintainer sign-off and a Discussions thread open for at least 7 days
 
 ---
 
@@ -157,7 +158,7 @@ These complement the hard gates in `MERGE-GATE.md` and apply across all PRs.
 |---|---|---|
 | **P0** | Production outage, data loss, credential exposure | Immediate; skip normal review queue; PSIRT if security |
 | **P1** | Critical breakage for a common configuration; blocked install | Prioritized in next morning plan; same-day fix target |
-| **P2** | Significant bug with an available workaround | Backlog with `priority: high`; target within 2 sprints |
+| **P2** | Significant bug with an available workaround | Backlog with `priority: medium`; target within 2 sprints |
 
 ### Hotfix flow
 
