@@ -2988,8 +2988,8 @@ async function createSandbox(
   // This prevents port forwards from connecting to a non-existent port
   // or seeing 502/503 errors during initial load.
   console.log("  Waiting for NemoClaw dashboard to become ready...");
+  const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
-    const openshellBin = getOpenshellBinary();
     const readyResult = run(
       [openshellBin, "sandbox", "exec", sandboxName, "curl", "-sf", `http://localhost:${DASHBOARD_PORT}/`],
       { ignoreError: true, suppressOutput: true },
@@ -5498,6 +5498,7 @@ async function onboard(opts = {}) {
         step,
         runCaptureOpenshell,
         openshellShellCommand,
+        openshellBinary: getOpenshellBinary(),
         buildSandboxConfigSyncScript,
         writeSandboxConfigSyncFile,
         cleanupTempDir,

@@ -19,6 +19,7 @@ export interface OnboardContext {
   step: (current: number, total: number, message: string) => void;
   runCaptureOpenshell: (args: string[], opts?: { ignoreError?: boolean }) => string | null;
   openshellShellCommand: (args: string[], options?: { openshellBinary?: string }) => string;
+  openshellBinary: string;
   buildSandboxConfigSyncScript: (config: Record<string, unknown>) => string;
   writeSandboxConfigSyncFile: (script: string) => string;
   cleanupTempDir: (file: string, prefix: string) => void;
@@ -122,6 +123,7 @@ export async function handleAgentSetup(
     step,
     runCaptureOpenshell,
     openshellShellCommand,
+    openshellBinary: openshellBin,
     buildSandboxConfigSyncScript,
     writeSandboxConfigSyncFile,
     cleanupTempDir,
@@ -157,7 +159,6 @@ export async function handleAgentSetup(
     const script = buildSandboxConfigSyncScript(sandboxConfig);
     const scriptFile = writeSandboxConfigSyncFile(script);
     try {
-      const openshellBin = process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
       const scriptContent = fs.readFileSync(scriptFile, "utf-8");
       run(
         [openshellBin, "sandbox", "connect", sandboxName],
