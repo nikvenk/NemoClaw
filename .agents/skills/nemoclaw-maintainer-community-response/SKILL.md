@@ -85,6 +85,7 @@ State the recommended action and **project status** clearly before drafting. The
 | NVQA-tracked item | `NVQA` |
 
 **For feature requests — also suggest labels** (read label structure from `project-workflow.md`):
+
 1. Always suggest `enhancement` as the base label
 2. Suggest the most specific Tier 2 sub-label that fits (e.g., `enhancement: inference`, `enhancement: ui`)
 3. Suggest Tier 3 dimension label(s) if platform-, integration-, or provider-specific (e.g., `Integration: Slack`, `Platform: MacOS`)
@@ -105,9 +106,11 @@ Write the response following the template from the guide. Apply these rules:
 - Warm but specific — generic phrases without substance read as dismissive.
 - Never reference internal systems, roadmap items, or org decisions that shouldn't be public.
 - **PRs requiring rebase:** After posting the comment, always apply `status: rebase` via:
+
   ```bash
   gh pr edit <number> --repo NVIDIA/NemoClaw --add-label "status: rebase"
   ```
+
   This keeps rebase-blocked PRs distinct from needs-info PRs and surfaces them for follow-up separately.
 - **Same contributor on multiple PRs needing rebase:** If the contributor who owns this PR also has another open PR that needs a rebase, note it in the comment — suggest a joint rebase on both at once. Example addition: "Note this is from the same contributor as #[N] — a joint rebase on both would be ideal." Apply `status: rebase` to both PRs. Check for contributor overlap before sending any rebase nudge.
 
@@ -127,7 +130,7 @@ When the user approves, append to `~/development/daily-rhythm/activity/nemoclaw-
 
 Use the absolute path — this file lives in the daily-rhythm activity folder so it is persisted to GitLab over time, not in the NemoClaw repo.
 
-```
+```markdown
 ## [ISSUE|PR] NVIDIA/NemoClaw#<number> — <title>
 **Date:** YYYY-MM-DD
 **Action:** comment | close | request changes | escalate
