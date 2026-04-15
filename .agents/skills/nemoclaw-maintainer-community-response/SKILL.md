@@ -1,6 +1,6 @@
 ---
 name: nemoclaw-maintainer-community-response
-description: Drafts community-facing responses to GitHub issues and PRs for NemoClaw maintainers. For each item, recommends an action (comment, close, request changes, escalate) and drafts the response text. Handles won't-fix closures, out-of-scope closures, superseded PRs, poorly designed PR rejections, security acknowledgments, duplicate issues, feature request routing, needs-info labeling, and general triage. Tone: community first, firm and friendly. Trigger keywords - respond to issue, close issue, respond to PR, community response, won't fix, out of scope, reject PR, triage response, draft response, what should I say, needs info, duplicate issue, feature request.
+description: Drafts community-facing responses to GitHub issues and PRs for NemoClaw maintainers. For each item, recommends an action (comment, close, close+comment, request changes, escalate) and drafts the response text. Handles won't-fix closures, out-of-scope closures, superseded PRs, poorly designed PR rejections, security acknowledgments, duplicate issues, feature request routing, needs-info labeling, and general triage. Logs approved responses locally to ~/development/daily-rhythm/activity/nemoclaw-community-responses.md. Tone: community first, firm and friendly. Trigger keywords - respond to issue, close issue, respond to PR, community response, won't fix, out of scope, reject PR, triage response, draft response, what should I say, needs info, duplicate issue, feature request.
 user_invocable: true
 ---
 
@@ -33,6 +33,7 @@ Ask the user (or infer from context) for:
 - Any existing comments relevant to the response
 - Whether this is an issue or a PR
 
+If the user provides a URL or number only, ask for the body text — don't assume.
 
 ## Step 3: Identify the Situation
 
@@ -49,8 +50,7 @@ Map the item to one of the situations in the guide:
 | Redirect to Discussions | Open-ended question or design topic, not actionable |
 | Triage acknowledgment | Valid open issue, confirmed, no timeline yet |
 | Needs info (first contact) | Can't investigate without more information from contributor |
-| Needs info (day-7 warning) | Labeled `status: needs-info`, 7 days elapsed, no response yet |
-| Needs info (close) | Labeled `status: needs-info`, 14 days elapsed, no response |
+| Needs info (close) | Already labeled `status: needs-info`, 7+ days, no response |
 
 If the situation is ambiguous, ask: "Is this a closure, a needs-info, a routing decision, or something else?"
 
@@ -63,12 +63,12 @@ State the recommended action and **project status** clearly before drafting. The
 | Action | When |
 |---|---|
 | `comment` | Post a reply, leave open (triage ack, needs-info first contact, redirect to Discussions) |
-| `warning` | Day-7 reminder on needs-info or needs-rebase items — post friendly heads-up, do NOT close |
 | `close` | Close with comment |
 | `request changes` | PR needs revision — post comment, leave open |
 | `comment + label` | Post comment AND apply a label (e.g., rebase nudge → apply `status: rebase`) |
 | `escalate` | Security report that should go through PSIRT — do not respond publicly |
-| `rebase nudge` | PR has merge conflicts or is significantly out of date — post comment asking author to rebase, apply `status: rebase` |
+| `rebase nudge` | PR has **verified** merge conflicts (`mergeable_state=dirty` only) — post comment asking author to rebase, apply `status: rebase`. See rebase gate in Step 5. |
+| `integration hold` | PR has any `Integration: *` label — post integration evaluation holding comment instead of rebase nudge. Never apply `status: rebase` to integration PRs regardless of merge state. |
 
 **Project status mapping (NemoClaw Development Tracker):**
 
@@ -86,14 +86,13 @@ State the recommended action and **project status** clearly before drafting. The
 | NVQA-tracked item | `NVQA` |
 
 **For feature requests — also suggest labels** (read label structure from `project-workflow.md`):
-
 1. Always suggest `enhancement` as the base label
 2. Suggest the most specific Tier 2 sub-label that fits (e.g., `enhancement: inference`, `enhancement: ui`)
 3. Suggest Tier 3 dimension label(s) if platform-, integration-, or provider-specific (e.g., `Integration: Slack`, `Platform: MacOS`)
 
 Present as: **Action:** `comment` · **Project status:** `No Status` · **Suggested labels:** `enhancement`, `enhancement: inference`
 
-For closures, use the project status from the mapping table above — `Won't Fix`, `Duplicate`, or `No Status` depending on the situation.
+Always present as: **Action:** `close` · **Project status:** `Won't Fix` (for closures)
 
 ## Step 5: Draft the Response
 
@@ -106,20 +105,50 @@ Write the response following the template from the guide. Apply these rules:
 - Write in second person, direct address to the contributor.
 - Warm but specific — generic phrases without substance read as dismissive.
 - Never reference internal systems, roadmap items, or org decisions that shouldn't be public.
-- **PRs requiring rebase:** After posting the comment, always apply `status: rebase` via:
+- **Hedged language for risks and impacts:** Do not assert that something IS a risk or problem. Use acknowledging, hedged language: "could be", "may", "worth noting", "potentially". Example: "unbounded CPU/memory could be an operational risk" — not "is a real operational risk". This applies to security, performance, correctness, and other concerns raised in response comments.
+- **Rebase verification gate (mandatory before any rebase nudge):** Before posting a rebase nudge or applying `status: rebase`, check the PR's actual merge state:
+  ```bash
+  gh api repos/NVIDIA/NemoClaw/pulls/<number> --jq '"\(.mergeable) \(.mergeable_state)"'
+  ```
+  Only proceed with the rebase nudge if `mergeable_state` is `dirty` (actual merge conflict). Do NOT send a rebase nudge if the state is:
+  - `blocked` — PR merges cleanly, needs review or CI sign-off
+  - `unstable` — PR merges cleanly, CI is failing
+  - `unknown` — GitHub hasn't computed yet; re-check before acting
 
+  If the state is not `dirty`, do not apply `status: rebase`. Choose the correct action for the actual state instead.
+
+- **Integration PRs — no rebase nudge:** If the PR already has any `Integration: *` label, post the integration evaluation holding comment instead. Do not apply `status: rebase` to integration PRs regardless of merge state.
+
+- **PRs requiring rebase:** After posting the comment, always apply `status: rebase` via:
   ```bash
   gh pr edit <number> --repo NVIDIA/NemoClaw --add-label "status: rebase"
   ```
-
   This keeps rebase-blocked PRs distinct from needs-info PRs and surfaces them for follow-up separately.
 - **Same contributor on multiple PRs needing rebase:** If the contributor who owns this PR also has another open PR that needs a rebase, note it in the comment — suggest a joint rebase on both at once. Example addition: "Note this is from the same contributor as #[N] — a joint rebase on both would be ideal." Apply `status: rebase` to both PRs. Check for contributor overlap before sending any rebase nudge.
+
+- **Author identification:** For every PR, check whether the author is an NVIDIA org member before drafting:
+  ```bash
+  gh api orgs/NVIDIA/members/<username> --silent 2>/dev/null && echo "NVIDIA member" || echo "external"
+  ```
+  Include in the draft presentation header as: **Author:** username (NVIDIA) or **Author:** username (external).
+
+- **Git fetch rule:** Always run `git fetch origin` before any supersession check, especially in long sessions. Re-fetch at the start of any session that resumes after more than 2 hours of inactivity.
+
+- **Session resume validation:** When resuming after a break:
+  1. Run `git fetch origin` to get the latest main
+  2. For any PRs already queued but not yet actioned, verify they are still open before proceeding:
+     ```bash
+     gh api repos/NVIDIA/NemoClaw/pulls/<number> --jq '.state'
+     ```
+     Skip any PR that returns `"closed"`.
 
 ## Step 6: Present for Approval
 
 Show the user:
 
 1. **Recommended action and project status** (e.g., `close` · project status: `Won't Fix`)
+   **Author:** username (NVIDIA) or username (external)
+   **Opened:** YYYY-MM-DD (N days ago)
 2. **Draft response** (ready to paste into GitHub)
 3. Any follow-up note (e.g., "add the label before closing")
 
@@ -131,7 +160,7 @@ When the user approves, append to `~/development/daily-rhythm/activity/nemoclaw-
 
 Use the absolute path — this file lives in the daily-rhythm activity folder so it is persisted to GitLab over time, not in the NemoClaw repo.
 
-```markdown
+```
 ## [ISSUE|PR] NVIDIA/NemoClaw#<number> — <title>
 **Date:** YYYY-MM-DD
 **Action:** comment | close | request changes | escalate
@@ -146,3 +175,37 @@ Use the absolute path — this file lives in the daily-rhythm activity folder so
 
 Create the file if it doesn't exist. Never stage or commit this file to the NemoClaw repo.
 
+## Batch Mode
+
+When processing multiple PRs in one session, present a batch analysis table before drafting any individual responses:
+
+```
+┌───────┬──────────┬──────────┬────────┬──────────────┬───────┐
+│  PR   │  Author  │   NV?    │ Opened │    Action    │ Notes │
+├───────┼──────────┼──────────┼────────┼──────────────┼───────┤
+│ #1234 │ username │ external │ Apr 10 │ rebase nudge │ dirty │
+└───────┴──────────┴──────────┴────────┴──────────────┴───────┘
+```
+
+Columns:
+- **PR** — number with #
+- **Author** — GitHub username
+- **NV?** — `NVIDIA` or `external`
+- **Opened** — `Mon DD` format
+- **Action** — recommended action from Step 4
+- **Notes** — merge state (dirty/blocked/unknown), label flags, or other relevant context
+
+Ask the user to confirm or adjust the batch plan before proceeding to draft responses one by one.
+
+## Response Time Check
+
+If the user asks whether a response window is at risk, check against:
+
+| Situation | Target |
+|---|---|
+| New issue | First response ≤ 5 business days |
+| Open PR, no review | First comment ≤ 7 business days |
+| Contributor asks for update | Reply ≤ 3 business days |
+| `status: needs-info` labeled | Close if no response after 7 days |
+
+A window is "at risk" when 80% of the target has elapsed. Surface as a flag, not an alarm.
