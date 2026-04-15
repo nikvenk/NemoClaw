@@ -4,7 +4,26 @@
 import { describe, it, expect } from "vitest";
 
 // Import the pure helper functions from the compiled output
-const { extractDotpath, setDotpath, validateUrlValue } = require("../dist/lib/sandbox-config");
+const { extractDotpath, setDotpath, validateUrlValue, resolveAgentConfig } = require("../dist/lib/sandbox-config");
+
+describe("resolveAgentConfig", () => {
+  it("returns openclaw defaults for unknown sandbox", () => {
+    const target = resolveAgentConfig("nonexistent-sandbox");
+    expect(target.agentName).toBe("openclaw");
+    expect(target.configPath).toBe("/sandbox/.openclaw/openclaw.json");
+    expect(target.format).toBe("json");
+  });
+
+  it("returns a configDir that is the parent of configPath", () => {
+    const target = resolveAgentConfig("any-sandbox");
+    expect(target.configPath.startsWith(target.configDir)).toBe(true);
+  });
+
+  it("includes configFile in configPath", () => {
+    const target = resolveAgentConfig("any-sandbox");
+    expect(target.configPath.endsWith(target.configFile)).toBe(true);
+  });
+});
 
 describe("config set helpers", () => {
   describe("extractDotpath", () => {

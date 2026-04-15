@@ -3,6 +3,11 @@
 //
 // Host-side sandbox configuration management.
 //
+// All config commands are agent-aware: the sandbox registry records which
+// agent runs in each sandbox (openclaw, hermes, etc.), and agent-defs.ts
+// provides the per-agent config paths and formats. This module resolves
+// those at runtime so the same CLI surface works for any agent.
+//
 // config get:          Read-only inspection with credential redaction.
 // config set:          Host-initiated config mutation with validation.
 // config rotate-token: Credential rotation via stdin or env var.
@@ -10,13 +15,69 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { run, runCapture, runArrayCmd, validateName, shellQuote } = require("./runner");
+const { runCapture, validateName, shellQuote } = require("./runner");
 const { stripCredentials } = require("./credential-filter");
 const { appendAuditEntry } = require("./shields-audit");
 const {
   runOpenshellCommand,
   captureOpenshellCommand,
 } = require("./openshell");
+
+// ---------------------------------------------------------------------------
+// Agent-aware config resolution
+//
+// Each agent defines its own config layout in agents/*/manifest.yaml:
+//   - openclaw: /sandbox/.openclaw/openclaw.json  (JSON)
+//   - hermes:   /sandbox/.hermes/config.yaml      (YAML)
+//
+// resolveAgentConfig() looks up the sandbox's agent from the registry,
+// loads the agent definition, and returns the paths and format needed
+// to read/write that agent's config from the host.
+// ---------------------------------------------------------------------------
+
+interface AgentConfigTarget {
+  /** Agent name (e.g. "openclaw", "hermes") */
+  agentName: string;
+  /** Absolute path inside sandbox to the config file */
+  configPath: string;
+  /** Directory containing the config (for chown after cp) */
+  configDir: string;
+  /** Config file format: "json" or "yaml" */
+  format: string;
+  /** Config file basename */
+  configFile: string;
+}
+
+const DEFAULT_AGENT_CONFIG: AgentConfigTarget = {
+  agentName: "openclaw",
+  configPath: "/sandbox/.openclaw/openclaw.json",
+  configDir: "/sandbox/.openclaw",
+  format: "json",
+  configFile: "openclaw.json",
+};
+
+function resolveAgentConfig(sandboxName: string): AgentConfigTarget {
+  try {
+    const registry = require("./registry");
+    const entry = registry.getSandbox(sandboxName);
+    if (!entry || !entry.agent) return DEFAULT_AGENT_CONFIG;
+
+    const agentDefs = require("./agent-defs");
+    const agent = agentDefs.loadAgent(entry.agent);
+    const cfg = agent.configPaths;
+
+    return {
+      agentName: entry.agent,
+      configPath: `${cfg.immutableDir}/${cfg.configFile}`,
+      configDir: cfg.immutableDir,
+      format: cfg.format || "json",
+      configFile: cfg.configFile,
+    };
+  } catch {
+    // Registry or agent-defs unavailable (e.g., during tests) — fall back
+    return DEFAULT_AGENT_CONFIG;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,12 +117,34 @@ function setDotpath(obj: Record<string, unknown>, dotpath: string, value: unknow
 }
 
 /**
- * Read the raw openclaw.json from a running sandbox.
- * Returns the parsed config object or exits on failure.
+ * Parse a config file's raw text according to its format.
  */
-function readSandboxConfig(sandboxName: string): Record<string, unknown> {
+function parseConfig(raw: string, format: string): Record<string, unknown> {
+  if (format === "yaml") {
+    const YAML = require("yaml");
+    return YAML.parse(raw) as Record<string, unknown>;
+  }
+  return JSON.parse(raw) as Record<string, unknown>;
+}
+
+/**
+ * Serialize a config object according to its format.
+ */
+function serializeConfig(config: Record<string, unknown>, format: string): string {
+  if (format === "yaml") {
+    const YAML = require("yaml");
+    return YAML.stringify(config);
+  }
+  return JSON.stringify(config, null, 2);
+}
+
+/**
+ * Read the agent's config from a running sandbox.
+ * Resolves the correct config path based on the agent type.
+ */
+function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Record<string, unknown> {
   const openshell = getOpenshellCommand();
-  const cmd = `${openshell} sandbox exec ${shellQuote(sandboxName)} cat /sandbox/.openclaw/openclaw.json 2>/dev/null`;
+  const cmd = `${openshell} sandbox exec ${shellQuote(sandboxName)} cat ${target.configPath} 2>/dev/null`;
 
   let raw: string;
   try {
@@ -71,15 +154,16 @@ function readSandboxConfig(sandboxName: string): Record<string, unknown> {
   }
 
   if (!raw || !raw.trim()) {
-    console.error("  Cannot read sandbox config. Is the sandbox running?");
+    console.error(`  Cannot read ${target.agentName} config (${target.configPath}).`);
+    console.error("  Is the sandbox running?");
     process.exit(1);
   }
 
   try {
-    return JSON.parse(raw) as Record<string, unknown>;
+    return parseConfig(raw, target.format);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`  Failed to parse sandbox config: ${message}`);
+    console.error(`  Failed to parse ${target.agentName} config: ${message}`);
     process.exit(1);
   }
 }
@@ -136,12 +220,13 @@ interface ConfigGetOpts {
 function configGet(sandboxName: string, opts: ConfigGetOpts = {}): void {
   validateName(sandboxName, "sandbox name");
 
-  let config: unknown = readSandboxConfig(sandboxName);
+  const target = resolveAgentConfig(sandboxName);
+  let config: unknown = readSandboxConfig(sandboxName, target);
 
   // Strip credentials before display
   config = stripCredentials(config);
 
-  // Remove gateway section (contains auth tokens — per migration-state.ts pattern)
+  // Remove gateway section for openclaw (contains auth tokens)
   if (config && typeof config === "object" && !Array.isArray(config)) {
     delete (config as Record<string, unknown>).gateway;
   }
@@ -150,15 +235,15 @@ function configGet(sandboxName: string, opts: ConfigGetOpts = {}): void {
   if (opts.key) {
     const value = extractDotpath(config, opts.key);
     if (value === undefined) {
-      console.error(`  Key "${opts.key}" not found in sandbox config.`);
+      console.error(`  Key "${opts.key}" not found in ${target.agentName} config.`);
       process.exit(1);
     }
     config = value;
   }
 
-  // Format output
-  const format = opts.format || "json";
-  if (format === "yaml") {
+  // Format output — default to the agent's native format
+  const outputFormat = opts.format || target.format;
+  if (outputFormat === "yaml") {
     const YAML = require("yaml");
     console.log(YAML.stringify(config));
   } else {
@@ -191,9 +276,11 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
     process.exit(1);
   }
 
+  const target = resolveAgentConfig(sandboxName);
+
   // 1. Read current config
-  console.log("  Reading current config...");
-  const config = readSandboxConfig(sandboxName);
+  console.log(`  Reading ${target.agentName} config...`);
+  const config = readSandboxConfig(sandboxName, target);
 
   // 2. Parse and validate value
   let parsedValue: unknown;
@@ -224,6 +311,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
 
   // 5. Show what will change
   const oldValue = extractDotpath(config, opts.key);
+  console.log(`  Agent:     ${target.agentName}`);
   console.log(`  Key:       ${opts.key}`);
   console.log(`  Old value: ${oldValue !== undefined ? JSON.stringify(oldValue) : "(not set)"}`);
   console.log(`  New value: ${JSON.stringify(parsedValue)}`);
@@ -231,21 +319,21 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 6. Apply change
   setDotpath(config, opts.key, parsedValue);
 
-  // 7. Write to temp file
+  // 7. Write to temp file in the agent's native format
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-config-"));
-  const tmpFile = path.join(tmpDir, "openclaw.json");
-  fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2), { mode: 0o600 });
+  const tmpFile = path.join(tmpDir, target.configFile);
+  fs.writeFileSync(tmpFile, serializeConfig(config, target.format), { mode: 0o600 });
 
   // 8. Push to sandbox via openshell sandbox cp
-  console.log("  Writing config to sandbox...");
+  console.log(`  Writing config to sandbox (${target.configPath})...`);
   const binary = getOpenshellBinary();
   runOpenshellCommand(binary, [
-    "sandbox", "cp", tmpFile, `${sandboxName}:/sandbox/.openclaw/openclaw.json`,
+    "sandbox", "cp", tmpFile, `${sandboxName}:${target.configPath}`,
   ], { errorLine: console.error, exit: (code: number) => process.exit(code) });
 
   // 9. Fix ownership
   runOpenshellCommand(binary, [
-    "sandbox", "exec", sandboxName, "chown", "sandbox:sandbox", "/sandbox/.openclaw/openclaw.json",
+    "sandbox", "exec", sandboxName, "chown", "sandbox:sandbox", target.configPath,
   ], { ignoreError: true, errorLine: console.error, exit: (code: number) => process.exit(code) });
 
   // 10. Cleanup temp
@@ -258,13 +346,13 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
 
   // 11. Audit log
   appendAuditEntry({
-    action: "shields_down", // reuse audit — we'll use a config-specific action if audit supports it
+    action: "shields_down",
     sandbox: sandboxName,
     timestamp: new Date().toISOString(),
-    reason: `config set ${opts.key}`,
+    reason: `config set ${target.agentName}:${opts.key}`,
   });
 
-  console.log("  Config updated.");
+  console.log(`  ${target.agentName} config updated.`);
 
   // 12. Restart if requested
   if (opts.restart) {
@@ -298,7 +386,7 @@ interface RotateTokenOpts {
 async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}): Promise<void> {
   validateName(sandboxName, "sandbox name");
 
-  // 1. Determine which provider and credentialEnv the sandbox uses
+  // 1. Determine which provider and credentialEnv the sandbox uses.
   //    Load the onboard session and verify it matches this sandbox.
   const { loadSession } = require("./onboard-session");
   const session = loadSession();
@@ -315,9 +403,11 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
     process.exit(1);
   }
 
+  const target = resolveAgentConfig(sandboxName);
   const credentialEnv: string = session.credentialEnv;
   const providerName: string = session.provider || "inference";
 
+  console.log(`  Agent:          ${target.agentName}`);
   console.log(`  Provider:       ${providerName}`);
   console.log(`  Credential env: ${credentialEnv}`);
 
@@ -331,10 +421,8 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
       process.exit(1);
     }
   } else if (opts.fromStdin) {
-    // Read from stdin (piped input)
     newToken = await readStdin();
   } else {
-    // Interactive prompt
     const { promptSecret } = require("./credentials");
     newToken = await promptSecret(`  New ${credentialEnv} value: `);
   }
@@ -370,7 +458,6 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
   });
 
   if (result.status !== 0) {
-    // Try create if update failed (provider might not exist)
     const providerType = session.providerType || "generic";
     const createResult = runOpenshellCommand(binary, [
       "provider", "create", "--name", providerName, "--type", providerType,
@@ -390,10 +477,10 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
 
   // 6. Audit log
   appendAuditEntry({
-    action: "shields_down", // reuse audit infrastructure
+    action: "shields_down",
     sandbox: sandboxName,
     timestamp: new Date().toISOString(),
-    reason: `rotate-token ${credentialEnv}`,
+    reason: `rotate-token ${target.agentName}:${credentialEnv}`,
   });
 
   // 7. Output (redacted)
@@ -420,4 +507,13 @@ function readStdin(): Promise<string> {
 // Exports
 // ---------------------------------------------------------------------------
 
-export { configGet, configSet, configRotateToken, extractDotpath, setDotpath, validateUrlValue, readStdin };
+export {
+  configGet,
+  configSet,
+  configRotateToken,
+  resolveAgentConfig,
+  extractDotpath,
+  setDotpath,
+  validateUrlValue,
+  readStdin,
+};
