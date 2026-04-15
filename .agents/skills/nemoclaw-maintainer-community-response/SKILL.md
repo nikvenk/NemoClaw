@@ -33,7 +33,6 @@ Ask the user (or infer from context) for:
 - Any existing comments relevant to the response
 - Whether this is an issue or a PR
 
-If the user provides a URL or number only, ask for the body text — don't assume.
 
 ## Step 3: Identify the Situation
 
