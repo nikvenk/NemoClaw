@@ -14,17 +14,17 @@
 
 import type { SandboxEntry } from "./registry";
 
-export interface ConflictProbe {
+interface ConflictProbe {
   // Returns true when a provider with this exact name exists in OpenShell.
   providerExists: (name: string) => boolean;
 }
 
-export interface ConflictRegistry {
+interface ConflictRegistry {
   listSandboxes: () => { sandboxes: SandboxEntry[]; defaultSandbox?: string | null };
   updateSandbox: (name: string, updates: Partial<SandboxEntry>) => boolean;
 }
 
-export interface Conflict {
+interface Conflict {
   channel: string;
   sandbox: string;
 }
