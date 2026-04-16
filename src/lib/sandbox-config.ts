@@ -15,13 +15,16 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { runCapture, validateName, shellQuote } = require("./runner");
+const { execFileSync } = require("child_process");
+const { validateName } = require("./runner");
 const { stripCredentials } = require("./credential-filter");
 const { appendAuditEntry } = require("./shields-audit");
 const {
   runOpenshellCommand,
   captureOpenshellCommand,
 } = require("./openshell");
+
+const K3S_CONTAINER = "openshell-cluster-nemoclaw";
 
 // ---------------------------------------------------------------------------
 // Agent-aware config resolution
@@ -87,12 +90,6 @@ function getOpenshellBinary(): string {
   return process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
 }
 
-function getOpenshellCommand(): string {
-  const binary = process.env.NEMOCLAW_OPENSHELL_BIN;
-  if (!binary) return "openshell";
-  return shellQuote(binary);
-}
-
 function extractDotpath(obj: unknown, dotpath: string): unknown {
   const keys = dotpath.split(".");
   let current: unknown = obj;
@@ -143,12 +140,14 @@ function serializeConfig(config: Record<string, unknown>, format: string): strin
  * Resolves the correct config path based on the agent type.
  */
 function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Record<string, unknown> {
-  const openshell = getOpenshellCommand();
-  const cmd = `${openshell} sandbox exec ${shellQuote(sandboxName)} cat ${target.configPath} 2>/dev/null`;
-
+  const binary = getOpenshellBinary();
   let raw: string;
   try {
-    raw = runCapture(cmd, { ignoreError: true });
+    const result = captureOpenshellCommand(binary,
+      ["sandbox", "exec", sandboxName, "--", "cat", target.configPath],
+      { ignoreError: true, errorLine: console.error, exit: (code: number) => process.exit(code) },
+    );
+    raw = result.output || "";
   } catch {
     raw = "";
   }
@@ -324,17 +323,25 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   const tmpFile = path.join(tmpDir, target.configFile);
   fs.writeFileSync(tmpFile, serializeConfig(config, target.format), { mode: 0o600 });
 
-  // 8. Push to sandbox via openshell sandbox cp
+  // 8. Write config to sandbox via kubectl exec (bypasses Landlock)
   console.log(`  Writing config to sandbox (${target.configPath})...`);
-  const binary = getOpenshellBinary();
-  runOpenshellCommand(binary, [
-    "sandbox", "cp", tmpFile, `${sandboxName}:${target.configPath}`,
-  ], { errorLine: console.error, exit: (code: number) => process.exit(code) });
+  const content = fs.readFileSync(tmpFile, "utf-8");
+  execFileSync("docker", [
+    "exec", "-i", K3S_CONTAINER,
+    "kubectl", "exec", "-n", "openshell", sandboxName, "-c", "agent", "-i", "--",
+    "sh", "-c", `cat > ${target.configPath}`,
+  ], { input: content, stdio: ["pipe", "pipe", "pipe"], timeout: 15000 });
 
-  // 9. Fix ownership
-  runOpenshellCommand(binary, [
-    "sandbox", "exec", sandboxName, "chown", "sandbox:sandbox", target.configPath,
-  ], { ignoreError: true, errorLine: console.error, exit: (code: number) => process.exit(code) });
+  // 9. Fix ownership via kubectl exec (bypasses Landlock)
+  try {
+    execFileSync("docker", [
+      "exec", K3S_CONTAINER,
+      "kubectl", "exec", "-n", "openshell", sandboxName, "-c", "agent", "--",
+      "chown", "sandbox:sandbox", target.configPath,
+    ], { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+  } catch {
+    // Best effort — chown failure is non-fatal
+  }
 
   // 10. Cleanup temp
   try {
@@ -357,8 +364,9 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 12. Restart if requested
   if (opts.restart) {
     console.log("  Restarting sandbox agent process...");
-    const result = captureOpenshellCommand(binary, [
-      "sandbox", "exec", sandboxName, "kill", "-HUP", "1",
+    const restartBinary = getOpenshellBinary();
+    const result = captureOpenshellCommand(restartBinary, [
+      "sandbox", "exec", sandboxName, "--", "kill", "-HUP", "1",
     ], { ignoreError: true, errorLine: console.error, exit: (code: number) => process.exit(code) });
 
     if (result.status !== 0) {
