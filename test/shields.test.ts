@@ -11,24 +11,40 @@ import os from "node:os";
 // relative to src/lib/. We mock the absolute paths that vitest will resolve.
 
 vi.mock("../../src/lib/runner", () => ({
-  run: vi.fn(),
-  runCapture: vi.fn(),
-  validateName: vi.fn(),
+  run: vi.fn(() => ({ status: 0 })),
+  runCapture: vi.fn(() => "version: 1\nnetwork_policies:\n  test: {}"),
+  validateName: vi.fn((name) => name),
   shellQuote: vi.fn((s) => `'${s}'`),
+  redact: vi.fn((s) => s),
   ROOT: "/mock/root",
 }));
 
 vi.mock("../../src/lib/policies", () => ({
-  buildPolicyGetCommand: vi.fn((name) => `openshell policy get --full '${name}'`),
+  buildPolicyGetCommand: vi.fn((name) => ["openshell", "policy", "get", "--full", name]),
   buildPolicySetCommand: vi.fn(
-    (file, name) => `openshell policy set --policy '${file}' --wait '${name}'`,
+    (file, name) => ["openshell", "policy", "set", "--policy", file, "--wait", name],
   ),
-  parseCurrentPolicy: vi.fn((raw) => raw),
+  parseCurrentPolicy: vi.fn((raw) => raw || ""),
   PERMISSIVE_POLICY_PATH: "/mock/permissive.yaml",
 }));
 
+vi.mock("../../src/lib/sandbox-config", () => ({
+  resolveAgentConfig: vi.fn(() => ({
+    agentName: "openclaw",
+    configPath: "/sandbox/.openclaw/openclaw.json",
+    configDir: "/sandbox/.openclaw",
+    format: "json",
+    configFile: "openclaw.json",
+  })),
+}));
+
+vi.mock("../../src/lib/shields-audit", () => ({
+  appendAuditEntry: vi.fn(),
+}));
+
 vi.mock("child_process", () => ({
-  fork: vi.fn(() => ({ pid: 12345, unref: vi.fn() })),
+  fork: vi.fn(() => ({ pid: 12345, disconnect: vi.fn(), unref: vi.fn() })),
+  execFileSync: vi.fn(),
 }));
 
 let tmpDir;
@@ -83,11 +99,26 @@ describe("shields — unit logic", () => {
   });
 
   describe("shields state file management", () => {
+    it("state files are namespaced by sandbox", () => {
+      const stateDir = path.join(tmpDir, ".nemoclaw", "state");
+      fs.mkdirSync(stateDir, { recursive: true });
+
+      // Write state for two different sandboxes
+      const alphaState = { shieldsDown: true, updatedAt: new Date().toISOString() };
+      const betaState = { shieldsDown: false, updatedAt: new Date().toISOString() };
+      fs.writeFileSync(path.join(stateDir, "shields-alpha.json"), JSON.stringify(alphaState, null, 2));
+      fs.writeFileSync(path.join(stateDir, "shields-beta.json"), JSON.stringify(betaState, null, 2));
+
+      const alpha = JSON.parse(fs.readFileSync(path.join(stateDir, "shields-alpha.json"), "utf-8"));
+      const beta = JSON.parse(fs.readFileSync(path.join(stateDir, "shields-beta.json"), "utf-8"));
+      expect(alpha.shieldsDown).toBe(true);
+      expect(beta.shieldsDown).toBe(false);
+    });
+
     it("shieldsDown creates snapshot, state, and audit files", () => {
       const stateDir = path.join(tmpDir, ".nemoclaw", "state");
       fs.mkdirSync(stateDir, { recursive: true });
 
-      // Simulate what shieldsDown would write
       const ts = Date.now();
       const snapshotPath = path.join(stateDir, `policy-snapshot-${ts}.yaml`);
       fs.writeFileSync(snapshotPath, "version: 1\nnetwork_policies:\n  test: {}", {
@@ -103,10 +134,9 @@ describe("shields — unit logic", () => {
         shieldsPolicySnapshotPath: snapshotPath,
         updatedAt: new Date().toISOString(),
       };
-      fs.writeFileSync(path.join(stateDir, "nemoclaw.json"), JSON.stringify(state, null, 2));
+      fs.writeFileSync(path.join(stateDir, "shields-openclaw.json"), JSON.stringify(state, null, 2));
 
-      // Verify
-      const loaded = JSON.parse(fs.readFileSync(path.join(stateDir, "nemoclaw.json"), "utf-8"));
+      const loaded = JSON.parse(fs.readFileSync(path.join(stateDir, "shields-openclaw.json"), "utf-8"));
       expect(loaded.shieldsDown).toBe(true);
       expect(loaded.shieldsDownTimeout).toBe(300);
       expect(loaded.shieldsDownPolicy).toBe("permissive");
@@ -117,7 +147,6 @@ describe("shields — unit logic", () => {
       const stateDir = path.join(tmpDir, ".nemoclaw", "state");
       fs.mkdirSync(stateDir, { recursive: true });
 
-      // Set up shields-down state
       const snapshotPath = path.join(stateDir, "policy-snapshot-test.yaml");
       fs.writeFileSync(snapshotPath, "version: 1\nnetwork_policies:\n  test: {}");
 
@@ -130,9 +159,8 @@ describe("shields — unit logic", () => {
         shieldsPolicySnapshotPath: snapshotPath,
         updatedAt: new Date().toISOString(),
       };
-      fs.writeFileSync(path.join(stateDir, "nemoclaw.json"), JSON.stringify(downState, null, 2));
+      fs.writeFileSync(path.join(stateDir, "shields-openclaw.json"), JSON.stringify(downState, null, 2));
 
-      // Simulate shieldsUp clearing state
       const cleared = {
         ...downState,
         shieldsDown: false,
@@ -142,12 +170,11 @@ describe("shields — unit logic", () => {
         shieldsDownPolicy: null,
         updatedAt: new Date().toISOString(),
       };
-      fs.writeFileSync(path.join(stateDir, "nemoclaw.json"), JSON.stringify(cleared, null, 2));
+      fs.writeFileSync(path.join(stateDir, "shields-openclaw.json"), JSON.stringify(cleared, null, 2));
 
-      const loaded = JSON.parse(fs.readFileSync(path.join(stateDir, "nemoclaw.json"), "utf-8"));
+      const loaded = JSON.parse(fs.readFileSync(path.join(stateDir, "shields-openclaw.json"), "utf-8"));
       expect(loaded.shieldsDown).toBe(false);
       expect(loaded.shieldsDownAt).toBeNull();
-      // Snapshot path preserved for forensics
       expect(loaded.shieldsPolicySnapshotPath).toBe(snapshotPath);
     });
 
@@ -204,4 +231,9 @@ describe("shields — unit logic", () => {
       expect(JSON.parse(lines[1]).action).toBe("shields_up");
     });
   });
+
+  // NOTE: Integration tests that call the real shieldsDown/shieldsUp are not
+  // feasible here because shields.ts uses CJS require() which doesn't resolve
+  // through vitest's ESM mock system. The full call chain is exercised by the
+  // E2E test (test/e2e/test-shields-config.sh) against a live sandbox.
 });

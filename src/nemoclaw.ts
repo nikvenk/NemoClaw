@@ -2102,9 +2102,28 @@ const [cmd, ...args] = process.argv.slice(2);
           case "down": {
             const opts = { timeout: null, reason: null, policy: "permissive" };
             for (let i = 0; i < shieldsFlags.length; i++) {
-              if (shieldsFlags[i] === "--timeout") opts.timeout = shieldsFlags[++i];
-              else if (shieldsFlags[i] === "--reason") opts.reason = shieldsFlags[++i];
-              else if (shieldsFlags[i] === "--policy") opts.policy = shieldsFlags[++i];
+              if (shieldsFlags[i] === "--timeout") {
+                if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
+                  console.error("  --timeout requires a value (e.g. 5m, 30m, 300)");
+                  process.exit(1);
+                }
+                opts.timeout = shieldsFlags[++i];
+              } else if (shieldsFlags[i] === "--reason") {
+                if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
+                  console.error("  --reason requires a value");
+                  process.exit(1);
+                }
+                opts.reason = shieldsFlags[++i];
+              } else if (shieldsFlags[i] === "--policy") {
+                if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
+                  console.error("  --policy requires a value (e.g. permissive, /path/to/policy.yaml)");
+                  process.exit(1);
+                }
+                opts.policy = shieldsFlags[++i];
+              } else {
+                console.error(`  Unknown flag: ${shieldsFlags[i]}`);
+                process.exit(1);
+              }
             }
             shields.shieldsDown(cmd, opts);
             break;

@@ -35,7 +35,21 @@ export function describeOnboardEndpoint(config: NemoClawOnboardConfig): string {
     return "Managed Inference Route (inference.local)";
   }
 
-  return `${config.endpointType} (${config.endpointUrl})`;
+  let safeUrl = config.endpointUrl;
+  try {
+    const parsed = new URL(config.endpointUrl);
+    if (parsed.password) parsed.password = "****";
+    if (parsed.username) parsed.username = "****";
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/(token|key|secret|auth|sig|credential|password)/i.test(key)) {
+        parsed.searchParams.set(key, "****");
+      }
+    }
+    safeUrl = parsed.toString();
+  } catch {
+    // Not a valid URL — show as-is
+  }
+  return `${config.endpointType} (${safeUrl})`;
 }
 
 export function describeOnboardProvider(config: NemoClawOnboardConfig): string {

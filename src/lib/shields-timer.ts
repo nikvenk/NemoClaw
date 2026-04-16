@@ -15,10 +15,10 @@ const { run } = require("./runner");
 const { buildPolicySetCommand } = require("./policies");
 
 const STATE_DIR = path.join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
-const STATE_FILE = path.join(STATE_DIR, "nemoclaw.json");
 const AUDIT_FILE = path.join(STATE_DIR, "shields-audit.jsonl");
 
 const [sandboxName, snapshotPath, restoreAtIso] = process.argv.slice(2);
+const STATE_FILE = path.join(STATE_DIR, `shields-${sandboxName}.json`);
 const restoreAtMs = new Date(restoreAtIso).getTime();
 const delayMs = Math.max(0, restoreAtMs - Date.now());
 
@@ -86,7 +86,22 @@ setTimeout(() => {
     });
 
     // Restore policy (slow — openshell policy set --wait blocks)
-    run(buildPolicySetCommand(snapshotPath, sandboxName), { ignoreError: true });
+    const result = run(buildPolicySetCommand(snapshotPath, sandboxName), { ignoreError: true });
+
+    if (result.status !== 0) {
+      // Policy restore failed — revert state so callers know shields are
+      // still down. The sandbox remains relaxed.
+      updateState({ shieldsDown: true });
+      appendAudit({
+        action: "shields_up_failed",
+        sandbox: sandboxName,
+        timestamp: now,
+        restored_by: "auto_timer",
+        error: `Policy restore exited with status ${result.status}`,
+      });
+      cleanupMarker();
+      process.exit(1);
+    }
 
     // Audit
     appendAudit({

@@ -47,10 +47,12 @@ const MAX_TIMEOUT_SECONDS = MAX_SECONDS;
 const DEFAULT_TIMEOUT_SECONDS = DEFAULT_SECONDS;
 
 // ---------------------------------------------------------------------------
-// State helpers — read/write shields state from ~/.nemoclaw/state/nemoclaw.json
+// State helpers — read/write shields state per sandbox
 // ---------------------------------------------------------------------------
 
-const STATE_FILE = path.join(STATE_DIR, "nemoclaw.json");
+function stateFilePath(sandboxName: string): string {
+  return path.join(STATE_DIR, `shields-${sandboxName}.json`);
+}
 
 interface ShieldsState {
   shieldsDown?: boolean;
@@ -62,20 +64,21 @@ interface ShieldsState {
   updatedAt?: string;
 }
 
-function loadShieldsState(): ShieldsState {
-  if (!fs.existsSync(STATE_FILE)) return {};
+function loadShieldsState(sandboxName: string): ShieldsState {
+  const filePath = stateFilePath(sandboxName);
+  if (!fs.existsSync(filePath)) return {};
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as ShieldsState;
+    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as ShieldsState;
   } catch {
     return {};
   }
 }
 
-function saveShieldsState(patch: ShieldsState): ShieldsState {
-  const current = loadShieldsState();
+function saveShieldsState(sandboxName: string, patch: ShieldsState): ShieldsState {
+  const current = loadShieldsState(sandboxName);
   const updated: ShieldsState = { ...current, ...patch, updatedAt: new Date().toISOString() };
   fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(STATE_FILE, JSON.stringify(updated, null, 2), { mode: 0o600 });
+  fs.writeFileSync(stateFilePath(sandboxName), JSON.stringify(updated, null, 2), { mode: 0o600 });
   return updated;
 }
 
@@ -135,7 +138,7 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
   // Kill any stale timer from a previous shields-down cycle
   killTimer(sandboxName);
 
-  const state = loadShieldsState();
+  const state = loadShieldsState(sandboxName);
   if (state.shieldsDown) {
     console.error(
       `  Shields are already DOWN for ${sandboxName} (since ${state.shieldsDownAt}).`,
@@ -201,7 +204,7 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
 
   // 3. Update state
   const now = new Date().toISOString();
-  saveShieldsState({
+  saveShieldsState(sandboxName, {
     shieldsDown: true,
     shieldsDownAt: now,
     shieldsDownTimeout: timeoutSeconds,
@@ -241,8 +244,24 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`  Warning: Could not start auto-restore timer: ${message}`);
-    console.error("  You MUST manually run `nemoclaw shields up` when done.");
+    console.error(`  Cannot start auto-restore timer: ${message}`);
+    console.error("  Rolling back — restoring policy from snapshot...");
+    try {
+      run(buildPolicySetCommand(snapshotPath, sandboxName), { ignoreError: true });
+      kubectlExec(sandboxName, ["chmod", "444", target.configPath]);
+      kubectlExec(sandboxName, ["chattr", "+i", target.configPath]);
+    } catch {
+      // Best effort rollback
+    }
+    saveShieldsState(sandboxName, {
+      shieldsDown: false,
+      shieldsDownAt: null,
+      shieldsDownTimeout: null,
+      shieldsDownReason: null,
+      shieldsDownPolicy: null,
+    });
+    console.error("  Shields restored to UP. The sandbox was never left unguarded.");
+    process.exit(1);
   }
 
   // 5. Audit log
@@ -272,7 +291,7 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
 function shieldsUp(sandboxName: string): void {
   validateName(sandboxName, "sandbox name");
 
-  const state = loadShieldsState();
+  const state = loadShieldsState(sandboxName);
   if (!state.shieldsDown) {
     console.log("  Shields are already UP.");
     return;
@@ -313,7 +332,7 @@ function shieldsUp(sandboxName: string): void {
   const durationSeconds = Math.floor((now.getTime() - downAt.getTime()) / 1000);
 
   // 4. Update state
-  saveShieldsState({
+  saveShieldsState(sandboxName, {
     shieldsDown: false,
     shieldsDownAt: null,
     shieldsDownTimeout: null,
@@ -347,7 +366,7 @@ function shieldsUp(sandboxName: string): void {
 function shieldsStatus(sandboxName: string): void {
   validateName(sandboxName, "sandbox name");
 
-  const state = loadShieldsState();
+  const state = loadShieldsState(sandboxName);
 
   if (!state.shieldsDown) {
     console.log("  Shields: UP");
@@ -380,8 +399,8 @@ function shieldsStatus(sandboxName: string): void {
 // Query — check whether shields are currently down
 // ---------------------------------------------------------------------------
 
-function isShieldsDown(): boolean {
-  return loadShieldsState().shieldsDown === true;
+function isShieldsDown(sandboxName: string): boolean {
+  return loadShieldsState(sandboxName).shieldsDown === true;
 }
 
 // ---------------------------------------------------------------------------

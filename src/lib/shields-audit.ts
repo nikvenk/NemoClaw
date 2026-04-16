@@ -12,6 +12,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureConfigDir } from "./config-io";
+import { redact } from "./runner";
 
 const AUDIT_DIR = join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
 const AUDIT_FILE = join(AUDIT_DIR, "shields-audit.jsonl");
@@ -36,7 +37,10 @@ export interface ShieldsAuditEntry {
  */
 export function appendAuditEntry(entry: ShieldsAuditEntry): void {
   ensureConfigDir(AUDIT_DIR);
-  appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n", { mode: 0o600 });
+  const safe = { ...entry };
+  if (safe.reason) safe.reason = redact(safe.reason);
+  if (safe.error) safe.error = redact(safe.error);
+  appendFileSync(AUDIT_FILE, JSON.stringify(safe) + "\n", { mode: 0o600 });
 }
 
 export { AUDIT_FILE, AUDIT_DIR };
