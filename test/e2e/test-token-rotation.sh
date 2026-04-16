@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Token rotation E2E test (issue #1903 / nvbug 6083165):
+# Token rotation E2E test (issue #1903):
 #   - prove that rotating a messaging token and re-running onboard propagates
 #     the new credential to the sandbox (sandbox is rebuilt automatically)
 #   - prove that re-running onboard with the same token reuses the sandbox

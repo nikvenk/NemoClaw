@@ -209,7 +209,7 @@ jobs:
   # Validates that rotating a messaging token and re-running onboard
   # propagates the new credential to the sandbox. Uses two fake tokens
   # to prove the sandbox is rebuilt on rotation and reused when unchanged.
-  # See: issue #1903, nvbug 6083165
+  # See: issue #1903
   token-rotation-e2e:
     if: github.repository == 'NVIDIA/NemoClaw'
     runs-on: ubuntu-latest
