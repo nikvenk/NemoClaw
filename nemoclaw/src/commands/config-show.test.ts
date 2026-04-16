@@ -94,6 +94,24 @@ describe("commands/config-show", () => {
     expect(result.text).toContain("NCP Partner: PartnerCo");
   });
 
+  it("shows not configured when credentialEnv is empty", () => {
+    const config: NemoClawOnboardConfig = {
+      endpointType: "build",
+      endpointUrl: "https://integrate.api.nvidia.com/v1",
+      ncpPartner: null,
+      model: "nvidia/nemotron-3-super-120b-a12b",
+      profile: "default",
+      credentialEnv: "",
+      onboardedAt: "2026-04-10T14:22:00Z",
+    };
+    mockedLoadOnboardConfig.mockReturnValue(config);
+    mockedDescribeOnboardEndpoint.mockReturnValue("build");
+    mockedDescribeOnboardProvider.mockReturnValue("NVIDIA");
+
+    const result = slashConfigShow();
+    expect(result.text).toContain("not configured");
+  });
+
   it("notes that config is host-only modifiable", () => {
     const config: NemoClawOnboardConfig = {
       endpointType: "build",

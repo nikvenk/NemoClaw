@@ -44,6 +44,17 @@ describe("commands/shields-status", () => {
     expect(result.text).toContain("normal security level");
   });
 
+  it("shows last-lowered info when UP with a previous snapshot", () => {
+    mockedLoadState.mockReturnValue({
+      ...blankState(),
+      shieldsDown: false,
+      shieldsPolicySnapshotPath: "/home/user/.nemoclaw/state/policy-snapshot-123.yaml",
+    });
+    const result = slashShieldsStatus();
+    expect(result.text).toContain("Shields: UP");
+    expect(result.text).toContain("policy-snapshot-123.yaml");
+  });
+
   it("reports shields DOWN with details", () => {
     mockedLoadState.mockReturnValue({
       ...blankState(),
@@ -75,6 +86,22 @@ describe("commands/shields-status", () => {
 
     const result = slashShieldsStatus();
     expect(result.text).toContain("remaining");
+  });
+
+  it("handles shields DOWN with no timeout set", () => {
+    mockedLoadState.mockReturnValue({
+      ...blankState(),
+      shieldsDown: true,
+      shieldsDownAt: new Date().toISOString(),
+      shieldsDownTimeout: null,
+      shieldsDownReason: "Manual override",
+      shieldsDownPolicy: "custom",
+    });
+
+    const result = slashShieldsStatus();
+    expect(result.text).toContain("Shields: DOWN");
+    expect(result.text).toContain("Manual override");
+    expect(result.text).not.toContain("remaining");
   });
 
   it("includes security warning when shields are down", () => {

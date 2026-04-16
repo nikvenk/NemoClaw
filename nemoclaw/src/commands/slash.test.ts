@@ -158,6 +158,23 @@ describe("commands/slash", () => {
       expect(result.text).toContain("Sandbox: test-sandbox");
     });
 
+    it("includes rebuild info when present", () => {
+      mockedLoadState.mockReturnValue({
+        ...blankState(),
+        lastRunId: "run-789",
+        lastAction: "rebuild",
+        blueprintVersion: "2.0.0",
+        sandboxName: "sb",
+        lastRebuildAt: "2026-04-15T10:00:00Z",
+        lastRebuildBackupPath: "/backups/rebuild-001",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      });
+      const result = handleSlashCommand(makeCtx("status"), makeApi());
+      expect(result.text).toContain("Last rebuild: 2026-04-15T10:00:00Z");
+      expect(result.text).toContain("Rebuild backup: /backups/rebuild-001");
+    });
+
     it("includes rollback snapshot when present", () => {
       mockedLoadState.mockReturnValue({
         ...blankState(),
