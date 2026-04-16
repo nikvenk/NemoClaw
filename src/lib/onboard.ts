@@ -1051,8 +1051,16 @@ function patchStagedDockerfile(
   // Pin the base image to a specific digest when available (#1904).
   // The ref must come from pullAndResolveBaseImageDigest() — never from
   // blueprint.yaml, whose digest belongs to a different registry.
+  // Only rewrite when the current value already points at our sandbox-base
+  // image — custom --from Dockerfiles may use a different base.
   if (baseImageRef) {
-    dockerfile = dockerfile.replace(/^ARG BASE_IMAGE=.*$/m, `ARG BASE_IMAGE=${baseImageRef}`);
+    dockerfile = dockerfile.replace(/^ARG BASE_IMAGE=(.*)$/m, (line, currentValue) => {
+      const trimmed = String(currentValue).trim();
+      if (trimmed.startsWith(`${SANDBOX_BASE_IMAGE}:`) || trimmed.startsWith(`${SANDBOX_BASE_IMAGE}@`)) {
+        return `ARG BASE_IMAGE=${baseImageRef}`;
+      }
+      return line;
+    });
   }
   dockerfile = dockerfile.replace(/^ARG NEMOCLAW_MODEL=.*$/m, `ARG NEMOCLAW_MODEL=${model}`);
   dockerfile = dockerfile.replace(
@@ -2821,7 +2829,22 @@ async function createSandbox(
   if (resolved) {
     console.log(`  Pinning base image to ${resolved.digest.slice(0, 19)}...`);
   } else {
-    console.warn("  Warning: could not pull base image from registry; using cached :latest.");
+    // Check if the image exists locally before falling back to unpinned :latest.
+    // On a first-time install behind a firewall, there's no cached image and the
+    // build would fail later with a confusing Docker error.
+    const localCheck = runCapture(
+      ["docker", "image", "inspect", `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`],
+      { ignoreError: true },
+    );
+    if (localCheck) {
+      console.warn("  Warning: could not pull base image from registry; using cached :latest.");
+    } else {
+      console.error(`  Error: base image ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG} is not available.`);
+      console.error("  Cannot pull from registry and no local cache exists.");
+      console.error("  Check your network connection or pull the image manually:");
+      console.error(`    docker pull ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`);
+      process.exit(1);
+    }
   }
   patchStagedDockerfile(
     stagedDockerfile,

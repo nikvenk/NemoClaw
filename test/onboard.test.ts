@@ -4700,6 +4700,56 @@ const { createSandbox } = require(${onboardPath});
     }
   });
 
+  it("patchStagedDockerfile does NOT overwrite custom --from BASE_IMAGE that differs from sandbox-base", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-custom-base-"));
+    const dockerfilePath = path.join(tmpDir, "Dockerfile");
+    const customBase = "my-registry.example.com/my-custom-image:v2";
+    fs.writeFileSync(
+      dockerfilePath,
+      [
+        `ARG BASE_IMAGE=${customBase}`,
+        "ARG NEMOCLAW_MODEL=nvidia/nemotron-3-super-120b-a12b",
+        "ARG NEMOCLAW_PROVIDER_KEY=nvidia",
+        "ARG NEMOCLAW_PRIMARY_MODEL_REF=nvidia/nemotron-3-super-120b-a12b",
+        "ARG CHAT_UI_URL=http://127.0.0.1:18789",
+        "ARG NEMOCLAW_INFERENCE_COMPAT_B64=e30=",
+        "ARG NEMOCLAW_WEB_SEARCH_ENABLED=0",
+        "ARG NEMOCLAW_BUILD_ID=default",
+      ].join("\n"),
+    );
+
+    const sandboxRef =
+      "ghcr.io/nvidia/nemoclaw/sandbox-base@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    try {
+      patchStagedDockerfile(
+        dockerfilePath,
+        "gpt-5.4",
+        "http://127.0.0.1:19999",
+        "build-custom",
+        "openai-api",
+        null,
+        null,
+        [],
+        {},
+        {},
+        sandboxRef,
+      );
+      const patched = fs.readFileSync(dockerfilePath, "utf8");
+      const baseLine = patched.split("\n").find((l) => l.startsWith("ARG BASE_IMAGE="));
+      assert.ok(baseLine, "ARG BASE_IMAGE line must exist");
+      assert.ok(
+        baseLine.includes(customBase),
+        `Custom --from BASE_IMAGE must be preserved, got: ${baseLine}`,
+      );
+      assert.ok(
+        !baseLine.includes("sandbox-base"),
+        `Custom --from BASE_IMAGE must NOT be overwritten with sandbox-base, got: ${baseLine}`,
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("regression #1904: pullAndResolveBaseImageDigest uses sandbox-base registry", () => {
     // Structural check: verify the constant matches the Dockerfile default
     // and does NOT reference the openshell-community registry.
