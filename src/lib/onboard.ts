@@ -3562,21 +3562,26 @@ async function setupNim(gpu) {
                 remoteConfig.helpUrl,
               );
               if (validation.ok) {
-                // Force chat completions for all OpenAI-compatible endpoints.
+                // Force chat completions for all OpenAI-compatible endpoints
+                // unless the user explicitly opted in to responses via env var.
                 // Many backends (Ollama, vLLM, LiteLLM) expose /v1/responses
                 // but do not correctly handle the `developer` role used by the
                 // Responses API — messages with that role are silently dropped,
                 // causing the model to receive no system prompt or tool
                 // definitions. Chat completions uses the `system` role which
-                // is universally supported. Users who need the Responses API
-                // can override via NEMOCLAW_PREFERRED_API=openai-responses.
+                // is universally supported.
                 // See: https://github.com/NVIDIA/NemoClaw/issues/1932
-                if (validation.api !== "openai-completions") {
-                  console.log(
-                    "  ℹ Using chat completions API (compatible endpoints may not support the Responses API developer role)",
-                  );
+                const explicitApi = (process.env.NEMOCLAW_PREFERRED_API || "").trim().toLowerCase();
+                if (explicitApi && explicitApi !== "openai-completions" && explicitApi !== "chat-completions") {
+                  preferredInferenceApi = validation.api;
+                } else {
+                  if (validation.api !== "openai-completions") {
+                    console.log(
+                      "  ℹ Using chat completions API (compatible endpoints may not support the Responses API developer role)",
+                    );
+                  }
+                  preferredInferenceApi = "openai-completions";
                 }
-                preferredInferenceApi = "openai-completions";
                 break;
               }
               if (
