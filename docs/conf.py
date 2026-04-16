@@ -18,7 +18,11 @@ author = "NVIDIA Corporation"
 # can match it.  versions1.json is the source of truth for the switcher
 # dropdown; reading from it keeps conf.py in sync automatically.
 _versions = json.loads((Path(__file__).parent / "versions1.json").read_text())
-release = next(v["version"] for v in _versions if v.get("preferred"))
+_preferred = [v["version"] for v in _versions if v.get("preferred")]
+assert len(_preferred) == 1, (
+    f"docs/versions1.json must have exactly one entry with preferred: true; found {len(_preferred)}"
+)
+release = _preferred[0]
 
 
 extensions = [
