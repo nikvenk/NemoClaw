@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=d363c973"></script>
+    <script src="../_static/documentation_options.js?v=b7ac1937"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.16';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.17';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -626,7 +626,8 @@ If the installed OpenShell version falls outside this range, onboarding exits wi
 <section id="from-dockerfile">
 <h4><code class="docutils literal notranslate"><span class="pre">--from</span> <span class="pre">&lt;Dockerfile&gt;</span></code><a class="headerlink" href="#from-dockerfile" title="Link to this heading">#</a></h4>
 <p>Build the sandbox image from a custom Dockerfile instead of the stock NemoClaw image.
-The entire parent directory of the specified file is used as the Docker build context, so any files your Dockerfile references (scripts, config, etc.) must live alongside it.</p>
+The entire parent directory of the specified file is used as the Docker build context, so any files your Dockerfile references (scripts, config, etc.) must live alongside it.
+If the directory contains unreadable files (for example, Windows system files visible in WSL), onboarding exits with an error suggesting you move the Dockerfile to a dedicated directory.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--from<span class="w"> </span>path/to/Dockerfile
 </pre></div>
 </div>
@@ -826,8 +827,10 @@ Snapshots are stored in <code class="docutils literal notranslate"><span class="
 <section id="nemoclaw-name-snapshot-restore-timestamp">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[timestamp]</span></code><a class="headerlink" href="#nemoclaw-name-snapshot-restore-timestamp" title="Link to this heading">#</a></h3>
 <p>Restore sandbox state from a snapshot.
+The sandbox must be running before you restore.
 If no timestamp is provided, the latest snapshot is used.
-Partial timestamp prefixes are accepted if they match exactly one snapshot.</p>
+Partial timestamp prefixes are accepted if they match exactly one snapshot.
+Restore performs a clean replacement of each state directory, removing files that were added after the snapshot was taken.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span><span class="m">2026</span>-04-14T
 </pre></div>

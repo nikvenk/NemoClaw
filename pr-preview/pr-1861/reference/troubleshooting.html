@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=d363c973"></script>
+    <script src="../_static/documentation_options.js?v=b7ac1937"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.16';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.17';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -586,7 +586,8 @@ Instead, configure npm to use a directory you own:</p>
 <p>The installer auto-detects NVIDIA Jetson devices (Orin and Thor) and applies required host configuration before the normal install flow.
 If the Jetson setup step fails, verify that you have <code class="docutils literal notranslate"><span class="pre">sudo</span></code> access and that Docker is installed and running.</p>
 <p>For JetPack 6 (L4T 36.x), the setup switches iptables to legacy mode and adjusts the Docker daemon configuration.
-For JetPack 7 (L4T 38.x / Thor), only bridge netfilter and sysctl settings are applied.</p>
+For JetPack 7 (L4T 38.x / Thor), only bridge netfilter and sysctl settings are applied.
+BSP R39 and later do not require host customization and are handled automatically.</p>
 <p>If the L4T version is not recognized, the setup step is skipped and the installer continues normally.</p>
 </section>
 <section id="port-already-in-use">
@@ -849,6 +850,20 @@ If logs show errors such as <code class="docutils literal notranslate"><span cla
 <li><p>treat the failure as a native Discord gateway problem, not as a bridge startup problem</p></li>
 </ul>
 </section>
+<section id="messaging-bridge-appears-running-but-no-messages-arrive">
+<h3>Messaging bridge appears running but no messages arrive<a class="headerlink" href="#messaging-bridge-appears-running-but-no-messages-arrive" title="Link to this heading">#</a></h3>
+<p>Bot tokens for Telegram (<code class="docutils literal notranslate"><span class="pre">getUpdates</span></code>), Discord (gateway), and Slack (Socket Mode) only allow one active consumer per token. If two NemoClaw sandboxes are configured with the same bot token, each one kicks the other off its polling connection and neither delivers messages. <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code> still reports the bridge as running because the gateway process itself is alive.</p>
+<p>To diagnose, open a shell in the sandbox and inspect the gateway log:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>term<span class="w"> </span>&lt;sandbox-name&gt;
+<span class="gp">$ </span>tail<span class="w"> </span>-f<span class="w"> </span>/tmp/gateway.log
+</pre></div>
+</div>
+<p>A repeating line like the following confirms the conflict:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[telegram] getUpdates conflict: 409: Conflict: terminated by other getUpdates request; retrying in 30s.
+</pre></div>
+</div>
+<p>To fix, run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;other-sandbox&gt;</span> <span class="pre">destroy</span></code> on whichever sandbox should stop polling, or rerun onboarding on it with the channel disabled. Current NemoClaw warns at <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.</p>
+</section>
 <section id="landlock-filesystem-restrictions-silently-degraded">
 <h3>Landlock filesystem restrictions silently degraded<a class="headerlink" href="#landlock-filesystem-restrictions-silently-degraded" title="Link to this heading">#</a></h3>
 <p>After sandbox creation, NemoClaw checks whether the host kernel supports Landlock (Linux 5.13+).
@@ -905,6 +920,15 @@ the sandbox image with the gateway bound to the configured port:</p>
 </div>
 <p>If you need to run multiple sandboxes at different ports at the same time, see
 <a class="reference internal" href="#running-multiple-sandboxes-simultaneously">Running multiple sandboxes simultaneously</a>.</p>
+</section>
+<section id="ollama-network-exposure-warning-during-onboard">
+<h3>Ollama network exposure warning during onboard<a class="headerlink" href="#ollama-network-exposure-warning-during-onboard" title="Link to this heading">#</a></h3>
+<p>When you select a local Ollama provider, onboarding binds Ollama to <code class="docutils literal notranslate"><span class="pre">0.0.0.0</span></code> so the Docker sandbox can reach the host.
+This exposes the unauthenticated Ollama API to the local network.
+NemoClaw prints a warning during onboarding to alert you to this risk.</p>
+<p>On trusted private networks, the warning is informational.
+On shared or public networks (airports, coffee shops), any adjacent device can send prompts to and enumerate models on your Ollama instance.</p>
+<p>The warning is suppressed on WSL, where Ollama binds to <code class="docutils literal notranslate"><span class="pre">127.0.0.1</span></code> instead.</p>
 </section>
 <section id="blueprint-run-failed">
 <h3>Blueprint run failed<a class="headerlink" href="#blueprint-run-failed" title="Link to this heading">#</a></h3>
@@ -1059,11 +1083,13 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox"><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-doctor-fix-cannot-repair-discord-channel-config-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> cannot repair Discord channel config inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#discord-bot-logs-in-but-the-channel-still-does-not-work">Discord bot logs in, but the channel still does not work</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#messaging-bridge-appears-running-but-no-messages-arrive">Messaging bridge appears running but no messages arrive</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#landlock-filesystem-restrictions-silently-degraded">Landlock filesystem restrictions silently degraded</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-lost-after-gateway-restart">Sandbox lost after gateway restart</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-external-hosts-through-a-proxy">Agent cannot reach external hosts through a proxy</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-an-external-host">Agent cannot reach an external host</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#dashboard-not-reachable-after-setting-nemoclaw-dashboard-port">Dashboard not reachable after setting <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ollama-network-exposure-warning-during-onboard">Ollama network exposure warning during onboard</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blueprint-run-failed">Blueprint run failed</a></li>
 </ul>
 </li>
