@@ -854,15 +854,15 @@ If logs show errors such as <code class="docutils literal notranslate"><span cla
 <h3>Messaging bridge appears running but no messages arrive<a class="headerlink" href="#messaging-bridge-appears-running-but-no-messages-arrive" title="Link to this heading">#</a></h3>
 <p>Bot tokens for Telegram (<code class="docutils literal notranslate"><span class="pre">getUpdates</span></code>), Discord (gateway), and Slack (Socket Mode) only allow one active consumer per token. If two NemoClaw sandboxes are configured with the same bot token, each one kicks the other off its polling connection and neither delivers messages. <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code> still reports the bridge as running because the gateway process itself is alive.</p>
 <p>To diagnose, open a shell in the sandbox and inspect the gateway log:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>openshell<span class="w"> </span>term<span class="w"> </span>&lt;sandbox-name&gt;
-tail<span class="w"> </span>-f<span class="w"> </span>/tmp/gateway.log
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>term<span class="w"> </span>&lt;sandbox-name&gt;
+<span class="gp">$ </span>tail<span class="w"> </span>-f<span class="w"> </span>/tmp/gateway.log
 </pre></div>
 </div>
 <p>A repeating line like the following confirms the conflict:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[telegram] getUpdates conflict: 409: Conflict: terminated by other getUpdates request; retrying in 30s.
 </pre></div>
 </div>
-<p>To fix, remove the messaging channel from the other sandbox (<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">remove</span> <span class="pre">&lt;other-sandbox&gt;</span></code> or rerun onboarding on it with the channel disabled). Current NemoClaw warns at <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.</p>
+<p>To fix, run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;other-sandbox&gt;</span> <span class="pre">destroy</span></code> on whichever sandbox should stop polling, or rerun onboarding on it with the channel disabled. Current NemoClaw warns at <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.</p>
 </section>
 <section id="landlock-filesystem-restrictions-silently-degraded">
 <h3>Landlock filesystem restrictions silently degraded<a class="headerlink" href="#landlock-filesystem-restrictions-silently-degraded" title="Link to this heading">#</a></h3>
