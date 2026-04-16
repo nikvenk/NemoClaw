@@ -309,6 +309,8 @@ rm -f "$ssh_config"
 
 # Retry sandbox inference up to 3 times — live models are not deterministic
 # and the gateway proxy can return unexpected responses on first attempt. (#1969)
+TIMEOUT_CMD="${TIMEOUT_CMD:-}"
+sandbox_content=""
 pong_ok=false
 for pong_attempt in 1 2 3; do
   if [ -n "$sandbox_response" ]; then

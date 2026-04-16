@@ -322,6 +322,7 @@ baseline_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
 
 # Retry baseline inference up to 3 times — live models are not deterministic
 # and the gateway proxy can return unexpected responses on first attempt. (#1969)
+baseline_content=""
 pong_ok=false
 for pong_attempt in 1 2 3; do
   baseline_content=""
@@ -651,6 +652,7 @@ post_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
   2>&1) || true
 
 # Retry post-restart inference up to 3 times. (#1969)
+post_content=""
 pong_ok=false
 for pong_attempt in 1 2 3; do
   post_content=""
