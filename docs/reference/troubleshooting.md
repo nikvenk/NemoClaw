@@ -450,9 +450,9 @@ Bot tokens for Telegram (`getUpdates`), Discord (gateway), and Slack (Socket Mod
 
 To diagnose, open a shell in the sandbox and inspect the gateway log:
 
-```bash
-openshell term <sandbox-name>
-tail -f /tmp/gateway.log
+```console
+$ openshell term <sandbox-name>
+$ tail -f /tmp/gateway.log
 ```
 
 A repeating line like the following confirms the conflict:
@@ -461,7 +461,7 @@ A repeating line like the following confirms the conflict:
 [telegram] getUpdates conflict: 409: Conflict: terminated by other getUpdates request; retrying in 30s.
 ```
 
-To fix, remove the messaging channel from the other sandbox (`nemoclaw remove <other-sandbox>` or rerun onboarding on it with the channel disabled). Current NemoClaw warns at `nemoclaw onboard` time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.
+To fix, run `nemoclaw <other-sandbox> destroy` on whichever sandbox should stop polling, or rerun onboarding on it with the channel disabled. Current NemoClaw warns at `nemoclaw onboard` time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.
 
 ### Landlock filesystem restrictions silently degraded
 

@@ -126,7 +126,7 @@ export function showStatusCommand(deps: ShowStatusCommandDeps): void {
         );
       }
       log(
-        "    Run `nemoclaw remove <sandbox>` on whichever sandbox should stop polling, or rerun onboarding with the channel disabled.",
+        "    Run `nemoclaw <sandbox> destroy` on whichever sandbox should stop polling, or rerun onboarding with the channel disabled.",
       );
     }
   }

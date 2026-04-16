@@ -1055,13 +1055,19 @@ function checkMessagingBridgeHealth(sandboxName, channels) {
 }
 
 function backfillAndFindOverlaps() {
-  const {
-    backfillMessagingChannels,
-    findAllOverlaps,
-  } = require("./lib/messaging-conflict");
-  const { providerExistsInGateway } = require("./lib/onboard");
-  backfillMessagingChannels(registry, { providerExists: providerExistsInGateway });
-  return findAllOverlaps(registry);
+  // Non-critical path: status must remain usable even if the gateway probe or
+  // registry write throws, so any failure yields an empty overlap list.
+  try {
+    const {
+      backfillMessagingChannels,
+      findAllOverlaps,
+    } = require("./lib/messaging-conflict");
+    const { providerExistsInGateway } = require("./lib/onboard");
+    backfillMessagingChannels(registry, { providerExists: providerExistsInGateway });
+    return findAllOverlaps(registry);
+  } catch {
+    return [];
+  }
 }
 
 function showStatus() {

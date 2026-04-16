@@ -2714,7 +2714,7 @@ async function createSandbox(
       }
       if (isNonInteractive()) {
         console.error(
-          "  Aborting: resolve the messaging channel conflict above or run `nemoclaw remove <sandbox>` on the other sandbox.",
+          "  Aborting: resolve the messaging channel conflict above or run `nemoclaw <sandbox> destroy` on the other sandbox.",
         );
         process.exit(1);
       }

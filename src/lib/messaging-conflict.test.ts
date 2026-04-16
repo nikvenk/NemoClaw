@@ -119,7 +119,9 @@ describe("backfillMessagingChannels", () => {
     expect(registry.updateSandbox).toHaveBeenCalledWith("alice", { messagingChannels: [] });
   });
 
-  it("swallows probe errors for individual channels and keeps going", () => {
+  it("does NOT persist a partial result when a probe throws (retry on next call)", () => {
+    // Writing a partial list would set messagingChannels and prevent future
+    // retries, permanently hiding real overlaps for upgraded sandboxes.
     const registry = makeRegistry([{ name: "alice" }]);
     const probe = {
       providerExists: vi.fn((name: string) => {
@@ -128,8 +130,26 @@ describe("backfillMessagingChannels", () => {
       }),
     };
     backfillMessagingChannels(registry, probe);
+    expect(registry.updateSandbox).not.toHaveBeenCalled();
+  });
+
+  it("re-attempts backfill on a subsequent call after a prior probe failure", () => {
+    const registry = makeRegistry([{ name: "alice" }]);
+    let throwOnce = true;
+    const probe = {
+      providerExists: vi.fn((name: string) => {
+        if (name.endsWith("-telegram-bridge") && throwOnce) {
+          throwOnce = false;
+          throw new Error("gateway down");
+        }
+        return name === "alice-telegram-bridge";
+      }),
+    };
+    backfillMessagingChannels(registry, probe);
+    expect(registry.updateSandbox).not.toHaveBeenCalled();
+    backfillMessagingChannels(registry, probe);
     expect(registry.updateSandbox).toHaveBeenCalledWith("alice", {
-      messagingChannels: ["discord"],
+      messagingChannels: ["telegram"],
     });
   });
 });

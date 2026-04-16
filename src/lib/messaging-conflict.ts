@@ -56,15 +56,22 @@ export function backfillMessagingChannels(
   for (const entry of sandboxes) {
     if (Array.isArray(entry.messagingChannels)) continue;
     const discovered: string[] = [];
+    let probeFailed = false;
     for (const channel of KNOWN_CHANNELS) {
       const providerName = `${entry.name}${PROVIDER_SUFFIXES[channel]}`;
       try {
         if (probe.providerExists(providerName)) discovered.push(channel);
       } catch {
-        // Probe failure is non-fatal; leave this entry unfilled and try later.
+        // Partial results can't be persisted: writing a partial/empty list
+        // sets messagingChannels, preventing future retries and permanently
+        // hiding real overlaps. Skip the write so we retry on next call.
+        probeFailed = true;
+        break;
       }
     }
-    registry.updateSandbox(entry.name, { messagingChannels: discovered });
+    if (!probeFailed) {
+      registry.updateSandbox(entry.name, { messagingChannels: discovered });
+    }
   }
 }
 
