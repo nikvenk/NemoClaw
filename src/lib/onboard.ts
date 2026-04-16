@@ -2830,8 +2830,8 @@ async function createSandbox(
     console.log(`  Pinning base image to ${resolved.digest.slice(0, 19)}...`);
   } else {
     // Check if the image exists locally before falling back to unpinned :latest.
-    // On a first-time install behind a firewall, there's no cached image and the
-    // build would fail later with a confusing Docker error.
+    // On a first-time install behind a firewall with no cached image, warn early
+    // so the user knows the build will likely fail.
     const localCheck = runCapture(
       ["docker", "image", "inspect", `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`],
       { ignoreError: true },
@@ -2839,11 +2839,10 @@ async function createSandbox(
     if (localCheck) {
       console.warn("  Warning: could not pull base image from registry; using cached :latest.");
     } else {
-      console.error(`  Error: base image ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG} is not available.`);
-      console.error("  Cannot pull from registry and no local cache exists.");
-      console.error("  Check your network connection or pull the image manually:");
-      console.error(`    docker pull ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`);
-      process.exit(1);
+      console.warn(`  Warning: base image ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG} is not available locally.`);
+      console.warn("  The build will fail unless Docker can pull the image during build.");
+      console.warn("  If offline, pull the image manually first:");
+      console.warn(`    docker pull ${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`);
     }
   }
   patchStagedDockerfile(
