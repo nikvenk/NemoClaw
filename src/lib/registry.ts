@@ -166,6 +166,7 @@ export function registerSandbox(entry: SandboxEntry): void {
       dangerouslySkipPermissions:
         entry.dangerouslySkipPermissions === true ? true : undefined,
       agentVersion: entry.agentVersion || null,
+      providerCredentialHashes: entry.providerCredentialHashes || undefined,
     };
     if (!data.defaultSandbox) {
       data.defaultSandbox = entry.name;

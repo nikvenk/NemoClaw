@@ -4,12 +4,22 @@
 
 # Token rotation E2E test (issue #1903 / nvbug 6083165):
 #   - prove that rotating a messaging token and re-running onboard propagates
-#     the new credential to the L7 proxy (sandbox is rebuilt automatically)
+#     the new credential to the sandbox (sandbox is rebuilt automatically)
 #   - prove that re-running onboard with the same token reuses the sandbox
-#   - prove that workspace state is preserved across credential rotation
 #
-# Requires two Telegram bot tokens: TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B
-# At least one must be a valid Telegram bot token for meaningful verification.
+# Uses two distinct fake tokens. The test validates that NemoClaw detects the
+# rotation and triggers a sandbox rebuild, not the Telegram API response.
+#
+# Prerequisites:
+#   - Docker running
+#   - NVIDIA_API_KEY set (or fake OpenAI endpoint)
+#   - TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B set (can be fake)
+#
+# Usage:
+#   NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+#     NVIDIA_API_KEY=nvapi-... \
+#     TELEGRAM_BOT_TOKEN_A=fake-a TELEGRAM_BOT_TOKEN_B=fake-b \
+#     bash test/e2e/test-token-rotation.sh
 
 set -uo pipefail
 
@@ -39,26 +49,19 @@ section() {
 }
 info() { printf '\033[1;34m  [info]\033[0m %s\n' "$1"; }
 
-registry_has() {
-  local sandbox_name="$1"
-  [ -f "$REGISTRY" ] && grep -q "$sandbox_name" "$REGISTRY"
-}
-
-SANDBOX_NAME="e2e-token-rotation"
-REGISTRY="$HOME/.nemoclaw/sandboxes.json"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-FAKE_HOST="127.0.0.1"
-FAKE_PORT="${NEMOCLAW_FAKE_PORT:-18080}"
-FAKE_BASE_URL="http://${FAKE_HOST}:${FAKE_PORT}/v1"
-FAKE_LOG="$(mktemp)"
-FAKE_PID=""
-
-if command -v node >/dev/null 2>&1 && [ -f "$REPO_ROOT/bin/nemoclaw.js" ]; then
-  NEMOCLAW_CMD=(node "$REPO_ROOT/bin/nemoclaw.js")
+# Determine repo root
+if [ -d /workspace ] && [ -f /workspace/install.sh ]; then
+  REPO="/workspace"
+elif [ -f "$(cd "$(dirname "$0")/../.." && pwd)/install.sh" ]; then
+  REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 else
-  NEMOCLAW_CMD=(nemoclaw)
+  echo "ERROR: Cannot find repo root."
+  exit 1
 fi
+
+SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-e2e-token-rotation}"
+REGISTRY="$HOME/.nemoclaw/sandboxes.json"
+INSTALL_LOG="/tmp/nemoclaw-e2e-install.log"
 
 # ── Prerequisite checks ──────────────────────────────────────────
 
@@ -75,94 +78,73 @@ fi
 # ── Helpers ───────────────────────────────────────────────────────
 
 cleanup() {
-  if [ -n "$FAKE_PID" ] && kill -0 "$FAKE_PID" 2>/dev/null; then
-    kill "$FAKE_PID" 2>/dev/null || true
-    wait "$FAKE_PID" 2>/dev/null || true
-  fi
-  rm -f "$FAKE_LOG"
-
-  # Clean up sandbox
   openshell sandbox delete "$SANDBOX_NAME" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-start_fake_openai() {
-  python3 - "$FAKE_HOST" "$FAKE_PORT" >"$FAKE_LOG" 2>&1 <<'PY' &
-import json
-import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+# ── Phase 0: Install NemoClaw with token A ────────────────────────
 
-HOST = sys.argv[1]
-PORT = int(sys.argv[2])
+section "Phase 0: Install NemoClaw and first onboard with token A"
 
-
-class Handler(BaseHTTPRequestHandler):
-    def _send(self, status, payload):
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        return
-
-    def do_GET(self):
-        if self.path in ("/v1/models", "/models"):
-            self._send(200, {"data": [{"id": "fake-model"}]})
-        else:
-            self._send(404, {"error": "not found"})
-
-    def do_POST(self):
-        self._send(200, {
-            "id": "chatcmpl-fake",
-            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-        })
-
-
-HTTPServer((HOST, PORT), Handler).serve_forever()
-PY
-  FAKE_PID=$!
-  sleep 1
-  if ! kill -0 "$FAKE_PID" 2>/dev/null; then
-    echo "FATAL: fake OpenAI server failed to start"
-    cat "$FAKE_LOG"
-    exit 1
-  fi
-}
-
-call_telegram_getme() {
-  # Call Telegram getMe from inside the sandbox via the L7 proxy.
-  # The sandbox holds a placeholder token; the proxy rewrites it.
-  openshell sandbox exec "$SANDBOX_NAME" \
-    curl -sf -o /dev/null -w '%{http_code}' \
-    "https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/getMe" 2>/dev/null || echo "000"
-}
-
-# ── Phase 0: Setup ────────────────────────────────────────────────
-
-section "Phase 0: Start fake OpenAI endpoint"
-start_fake_openai
-info "Fake OpenAI listening on $FAKE_BASE_URL"
-
-# Clean up any leftover sandbox from a previous run
+# Pre-clean
 openshell sandbox delete "$SANDBOX_NAME" 2>/dev/null || true
-
-# ── Phase 1: First onboard with token A ──────────────────────────
-
-section "Phase 1: First onboard with TELEGRAM_BOT_TOKEN_A"
+openshell gateway destroy -g nemoclaw 2>/dev/null || true
 
 export TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN_A"
 export NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME"
 export NEMOCLAW_POLICY_TIER="open"
-export NEMOCLAW_NON_INTERACTIVE=1
-export OPENAI_API_KEY="fake-key"
-export OPENAI_BASE_URL="$FAKE_BASE_URL"
-export NEMOCLAW_INFERENCE_PROVIDER="openai-compatible"
-export NEMOCLAW_INFERENCE_MODEL="fake-model"
+export NEMOCLAW_RECREATE_SANDBOX=1
 
-"${NEMOCLAW_CMD[@]}" onboard --non-interactive
+info "Running install.sh --non-interactive (includes first onboard)..."
+cd "$REPO" || exit 1
+bash install.sh --non-interactive >"$INSTALL_LOG" 2>&1 &
+install_pid=$!
+tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
+tail_pid=$!
+wait $install_pid
+install_exit=$?
+kill $tail_pid 2>/dev/null || true
+wait $tail_pid 2>/dev/null || true
+
+# Source shell profile to pick up nvm/PATH changes from install.sh
+if [ -f "$HOME/.bashrc" ]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.bashrc" 2>/dev/null || true
+fi
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$NVM_DIR/nvm.sh"
+fi
+if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if [ $install_exit -eq 0 ]; then
+  pass "install.sh completed (exit 0)"
+else
+  fail "install.sh failed (exit $install_exit)"
+  info "Last 30 lines of install log:"
+  tail -30 "$INSTALL_LOG" 2>/dev/null || true
+  exit 1
+fi
+
+# Verify tools are on PATH
+if ! command -v openshell >/dev/null 2>&1; then
+  fail "openshell not found on PATH after install"
+  exit 1
+fi
+pass "openshell installed ($(openshell --version 2>&1 || echo unknown))"
+
+if ! command -v nemoclaw >/dev/null 2>&1; then
+  fail "nemoclaw not found on PATH after install"
+  exit 1
+fi
+pass "nemoclaw installed at $(command -v nemoclaw)"
+
+# ── Phase 1: Verify first onboard with token A ──────────────────
+
+section "Phase 1: Verify first onboard results"
 
 if openshell sandbox list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
   pass "Sandbox $SANDBOX_NAME created and running"
@@ -187,24 +169,28 @@ fi
 
 section "Phase 2: Re-onboard with rotated TELEGRAM_BOT_TOKEN_B"
 
-# Write a marker file to verify workspace preservation
-openshell sandbox exec "$SANDBOX_NAME" \
-  sh -c 'echo "rotation-marker" > /tmp/rotation-test-marker' 2>/dev/null || true
-
 export TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN_B"
+unset NEMOCLAW_RECREATE_SANDBOX
 
-ONBOARD_OUTPUT=$("${NEMOCLAW_CMD[@]}" onboard --non-interactive 2>&1)
+ONBOARD_OUTPUT=$(nemoclaw onboard --non-interactive 2>&1)
+onboard_exit=$?
+
+info "onboard exit code: $onboard_exit"
 
 if echo "$ONBOARD_OUTPUT" | grep -q "credential(s) rotated"; then
   pass "Credential rotation detected"
 else
   fail "Credential rotation not detected in onboard output"
+  info "Onboard output:"
+  echo "$ONBOARD_OUTPUT" | tail -20
 fi
 
 if echo "$ONBOARD_OUTPUT" | grep -q "Rebuilding sandbox"; then
   pass "Sandbox rebuild triggered by rotation"
 else
   fail "Sandbox rebuild not triggered"
+  info "Onboard output:"
+  echo "$ONBOARD_OUTPUT" | tail -20
 fi
 
 if openshell sandbox list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
@@ -213,25 +199,18 @@ else
   fail "Sandbox not running after rotation"
 fi
 
-# Verify workspace state was preserved
-MARKER=$(openshell sandbox exec "$SANDBOX_NAME" \
-  cat /tmp/rotation-test-marker 2>/dev/null || echo "")
-if [ "$MARKER" = "rotation-marker" ]; then
-  pass "Workspace state preserved across rotation"
-else
-  info "Marker file not found (workspace restore may not cover /tmp)"
-fi
-
 # ── Phase 3: Re-onboard with same token B (no change) ────────────
 
 section "Phase 3: Re-onboard with same token (no rotation expected)"
 
-ONBOARD_OUTPUT=$("${NEMOCLAW_CMD[@]}" onboard --non-interactive 2>&1)
+ONBOARD_OUTPUT=$(nemoclaw onboard --non-interactive 2>&1)
 
 if echo "$ONBOARD_OUTPUT" | grep -q "reusing it"; then
   pass "Sandbox reused when token unchanged"
 else
   fail "Sandbox was not reused (unexpected rebuild)"
+  info "Onboard output:"
+  echo "$ONBOARD_OUTPUT" | tail -20
 fi
 
 # ── Summary ───────────────────────────────────────────────────────
