@@ -18,6 +18,10 @@ filesystem_policy:
   # changing include_workdir on a live sandbox. Instead, we explicitly list
   # /sandbox and /sandbox/.openclaw in read_write to grant the same access.
   include_workdir: false
+  # read_only paths must be a superset of the default policy's read_only —
+  # OpenShell rejects removing read_only paths on a live sandbox. Landlock
+  # grants the union of all matching rules, so listing a path in both
+  # read_only and read_write results in read-write access.
   read_only:
     - /usr
     - /lib
@@ -26,11 +30,13 @@ filesystem_policy:
     - /app
     - /etc
     - /var/log
+    - /sandbox
+    - /sandbox/.openclaw
   read_write:
     - /tmp
     - /dev/null
-    - /sandbox                    # Home dir — writable during shields-down
-    - /sandbox/.openclaw          # Config dir — writable during shields-down
+    - /sandbox                    # Home dir — writable during shields-down (union with read_only)
+    - /sandbox/.openclaw          # Config dir — writable during shields-down (union with read_only)
     - /sandbox/.openclaw-data
     - /sandbox/.nemoclaw
 

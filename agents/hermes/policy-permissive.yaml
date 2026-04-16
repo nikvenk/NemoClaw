@@ -15,6 +15,10 @@ filesystem_policy:
   # changing include_workdir on a live sandbox. Instead, we explicitly list
   # writable paths in read_write.
   include_workdir: false
+  # read_only paths must be a superset of the default policy's read_only —
+  # OpenShell rejects removing read_only paths on a live sandbox. Landlock
+  # grants the union of all matching rules, so listing a path in both
+  # read_only and read_write results in read-write access.
   read_only:
     - /usr
     - /lib
@@ -23,11 +27,13 @@ filesystem_policy:
     - /app
     - /etc
     - /var/log
+    - /sandbox
+    - /sandbox/.hermes
   read_write:
     - /tmp
     - /dev/null
-    - /sandbox                   # Home dir — writable during shields-down
-    - /sandbox/.hermes           # Config dir — writable during shields-down
+    - /sandbox                   # Home dir — writable during shields-down (union with read_only)
+    - /sandbox/.hermes           # Config dir — writable during shields-down (union with read_only)
     - /sandbox/.hermes-data
     - /sandbox/.nemoclaw
 
