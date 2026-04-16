@@ -189,6 +189,12 @@ SHIELDS_DOWN_OUTPUT=$(nemoclaw "${SANDBOX_NAME}" shields down \
   --timeout 5m --reason "E2E config mutation test" 2>&1)
 echo "$SHIELDS_DOWN_OUTPUT"
 
+# Diagnostic: dump state file immediately after shields down
+info "State file after shields down:"
+cat "$HOME/.nemoclaw/state/nemoclaw.json" 2>&1 | while IFS= read -r line; do info "  $line"; done
+info "Docker containers:"
+docker ps --format '{{.Names}}' 2>&1 | while IFS= read -r line; do info "  $line"; done
+
 if echo "$SHIELDS_DOWN_OUTPUT" | grep -q "Shields DOWN"; then
   pass "shields down succeeded"
 else
