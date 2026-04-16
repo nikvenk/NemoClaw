@@ -9,7 +9,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { fork } = require("child_process");
+const { fork, execFileSync } = require("child_process");
 const { run, runCapture, validateName, shellQuote } = require("./runner");
 const {
   buildPolicyGetCommand,
@@ -22,6 +22,25 @@ const { appendAuditEntry } = require("./shields-audit");
 const { resolveAgentConfig } = require("./sandbox-config");
 
 const STATE_DIR = path.join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
+
+// ---------------------------------------------------------------------------
+// kubectl exec — bypasses the sandbox's Landlock context
+//
+// openshell sandbox exec runs commands INSIDE the Landlock domain, so it
+// can't modify read_only paths or change chattr flags. kubectl exec starts
+// a new process in the pod that does NOT inherit the Landlock ruleset.
+// We reach kubectl via the K3s container: docker exec <k3s> kubectl exec ...
+// ---------------------------------------------------------------------------
+
+const K3S_CONTAINER = "openshell-cluster-nemoclaw";
+
+function kubectlExec(sandboxName: string, cmd: string[]): void {
+  execFileSync("docker", [
+    "exec", K3S_CONTAINER,
+    "kubectl", "exec", "-n", "openshell", sandboxName, "-c", "agent", "--",
+    ...cmd,
+  ], { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+}
 
 // Re-export for tests and external consumers
 const MAX_TIMEOUT_SECONDS = MAX_SECONDS;
@@ -161,16 +180,17 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
   run(buildPolicySetCommand(policyFile, sandboxName));
 
   // 2b. Make config file writable inside the sandbox.
-  //     The Dockerfile bakes root:root 444 on the config file and 755 on
-  //     the config dir. The permissive Landlock policy adds the config dir
-  //     to read_write, but UNIX permissions still block the sandbox user.
-  //     chmod via openshell exec runs as root, so it can change them.
+  //     Three layers protect the config: Landlock (read_only), chattr +i
+  //     (immutable bit), and UNIX perms (444 root:root). openshell sandbox exec
+  //     runs inside the Landlock context and can't bypass any of them.
+  //     kubectl exec bypasses Landlock (starts a new process outside the sandbox's
+  //     Landlock domain), so we route through docker exec → kubectl exec.
   const target = resolveAgentConfig(sandboxName);
   console.log(`  Unlocking ${target.agentName} config (${target.configPath})...`);
-  const openshell = process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
   try {
-    run(`${openshell} sandbox exec ${sandboxName} chmod 777 ${target.configDir}`, { ignoreError: true });
-    run(`${openshell} sandbox exec ${sandboxName} chmod 666 ${target.configPath}`, { ignoreError: true });
+    kubectlExec(sandboxName, ["chattr", "-i", target.configPath]);
+    kubectlExec(sandboxName, ["chmod", "666", target.configPath]);
+    kubectlExec(sandboxName, ["chmod", "777", target.configDir]);
   } catch {
     console.error("  Warning: Could not unlock config file. Config may remain read-only.");
   }
@@ -265,18 +285,18 @@ function shieldsUp(sandboxName: string): void {
   run(buildPolicySetCommand(snapshotPath, sandboxName));
 
   // 2b. Re-lock config file to read-only.
-  //     Restore the Dockerfile's original permissions: dir 755, file 444.
+  //     Restore the Dockerfile's original permissions and immutable bit.
+  //     Uses kubectl exec to bypass Landlock (same as shields down).
   const target = resolveAgentConfig(sandboxName);
   console.log(`  Locking ${target.agentName} config (${target.configPath})...`);
-  const openshell = process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
   try {
-    run(`${openshell} sandbox exec ${sandboxName} chmod 444 ${target.configPath}`, { ignoreError: true });
-    run(`${openshell} sandbox exec ${sandboxName} chown root:root ${target.configPath}`, { ignoreError: true });
-    run(`${openshell} sandbox exec ${sandboxName} chmod 755 ${target.configDir}`, { ignoreError: true });
-    run(`${openshell} sandbox exec ${sandboxName} chown root:root ${target.configDir}`, { ignoreError: true });
+    kubectlExec(sandboxName, ["chmod", "444", target.configPath]);
+    kubectlExec(sandboxName, ["chown", "root:root", target.configPath]);
+    kubectlExec(sandboxName, ["chmod", "755", target.configDir]);
+    kubectlExec(sandboxName, ["chown", "root:root", target.configDir]);
+    kubectlExec(sandboxName, ["chattr", "+i", target.configPath]);
   } catch {
-    console.error("  Warning: Could not re-lock config file. Run manually:");
-    console.error(`    openshell sandbox exec ${sandboxName} chmod 444 ${target.configPath}`);
+    console.error("  Warning: Could not re-lock config file.");
   }
 
   // 3. Calculate duration
