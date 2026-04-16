@@ -1054,16 +1054,12 @@ function checkMessagingBridgeHealth(sandboxName, channels) {
   }
 }
 
-function providerExistsInGateway(name) {
-  const result = captureOpenshell(["provider", "get", name], { ignoreError: true });
-  return result.status === 0;
-}
-
 function backfillAndFindOverlaps() {
   const {
     backfillMessagingChannels,
     findAllOverlaps,
   } = require("./lib/messaging-conflict");
+  const { providerExistsInGateway } = require("./lib/onboard");
   backfillMessagingChannels(registry, { providerExists: providerExistsInGateway });
   return findAllOverlaps(registry);
 }

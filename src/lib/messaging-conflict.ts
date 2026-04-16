@@ -39,7 +39,7 @@ const PROVIDER_SUFFIXES: Record<string, string> = {
   slack: "-slack-bridge",
 };
 
-export const KNOWN_CHANNELS = Object.keys(PROVIDER_SUFFIXES);
+const KNOWN_CHANNELS = Object.keys(PROVIDER_SUFFIXES);
 
 /**
  * For registry entries missing `messagingChannels`, probe OpenShell to infer
