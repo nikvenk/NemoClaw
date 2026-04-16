@@ -37,11 +37,34 @@ export function resolveDashboardForwardTarget(
   }
 }
 
+/**
+ * Redact a token for safe display — show only the first 4 characters
+ * and replace the rest with asterisks. Returns the full token when
+ * embedding in a URL fragment (forDisplay=false).
+ */
+function redactToken(token: string, forDisplay: boolean): string {
+  if (!forDisplay || token.length <= 4) return token;
+  return token.slice(0, 4) + "*".repeat(Math.min(token.length - 4, 20));
+}
+
+/**
+ * Build Control UI URLs.
+ *
+ * @param token       Gateway auth token (null if unavailable)
+ * @param port        Dashboard port
+ * @param forDisplay  When true, the token is redacted in the URL so it
+ *                    is safe to print to stdout/CI logs. Callers that
+ *                    need a clickable URL for programmatic use should
+ *                    pass false (or omit — default is false for
+ *                    backward compatibility).
+ */
 export function buildControlUiUrls(
   token: string | null = null,
   port: number = CONTROL_UI_PORT,
+  forDisplay: boolean = false,
 ): string[] {
-  const hash = token ? `#token=${token}` : "";
+  const displayToken = token ? redactToken(token, forDisplay) : "";
+  const hash = token ? `#token=${displayToken}` : "";
   const baseUrl = `http://127.0.0.1:${port}`;
   const urls = [`${baseUrl}${CONTROL_UI_PATH}${hash}`];
   const chatUi = (process.env.CHAT_UI_URL || "").trim().replace(/\/$/, "");

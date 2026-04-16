@@ -222,16 +222,21 @@ export function printDashboardUi(
   agent: AgentDefinition,
   deps: {
     note: (msg: string) => void;
-    buildControlUiUrls: (token: string | null, port: number) => string[];
+    buildControlUiUrls: (token: string | null, port: number, forDisplay?: boolean) => string[];
   },
 ): void {
   const info = getAgentDashboardInfo(agent);
   if (token) {
-    console.log(`  ${info.displayName} UI (tokenized URL; treat it like a password)`);
+    console.log(`  ${info.displayName} UI`);
     console.log(`  Port ${info.port} must be forwarded before opening this URL.`);
-    for (const url of deps.buildControlUiUrls(token, info.port)) {
+    // Print URLs with the token redacted (forDisplay=true) so the
+    // gateway auth token does not appear in terminal scrollback or
+    // CI/CD build logs. The full token can be retrieved via:
+    //   nemoclaw <name> connect → jq '.gateway.auth.token' /sandbox/.openclaw/openclaw.json
+    for (const url of deps.buildControlUiUrls(token, info.port, true)) {
       console.log(`  ${url}`);
     }
+    console.log(`  To get the full token: nemoclaw <sandbox> connect → jq '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`);
   } else {
     deps.note("  Could not read gateway token from the sandbox (download failed).");
     console.log(`  ${info.displayName} UI`);
