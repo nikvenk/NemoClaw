@@ -2035,11 +2035,23 @@ async function preflight() {
     { port: DASHBOARD_PORT, label: "NemoClaw dashboard" },
   ];
   for (const { port, label } of requiredPorts) {
-    const portCheck = await checkPortAvailable(port);
+    let portCheck = await checkPortAvailable(port);
     if (!portCheck.ok) {
       if ((port === GATEWAY_PORT || port === DASHBOARD_PORT) && gatewayReuseState === "healthy") {
         console.log(`  ✓ Port ${port} already owned by healthy NemoClaw runtime (${label})`);
         continue;
+      }
+      // Auto-cleanup orphaned SSH port-forward from a previous NemoClaw session
+      // (e.g. dashboard forward left behind after destroy). (#1950)
+      if (port === DASHBOARD_PORT && portCheck.process === "ssh" && portCheck.pid) {
+        console.log(`  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`);
+        run(`kill ${portCheck.pid} 2>/dev/null || true`, { ignoreError: true });
+        sleep(1);
+        portCheck = await checkPortAvailable(port);
+        if (portCheck.ok) {
+          console.log(`  ✓ Port ${port} available after orphaned forward cleanup (${label})`);
+          continue;
+        }
       }
       console.error("");
       console.error(`  !! Port ${port} is not available.`);
