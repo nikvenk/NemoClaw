@@ -217,7 +217,7 @@ export function getAgentDashboardInfo(agent: AgentDefinition): {
  * Print the dashboard UI section for a non-OpenClaw agent.
  */
 export function printDashboardUi(
-  _sandboxName: string,
+  sandboxName: string,
   token: string | null,
   agent: AgentDefinition,
   deps: {
@@ -236,7 +236,7 @@ export function printDashboardUi(
     for (const url of deps.buildControlUiUrls(token, info.port, true)) {
       console.log(`  ${url}`);
     }
-    console.log(`  To get the full token: nemoclaw <sandbox> connect → jq '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`);
+    console.log(`  To get the full token: nemoclaw ${sandboxName} connect → jq '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`);
   } else {
     deps.note("  Could not read gateway token from the sandbox (download failed).");
     console.log(`  ${info.displayName} UI`);
