@@ -307,16 +307,44 @@ if openshell sandbox ssh-config "$SANDBOX_NAME" >"$ssh_config" 2>/dev/null; then
 fi
 rm -f "$ssh_config"
 
-if [ -n "$sandbox_response" ]; then
-  sandbox_content=$(echo "$sandbox_response" | parse_chat_content 2>/dev/null) || true
-  if grep -qi "PONG" <<<"$sandbox_content"; then
-    pass "[LIVE] Sandbox inference: model responded with PONG through sandbox"
-    info "Full path proven: user → sandbox → openshell gateway → NVIDIA Endpoints → response"
+# Retry sandbox inference up to 3 times — live models are not deterministic
+# and the gateway proxy can return unexpected responses on first attempt. (#1969)
+pong_ok=false
+for pong_attempt in 1 2 3; do
+  if [ -n "$sandbox_response" ]; then
+    sandbox_content=$(echo "$sandbox_response" | parse_chat_content 2>/dev/null) || true
+    if grep -qi "PONG" <<<"$sandbox_content"; then
+      pong_ok=true
+      break
+    fi
+    info "Sandbox inference attempt ${pong_attempt}/3: got '${sandbox_content:0:80}', retrying in 5s..."
   else
-    fail "[LIVE] Sandbox inference: expected PONG, got: ${sandbox_content:0:200}"
+    info "Sandbox inference attempt ${pong_attempt}/3: empty response, retrying in 5s..."
   fi
+  [ "$pong_attempt" -lt 3 ] || break
+  sleep 5
+  # Re-fetch
+  ssh_config="$(mktemp)"
+  sandbox_response=""
+  if openshell sandbox ssh-config "$SANDBOX_NAME" >"$ssh_config" 2>/dev/null; then
+    sandbox_response=$($TIMEOUT_CMD ssh -F "$ssh_config" \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o ConnectTimeout=10 \
+      -o LogLevel=ERROR \
+      "openshell-${SANDBOX_NAME}" \
+      "curl -s --max-time 60 https://inference.local/v1/chat/completions \
+        -H 'Content-Type: application/json' \
+        -d '{\"model\":\"nvidia/nemotron-3-super-120b-a12b\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":100}'" \
+      2>&1) || true
+  fi
+  rm -f "$ssh_config"
+done
+if $pong_ok; then
+  pass "[LIVE] Sandbox inference: model responded with PONG through sandbox"
+  info "Full path proven: user → sandbox → openshell gateway → NVIDIA Endpoints → response"
 else
-  fail "[LIVE] Sandbox inference: no response from inference.local inside sandbox"
+  fail "[LIVE] Sandbox inference: expected PONG after 3 attempts, got: ${sandbox_content:0:200}"
 fi
 
 # ══════════════════════════════════════════════════════════════════
