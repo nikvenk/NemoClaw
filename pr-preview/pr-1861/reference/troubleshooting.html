@@ -717,6 +717,20 @@ The wizard prompts for confirmation before destroying an existing sandbox. If yo
 Back up your workspace first by following the instructions at <a class="reference internal" href="../workspace/backup-restore.html"><span class="std std-doc">Back Up and Restore</span></a>.</p>
 </div>
 </section>
+<section id="sandbox-is-running-an-outdated-agent-version">
+<h3>Sandbox is running an outdated agent version<a class="headerlink" href="#sandbox-is-running-an-outdated-agent-version" title="Link to this heading">#</a></h3>
+<p>After upgrading NemoClaw, <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code> and <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">status</span></code> warn if the sandbox is running an older agent version than the current image.</p>
+<p>To upgrade the sandbox while preserving workspace state, run:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>rebuild
+</pre></div>
+</div>
+<p>The rebuild command backs up state, destroys the old sandbox, recreates it with the current image, and restores state.
+Create a snapshot before rebuilding if you want an additional safety net:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>snapshot<span class="w"> </span>create
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>rebuild
+</pre></div>
+</div>
+</section>
 <section id="sandbox-shows-as-stopped">
 <h3>Sandbox shows as stopped<a class="headerlink" href="#sandbox-shows-as-stopped" title="Link to this heading">#</a></h3>
 <p>The sandbox may have been stopped or deleted.
@@ -1000,6 +1014,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime">Runtime</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#reconnect-after-a-host-reboot">Reconnect after a host reboot</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-is-running-an-outdated-agent-version">Sandbox is running an outdated agent version</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-shows-as-stopped">Sandbox shows as stopped</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#status-shows-not-running-inside-the-sandbox">Status shows “not running” inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-requests-time-out">Inference requests time out</a></li>

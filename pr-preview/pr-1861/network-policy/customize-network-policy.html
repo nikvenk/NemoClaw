@@ -521,6 +521,10 @@ Changes made only inside the sandbox are also ephemeral and are lost when the sa
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add
 </pre></div>
 </div>
+<p>To remove a previously applied preset, use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-remove</span></code>:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-remove
+</pre></div>
+</div>
 <p>Use a manual YAML edit when you need to allow custom hosts that are not covered by a preset, such as an internal API or a weather service.</p>
 <p>Each entry in the <code class="docutils literal notranslate"><span class="pre">network</span></code> section defines an endpoint group with the following fields:</p>
 <dl class="simple myst">
