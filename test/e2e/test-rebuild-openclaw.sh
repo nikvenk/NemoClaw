@@ -187,7 +187,10 @@ reg = {'sandboxes': {'${SANDBOX_NAME}': {
 with open('${REGISTRY_FILE}', 'w') as f:
     json.dump(reg, f, indent=2)
 
-# Update session to point at this sandbox
+# Update session to point at this sandbox.
+# Mark preflight and gateway steps as complete so that rebuild's
+# onboard --resume skips them (the gateway is already running and
+# port 8080 is legitimately in use).
 sess_path = '${SESSION_FILE}'
 try:
     with open(sess_path) as f:
@@ -196,6 +199,22 @@ except Exception:
     sess = {}
 sess['sandboxName'] = '${SANDBOX_NAME}'
 sess['status'] = 'complete'
+sess['resumable'] = True
+sess['lastCompletedStep'] = 'gateway'
+sess['failure'] = None
+now = __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+complete = {'status': 'complete', 'startedAt': now, 'completedAt': now, 'error': None}
+pending  = {'status': 'pending',  'startedAt': None, 'completedAt': None, 'error': None}
+sess['steps'] = {
+    'preflight': complete,
+    'gateway': complete,
+    'sandbox': pending,
+    'provider_selection': pending,
+    'inference': pending,
+    'openclaw': pending,
+    'agent_setup': pending,
+    'policies': pending,
+}
 with open(sess_path, 'w') as f:
     json.dump(sess, f, indent=2)
 print('Registry and session updated')
