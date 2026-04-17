@@ -164,7 +164,7 @@ kctl exec -n openshell "$POD" -- \
 _dns_ready=0
 for _i in $(seq 1 10); do
   if kctl exec -n openshell "$POD" -- \
-    sh -c "echo -ne '\x00\x1e\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01' \
+    sh -c "printf '%b' '\x00\x1e\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01' \
       | timeout 1 socat - UDP:${VETH_GW}:53 2>/dev/null" | grep -q .; then
     _dns_ready=1
     break
