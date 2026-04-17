@@ -4412,7 +4412,8 @@ const MESSAGING_CHANNELS = [
 ];
 
 // Curl exit codes that indicate a network-level failure (not a token problem).
-const TELEGRAM_NETWORK_CURL_CODES = new Set([6, 7, 28, 52, 56]);
+// 35 (TLS handshake failure) covers corporate proxies that MITM HTTPS.
+const TELEGRAM_NETWORK_CURL_CODES = new Set([6, 7, 28, 35, 52, 56]);
 
 async function checkTelegramReachability(token) {
   const result = runCurlProbe([
