@@ -118,6 +118,21 @@ const RESET = USE_COLOR ? "\x1b[0m" : "";
 let OPENSHELL_BIN = null;
 const GATEWAY_NAME = "nemoclaw";
 const BACK_TO_SELECTION = "__NEMOCLAW_BACK_TO_SELECTION__";
+
+/**
+ * Probe whether the gateway Docker container is actually running.
+ * openshell CLI metadata can be stale after a manual `docker rm`, so this
+ * verifies the container is live before trusting a "healthy" reuse state.
+ * See #2020.
+ */
+function verifyGatewayContainerRunning() {
+  const containerName = `openshell-cluster-${GATEWAY_NAME}`;
+  const result = run(
+    `docker inspect --type container --format '{{.State.Running}}' ${containerName} 2>/dev/null`,
+    { ignoreError: true, suppressOutput: true },
+  );
+  return result.status === 0 && (result.stdout || "").trim() === "true";
+}
 const OPENCLAW_LAUNCH_AGENT_PLIST = "~/Library/LaunchAgents/ai.openclaw.gateway.plist";
 
 const BUILD_ENDPOINT_URL = "https://integrate.api.nvidia.com/v1";
@@ -2352,7 +2367,19 @@ async function preflight() {
     ignoreError: true,
   });
   const activeGatewayInfo = runCaptureOpenshell(["gateway", "info"], { ignoreError: true });
-  const gatewayReuseState = getGatewayReuseState(gatewayStatus, gwInfo, activeGatewayInfo);
+  let gatewayReuseState = getGatewayReuseState(gatewayStatus, gwInfo, activeGatewayInfo);
+
+  // Verify the gateway container is actually running — openshell CLI metadata
+  // can be stale after a manual `docker rm`. See #2020.
+  if (gatewayReuseState === "healthy" && !verifyGatewayContainerRunning()) {
+    console.log("  Gateway metadata is stale (container not running). Cleaning up...");
+    runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
+    runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], { ignoreError: true });
+    registry.clearAll();
+    gatewayReuseState = "missing";
+    console.log("  ✓ Stale gateway metadata cleaned up");
+  }
+
   if (gatewayReuseState === "stale" || gatewayReuseState === "active-unnamed") {
     console.log("  Cleaning up previous NemoClaw session...");
     runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
@@ -5820,7 +5847,19 @@ async function onboard(opts = {}) {
       ignoreError: true,
     });
     const activeGatewayInfo = runCaptureOpenshell(["gateway", "info"], { ignoreError: true });
-    const gatewayReuseState = getGatewayReuseState(gatewayStatus, gatewayInfo, activeGatewayInfo);
+    let gatewayReuseState = getGatewayReuseState(gatewayStatus, gatewayInfo, activeGatewayInfo);
+
+    // Verify the gateway container is actually running — openshell CLI metadata
+    // can be stale after a manual `docker rm`. See #2020.
+    if (gatewayReuseState === "healthy" && !verifyGatewayContainerRunning()) {
+      console.log("  Gateway metadata is stale (container not running). Cleaning up...");
+      runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
+      runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], { ignoreError: true });
+      registry.clearAll();
+      gatewayReuseState = "missing";
+      console.log("  ✓ Stale gateway metadata cleaned up");
+    }
+
     const canReuseHealthyGateway = gatewayReuseState === "healthy";
     const resumeGateway =
       resume && session?.steps?.gateway?.status === "complete" && canReuseHealthyGateway;
