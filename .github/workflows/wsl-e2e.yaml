@@ -88,8 +88,11 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y bash ca-certificates curl git jq lsb-release make python3 python3-pip rsync tar unzip xz-utils
-          '@ -replace "`r","" -replace "\uFEFF",""
-          $script | wsl -d $env:WSL_DISTRO -- bash -l
+          '@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
 
       - name: Install Node.js 22 in WSL
         shell: powershell
@@ -100,21 +103,27 @@ jobs:
           apt-get install -y nodejs
           node --version
           npm --version
-          '@ -replace "`r","" -replace "\uFEFF",""
-          $script | wsl -d $env:WSL_DISTRO -- bash -l
+          '@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
 
       - name: Install project dependencies and build plugin
         shell: powershell
         run: |
-          $script = (@'
+          $script = @"
           set -euo pipefail
-          cd '{0}'
+          cd '$env:WSL_WORKDIR'
           npm install --ignore-scripts
           cd nemoclaw
           npm install --ignore-scripts
           npm run build
-          '@ -f $env:WSL_WORKDIR) -replace "`r","" -replace "\uFEFF",""
-          $script | wsl -d $env:WSL_DISTRO -- bash -l
+          "@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
 
       - name: Detect Docker availability in WSL
         id: docker
@@ -126,8 +135,11 @@ jobs:
           else
             echo DOCKER_OK=0
           fi
-          '@ -replace "`r","" -replace "\uFEFF",""
-          $result = $script | wsl -d $env:WSL_DISTRO -- bash -l
+          '@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          $result = wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
           if ($result -match 'DOCKER_OK=1') {
             'docker_ok=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             Write-Host 'Docker is available in WSL'
@@ -139,12 +151,15 @@ jobs:
       - name: Run WSL compatibility test suite
         shell: powershell
         run: |
-          $script = (@'
+          $script = @"
           set -euo pipefail
-          cd '{0}'
+          cd '$env:WSL_WORKDIR'
           npm test
-          '@ -f $env:WSL_WORKDIR) -replace "`r","" -replace "\uFEFF",""
-          $script | wsl -d $env:WSL_DISTRO -- bash -l
+          "@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
 
       - name: Run WSL full E2E
         if: steps.docker.outputs.docker_ok == 'true'
@@ -153,18 +168,21 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          $script = (@'
+          $script = @"
           set -euo pipefail
-          cd '{0}'
-          export NVIDIA_API_KEY='{1}'
-          export GITHUB_TOKEN='{2}'
-          export NEMOCLAW_NON_INTERACTIVE='{3}'
-          export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE='{4}'
-          export NEMOCLAW_RECREATE_SANDBOX='{5}'
-          export NEMOCLAW_SANDBOX_NAME='{6}'
+          cd '$env:WSL_WORKDIR'
+          export NVIDIA_API_KEY='$env:NVIDIA_API_KEY'
+          export GITHUB_TOKEN='$env:GITHUB_TOKEN'
+          export NEMOCLAW_NON_INTERACTIVE='$env:NEMOCLAW_NON_INTERACTIVE'
+          export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE='$env:NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE'
+          export NEMOCLAW_RECREATE_SANDBOX='$env:NEMOCLAW_RECREATE_SANDBOX'
+          export NEMOCLAW_SANDBOX_NAME='$env:NEMOCLAW_SANDBOX_NAME'
           bash test/e2e/test-full-e2e.sh
-          '@ -f $env:WSL_WORKDIR, $env:NVIDIA_API_KEY, $env:GITHUB_TOKEN, $env:NEMOCLAW_NON_INTERACTIVE, $env:NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE, $env:NEMOCLAW_RECREATE_SANDBOX, $env:NEMOCLAW_SANDBOX_NAME) -replace "`r","" -replace "\uFEFF",""
-          $script | wsl -d $env:WSL_DISTRO -- bash -l
+          "@
+          $tmp = "$env:RUNNER_TEMP\wsl-step.sh"
+          [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
+          $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
+          wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
 
       - name: Explain skipped full E2E
         if: steps.docker.outputs.docker_ok != 'true'
