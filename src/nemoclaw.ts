@@ -737,7 +737,7 @@ async function ensureLiveSandboxOrExit(sandboxName) {
       );
       console.error("");
       console.error(
-        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (workspace state will be preserved).`,
+        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
       );
       process.exit(1);
     }
@@ -1274,7 +1274,7 @@ async function sandboxStatus(sandboxName) {
       );
       console.log("");
       console.log(
-        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (workspace state will be preserved).`,
+        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
       );
     }
   } else if (lookup.state === "missing") {

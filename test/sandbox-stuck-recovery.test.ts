@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -6,18 +5,19 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-/**
- * Tests for #2016 — recovery hint when sandbox is stuck in non-Ready phase.
- *
- * Creates a fake openshell binary that reports a sandbox in "Provisioning"
- * phase, then verifies that `nemoclaw connect` and `nemoclaw status` print
- * the recovery guidance instead of proceeding or silently failing.
- */
+const tmpFixtures: string[] = [];
+
+afterEach(() => {
+  for (const dir of tmpFixtures.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function setupFixture(sandboxName: string, phase: string) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-stuck-"));
+  tmpFixtures.push(tmpDir);
   const homeLocalBin = path.join(tmpDir, ".local", "bin");
   const registryDir = path.join(tmpDir, ".nemoclaw");
   const openshellPath = path.join(homeLocalBin, "openshell");
