@@ -36,6 +36,10 @@ jobs:
       NEMOCLAW_RECREATE_SANDBOX: "1"
       NEMOCLAW_SANDBOX_NAME: "e2e-wsl"
     steps:
+      - name: Force LF line endings for checkout
+        shell: powershell
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v6
 
