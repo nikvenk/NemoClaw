@@ -88,7 +88,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y bash ca-certificates curl git jq lsb-release make python3 python3-pip rsync tar unzip xz-utils
-          '@ -replace "`r",""
+          '@ -replace "`r","" -replace "\uFEFF",""
           $script | wsl -d $env:WSL_DISTRO -- bash -l
 
       - name: Install Node.js 22 in WSL
@@ -100,7 +100,7 @@ jobs:
           apt-get install -y nodejs
           node --version
           npm --version
-          '@ -replace "`r",""
+          '@ -replace "`r","" -replace "\uFEFF",""
           $script | wsl -d $env:WSL_DISTRO -- bash -l
 
       - name: Install project dependencies and build plugin
@@ -113,7 +113,7 @@ jobs:
           cd nemoclaw
           npm install --ignore-scripts
           npm run build
-          '@ -f $env:WSL_WORKDIR) -replace "`r",""
+          '@ -f $env:WSL_WORKDIR) -replace "`r","" -replace "\uFEFF",""
           $script | wsl -d $env:WSL_DISTRO -- bash -l
 
       - name: Detect Docker availability in WSL
@@ -126,7 +126,7 @@ jobs:
           else
             echo DOCKER_OK=0
           fi
-          '@ -replace "`r",""
+          '@ -replace "`r","" -replace "\uFEFF",""
           $result = $script | wsl -d $env:WSL_DISTRO -- bash -l
           if ($result -match 'DOCKER_OK=1') {
             'docker_ok=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -143,7 +143,7 @@ jobs:
           set -euo pipefail
           cd '{0}'
           npm test
-          '@ -f $env:WSL_WORKDIR) -replace "`r",""
+          '@ -f $env:WSL_WORKDIR) -replace "`r","" -replace "\uFEFF",""
           $script | wsl -d $env:WSL_DISTRO -- bash -l
 
       - name: Run WSL full E2E
@@ -163,7 +163,7 @@ jobs:
           export NEMOCLAW_RECREATE_SANDBOX='{5}'
           export NEMOCLAW_SANDBOX_NAME='{6}'
           bash test/e2e/test-full-e2e.sh
-          '@ -f $env:WSL_WORKDIR, $env:NVIDIA_API_KEY, $env:GITHUB_TOKEN, $env:NEMOCLAW_NON_INTERACTIVE, $env:NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE, $env:NEMOCLAW_RECREATE_SANDBOX, $env:NEMOCLAW_SANDBOX_NAME) -replace "`r",""
+          '@ -f $env:WSL_WORKDIR, $env:NVIDIA_API_KEY, $env:GITHUB_TOKEN, $env:NEMOCLAW_NON_INTERACTIVE, $env:NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE, $env:NEMOCLAW_RECREATE_SANDBOX, $env:NEMOCLAW_SANDBOX_NAME) -replace "`r","" -replace "\uFEFF",""
           $script | wsl -d $env:WSL_DISTRO -- bash -l
 
       - name: Explain skipped full E2E
