@@ -13,7 +13,7 @@
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { TypedMemoryProvider } from "../nemoclaw/dist/memory/typed-provider.js";
+import { TypedMemoryProvider } from "../../nemoclaw/dist/memory/typed-provider.js";
 import { encodingForModel } from "js-tiktoken";
 
 // ---------------------------------------------------------------------------

@@ -8,12 +8,12 @@
 #
 # Requires Podman (or Docker). No API keys, no network, no GPU.
 #
-# Usage: bash scripts/benchmark-memory.sh
+# Usage: bash docs/benchmarks/benchmark-memory.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPORT_DIR="$REPO_ROOT/docs/benchmarks"
 REPORT_PATH="$REPORT_DIR/typed-memory-index-benchmark.md"
 
@@ -48,7 +48,7 @@ FROM node:22-slim
 WORKDIR /app
 COPY nemoclaw/dist/ /app/nemoclaw/dist/
 COPY nemoclaw/package.json /app/nemoclaw/package.json
-COPY scripts/benchmark-memory-runner.mjs /app/scripts/benchmark-memory-runner.mjs
+COPY docs/benchmarks/benchmark-memory-runner.mjs /app/docs/benchmarks/benchmark-memory-runner.mjs
 RUN cd /app/nemoclaw && npm install --omit=dev --ignore-scripts 2>/dev/null || true
 RUN cd /app && npm init -y --silent 2>/dev/null && npm install js-tiktoken --ignore-scripts 2>/dev/null || true
 DOCKERFILE
@@ -62,7 +62,7 @@ echo "--- Running benchmark in container ---"
 mkdir -p "$REPORT_DIR"
 
 "$CONTAINER_CMD" run --rm --name "$CONTAINER_NAME" "$IMAGE_NAME" \
-  node /app/scripts/benchmark-memory-runner.mjs >"$REPORT_PATH"
+  node /app/docs/benchmarks/benchmark-memory-runner.mjs >"$REPORT_PATH"
 
 echo ""
 echo "--- Report written to $REPORT_PATH ---"
