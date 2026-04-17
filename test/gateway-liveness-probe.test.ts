@@ -45,18 +45,25 @@ describe("gateway liveness probe (#2020)", () => {
     expect(mainFlowProbe).toBeTruthy();
   });
 
-  it("downgrades to 'missing' when container is not running", () => {
-    // Both probe sites must set gatewayReuseState = "missing" on failure
-    const downgrades = content.match(/!verifyGatewayContainerRunning\(\)/g);
+  it("returns tri-state: running, missing, or unknown", () => {
+    // The helper must distinguish container-removed from Docker-unavailable
+    expect(content).toContain('return "running"');
+    expect(content).toContain('return "missing"');
+    expect(content).toContain('return "unknown"');
+  });
+
+  it("only downgrades to 'missing' when container is confirmed missing", () => {
+    // Both probe sites must check containerState === "missing" before cleanup
+    const downgrades = content.match(/containerState === "missing"/g);
     expect(downgrades).toBeTruthy();
     expect(downgrades.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("cleans up stale metadata when container is not running", () => {
-    // After detecting a stale container, the code must clean up forwarding
+  it("cleans up stale metadata when container is confirmed missing", () => {
+    // After detecting a removed container, the code must clean up forwarding
     // and destroy the gateway via the shared destroyGateway() helper.
     const cleanupAfterProbe = content.match(
-      /!verifyGatewayContainerRunning\(\)[\s\S]*?forward.*stop[\s\S]*?destroyGateway\(\)/,
+      /containerState === "missing"[\s\S]*?forward.*stop[\s\S]*?destroyGateway\(\)/,
     );
     expect(cleanupAfterProbe).toBeTruthy();
   });
