@@ -154,8 +154,6 @@ jobs:
           }
 
       - name: Run WSL compatibility test suite
-        id: wsl-tests
-        continue-on-error: true
         shell: powershell
         run: |
           $script = @"
@@ -167,19 +165,6 @@ jobs:
           [IO.File]::WriteAllText($tmp, ($script -replace "`r",""), (New-Object System.Text.UTF8Encoding $false))
           $wslTmp = wsl -d $env:WSL_DISTRO -- wslpath -u ($tmp -replace '\\','/')
           wsl -d $env:WSL_DISTRO -- bash -l $wslTmp
-
-      - name: Verify WSL test results
-        if: always() && steps.wsl-tests.outcome != 'skipped'
-        shell: powershell
-        run: |
-          if ('${{ steps.wsl-tests.outcome }}' -eq 'failure') {
-            Write-Host '::warning::WSL compatibility tests had failures (see step above).'
-            Write-Host 'Some tests use hardcoded subprocess timeouts that are too short for'
-            Write-Host 'DrvFS I/O, and a few tests detect WSL2 port-binding differences.'
-            Write-Host 'These are tracked as known WSL-specific issues.'
-          } else {
-            Write-Host 'WSL compatibility tests passed.'
-          }
 
       - name: Run WSL full E2E
         if: steps.docker.outputs.docker_ok == 'true'
