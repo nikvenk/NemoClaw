@@ -269,6 +269,7 @@ function repairRecordedSandbox(sandboxName) {
 
 const { streamSandboxCreate } = sandboxCreateStream;
 
+/** Spawn `openshell gateway start` and stream its output with progress heartbeats. */
 function streamGatewayStart(command, env = process.env) {
   const child = spawn("bash", ["-lc", command], {
     cwd: ROOT,
@@ -2524,6 +2525,7 @@ async function preflight() {
 
 // ── Step 2: Gateway ──────────────────────────────────────────────
 
+/** Start the OpenShell gateway with retry logic and post-start health polling. */
 async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
   step(2, 8, "Starting OpenShell gateway");
 
