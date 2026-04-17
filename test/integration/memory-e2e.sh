@@ -55,10 +55,9 @@ echo ""
 # ---------------------------------------------------------------------------
 
 echo "--- Running integration test in container ---"
+EXIT_CODE=0
 "$CONTAINER_CMD" run --rm --name "$CONTAINER_NAME" "$IMAGE_NAME" \
-  node /app/test/integration/memory-index.mjs
-
-EXIT_CODE=$?
+  node /app/test/integration/memory-index.mjs || EXIT_CODE=$?
 
 # ---------------------------------------------------------------------------
 # 4. Cleanup

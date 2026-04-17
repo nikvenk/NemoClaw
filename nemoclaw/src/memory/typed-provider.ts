@@ -19,6 +19,16 @@ import {
   type MemoryStats,
 } from "./index.js";
 
+/**
+ * Validate that a slug does not escape the topics directory via path traversal.
+ * Rejects slugs containing `..`, `/`, `\`, or null bytes.
+ */
+function validateSlug(slug: string): void {
+  if (!slug || /[/\\]|\.\.|\0/.test(slug)) {
+    throw new Error(`Invalid slug: ${JSON.stringify(slug)}`);
+  }
+}
+
 export class TypedMemoryProvider implements MemoryProvider {
   private readonly indexPath: string;
   private readonly topicsDir: string;
@@ -34,10 +44,12 @@ export class TypedMemoryProvider implements MemoryProvider {
   }
 
   load(slug: string): { frontmatter: MemoryTopicFrontmatter; body: string } | null {
+    validateSlug(slug);
     return loadTopic(slug, this.topicsDir);
   }
 
   save(slug: string, frontmatter: MemoryTopicFrontmatter, body: string): void {
+    validateSlug(slug);
     saveTopic(slug, frontmatter, body, this.topicsDir);
 
     const index = loadMemoryIndex(this.indexPath);
@@ -63,14 +75,23 @@ export class TypedMemoryProvider implements MemoryProvider {
   }
 
   delete(slug: string): void {
+    validateSlug(slug);
     const filePath = join(this.topicsDir, `${slug}.md`);
-    if (existsSync(filePath)) {
+    const fileExists = existsSync(filePath);
+    const index = loadMemoryIndex(this.indexPath);
+    const hadEntry = index.entries.some((e) => e.slug === slug);
+
+    // True no-op: don't create/rewrite files if slug never existed
+    if (!fileExists && !hadEntry) return;
+
+    if (fileExists) {
       unlinkSync(filePath);
     }
 
-    const index = loadMemoryIndex(this.indexPath);
-    index.entries = index.entries.filter((e) => e.slug !== slug);
-    saveMemoryIndex(index, this.indexPath);
+    if (hadEntry) {
+      index.entries = index.entries.filter((e) => e.slug !== slug);
+      saveMemoryIndex(index, this.indexPath);
+    }
   }
 
   list(filter?: { type?: MemoryType }): MemoryIndexEntry[] {
@@ -92,10 +113,9 @@ export class TypedMemoryProvider implements MemoryProvider {
     for (const entry of index.entries) {
       let score = 0;
       const title = entry.title.toLowerCase();
-      const desc =
-        (entry as MemoryIndexEntry & { description?: string }).description?.toLowerCase() ?? "";
 
       const topic = loadTopic(entry.slug, this.topicsDir);
+      const desc = topic?.frontmatter.description.toLowerCase() ?? "";
       const bodyText = topic?.body.toLowerCase() ?? "";
 
       for (const term of terms) {

@@ -155,7 +155,9 @@ export function saveMemoryIndex(index: MemoryIndex, indexPath: string = MEMORY_I
   ];
 
   for (const e of sorted) {
-    lines.push(`| [${e.title}](memory/topics/${e.slug}.md) | ${e.type} | ${e.updatedAt} |`);
+    // Sanitize title to prevent breaking the markdown table format
+    const safeTitle = e.title.replace(/[|\[\]]/g, "").trim() || e.slug;
+    lines.push(`| [${safeTitle}](memory/topics/${e.slug}.md) | ${e.type} | ${e.updatedAt} |`);
   }
 
   lines.push(""); // trailing newline

@@ -137,7 +137,7 @@ export function removeMemoryInstructions(workspaceDir: string = WORKSPACE_DIR): 
   const startIdx = content.indexOf(MARKER_START);
   const endIdx = content.indexOf(MARKER_END);
 
-  if (startIdx === -1 || endIdx === -1) return;
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return;
 
   const before = content.slice(0, startIdx).replace(/\n+$/, "");
   const after = content.slice(endIdx + MARKER_END.length).replace(/^\n+/, "");
