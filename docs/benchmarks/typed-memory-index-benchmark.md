@@ -89,5 +89,5 @@ Average topic content: ~67 tokens.
 - Token count measured with tiktoken cl100k_base encoding (used by GPT-4o / Claude-class models).
 - Tool call overhead estimated at 80 tokens per invocation (request framing + result wrapper).
 - Flat memory: all entries as bullet points in a single MEMORY.md file.
-- Typed index: markdown table in MEMORY.md with topic content in separate files under memory/topics/.
+- Typed index: Markdown table in MEMORY.md with topic content in separate files under memory/topics/.
 - All measurements taken inside the NemoClaw sandbox container against real filesystem operations.

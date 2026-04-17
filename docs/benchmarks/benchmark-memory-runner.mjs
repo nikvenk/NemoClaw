@@ -7,7 +7,7 @@
  * Compares flat MEMORY.md vs typed index at various scales.
  * Outputs a markdown report to stdout.
  *
- * Usage: node scripts/benchmark-memory-runner.mjs
+ * Usage: node docs/benchmarks/benchmark-memory-runner.mjs
  */
 
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -24,7 +24,7 @@ const SCALES = [10, 50, 100, 500, 1_000, 5_000, 10_000];
 const SESSION_K_VALUES = [0, 3, 5, 10]; // topics read per session
 
 // Approximate tool call overhead per invocation (tokens)
-// Based on: tool call request (~50 tokens) + tool result wrapper (~30 tokens)
+// Based on: tool call request framing (~40 tokens) + tool result wrapper (~40 tokens)
 const TOOL_CALL_OVERHEAD = 80;
 
 // Average topic body size in characters (realistic memory entry)
@@ -281,7 +281,7 @@ lines.push("- Synthetic entries generated with realistic titles (20 rotating top
 lines.push("- Token count measured with tiktoken cl100k_base encoding (used by GPT-4o / Claude-class models).");
 lines.push("- Tool call overhead estimated at 80 tokens per invocation (request framing + result wrapper).");
 lines.push("- Flat memory: all entries as bullet points in a single MEMORY.md file.");
-lines.push("- Typed index: markdown table in MEMORY.md with topic content in separate files under memory/topics/.");
+lines.push("- Typed index: Markdown table in MEMORY.md with topic content in separate files under memory/topics/.");
 lines.push("- All measurements taken inside the NemoClaw sandbox container against real filesystem operations.");
 lines.push("");
 

@@ -4,7 +4,7 @@
 
 # Container-based memory benchmark.
 # Compares flat MEMORY.md vs typed index at various scales.
-# Outputs a markdown report to docs/benchmarks/memory-benchmark-report.md.
+# Outputs a Markdown report to docs/benchmarks/typed-memory-index-benchmark.md.
 #
 # Requires Podman (or Docker). No API keys, no network, no GPU.
 #
