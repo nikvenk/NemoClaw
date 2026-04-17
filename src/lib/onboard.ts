@@ -384,11 +384,18 @@ function streamGatewayStart(command, env = process.env) {
 
   // Hard timeout to prevent indefinite hangs if the openshell process
   // never exits (e.g. Docker daemon unresponsive, k3s restart loop). (#1830)
+  // On timeout, send SIGTERM and let the `close` event resolve the promise
+  // so the child has actually exited before the caller proceeds to retry.
   const GATEWAY_START_TIMEOUT = envInt("NEMOCLAW_GATEWAY_START_TIMEOUT", 600) * 1000;
+  let killedByTimeout = false;
   const killTimer = setTimeout(() => {
+    killedByTimeout = true;
     lines.push("[NemoClaw] Gateway start timed out — killing process.");
     child.kill("SIGTERM");
-    finish({ status: 1, output: lines.join("\n") });
+    // If SIGTERM is ignored, force-kill after 10s.
+    setTimeout(() => {
+      if (!settled) child.kill("SIGKILL");
+    }, 10_000).unref?.();
   }, GATEWAY_START_TIMEOUT);
   killTimer.unref?.();
 
@@ -402,7 +409,8 @@ function streamGatewayStart(command, env = process.env) {
     });
     child.on("close", (code) => {
       clearTimeout(killTimer);
-      finish({ status: code ?? 1, output: lines.join("\n") });
+      const exitCode = killedByTimeout ? 1 : (code ?? 1);
+      finish({ status: exitCode, output: lines.join("\n") });
     });
   });
 }
