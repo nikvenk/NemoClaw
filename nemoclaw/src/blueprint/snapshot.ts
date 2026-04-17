@@ -12,19 +12,13 @@
  */
 
 import type { Dirent } from "node:fs";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
 import { execa } from "execa";
+
+import { safeMkdirSync } from "../lib/safe-dir.js";
 
 const HOME = homedir();
 const OPENCLAW_DIR = join(HOME, ".openclaw");
@@ -61,7 +55,7 @@ export function createSnapshot(): string | null {
 
   const timestamp = compactTimestamp();
   const snapshotDir = join(SNAPSHOTS_DIR, timestamp);
-  mkdirSync(snapshotDir, { recursive: true });
+  safeMkdirSync(snapshotDir);
 
   const dest = join(snapshotDir, "openclaw");
   cpSync(OPENCLAW_DIR, dest, { recursive: true });

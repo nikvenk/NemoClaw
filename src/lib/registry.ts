@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { ensureConfigDir, readConfigFile, writeConfigFile } from "./config-io";
@@ -27,7 +28,7 @@ export interface SandboxRegistry {
   defaultSandbox: string | null;
 }
 
-export const REGISTRY_FILE = path.join(process.env.HOME || "/tmp", ".nemoclaw", "sandboxes.json");
+export const REGISTRY_FILE = path.join(os.homedir(), ".nemoclaw", "sandboxes.json");
 export const LOCK_DIR = `${REGISTRY_FILE}.lock`;
 export const LOCK_OWNER = path.join(LOCK_DIR, "owner");
 export const LOCK_STALE_MS = 10_000;

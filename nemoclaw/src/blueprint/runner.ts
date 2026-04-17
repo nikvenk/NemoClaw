@@ -13,7 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -21,6 +21,7 @@ import { execa } from "execa";
 import YAML from "yaml";
 
 import { validateEndpointUrl } from "./ssrf.js";
+import { safeMkdirSync } from "../lib/safe-dir.js";
 import { buildSubprocessEnv } from "../lib/subprocess-env.js";
 import { DASHBOARD_PORT } from "../lib/ports.js";
 
@@ -321,7 +322,7 @@ export async function actionApply(
 
   progress(85, "Saving run state");
   const stateDir = join(homedir(), ".nemoclaw", "state", "runs", rid);
-  mkdirSync(stateDir, { recursive: true });
+  safeMkdirSync(stateDir);
   writeFileSync(
     join(stateDir, "plan.json"),
     JSON.stringify(

@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-let configDir = join(process.env.HOME ?? tmpdir(), ".nemoclaw");
+import { safeMkdirSync } from "../lib/safe-dir.js";
+
+let configDir = join(homedir(), ".nemoclaw");
 
 export type EndpointType =
   | "build"
@@ -73,11 +75,11 @@ function ensureConfigDir(): void {
   if (configDirCreated) return;
   if (!existsSync(configDir)) {
     try {
-      mkdirSync(configDir, { recursive: true });
+      safeMkdirSync(configDir);
     } catch {
       configDir = join(tmpdir(), ".nemoclaw");
       if (!existsSync(configDir)) {
-        mkdirSync(configDir, { recursive: true });
+        safeMkdirSync(configDir);
       }
     }
   }

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { safeMkdirSync } from "./safe-dir";
 import { shellQuote } from "./shell-quote";
 
 function buildRemediation(): string {
@@ -82,7 +83,7 @@ export class ConfigPermissionError extends Error {
 
 export function ensureConfigDir(dirPath: string): void {
   try {
-    fs.mkdirSync(dirPath, { recursive: true, mode: 0o700 });
+    safeMkdirSync(dirPath, { mode: 0o700 });
 
     const stat = fs.statSync(dirPath);
     if ((stat.mode & 0o077) !== 0) {

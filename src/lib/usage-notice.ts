@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import noticeConfig from "../../bin/lib/usage-notice.json";
+import { safeMkdirSync } from "./safe-dir";
 
 export const NOTICE_ACCEPT_FLAG = "--yes-i-accept-third-party-software";
 export const NOTICE_ACCEPT_ENV = "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE";
@@ -61,7 +62,7 @@ export function hasAcceptedUsageNotice(version: string): boolean {
 export function saveUsageNoticeAcceptance(version: string): void {
   const stateFile = getUsageNoticeStateFile();
   const dir = path.dirname(stateFile);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  safeMkdirSync(dir, { mode: 0o700 });
   fs.chmodSync(dir, 0o700);
   fs.writeFileSync(
     stateFile,

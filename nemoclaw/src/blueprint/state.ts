@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
-const STATE_DIR = join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
+import { safeMkdirSync } from "../lib/safe-dir.js";
+
+const STATE_DIR = join(homedir(), ".nemoclaw", "state");
 
 export interface NemoClawState {
   lastRunId: string | null;
@@ -24,7 +27,7 @@ let stateDirCreated = false;
 function ensureStateDir(): void {
   if (stateDirCreated) return;
   if (!existsSync(STATE_DIR)) {
-    mkdirSync(STATE_DIR, { recursive: true });
+    safeMkdirSync(STATE_DIR);
   }
   stateDirCreated = true;
 }

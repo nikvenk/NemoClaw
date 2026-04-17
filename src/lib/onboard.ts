@@ -12,6 +12,7 @@ const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const pRetry = require("p-retry");
+const { safeMkdirSync } = require("./safe-dir");
 
 /** Parse a numeric env var, returning `fallback` when unset or non-finite. */
 function envInt(name, fallback) {
@@ -1631,7 +1632,7 @@ let ollamaProxyToken: string | null = null;
 
 function ensureProxyStateDir(): void {
   if (!fs.existsSync(PROXY_STATE_DIR)) {
-    fs.mkdirSync(PROXY_STATE_DIR, { recursive: true });
+    safeMkdirSync(PROXY_STATE_DIR);
   }
 }
 

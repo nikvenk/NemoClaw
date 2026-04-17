@@ -8,12 +8,14 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import type { WebSearchConfig } from "./web-search";
+import { safeMkdirSync } from "./safe-dir";
 
 export const SESSION_VERSION = 1;
-export const SESSION_DIR = path.join(process.env.HOME || "/tmp", ".nemoclaw");
+export const SESSION_DIR = path.join(os.homedir(), ".nemoclaw");
 export const SESSION_FILE = path.join(SESSION_DIR, "onboard-session.json");
 export const LOCK_FILE = path.join(SESSION_DIR, "onboard.lock");
 const VALID_STEP_STATES = new Set(["pending", "in_progress", "complete", "failed", "skipped"]);
@@ -94,7 +96,7 @@ export interface SessionUpdates {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function ensureSessionDir(): void {
-  fs.mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+  safeMkdirSync(SESSION_DIR, { mode: 0o700 });
 }
 
 export function sessionPath(): string {
