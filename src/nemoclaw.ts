@@ -1796,6 +1796,26 @@ async function sandboxRebuild(sandboxName, args = [], opts = {}) {
   console.log(`  ${G}\u2713${R} State backed up (${backup.backedUpDirs.length} directories)`);
   console.log(`    Backup: ${backup.manifest.backupPath}`);
 
+  // Step 2b: Preserve policy presets added after initial onboard (e.g. via policy-add).
+  // The session only records presets chosen during onboard; presets added later live
+  // only in the registry's sandbox entry, which is deleted in step 3. Merge them into
+  // the session now so the onboard resume path replays the full set.
+  try {
+    const appliedPresets = policies.getAppliedPresets(sandboxName);
+    log(`Applied presets before rebuild: ${appliedPresets.join(", ") || "(none)"}`);
+    if (appliedPresets.length > 0) {
+      onboardSession.updateSession((s) => {
+        const sessionPresets = Array.isArray(s.policyPresets) ? s.policyPresets : [];
+        s.policyPresets = [...new Set([...sessionPresets, ...appliedPresets])];
+        return s;
+      });
+      log(`Session policyPresets updated: ${onboardSession.loadSession()?.policyPresets?.join(", ")}`);
+    }
+  } catch (err) {
+    log(`Warning: could not read applied presets (degraded sandbox?): ${err.message}`);
+    // Fall back to whatever the session already has — don't block rebuild.
+  }
+
   // Step 3: Delete sandbox without tearing down gateway or session.
   // sandboxDestroy() cleans up the gateway when it's the last sandbox and
   // nulls session.sandboxName — both break the immediate onboard --resume.
