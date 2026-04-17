@@ -3129,6 +3129,7 @@ const { createSandbox } = require(${onboardPath});
 
       const script = String.raw`
 const runner = require(${runnerPath});
+const _n = (c) => (Array.isArray(c) ? c.join(" ") : String(c)).replace(/'/g, "");
 const registry = require(${registryPath});
 const onboardSession = require(${sessionModulePath});
 const childProcess = require("node:child_process");
@@ -3136,14 +3137,14 @@ const { EventEmitter } = require("node:events");
 
 const commands = [];
 runner.run = (command, opts = {}) => {
-  commands.push({ command, env: opts.env || null });
+  commands.push({ command: _n(command), env: opts.env || null });
   return { status: 0 };
 };
 runner.runCapture = (command) => {
-  if (command.includes("'sandbox' 'get' 'my-assistant'")) return "my-assistant";
-  if (command.includes("'sandbox' 'list'")) return "my-assistant Ready";
-  if (command.includes("'forward' 'list'")) return "";
-  if (command.includes("sandbox exec") && command.includes("curl")) return "ok";
+  if (_n(command).includes("sandbox get my-assistant")) return "my-assistant";
+  if (_n(command).includes("sandbox list")) return "my-assistant Ready";
+  if (_n(command).includes("forward list")) return "";
+  if (_n(command).includes("sandbox exec") && _n(command).includes("curl")) return "ok";
   return "";
 };
 
@@ -3166,7 +3167,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: args[1][1], env: args[2]?.env || null });
+  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
