@@ -2114,7 +2114,7 @@ const { setupInference } = require(${onboardPath});
       "utf-8",
     );
 
-    assert.match(onboardSource, /runRuntimeSetupFlow\(/);
+    assert.match(onboardSource, /run: runRuntimeSetupFlow/);
     // When agent path is taken, openclaw must be marked skipped.
     assert.match(helperSource, /handleAgentSetup\(/);
     assert.match(helperSource, /onSkipSiblingStep\("openclaw"\)/);
@@ -2133,7 +2133,7 @@ const { setupInference } = require(${onboardPath});
       "utf-8",
     );
 
-    assert.match(onboardSource, /runSandboxProvisioningFlow\(/);
+    assert.match(onboardSource, /run: runSandboxProvisioningFlow/);
     assert.match(helperSource, /onStartStep\("messaging"/);
     assert.match(helperSource, /onCompleteStep\("messaging"/);
     assert.match(helperSource, /onStartStep\("sandbox"/);
@@ -2188,7 +2188,7 @@ const { setupInference } = require(${onboardPath});
     // The dangerouslySkipPermissions branch must call applyPermissivePolicy to
     // activate the policy via `openshell policy set --wait`.  Without this,
     // the base policy from sandbox create stays in Pending status (#897).
-    assert.match(onboardSource, /runPolicySetupFlow\(/);
+    assert.match(onboardSource, /run: runPolicySetupFlow/);
     assert.match(
       helperSource,
       /if \(deps\.dangerouslySkipPermissions\) \{\s*deps\.onShowHeader\(\);\s*if \(!deps\.waitForSandboxReady\(state\.sandboxName\)\) \{[\s\S]*?\}\s*deps\.applyPermissivePolicy\(state\.sandboxName\);/,

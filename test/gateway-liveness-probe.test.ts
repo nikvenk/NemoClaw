@@ -40,7 +40,7 @@ describe("gateway liveness probe (#2020)", () => {
   });
 
   it("main onboard flow delegates the probe to the extracted host preparation helper", () => {
-    expect(content).toContain("runHostPreparationFlow(");
+    expect(content).toContain("run: runHostPreparationFlow");
     const mainFlowProbe = helperContent.match(
       /let gatewayReuseState = deps\.getGatewayReuseState[\s\S]*?deps\.verifyGatewayContainerRunning\(\)[\s\S]*?const canReuseHealthyGateway/,
     );

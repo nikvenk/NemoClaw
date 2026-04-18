@@ -64,9 +64,9 @@ const nim = require("./nim");
 const onboardSession = require("./onboard-session");
 const { ONBOARD_STEP_META, isOnboardStepName, toVisibleStepName } = require("./onboard-fsm");
 const { initializeOnboardRun } = require("./onboard-bootstrap");
-const { hasCompletedOnboardStep } = require("./onboard-flow-state");
 const { runHostPreparationFlow } = require("./onboard-host-flow");
 const { runInferenceSelectionLoop } = require("./onboard-inference-loop");
+const { runOnboardingOrchestrator } = require("./onboard-orchestrator");
 const { runPolicySetupFlow } = require("./onboard-policy-flow");
 const { createOnboardRunContext } = require("./onboard-run-context");
 const { collectResumeConfigConflicts, detectResumeSandboxConflict } = require("./onboard-resume");
@@ -5799,7 +5799,6 @@ async function onboard(opts = {}) {
   process.once("exit", releaseOnboardLock);
 
   try {
-    let selectedMessagingChannels = [];
     // Merged, absolute fromDockerfile: explicit flag/env takes precedence; on
     // resume falls back to what the original session recorded so the same image
     // is used even when --from is omitted from the resume invocation.
@@ -5822,21 +5821,13 @@ async function onboard(opts = {}) {
       process.exit(1);
     }
     const runContext = createOnboardRunContext(initializedRun.value);
-    const { driver: persistentDriver, fromDockerfile } = runContext;
-    const updateRecordedSession = (mutator) => runContext.updateSession(mutator);
-    const recordStepStarted = (stepName, updates = {}) => runContext.startStep(stepName, updates);
-    const recordStepComplete = (stepName, updates = {}) =>
-      runContext.completeStep(stepName, updates);
-    const recordStepSkipped = (stepName) => runContext.skipStep(stepName);
-    const recordStepFailed = (stepName, message = null) => runContext.failStep(stepName, message);
-    const recordSessionComplete = (updates = {}) => runContext.completeSession(updates);
 
     let completed = false;
     process.once("exit", (code) => {
       if (!completed && code !== 0) {
-        const failedStep = persistentDriver.session?.lastStepStarted;
+        const failedStep = runContext.driver.session?.lastStepStarted;
         if (failedStep) {
-          recordStepFailed(failedStep, "Onboarding exited before the step completed.");
+          runContext.failStep(failedStep, "Onboarding exited before the step completed.");
         }
       }
     });
@@ -5847,82 +5838,40 @@ async function onboard(opts = {}) {
     if (resume) note("  (resume mode)");
     console.log("  ===================");
 
-    const agent = agentOnboard.resolveAgent({ agentFlag: opts.agent, session: runContext.session });
-    if (agent) {
-      updateRecordedSession((s) => {
-        s.agent = agent.name;
-        return s;
-      });
-    }
-
-    const resumeFlowState = resume ? persistentDriver.flowState : null;
-
-    const { gpu } = await runHostPreparationFlow({
+    const orchestrationResult = await runOnboardingOrchestrator(runContext, {
       resume,
-      hasCompletedPreflight:
-        !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "preflight"),
-      hasCompletedGateway:
-        !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "gateway"),
-      preflight,
-      detectGpu: () => nim.detectGpu(),
-      getGatewayStatus: () => runCaptureOpenshell(["status"], { ignoreError: true }),
-      getNamedGatewayInfo: () =>
-        runCaptureOpenshell(["gateway", "info", "-g", GATEWAY_NAME], { ignoreError: true }),
-      getActiveGatewayInfo: () => runCaptureOpenshell(["gateway", "info"], { ignoreError: true }),
-      getGatewayReuseState,
-      verifyGatewayContainerRunning,
-      stopDashboardForward: () => {
-        runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
+      dangerouslySkipPermissions,
+      requestedAgent: opts.agent || null,
+      resolveAgent: agentOnboard.resolveAgent,
+      note,
+      log: console.log,
+      skippedStepMessage,
+      showPolicyHeader: () => {
+        step(8, 8, "Policy presets");
       },
-      destroyGateway,
-      clearRegistryAll: () => {
-        registry.clearAll();
+      host: {
+        run: runHostPreparationFlow,
+        preflight,
+        detectGpu: () => nim.detectGpu(),
+        getGatewayStatus: () => runCaptureOpenshell(["status"], { ignoreError: true }),
+        getNamedGatewayInfo: () =>
+          runCaptureOpenshell(["gateway", "info", "-g", GATEWAY_NAME], { ignoreError: true }),
+        getActiveGatewayInfo: () =>
+          runCaptureOpenshell(["gateway", "info"], { ignoreError: true }),
+        getGatewayReuseState,
+        verifyGatewayContainerRunning,
+        stopDashboardForward: () => {
+          runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
+        },
+        destroyGateway,
+        clearRegistryAll: () => {
+          registry.clearAll();
+        },
+        startGateway,
       },
-      startGateway,
-      onNote: note,
-      onLog: console.log,
-      onSkip: skippedStepMessage,
-      onStartStep: recordStepStarted,
-      onCompleteStep: recordStepComplete,
-    });
-
-    const currentSession = runContext.session;
-    let sandboxName = currentSession.sandboxName || null;
-    let model = currentSession.model || null;
-    let provider = currentSession.provider || null;
-    let endpointUrl = currentSession.endpointUrl || null;
-    let credentialEnv = currentSession.credentialEnv || null;
-    let preferredInferenceApi = currentSession.preferredInferenceApi || null;
-    let nimContainer = currentSession.nimContainer || null;
-    let webSearchConfig = currentSession.webSearchConfig || null;
-    selectedMessagingChannels = Array.isArray(currentSession.messagingChannels)
-      ? [...currentSession.messagingChannels]
-      : [];
-    ({
-      sandboxName,
-      model,
-      provider,
-      endpointUrl,
-      credentialEnv,
-      preferredInferenceApi,
-      nimContainer,
-    } = await runInferenceSelectionLoop(
-      {
-        sandboxName,
-        model,
-        provider,
-        endpointUrl,
-        credentialEnv,
-        preferredInferenceApi,
-        nimContainer,
-      },
-      {
-        gpu,
-        resume,
-        hasCompletedProviderSelection:
-          !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "provider_selection"),
-        hasCompletedInference:
-          !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "inference"),
+      inference: {
+        run: runInferenceSelectionLoop,
+        gpu: null,
         setupNim,
         setupInference,
         isInferenceRouteReady,
@@ -5937,38 +5886,13 @@ async function onboard(opts = {}) {
         updateSandboxNimContainer: (nextSandboxName, nextNimContainer) => {
           registry.updateSandbox(nextSandboxName, { nimContainer: nextNimContainer });
         },
-        onSkip: skippedStepMessage,
-        onStartStep: recordStepStarted,
-        onCompleteStep: recordStepComplete,
       },
-    ));
-
-    ({
-      sandboxName,
-      webSearchConfig,
-      selectedMessagingChannels,
-    } = await runSandboxProvisioningFlow(
-      {
-        gpu,
-        sandboxName,
-        model,
-        provider,
-        preferredInferenceApi,
-        webSearchConfig,
-        selectedMessagingChannels,
-        nimContainer,
-        fromDockerfile,
-        agent,
-        dangerouslySkipPermissions,
-      },
-      {
-        resume,
-        sessionMessagingChannels: Array.isArray(currentSession.messagingChannels)
-          ? [...currentSession.messagingChannels]
-          : null,
-        sessionWebSearchConfig: currentSession.webSearchConfig || null,
-        hasCompletedMessaging: !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "messaging"),
-        hasCompletedSandbox: !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "sandbox"),
+      sandbox: {
+        run: runSandboxProvisioningFlow,
+        sessionMessagingChannels: null,
+        sessionWebSearchConfig: null,
+        hasCompletedMessaging: false,
+        hasCompletedSandbox: false,
         setupMessagingChannels,
         configureWebSearch,
         ensureValidatedBraveSearchCredential,
@@ -5984,33 +5908,25 @@ async function onboard(opts = {}) {
           // run after createSandbox() / registerSandbox() — not before. Fixes #1881.
           registry.updateSandbox(name, patch);
         },
-        onNote: note,
-        onSkip: skippedStepMessage,
-        onStartStep: recordStepStarted,
-        onCompleteStep: recordStepComplete,
       },
-    ));
-
-    await runRuntimeSetupFlow(
-      {
-        sandboxName,
-        model,
-        provider,
-        agent,
-        resume,
-        session: runContext.session,
-      },
-      {
-        hasCompletedRuntimeSetup:
-          !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "runtime_setup"),
-        handleAgentSetup: async (nextSandboxName, nextModel, nextProvider, nextAgent) => {
+      runtime: {
+        run: runRuntimeSetupFlow,
+        hasCompletedRuntimeSetup: false,
+        handleAgentSetup: async (
+          nextSandboxName,
+          nextModel,
+          nextProvider,
+          nextAgent,
+          nextResume,
+          nextSession,
+        ) => {
           await agentOnboard.handleAgentSetup(
             nextSandboxName,
             nextModel,
             nextProvider,
             nextAgent,
-            resume,
-            runContext.session,
+            nextResume,
+            nextSession,
             {
               step,
               runCaptureOpenshell,
@@ -6018,71 +5934,37 @@ async function onboard(opts = {}) {
               buildSandboxConfigSyncScript,
               writeSandboxConfigSyncFile,
               cleanupTempDir,
-              startRecordedStep: recordStepStarted,
+              startRecordedStep: runContext.startStep,
               skippedStepMessage,
             },
           );
         },
         isOpenclawReady,
         setupOpenclaw,
-        onSkip: skippedStepMessage,
-        onStartStep: recordStepStarted,
-        onCompleteStep: recordStepComplete,
-        onSkipSiblingStep: recordStepSkipped,
       },
-    );
-
-    const latestSession = persistentDriver.session;
-    const recordedPolicyPresets = Array.isArray(latestSession?.policyPresets)
-      ? latestSession.policyPresets
-      : null;
-    const policyResult = await runPolicySetupFlow(
-      {
-        sandboxName,
-        provider,
-        model,
-        webSearchConfig,
-        enabledChannels: selectedMessagingChannels,
-        recordedPolicyPresets,
-      },
-      {
-        resume,
-        dangerouslySkipPermissions,
-        hasCompletedPolicies:
-          !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "policies"),
+      policy: {
+        run: runPolicySetupFlow,
         waitForSandboxReady,
         applyPermissivePolicy: (name) => {
           policies.applyPermissivePolicy(name);
         },
         arePolicyPresetsApplied,
         setupPoliciesWithSelection,
-        onShowHeader: () => {
-          step(8, 8, "Policy presets");
-        },
-        onSkip: skippedStepMessage,
-        onStartStep: recordStepStarted,
-        onCompleteStep: recordStepComplete,
-        onSelectionPersist: (policyPresets) => {
-          updateRecordedSession((current) => {
-            current.policyPresets = policyPresets;
-            return current;
-          });
-        },
       },
-    );
-    if (policyResult.kind === "sandbox_not_ready") {
-      console.error(`\n${policyResult.message}`);
+    });
+    if (orchestrationResult.policyResult.kind === "sandbox_not_ready") {
+      console.error(`\n${orchestrationResult.policyResult.message}`);
       process.exit(1);
     }
 
-    recordSessionComplete({
-      sandboxName,
-      provider,
-      model,
-      policyPresets: policyResult.policyPresets,
-    });
     completed = true;
-    printDashboard(sandboxName, model, provider, nimContainer, agent);
+    printDashboard(
+      orchestrationResult.sandboxName,
+      orchestrationResult.model,
+      orchestrationResult.provider,
+      orchestrationResult.nimContainer,
+      orchestrationResult.agent,
+    );
   } finally {
     releaseOnboardLock();
   }
