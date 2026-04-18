@@ -138,7 +138,7 @@ function verifyGatewayContainerRunning() {
     `docker inspect --type container --format '{{.State.Running}}' ${containerName}`,
     { ignoreError: true, suppressOutput: true },
   );
-  if (result.status === 0 && (result.stdout || "").toString().trim() === "true") {
+  if (result.status === 0 && String(result.stdout || "").trim() === "true") {
     return "running";
   }
   // Container exists but is stopped (exit 0, Running !== "true")
@@ -1226,6 +1226,30 @@ function patchStagedDockerfile(
     /^ARG NEMOCLAW_BUILD_ID=.*$/m,
     `ARG NEMOCLAW_BUILD_ID=${buildId}`,
   );
+  // Honor NEMOCLAW_CONTEXT_WINDOW / NEMOCLAW_MAX_TOKENS / NEMOCLAW_REASONING
+  // so the user can tune model metadata without editing the Dockerfile.
+  const POSITIVE_INT_RE = /^[1-9][0-9]*$/;
+  const contextWindow = process.env.NEMOCLAW_CONTEXT_WINDOW;
+  if (contextWindow && POSITIVE_INT_RE.test(contextWindow)) {
+    dockerfile = dockerfile.replace(
+      /^ARG NEMOCLAW_CONTEXT_WINDOW=.*$/m,
+      `ARG NEMOCLAW_CONTEXT_WINDOW=${contextWindow}`,
+    );
+  }
+  const maxTokens = process.env.NEMOCLAW_MAX_TOKENS;
+  if (maxTokens && POSITIVE_INT_RE.test(maxTokens)) {
+    dockerfile = dockerfile.replace(
+      /^ARG NEMOCLAW_MAX_TOKENS=.*$/m,
+      `ARG NEMOCLAW_MAX_TOKENS=${maxTokens}`,
+    );
+  }
+  const reasoning = process.env.NEMOCLAW_REASONING;
+  if (reasoning === "true" || reasoning === "false") {
+    dockerfile = dockerfile.replace(
+      /^ARG NEMOCLAW_REASONING=.*$/m,
+      `ARG NEMOCLAW_REASONING=${reasoning}`,
+    );
+  }
   // Honor NEMOCLAW_PROXY_HOST / NEMOCLAW_PROXY_PORT exported in the host
   // shell so the sandbox-side nemoclaw-start.sh sees them via $ENV at runtime.
   // Without this, the host export is silently dropped at image build time and
