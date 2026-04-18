@@ -67,6 +67,9 @@ const {
   recoverGatewayRuntime: recoverGatewayRuntimeWithDeps,
   startGatewayWithOptions: startGatewayWithOptionsWithDeps,
 } = require("./onboard-gateway-runtime");
+const { runSetupNim: setupNimWithDeps } = require("./onboard-nim-setup");
+const { runOnboardPreflight } = require("./onboard-preflight-run");
+const { runSetupInference } = require("./onboard-inference-provider");
 const { MESSAGING_CHANNELS, setupMessagingChannels: setupMessagingChannelsWithDeps } = require("./onboard-messaging");
 const { promptValidatedSandboxName: promptValidatedSandboxNameWithDeps } = require("./onboard-sandbox-name");
 const {
@@ -2201,334 +2204,40 @@ function getNonInteractiveModel(providerKey) {
 
 // eslint-disable-next-line complexity
 async function preflight() {
-  step(1, 8, "Preflight checks");
-
-  const host = assessHost();
-
-  // Docker / runtime
-  if (!host.dockerReachable) {
-    console.error("  Docker is not reachable. Please fix Docker and try again.");
-    printRemediationActions(planHostRemediation(host));
-    process.exit(1);
-  }
-  console.log("  ✓ Docker is running");
-
-  if (host.runtime !== "unknown") {
-    console.log(`  ✓ Container runtime: ${host.runtime}`);
-  }
-  // Podman is now supported — no unsupported runtime warning needed.
-  if (host.notes.includes("Running under WSL")) {
-    console.log("  ⓘ Running under WSL");
-  }
-
-  // OpenShell CLI — install if missing, upgrade if below minimum version.
-  // MIN_VERSION in install-openshell.sh handles the version gate; calling it
-  // when openshell already exists is safe (it exits early if version is OK).
-  let openshellInstall = { localBin: null, futureShellPathHint: null };
-  if (!isOpenshellInstalled()) {
-    console.log("  openshell CLI not found. Installing...");
-    openshellInstall = installOpenshell();
-    if (!openshellInstall.installed) {
-      console.error("  Failed to install openshell CLI.");
-      console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
-      process.exit(1);
-    }
-  } else {
-    // Ensure the installed version meets the minimum required by install-openshell.sh.
-    // The script itself is idempotent — it exits early if the version is already sufficient.
-    const currentVersion = getInstalledOpenshellVersion();
-    if (!currentVersion) {
-      console.log("  openshell version could not be determined. Reinstalling...");
-      openshellInstall = installOpenshell();
-      if (!openshellInstall.installed) {
-        console.error("  Failed to reinstall openshell CLI.");
-        console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
-        process.exit(1);
-      }
-    } else {
-      const parts = currentVersion.split(".").map(Number);
-      const minParts = [0, 0, 24]; // must match MIN_VERSION in scripts/install-openshell.sh
-      const needsUpgrade =
-        parts[0] < minParts[0] ||
-        (parts[0] === minParts[0] && parts[1] < minParts[1]) ||
-        (parts[0] === minParts[0] && parts[1] === minParts[1] && parts[2] < minParts[2]);
-      if (needsUpgrade) {
-        console.log(
-          `  openshell ${currentVersion} is below minimum required version. Upgrading...`,
-        );
-        openshellInstall = installOpenshell();
-        if (!openshellInstall.installed) {
-          console.error("  Failed to upgrade openshell CLI.");
-          console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
-          process.exit(1);
-        }
-      }
-    }
-  }
-  const openshellVersionOutput = runCaptureOpenshell(["--version"], { ignoreError: true });
-  console.log(`  ✓ openshell CLI: ${openshellVersionOutput || "unknown"}`);
-  // Enforce nemoclaw-blueprint/blueprint.yaml's min_openshell_version. Without
-  // this check, users can complete a full onboard against an OpenShell that
-  // pre-dates required CLI surface (e.g. `sandbox exec`, `--upload`) and hit
-  // silent failures inside the sandbox at runtime. See #1317.
-  const installedOpenshellVersion = getInstalledOpenshellVersion(openshellVersionOutput);
-  const minOpenshellVersion = getBlueprintMinOpenshellVersion();
-  if (
-    installedOpenshellVersion &&
-    minOpenshellVersion &&
-    !versionGte(installedOpenshellVersion, minOpenshellVersion)
-  ) {
-    console.error("");
-    console.error(
-      `  ✗ openshell ${installedOpenshellVersion} is below the minimum required by this NemoClaw release.`,
-    );
-    console.error(`    blueprint.yaml min_openshell_version: ${minOpenshellVersion}`);
-    console.error("");
-    console.error("    Upgrade openshell and retry:");
-    console.error("      https://github.com/NVIDIA/OpenShell/releases");
-    console.error(
-      "    Or remove the existing binary so the installer can re-fetch a current build:",
-    );
-    console.error('      command -v openshell && rm -f "$(command -v openshell)"');
-    console.error("");
-    process.exit(1);
-  }
-  // Enforce nemoclaw-blueprint/blueprint.yaml's max_openshell_version. Newer
-  // OpenShell releases may change sandbox semantics that this NemoClaw version
-  // has not been validated against. Blocking early avoids silent runtime
-  // breakage. Users should upgrade NemoClaw to pick up support for newer
-  // OpenShell releases.
-  const maxOpenshellVersion = getBlueprintMaxOpenshellVersion();
-  if (
-    installedOpenshellVersion &&
-    maxOpenshellVersion &&
-    !versionGte(maxOpenshellVersion, installedOpenshellVersion)
-  ) {
-    console.error("");
-    console.error(
-      `  ✗ openshell ${installedOpenshellVersion} is above the maximum supported by this NemoClaw release.`,
-    );
-    console.error(`    blueprint.yaml max_openshell_version: ${maxOpenshellVersion}`);
-    console.error("");
-    console.error("    Upgrade NemoClaw to a version that supports your OpenShell release,");
-    console.error("    or install a supported OpenShell version:");
-    console.error("      https://github.com/NVIDIA/OpenShell/releases");
-    console.error("");
-    process.exit(1);
-  }
-  if (openshellInstall.futureShellPathHint) {
-    console.log(
-      `  Note: openshell was installed to ${openshellInstall.localBin} for this onboarding run.`,
-    );
-    console.log(`  Future shells may still need: ${openshellInstall.futureShellPathHint}`);
-    console.log(
-      "  Add that export to your shell profile, or open a new terminal before running openshell directly.",
-    );
-  }
-
-  // Clean up stale or unnamed NemoClaw gateway state before checking ports.
-  // A healthy named gateway can be reused later in onboarding, so avoid
-  // tearing it down here. If some other gateway is active, do not treat it
-  // as NemoClaw state; let the port checks surface the conflict instead.
-  const gatewayStatus = runCaptureOpenshell(["status"], { ignoreError: true });
-  const gwInfo = runCaptureOpenshell(["gateway", "info", "-g", GATEWAY_NAME], {
-    ignoreError: true,
+  return runOnboardPreflight({
+    step,
+    assessHost,
+    planHostRemediation,
+    printRemediationActions,
+    isOpenshellInstalled,
+    installOpenshell,
+    getInstalledOpenshellVersion,
+    runCaptureOpenshell,
+    getBlueprintMinOpenshellVersion,
+    getBlueprintMaxOpenshellVersion,
+    versionGte,
+    getGatewayReuseState,
+    verifyGatewayContainerRunning,
+    runOpenshell,
+    destroyGateway,
+    clearRegistryAll: () => {
+      registry.clearAll();
+    },
+    run,
+    runCapture,
+    checkPortAvailable,
+    sleep,
+    getPortConflictServiceHints,
+    getMemoryInfo,
+    ensureSwap,
+    isNonInteractive,
+    prompt,
+    nimDetectGpu: () => nim.detectGpu(),
+    processPlatform: process.platform,
+    gatewayName: GATEWAY_NAME,
+    dashboardPort: DASHBOARD_PORT,
+    gatewayPort: GATEWAY_PORT,
   });
-  const activeGatewayInfo = runCaptureOpenshell(["gateway", "info"], { ignoreError: true });
-  let gatewayReuseState = getGatewayReuseState(gatewayStatus, gwInfo, activeGatewayInfo);
-
-  // Verify the gateway container is actually running — openshell CLI metadata
-  // can be stale after a manual `docker rm`. See #2020.
-  if (gatewayReuseState === "healthy") {
-    const containerState = verifyGatewayContainerRunning();
-    if (containerState === "missing") {
-      console.log("  Gateway metadata is stale (container not running). Cleaning up...");
-      runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
-      destroyGateway();
-      registry.clearAll();
-      gatewayReuseState = "missing";
-      console.log("  ✓ Stale gateway metadata cleaned up");
-    } else if (containerState === "unknown") {
-      console.log("  Warning: could not verify gateway container state (Docker may be unavailable). Proceeding with cached health status.");
-    }
-  }
-
-  if (gatewayReuseState === "stale" || gatewayReuseState === "active-unnamed") {
-    console.log("  Cleaning up previous NemoClaw session...");
-    runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
-    const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
-      ignoreError: true,
-    });
-    // Sandboxes under the destroyed gateway no longer exist in OpenShell —
-    // clear the local registry so `nemoclaw list` stays consistent. (#532)
-    if (destroyResult.status === 0) {
-      registry.clearAll();
-    }
-    console.log("  ✓ Previous session cleaned up");
-  }
-
-  // Clean up orphaned Docker containers from interrupted onboard (e.g. Ctrl+C
-  // during gateway start). The container may still be running even though
-  // OpenShell has no metadata for it (gatewayReuseState === "missing").
-  if (gatewayReuseState === "missing") {
-    const containerName = `openshell-cluster-${GATEWAY_NAME}`;
-    const inspectResult = run(
-      `docker inspect --type container --format '{{.State.Status}}' ${containerName} 2>/dev/null`,
-      { ignoreError: true, suppressOutput: true },
-    );
-    if (inspectResult.status === 0) {
-      console.log("  Cleaning up orphaned gateway container...");
-      run(`docker stop ${containerName} >/dev/null 2>&1`, {
-        ignoreError: true,
-        suppressOutput: true,
-      });
-      run(`docker rm ${containerName} >/dev/null 2>&1`, {
-        ignoreError: true,
-        suppressOutput: true,
-      });
-      const postInspectResult = run(
-        `docker inspect --type container ${containerName} 2>/dev/null`,
-        {
-          ignoreError: true,
-          suppressOutput: true,
-        },
-      );
-      if (postInspectResult.status !== 0) {
-        run(
-          `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm 2>/dev/null || true`,
-          { ignoreError: true, suppressOutput: true },
-        );
-        registry.clearAll();
-        console.log("  ✓ Orphaned gateway container removed");
-      } else {
-        console.warn("  ! Found an orphaned gateway container, but automatic cleanup failed.");
-      }
-    }
-  }
-
-  // Required ports — gateway and the dashboard port
-  const requiredPorts = [
-    { port: GATEWAY_PORT, label: "OpenShell gateway" },
-    { port: DASHBOARD_PORT, label: "NemoClaw dashboard" },
-  ];
-  for (const { port, label } of requiredPorts) {
-    let portCheck = await checkPortAvailable(port);
-    if (!portCheck.ok) {
-      if ((port === GATEWAY_PORT || port === DASHBOARD_PORT) && gatewayReuseState === "healthy") {
-        console.log(`  ✓ Port ${port} already owned by healthy NemoClaw runtime (${label})`);
-        continue;
-      }
-      // Auto-cleanup orphaned SSH port-forward from a previous NemoClaw session
-      // (e.g. dashboard forward left behind after destroy). Only kill the process
-      // if its command line contains "openshell" to avoid killing unrelated SSH
-      // tunnels the user may have set up on the same port. (#1950)
-      if (port === DASHBOARD_PORT && portCheck.process === "ssh" && portCheck.pid) {
-        // Use `ps` to get the command line — works on Linux, macOS, and WSL.
-        const cmdline = runCapture(
-          `ps -p ${portCheck.pid} -o args= 2>/dev/null`,
-          { ignoreError: true },
-        ).trim();
-        if (cmdline.includes("openshell")) {
-          console.log(`  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`);
-          run(`kill ${portCheck.pid} 2>/dev/null || true`, { ignoreError: true });
-          sleep(1);
-          portCheck = await checkPortAvailable(port);
-          if (portCheck.ok) {
-            console.log(`  ✓ Port ${port} available after orphaned forward cleanup (${label})`);
-            continue;
-          }
-        }
-      }
-      console.error("");
-      console.error(`  !! Port ${port} is not available.`);
-      console.error(`     ${label} needs this port.`);
-      console.error("");
-      if (portCheck.process && portCheck.process !== "unknown") {
-        console.error(
-          `     Blocked by: ${portCheck.process}${portCheck.pid ? ` (PID ${portCheck.pid})` : ""}`,
-        );
-        console.error("");
-        console.error("     To fix, stop the conflicting process:");
-        console.error("");
-        if (portCheck.pid) {
-          console.error(`       sudo kill ${portCheck.pid}`);
-        } else {
-          console.error(`       sudo lsof -i :${port} -sTCP:LISTEN -P -n`);
-        }
-        for (const hint of getPortConflictServiceHints()) {
-          console.error(hint);
-        }
-      } else {
-        console.error(`     Could not identify the process using port ${port}.`);
-        console.error(`     Run: sudo lsof -i :${port} -sTCP:LISTEN`);
-      }
-      console.error("");
-      console.error(`     Detail: ${portCheck.reason}`);
-      process.exit(1);
-    }
-    console.log(`  ✓ Port ${port} available (${label})`);
-  }
-
-  // GPU
-  const gpu = nim.detectGpu();
-  if (gpu && gpu.type === "nvidia") {
-    console.log(`  ✓ NVIDIA GPU detected: ${gpu.count} GPU(s), ${gpu.totalMemoryMB} MB VRAM`);
-    if (!gpu.nimCapable) {
-      console.log("  ⓘ GPU VRAM too small for local NIM — will use cloud inference");
-    }
-  } else if (gpu && gpu.type === "apple") {
-    console.log(
-      `  ✓ Apple GPU detected: ${gpu.name}${gpu.cores ? ` (${gpu.cores} cores)` : ""}, ${gpu.totalMemoryMB} MB unified memory`,
-    );
-    console.log("  ⓘ NIM requires NVIDIA GPU — will use cloud inference");
-  } else {
-    console.log("  ⓘ No GPU detected — will use cloud inference");
-  }
-
-  // Memory / swap check (Linux only)
-  if (process.platform === "linux") {
-    const mem = getMemoryInfo();
-    if (mem) {
-      if (mem.totalMB < 12000) {
-        console.log(
-          `  ⚠ Low memory detected (${mem.totalRamMB} MB RAM + ${mem.totalSwapMB} MB swap = ${mem.totalMB} MB total)`,
-        );
-
-        let proceedWithSwap = false;
-        if (!isNonInteractive()) {
-          const answer = await prompt(
-            "  Create a 4 GB swap file to prevent OOM during sandbox build? (requires sudo) [y/N]: ",
-          );
-          proceedWithSwap = answer && answer.toLowerCase().startsWith("y");
-        }
-
-        if (!proceedWithSwap) {
-          console.log(
-            "  ⓘ Skipping swap creation. Sandbox build may fail with OOM on this system.",
-          );
-        } else {
-          console.log("  Creating 4 GB swap file to prevent OOM during sandbox build...");
-          const swapResult = ensureSwap(12000);
-          if (swapResult.ok && swapResult.swapCreated) {
-            console.log("  ✓ Swap file created and activated");
-          } else if (swapResult.ok) {
-            if (swapResult.reason) {
-              console.log(`  ⓘ ${swapResult.reason} — existing swap should help prevent OOM`);
-            } else {
-              console.log(`  ✓ Memory OK: ${mem.totalRamMB} MB RAM + ${mem.totalSwapMB} MB swap`);
-            }
-          } else {
-            console.log(`  ⚠ Could not create swap: ${swapResult.reason}`);
-            console.log("  Sandbox creation may fail with OOM on low-memory systems.");
-          }
-        }
-      } else {
-        console.log(`  ✓ Memory OK: ${mem.totalRamMB} MB RAM + ${mem.totalSwapMB} MB swap`);
-      }
-    }
-  }
-
-  return gpu;
 }
 
 // ── Step 2: Gateway ──────────────────────────────────────────────
@@ -3304,675 +3013,58 @@ async function createSandbox(
 
 // eslint-disable-next-line complexity
 async function setupNim(gpu) {
-  step(3, 8, "Configuring inference (NIM)");
-
-  let model = null;
-  let provider = REMOTE_PROVIDER_CONFIG.build.providerName;
-  let nimContainer = null;
-  let endpointUrl = REMOTE_PROVIDER_CONFIG.build.endpointUrl;
-  let credentialEnv = REMOTE_PROVIDER_CONFIG.build.credentialEnv;
-  let preferredInferenceApi = null;
-
-  // Detect local inference options
-  const hasOllama = !!runCapture("command -v ollama", { ignoreError: true });
-  const ollamaRunning = !!runCapture(
-    `curl -sf http://127.0.0.1:${OLLAMA_PORT}/api/tags 2>/dev/null`,
-    {
-      ignoreError: true,
-    },
-  );
-  const vllmRunning = !!runCapture(`curl -sf http://127.0.0.1:${VLLM_PORT}/v1/models 2>/dev/null`, {
-    ignoreError: true,
+  return setupNimWithDeps(gpu, {
+    step,
+    remoteProviderConfig: REMOTE_PROVIDER_CONFIG,
+    runCapture,
+    ollamaPort: OLLAMA_PORT,
+    vllmPort: VLLM_PORT,
+    ollamaProxyPort: OLLAMA_PROXY_PORT,
+    experimental: EXPERIMENTAL,
+    isNonInteractive,
+    getNonInteractiveProvider,
+    getNonInteractiveModel,
+    note,
+    prompt,
+    getNavigationChoice,
+    exitOnboardFromPrompt,
+    normalizeProviderBaseUrl,
+    validateNvidiaApiKeyValue,
+    ensureApiKey,
+    defaultCloudModel: DEFAULT_CLOUD_MODEL,
+    promptCloudModel,
+    ensureNamedCredential,
+    getProbeAuthMode,
+    validateOpenAiLikeModel,
+    getCredential,
+    validateAnthropicModel,
+    anthropicEndpointUrl: ANTHROPIC_ENDPOINT_URL,
+    promptRemoteModel,
+    promptInputModel,
+    backToSelection: BACK_TO_SELECTION,
+    validateCustomOpenAiLikeSelection,
+    validateCustomAnthropicSelection,
+    validateAnthropicSelectionWithRetryMessage,
+    validateOpenAiLikeSelection,
+    shouldRequireResponsesToolCalling,
+    shouldSkipResponsesProbe,
+    nim,
+    gatewayName: GATEWAY_NAME,
+    getLocalProviderBaseUrl,
+    getLocalProviderValidationBaseUrl,
+    processPlatform: process.platform,
+    validateLocalProvider,
+    isWsl,
+    run,
+    sleep,
+    printOllamaExposureWarning,
+    startOllamaAuthProxy,
+    getOllamaModelOptions,
+    getDefaultOllamaModel,
+    promptOllamaModel,
+    prepareOllamaModel,
+    isSafeModelId,
   });
-  const requestedProvider = isNonInteractive() ? getNonInteractiveProvider() : null;
-  const requestedModel = isNonInteractive()
-    ? getNonInteractiveModel(requestedProvider || "build")
-    : null;
-  const options = [];
-  options.push({ key: "build", label: "NVIDIA Endpoints" });
-  options.push({ key: "openai", label: "OpenAI" });
-  options.push({ key: "custom", label: "Other OpenAI-compatible endpoint" });
-  options.push({ key: "anthropic", label: "Anthropic" });
-  options.push({ key: "anthropicCompatible", label: "Other Anthropic-compatible endpoint" });
-  options.push({ key: "gemini", label: "Google Gemini" });
-  if (hasOllama || ollamaRunning) {
-    options.push({
-      key: "ollama",
-      label:
-        `Local Ollama (localhost:${OLLAMA_PORT})${ollamaRunning ? " — running" : ""}` +
-        (ollamaRunning ? " (suggested)" : ""),
-    });
-  }
-  if (EXPERIMENTAL && gpu && gpu.nimCapable) {
-    options.push({ key: "nim-local", label: "Local NVIDIA NIM [experimental]" });
-  }
-  if (EXPERIMENTAL && vllmRunning) {
-    options.push({
-      key: "vllm",
-      label: "Local vLLM [experimental] — running",
-    });
-  }
-  // On macOS without Ollama, offer to install it
-  if (!hasOllama && process.platform === "darwin") {
-    options.push({ key: "install-ollama", label: "Install Ollama (macOS)" });
-  }
-
-  if (options.length > 1) {
-    selectionLoop: while (true) {
-      let selected;
-
-      if (isNonInteractive()) {
-        const providerKey = requestedProvider || "build";
-        selected = options.find((o) => o.key === providerKey);
-        if (!selected) {
-          console.error(
-            `  Requested provider '${providerKey}' is not available in this environment.`,
-          );
-          process.exit(1);
-        }
-        note(`  [non-interactive] Provider: ${selected.key}`);
-      } else {
-        const suggestions = [];
-        if (vllmRunning) suggestions.push("vLLM");
-        if (ollamaRunning) suggestions.push("Ollama");
-        if (suggestions.length > 0) {
-          console.log(
-            `  Detected local inference option${suggestions.length > 1 ? "s" : ""}: ${suggestions.join(", ")}`,
-          );
-          console.log("");
-        }
-
-        console.log("");
-        console.log("  Inference options:");
-        options.forEach((o, i) => {
-          console.log(`    ${i + 1}) ${o.label}`);
-        });
-        console.log("");
-
-        const envProviderHint = (process.env.NEMOCLAW_PROVIDER || "").trim().toLowerCase();
-        const envProviderIdx = envProviderHint
-          ? options.findIndex((o) => o.key.toLowerCase() === envProviderHint)
-          : -1;
-        const defaultIdx =
-          (envProviderIdx >= 0 ? envProviderIdx : options.findIndex((o) => o.key === "build")) + 1;
-        const choice = await prompt(`  Choose [${defaultIdx}]: `);
-        const idx = parseInt(choice || String(defaultIdx), 10) - 1;
-        selected = options[idx] || options[defaultIdx - 1];
-      }
-
-      if (REMOTE_PROVIDER_CONFIG[selected.key]) {
-        const remoteConfig = REMOTE_PROVIDER_CONFIG[selected.key];
-        provider = remoteConfig.providerName;
-        credentialEnv = remoteConfig.credentialEnv;
-        endpointUrl = remoteConfig.endpointUrl;
-        preferredInferenceApi = null;
-
-        if (selected.key === "custom") {
-          const _envUrl = (process.env.NEMOCLAW_ENDPOINT_URL || "").trim();
-          const endpointInput = isNonInteractive()
-            ? _envUrl
-            : (await prompt(
-                _envUrl
-                  ? `  OpenAI-compatible base URL [${_envUrl}]: `
-                  : "  OpenAI-compatible base URL (e.g., https://openrouter.ai): ",
-              )) || _envUrl;
-          const navigation = getNavigationChoice(endpointInput);
-          if (navigation === "back") {
-            console.log("  Returning to provider selection.");
-            console.log("");
-            continue selectionLoop;
-          }
-          if (navigation === "exit") {
-            exitOnboardFromPrompt();
-          }
-          endpointUrl = normalizeProviderBaseUrl(endpointInput, "openai");
-          if (!endpointUrl) {
-            console.error("  Endpoint URL is required for Other OpenAI-compatible endpoint.");
-            if (isNonInteractive()) {
-              process.exit(1);
-            }
-            console.log("");
-            continue selectionLoop;
-          }
-        } else if (selected.key === "anthropicCompatible") {
-          const _envUrl = (process.env.NEMOCLAW_ENDPOINT_URL || "").trim();
-          const endpointInput = isNonInteractive()
-            ? _envUrl
-            : (await prompt(
-                _envUrl
-                  ? `  Anthropic-compatible base URL [${_envUrl}]: `
-                  : "  Anthropic-compatible base URL (e.g., https://proxy.example.com): ",
-              )) || _envUrl;
-          const navigation = getNavigationChoice(endpointInput);
-          if (navigation === "back") {
-            console.log("  Returning to provider selection.");
-            console.log("");
-            continue selectionLoop;
-          }
-          if (navigation === "exit") {
-            exitOnboardFromPrompt();
-          }
-          endpointUrl = normalizeProviderBaseUrl(endpointInput, "anthropic");
-          if (!endpointUrl) {
-            console.error("  Endpoint URL is required for Other Anthropic-compatible endpoint.");
-            if (isNonInteractive()) {
-              process.exit(1);
-            }
-            console.log("");
-            continue selectionLoop;
-          }
-        }
-
-        if (selected.key === "build") {
-          // Allow NEMOCLAW_PROVIDER_KEY as a fallback for NVIDIA_API_KEY
-          const _nvProviderKey = (process.env.NEMOCLAW_PROVIDER_KEY || "").trim();
-          if (_nvProviderKey && !process.env.NVIDIA_API_KEY) {
-            process.env.NVIDIA_API_KEY = _nvProviderKey;
-          }
-          if (isNonInteractive()) {
-            if (!process.env.NVIDIA_API_KEY) {
-              console.error(
-                "  NVIDIA_API_KEY (or NEMOCLAW_PROVIDER_KEY) is required for NVIDIA Endpoints in non-interactive mode.",
-              );
-              process.exit(1);
-            }
-            const keyError = validateNvidiaApiKeyValue(process.env.NVIDIA_API_KEY);
-            if (keyError) {
-              console.error(keyError);
-              console.error(`  Get a key from ${REMOTE_PROVIDER_CONFIG.build.helpUrl}`);
-              process.exit(1);
-            }
-          } else {
-            await ensureApiKey();
-          }
-          const _envModel = (process.env.NEMOCLAW_MODEL || "").trim();
-          model =
-            requestedModel ||
-            (isNonInteractive()
-              ? DEFAULT_CLOUD_MODEL
-              : await promptCloudModel({ defaultModelId: _envModel || undefined })) ||
-            DEFAULT_CLOUD_MODEL;
-          if (model === BACK_TO_SELECTION) {
-            console.log("  Returning to provider selection.");
-            console.log("");
-            continue selectionLoop;
-          }
-        } else {
-          // NEMOCLAW_PROVIDER_KEY is a universal alias: if the specific credential env
-          // isn't already set, use NEMOCLAW_PROVIDER_KEY as the API key for this provider.
-          const _providerKeyHint = (process.env.NEMOCLAW_PROVIDER_KEY || "").trim();
-          if (_providerKeyHint && !process.env[credentialEnv]) {
-            process.env[credentialEnv] = _providerKeyHint;
-          }
-
-          if (isNonInteractive()) {
-            if (!process.env[credentialEnv]) {
-              console.error(
-                `  ${credentialEnv} (or NEMOCLAW_PROVIDER_KEY) is required for ${remoteConfig.label} in non-interactive mode.`,
-              );
-              process.exit(1);
-            }
-          } else {
-            await ensureNamedCredential(
-              credentialEnv,
-              remoteConfig.label + " API key",
-              remoteConfig.helpUrl,
-            );
-          }
-          const _envModelRemote = (process.env.NEMOCLAW_MODEL || "").trim();
-          const defaultModel = requestedModel || _envModelRemote || remoteConfig.defaultModel;
-          let modelValidator = null;
-          if (selected.key === "openai" || selected.key === "gemini") {
-            const modelAuthMode = getProbeAuthMode(provider);
-            modelValidator = (candidate) =>
-              validateOpenAiLikeModel(
-                remoteConfig.label,
-                endpointUrl,
-                candidate,
-                getCredential(credentialEnv),
-                ...(modelAuthMode ? [{ authMode: modelAuthMode }] : []),
-              );
-          } else if (selected.key === "anthropic") {
-            modelValidator = (candidate) =>
-              validateAnthropicModel(
-                endpointUrl || ANTHROPIC_ENDPOINT_URL,
-                candidate,
-                getCredential(credentialEnv),
-              );
-          }
-          while (true) {
-            if (isNonInteractive()) {
-              model = defaultModel;
-            } else if (remoteConfig.modelMode === "curated") {
-              model = await promptRemoteModel(
-                remoteConfig.label,
-                selected.key,
-                defaultModel,
-                modelValidator,
-              );
-            } else {
-              model = await promptInputModel(remoteConfig.label, defaultModel, modelValidator);
-            }
-            if (model === BACK_TO_SELECTION) {
-              console.log("  Returning to provider selection.");
-              console.log("");
-              continue selectionLoop;
-            }
-
-            if (selected.key === "custom") {
-              const validation = await validateCustomOpenAiLikeSelection(
-                remoteConfig.label,
-                endpointUrl,
-                model,
-                credentialEnv,
-                remoteConfig.helpUrl,
-              );
-              if (validation.ok) {
-                // Force chat completions for all OpenAI-compatible endpoints
-                // unless the user explicitly opted in to responses via env var.
-                // Many backends (Ollama, vLLM, LiteLLM) expose /v1/responses
-                // but do not correctly handle the `developer` role used by the
-                // Responses API — messages with that role are silently dropped,
-                // causing the model to receive no system prompt or tool
-                // definitions. Chat completions uses the `system` role which
-                // is universally supported.
-                // See: https://github.com/NVIDIA/NemoClaw/issues/1932
-                const explicitApi = (process.env.NEMOCLAW_PREFERRED_API || "").trim().toLowerCase();
-                if (explicitApi && explicitApi !== "openai-completions" && explicitApi !== "chat-completions") {
-                  preferredInferenceApi = validation.api;
-                } else {
-                  if (validation.api !== "openai-completions") {
-                    console.log(
-                      "  ℹ Using chat completions API (compatible endpoints may not support the Responses API developer role)",
-                    );
-                  }
-                  preferredInferenceApi = "openai-completions";
-                }
-                break;
-              }
-              if (
-                validation.retry === "credential" ||
-                validation.retry === "retry" ||
-                validation.retry === "model"
-              ) {
-                continue;
-              }
-              if (validation.retry === "selection") {
-                continue selectionLoop;
-              }
-            } else if (selected.key === "anthropicCompatible") {
-              const validation = await validateCustomAnthropicSelection(
-                remoteConfig.label,
-                endpointUrl || ANTHROPIC_ENDPOINT_URL,
-                model,
-                credentialEnv,
-                remoteConfig.helpUrl,
-              );
-              if (validation.ok) {
-                preferredInferenceApi = validation.api;
-                break;
-              }
-              if (
-                validation.retry === "credential" ||
-                validation.retry === "retry" ||
-                validation.retry === "model"
-              ) {
-                continue;
-              }
-              if (validation.retry === "selection") {
-                continue selectionLoop;
-              }
-            } else {
-              const retryMessage = "Please choose a provider/model again.";
-              if (selected.key === "anthropic") {
-                const validation = await validateAnthropicSelectionWithRetryMessage(
-                  remoteConfig.label,
-                  endpointUrl || ANTHROPIC_ENDPOINT_URL,
-                  model,
-                  credentialEnv,
-                  retryMessage,
-                  remoteConfig.helpUrl,
-                );
-                if (validation.ok) {
-                  preferredInferenceApi = validation.api;
-                  break;
-                }
-                if (
-                  validation.retry === "credential" ||
-                  validation.retry === "retry" ||
-                  validation.retry === "model"
-                ) {
-                  continue;
-                }
-              } else {
-                const validation = await validateOpenAiLikeSelection(
-                  remoteConfig.label,
-                  endpointUrl,
-                  model,
-                  credentialEnv,
-                  retryMessage,
-                  remoteConfig.helpUrl,
-                  {
-                    requireResponsesToolCalling: shouldRequireResponsesToolCalling(provider),
-                    skipResponsesProbe: shouldSkipResponsesProbe(provider),
-                    authMode: getProbeAuthMode(provider),
-                  },
-                );
-                if (validation.ok) {
-                  preferredInferenceApi = validation.api;
-                  break;
-                }
-                if (
-                  validation.retry === "credential" ||
-                  validation.retry === "retry" ||
-                  validation.retry === "model"
-                ) {
-                  continue;
-                }
-              }
-              continue selectionLoop;
-            }
-          }
-        }
-
-        if (selected.key === "build") {
-          while (true) {
-            const validation = await validateOpenAiLikeSelection(
-              remoteConfig.label,
-              endpointUrl,
-              model,
-              credentialEnv,
-              "Please choose a provider/model again.",
-              remoteConfig.helpUrl,
-              {
-                requireResponsesToolCalling: shouldRequireResponsesToolCalling(provider),
-                skipResponsesProbe: shouldSkipResponsesProbe(provider),
-                authMode: getProbeAuthMode(provider),
-              },
-            );
-            if (validation.ok) {
-              preferredInferenceApi = validation.api;
-              break;
-            }
-            if (validation.retry === "credential" || validation.retry === "retry") {
-              continue;
-            }
-            continue selectionLoop;
-          }
-        }
-
-        console.log(`  Using ${remoteConfig.label} with model: ${model}`);
-        break;
-      } else if (selected.key === "nim-local") {
-        // List models that fit GPU VRAM
-        const models = nim.listModels().filter((m) => m.minGpuMemoryMB <= gpu.totalMemoryMB);
-        if (models.length === 0) {
-          console.log("  No NIM models fit your GPU VRAM. Falling back to cloud API.");
-        } else {
-          let sel;
-          if (isNonInteractive()) {
-            if (requestedModel) {
-              sel = models.find((m) => m.name === requestedModel);
-              if (!sel) {
-                console.error(`  Unsupported NEMOCLAW_MODEL for NIM: ${requestedModel}`);
-                process.exit(1);
-              }
-            } else {
-              sel = models[0];
-            }
-            note(`  [non-interactive] NIM model: ${sel.name}`);
-          } else {
-            console.log("");
-            console.log("  Models that fit your GPU:");
-            models.forEach((m, i) => {
-              console.log(`    ${i + 1}) ${m.name} (min ${m.minGpuMemoryMB} MB)`);
-            });
-            console.log("");
-
-            const modelChoice = await prompt(`  Choose model [1]: `);
-            const midx = parseInt(modelChoice || "1", 10) - 1;
-            sel = models[midx] || models[0];
-          }
-          model = sel.name;
-
-          console.log(`  Pulling NIM image for ${model}...`);
-          nim.pullNimImage(model);
-
-          console.log("  Starting NIM container...");
-          nimContainer = nim.startNimContainerByName(nim.containerName(GATEWAY_NAME), model);
-
-          console.log("  Waiting for NIM to become healthy...");
-          if (!nim.waitForNimHealth()) {
-            console.error("  NIM failed to start. Falling back to cloud API.");
-            model = null;
-            nimContainer = null;
-          } else {
-            provider = "vllm-local";
-            credentialEnv = "OPENAI_API_KEY";
-            endpointUrl = getLocalProviderBaseUrl(provider);
-            const validation = await validateOpenAiLikeSelection(
-              "Local NVIDIA NIM",
-              endpointUrl,
-              model,
-              credentialEnv,
-            );
-            if (
-              validation.retry === "selection" ||
-              validation.retry === "back" ||
-              validation.retry === "model"
-            ) {
-              continue selectionLoop;
-            }
-            if (!validation.ok) {
-              continue selectionLoop;
-            }
-            preferredInferenceApi = validation.api;
-            // NIM uses vLLM internally — same tool-call-parser limitation
-            // applies to /v1/responses. Force chat completions.
-            if (preferredInferenceApi !== "openai-completions") {
-              console.log(
-                "  ℹ Using chat completions API (tool-call-parser requires /v1/chat/completions)",
-              );
-            }
-            preferredInferenceApi = "openai-completions";
-          }
-        }
-        break;
-      } else if (selected.key === "ollama") {
-        if (!ollamaRunning) {
-          console.log("  Starting Ollama...");
-          if (isWsl()) {
-            // On WSL2, binding to 0.0.0.0 creates a dual-stack socket that Docker
-            // cannot reach via host-gateway. The default 127.0.0.1 binding works
-            // because WSL2 relays IPv4-only sockets to the Windows host (#1104).
-            run(`ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
-          } else {
-            // Bind to localhost only — the auth proxy handles container access.
-            run(`OLLAMA_HOST=127.0.0.1:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
-          }
-          sleep(2);
-          if (!isWsl()) printOllamaExposureWarning();
-        }
-        if (isWsl()) {
-          // WSL2 doesn't need the proxy — Docker can reach the host directly.
-          console.log(`  ✓ Using Ollama on localhost:${OLLAMA_PORT}`);
-        } else {
-          startOllamaAuthProxy();
-          console.log(`  ✓ Using Ollama on localhost:${OLLAMA_PORT} (proxy on :${OLLAMA_PROXY_PORT})`);
-        }
-        provider = "ollama-local";
-        credentialEnv = "OPENAI_API_KEY";
-        endpointUrl = getLocalProviderBaseUrl(provider);
-        while (true) {
-          const installedModels = getOllamaModelOptions();
-          if (isNonInteractive()) {
-            model = requestedModel || getDefaultOllamaModel(gpu);
-          } else {
-            model = await promptOllamaModel(gpu);
-          }
-          if (model === BACK_TO_SELECTION) {
-            console.log("  Returning to provider selection.");
-            console.log("");
-            continue selectionLoop;
-          }
-          const probe = prepareOllamaModel(model, installedModels);
-          if (!probe.ok) {
-            console.error(`  ${probe.message}`);
-            if (isNonInteractive()) {
-              process.exit(1);
-            }
-            console.log("  Choose a different Ollama model or select Other.");
-            console.log("");
-            continue;
-          }
-          const validation = await validateOpenAiLikeSelection(
-            "Local Ollama",
-            getLocalProviderValidationBaseUrl(provider),
-            model,
-            null,
-            "Choose a different Ollama model or select Other.",
-          );
-          if (validation.retry === "selection" || validation.retry === "back") {
-            continue selectionLoop;
-          }
-          if (!validation.ok) {
-            continue;
-          }
-          // Ollama's /v1/responses endpoint does not produce correctly
-          // formatted tool calls — force chat completions like vLLM/NIM.
-          if (validation.api !== "openai-completions") {
-            console.log(
-              "  ℹ Using chat completions API (Ollama tool calls require /v1/chat/completions)",
-            );
-          }
-          preferredInferenceApi = "openai-completions";
-          break;
-        }
-        break;
-      } else if (selected.key === "install-ollama") {
-        // macOS only — this option is gated by process.platform === "darwin" above
-        console.log("  Installing Ollama via Homebrew...");
-        run("brew install ollama", { ignoreError: true });
-        console.log("  Starting Ollama...");
-        // Bind to localhost — the auth proxy handles container access.
-        run(`OLLAMA_HOST=127.0.0.1:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
-          ignoreError: true,
-        });
-        sleep(2);
-        startOllamaAuthProxy();
-        console.log(`  ✓ Using Ollama on localhost:${OLLAMA_PORT} (proxy on :${OLLAMA_PROXY_PORT})`);
-        provider = "ollama-local";
-        credentialEnv = "OPENAI_API_KEY";
-        endpointUrl = getLocalProviderBaseUrl(provider);
-        while (true) {
-          const installedModels = getOllamaModelOptions();
-          if (isNonInteractive()) {
-            model = requestedModel || getDefaultOllamaModel(gpu);
-          } else {
-            model = await promptOllamaModel(gpu);
-          }
-          if (model === BACK_TO_SELECTION) {
-            console.log("  Returning to provider selection.");
-            console.log("");
-            continue selectionLoop;
-          }
-          const probe = prepareOllamaModel(model, installedModels);
-          if (!probe.ok) {
-            console.error(`  ${probe.message}`);
-            if (isNonInteractive()) {
-              process.exit(1);
-            }
-            console.log("  Choose a different Ollama model or select Other.");
-            console.log("");
-            continue;
-          }
-          const validation = await validateOpenAiLikeSelection(
-            "Local Ollama",
-            getLocalProviderValidationBaseUrl(provider),
-            model,
-            null,
-            "Choose a different Ollama model or select Other.",
-          );
-          if (validation.retry === "selection" || validation.retry === "back") {
-            continue selectionLoop;
-          }
-          if (!validation.ok) {
-            continue;
-          }
-          // Ollama's /v1/responses endpoint does not produce correctly
-          // formatted tool calls — force chat completions like vLLM/NIM.
-          if (validation.api !== "openai-completions") {
-            console.log(
-              "  ℹ Using chat completions API (Ollama tool calls require /v1/chat/completions)",
-            );
-          }
-          preferredInferenceApi = "openai-completions";
-          break;
-        }
-        break;
-      } else if (selected.key === "vllm") {
-        console.log(`  ✓ Using existing vLLM on localhost:${VLLM_PORT}`);
-        provider = "vllm-local";
-        credentialEnv = "OPENAI_API_KEY";
-        endpointUrl = getLocalProviderBaseUrl(provider);
-        // Query vLLM for the actual model ID
-        const vllmModelsRaw = runCapture(
-          `curl -sf http://127.0.0.1:${VLLM_PORT}/v1/models 2>/dev/null`,
-          {
-            ignoreError: true,
-          },
-        );
-        try {
-          const vllmModels = JSON.parse(vllmModelsRaw);
-          if (vllmModels.data && vllmModels.data.length > 0) {
-            model = vllmModels.data[0].id;
-            if (!isSafeModelId(model)) {
-              console.error(`  Detected model ID contains invalid characters: ${model}`);
-              process.exit(1);
-            }
-            console.log(`  Detected model: ${model}`);
-          } else {
-            console.error("  Could not detect model from vLLM. Please specify manually.");
-            process.exit(1);
-          }
-        } catch {
-          console.error(
-            `  Could not query vLLM models endpoint. Is vLLM running on localhost:${VLLM_PORT}?`,
-          );
-          process.exit(1);
-        }
-        const validation = await validateOpenAiLikeSelection(
-          "Local vLLM",
-          getLocalProviderValidationBaseUrl(provider),
-          model,
-          credentialEnv,
-        );
-        if (
-          validation.retry === "selection" ||
-          validation.retry === "back" ||
-          validation.retry === "model"
-        ) {
-          continue selectionLoop;
-        }
-        if (!validation.ok) {
-          continue selectionLoop;
-        }
-        preferredInferenceApi = validation.api;
-        // Force chat completions — vLLM's /v1/responses endpoint does not
-        // run the --tool-call-parser, so tool calls arrive as raw text.
-        // See: https://github.com/NVIDIA/NemoClaw/issues/976
-        if (preferredInferenceApi !== "openai-completions") {
-          console.log(
-            "  ℹ Using chat completions API (tool-call-parser requires /v1/chat/completions)",
-          );
-        }
-        preferredInferenceApi = "openai-completions";
-        break;
-      }
-    }
-  }
-
-  return { model, provider, endpointUrl, credentialEnv, preferredInferenceApi, nimContainer };
 }
 
 // ── Step 4: Inference provider ───────────────────────────────────
@@ -3985,165 +3077,34 @@ async function setupInference(
   endpointUrl = null,
   credentialEnv = null,
 ) {
-  step(4, 8, "Setting up inference provider");
-  runOpenshell(["gateway", "select", GATEWAY_NAME], { ignoreError: true });
-
-  if (
-    provider === "nvidia-prod" ||
-    provider === "nvidia-nim" ||
-    provider === "openai-api" ||
-    provider === "anthropic-prod" ||
-    provider === "compatible-anthropic-endpoint" ||
-    provider === "gemini-api" ||
-    provider === "compatible-endpoint"
-  ) {
-    const config =
-      provider === "nvidia-nim"
-        ? REMOTE_PROVIDER_CONFIG.build
-        : Object.values(REMOTE_PROVIDER_CONFIG).find((entry) => entry.providerName === provider);
-    while (true) {
-      const resolvedCredentialEnv = credentialEnv || (config && config.credentialEnv);
-      const resolvedEndpointUrl = endpointUrl || (config && config.endpointUrl);
-      const credentialValue = hydrateCredentialEnv(resolvedCredentialEnv);
-      const env =
-        resolvedCredentialEnv && credentialValue
-          ? { [resolvedCredentialEnv]: credentialValue }
-          : {};
-      const providerResult = upsertProvider(
-        provider,
-        config.providerType,
-        resolvedCredentialEnv,
-        resolvedEndpointUrl,
-        env,
-      );
-      if (!providerResult.ok) {
-        console.error(`  ${providerResult.message}`);
-        if (isNonInteractive()) {
-          process.exit(providerResult.status || 1);
-        }
-        const retry = await promptValidationRecovery(
-          config.label,
-          classifyApplyFailure(providerResult.message),
-          resolvedCredentialEnv,
-          config.helpUrl,
-        );
-        if (retry === "credential" || retry === "retry") {
-          continue;
-        }
-        if (retry === "selection" || retry === "model") {
-          return { retry: "selection" };
-        }
-        process.exit(providerResult.status || 1);
-      }
-      const args = ["inference", "set"];
-      if (config.skipVerify) {
-        args.push("--no-verify");
-      }
-      args.push("--provider", provider, "--model", model);
-      const applyResult = runOpenshell(args, { ignoreError: true });
-      if (applyResult.status === 0) {
-        break;
-      }
-      const message =
-        compactText(redact(`${applyResult.stderr || ""} ${applyResult.stdout || ""}`)) ||
-        `Failed to configure inference provider '${provider}'.`;
-      console.error(`  ${message}`);
-      if (isNonInteractive()) {
-        process.exit(applyResult.status || 1);
-      }
-      const retry = await promptValidationRecovery(
-        config.label,
-        classifyApplyFailure(message),
-        resolvedCredentialEnv,
-        config.helpUrl,
-      );
-      if (retry === "credential" || retry === "retry") {
-        continue;
-      }
-      if (retry === "selection" || retry === "model") {
-        return { retry: "selection" };
-      }
-      process.exit(applyResult.status || 1);
-    }
-  } else if (provider === "vllm-local") {
-    const validation = validateLocalProvider(provider);
-    if (!validation.ok) {
-      console.error(`  ${validation.message}`);
-      process.exit(1);
-    }
-    const baseUrl = getLocalProviderBaseUrl(provider);
-    const providerResult = upsertProvider("vllm-local", "openai", "OPENAI_API_KEY", baseUrl, {
-      OPENAI_API_KEY: "dummy",
-    });
-    if (!providerResult.ok) {
-      console.error(`  ${providerResult.message}`);
-      process.exit(providerResult.status || 1);
-    }
-    runOpenshell([
-      "inference",
-      "set",
-      "--no-verify",
-      "--provider",
-      "vllm-local",
-      "--model",
-      model,
-      "--timeout",
-      String(LOCAL_INFERENCE_TIMEOUT_SECS),
-    ]);
-  } else if (provider === "ollama-local") {
-    const validation = validateLocalProvider(provider);
-    if (!validation.ok) {
-      console.error(`  ${validation.message}`);
-      if (process.platform === "darwin") {
-        console.error("  On macOS, local inference also depends on OpenShell host routing support.");
-      }
-      process.exit(1);
-    }
-    const baseUrl = getLocalProviderBaseUrl(provider);
-    let ollamaCredential = "ollama";
-    if (!isWsl()) {
-      ensureOllamaAuthProxy();
-      const proxyToken = getOllamaProxyToken();
-      if (!proxyToken) {
-        console.error("  Ollama auth proxy token is not set. Re-run onboard to initialize the proxy.");
-        process.exit(1);
-      }
-      ollamaCredential = proxyToken;
-      // Persist token now that ollama-local is confirmed as the provider.
-      // Not persisted earlier in case the user backs out to a different provider.
-      persistProxyToken(proxyToken);
-    }
-    const providerResult = upsertProvider("ollama-local", "openai", "OPENAI_API_KEY", baseUrl, {
-      OPENAI_API_KEY: ollamaCredential,
-    });
-    if (!providerResult.ok) {
-      console.error(`  ${providerResult.message}`);
-      process.exit(providerResult.status || 1);
-    }
-    runOpenshell([
-      "inference",
-      "set",
-      "--no-verify",
-      "--provider",
-      "ollama-local",
-      "--model",
-      model,
-      "--timeout",
-      String(LOCAL_INFERENCE_TIMEOUT_SECS),
-    ]);
-    console.log(`  Priming Ollama model: ${model}`);
-    run(getOllamaWarmupCommand(model), { ignoreError: true });
-    const probe = validateOllamaModel(model);
-    if (!probe.ok) {
-      console.error(`  ${probe.message}`);
-      process.exit(1);
-    }
-  }
-
-  verifyInferenceRoute(provider, model);
-  registry.updateSandbox(sandboxName, { model, provider });
-  console.log(`  ✓ Inference route set: ${provider} / ${model}`);
-  return { ok: true };
+  return runSetupInference(sandboxName, model, provider, endpointUrl, credentialEnv, {
+    step,
+    runOpenshell,
+    gatewayName: GATEWAY_NAME,
+    remoteProviderConfig: REMOTE_PROVIDER_CONFIG,
+    hydrateCredentialEnv,
+    upsertProvider,
+    isNonInteractive,
+    promptValidationRecovery,
+    classifyApplyFailure,
+    compactText,
+    redact,
+    validateLocalProvider,
+    getLocalProviderBaseUrl,
+    localInferenceTimeoutSecs: LOCAL_INFERENCE_TIMEOUT_SECS,
+    ensureOllamaAuthProxy,
+    getOllamaProxyToken,
+    persistProxyToken,
+    isWsl,
+    getOllamaWarmupCommand,
+    validateOllamaModel,
+    verifyInferenceRoute,
+    updateSandbox: (name, patch) => {
+      registry.updateSandbox(name, patch);
+    },
+    processPlatform: process.platform,
+    run,
+  });
 }
 
 // ── Step 6: Messaging channels ───────────────────────────────────

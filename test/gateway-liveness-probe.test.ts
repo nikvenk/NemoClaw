@@ -17,6 +17,10 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 
 describe("gateway liveness probe (#2020)", () => {
   const content = fs.readFileSync(path.join(ROOT, "src/lib/onboard.ts"), "utf-8");
+  const preflightContent = fs.readFileSync(
+    path.join(ROOT, "src/lib/onboard-preflight-run.ts"),
+    "utf-8",
+  );
   const depsContent = fs.readFileSync(
     path.join(ROOT, "src/lib/onboard-orchestrator-deps.ts"),
     "utf-8",
@@ -35,10 +39,8 @@ describe("gateway liveness probe (#2020)", () => {
   });
 
   it("preflight probes the container when gatewayReuseState is 'healthy'", () => {
-    // The preflight section must call the probe before entering the port loop.
-    // Find the first gatewayReuseState assignment and the port loop.
-    const preflightProbe = content.match(
-      /let gatewayReuseState = getGatewayReuseState[\s\S]*?verifyGatewayContainerRunning\(\)[\s\S]*?gatewayReuseState = "missing"/,
+    const preflightProbe = preflightContent.match(
+      /let gatewayReuseState = deps\.getGatewayReuseState[\s\S]*?deps\.verifyGatewayContainerRunning\(\)[\s\S]*?gatewayReuseState = "missing"/,
     );
     expect(preflightProbe).toBeTruthy();
   });
@@ -60,7 +62,7 @@ describe("gateway liveness probe (#2020)", () => {
 
   it("only downgrades to 'missing' when container is confirmed missing", () => {
     // Both probe sites must check containerState === "missing" before cleanup.
-    const preflightDowngrades = content.match(/containerState === "missing"/g) ?? [];
+    const preflightDowngrades = preflightContent.match(/containerState === "missing"/g) ?? [];
     const helperDowngrades = helperContent.match(/containerState === "missing"/g) ?? [];
     expect(preflightDowngrades.length).toBeGreaterThanOrEqual(1);
     expect(helperDowngrades.length).toBeGreaterThanOrEqual(1);
