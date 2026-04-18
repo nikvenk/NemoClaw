@@ -70,6 +70,14 @@ const {
 const { runSetupNim: setupNimWithDeps } = require("./onboard-nim-setup");
 const { runOnboardPreflight } = require("./onboard-preflight-run");
 const { runSetupInference } = require("./onboard-inference-provider");
+const {
+  arePolicyPresetsApplied: arePolicyPresetsAppliedWithDeps,
+  presetsCheckboxSelector: presetsCheckboxSelectorWithDeps,
+  selectPolicyTier: selectPolicyTierWithDeps,
+  selectTierPresetsAndAccess: selectTierPresetsAndAccessWithDeps,
+  setupPoliciesLegacy: setupPoliciesLegacyWithDeps,
+  setupPoliciesWithSelection: setupPoliciesWithSelectionWithDeps,
+} = require("./onboard-policy-ui");
 const { MESSAGING_CHANNELS, setupMessagingChannels: setupMessagingChannelsWithDeps } = require("./onboard-messaging");
 const { promptValidatedSandboxName: promptValidatedSandboxNameWithDeps } = require("./onboard-sandbox-name");
 const {
@@ -3183,715 +3191,63 @@ async function setupOpenclaw(sandboxName, model, provider) {
 
 // ── Step 7: Policy presets ───────────────────────────────────────
 
+function getPolicyUiDeps() {
+  return {
+    step,
+    prompt,
+    note,
+    sleep,
+    isNonInteractive,
+    parsePolicyPresetEnv,
+    waitForSandboxReady,
+    localInferenceProviders: LOCAL_INFERENCE_PROVIDERS,
+    useColor: USE_COLOR,
+    policies,
+    tiers,
+    updateSandbox: (name, patch) => {
+      registry.updateSandbox(name, patch);
+    },
+  };
+}
+
 // eslint-disable-next-line complexity
 async function _setupPolicies(sandboxName, options = {}) {
-  step(8, 8, "Policy presets");
-  const suggestions = getSuggestedPolicyPresets(options);
-
-  const allPresets = policies.listPresets();
-  const applied = policies.getAppliedPresets(sandboxName);
-
-  if (isNonInteractive()) {
-    const policyMode = (process.env.NEMOCLAW_POLICY_MODE || "suggested").trim().toLowerCase();
-    let selectedPresets = suggestions;
-
-    if (policyMode === "skip" || policyMode === "none" || policyMode === "no") {
-      note("  [non-interactive] Skipping policy presets.");
-      return;
-    }
-
-    if (policyMode === "custom" || policyMode === "list") {
-      selectedPresets = parsePolicyPresetEnv(process.env.NEMOCLAW_POLICY_PRESETS);
-      if (selectedPresets.length === 0) {
-        console.error("  NEMOCLAW_POLICY_PRESETS is required when NEMOCLAW_POLICY_MODE=custom.");
-        process.exit(1);
-      }
-    } else if (policyMode === "suggested" || policyMode === "default" || policyMode === "auto") {
-      const envPresets = parsePolicyPresetEnv(process.env.NEMOCLAW_POLICY_PRESETS);
-      if (envPresets.length > 0) {
-        selectedPresets = envPresets;
-      }
-    } else {
-      console.error(`  Unsupported NEMOCLAW_POLICY_MODE: ${policyMode}`);
-      console.error("  Valid values: suggested, custom, skip");
-      process.exit(1);
-    }
-
-    const knownPresets = new Set(allPresets.map((p) => p.name));
-    const invalidPresets = selectedPresets.filter((name) => !knownPresets.has(name));
-    if (invalidPresets.length > 0) {
-      console.error(`  Unknown policy preset(s): ${invalidPresets.join(", ")}`);
-      process.exit(1);
-    }
-
-    if (!waitForSandboxReady(sandboxName)) {
-      console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
-      process.exit(1);
-    }
-    note(`  [non-interactive] Applying policy presets: ${selectedPresets.join(", ")}`);
-    for (const name of selectedPresets) {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          policies.applyPreset(sandboxName, name);
-          break;
-        } catch (err) {
-          const message = err && err.message ? err.message : String(err);
-          if (!message.includes("sandbox not found") || attempt === 2) {
-            throw err;
-          }
-          sleep(2);
-        }
-      }
-    }
-  } else {
-    console.log("");
-    console.log("  Available policy presets:");
-    allPresets.forEach((p) => {
-      const marker = applied.includes(p.name) || suggestions.includes(p.name) ? "●" : "○";
-      const suggested = suggestions.includes(p.name) ? " (suggested)" : "";
-      console.log(`    ${marker} ${p.name} — ${p.description}${suggested}`);
-    });
-    console.log("");
-
-    const answer = await prompt(
-      `  Apply suggested presets (${suggestions.join(", ")})? [Y/n/list]: `,
-    );
-
-    if (answer.toLowerCase() === "n") {
-      console.log("  Skipping policy presets.");
-      return;
-    }
-
-    if (!waitForSandboxReady(sandboxName)) {
-      console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
-      process.exit(1);
-    }
-
-    if (answer.toLowerCase() === "list") {
-      // Let user pick
-      const picks = await prompt("  Enter preset names (comma-separated): ");
-      const selected = picks
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      for (const name of selected) {
-        policies.applyPreset(sandboxName, name);
-      }
-    } else {
-      // Apply suggested
-      for (const name of suggestions) {
-        policies.applyPreset(sandboxName, name);
-      }
-    }
-  }
-
-  console.log("  ✓ Policies applied");
+  return setupPoliciesLegacyWithDeps(
+    sandboxName,
+    {
+      ...options,
+      getSuggestedPolicyPresets,
+    },
+    getPolicyUiDeps(),
+  );
 }
 
 function arePolicyPresetsApplied(sandboxName, selectedPresets = []) {
-  if (!Array.isArray(selectedPresets) || selectedPresets.length === 0) return false;
-  const applied = new Set(policies.getAppliedPresets(sandboxName));
-  return selectedPresets.every((preset) => applied.has(preset));
+  return arePolicyPresetsAppliedWithDeps(sandboxName, selectedPresets, getPolicyUiDeps());
 }
 
-/**
- * Prompt the user to select a policy tier (restricted / balanced / open).
- * Uses the same radio-style TUI as presetsCheckboxSelector (single-select).
- * In non-interactive mode reads NEMOCLAW_POLICY_TIER (default: balanced).
- * Returns the tier name string.
- *
- * @returns {Promise<string>}
- */
 async function selectPolicyTier() {
-  const allTiers = tiers.listTiers();
-  const defaultTier = allTiers.find((t) => t.name === "balanced") || allTiers[1];
-
-  if (isNonInteractive()) {
-    const name = (process.env.NEMOCLAW_POLICY_TIER || "balanced").trim().toLowerCase();
-    if (!tiers.getTier(name)) {
-      console.error(
-        `  Unknown policy tier: ${name}. Valid: ${allTiers.map((t) => t.name).join(", ")}`,
-      );
-      process.exit(1);
-    }
-    note(`  [non-interactive] Policy tier: ${name}`);
-    return name;
-  }
-
-  const RADIO_ON = USE_COLOR ? "[\x1b[32m✓\x1b[0m]" : "[✓]";
-  const RADIO_OFF = USE_COLOR ? "\x1b[2m[ ]\x1b[0m" : "[ ]";
-
-  // ── Fallback: non-TTY ─────────────────────────────────────────────
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log("");
-    console.log("  Policy tier — controls which network presets are enabled:");
-    allTiers.forEach((t, i) => {
-      const marker = t.name === defaultTier.name ? RADIO_ON : RADIO_OFF;
-      console.log(`    ${marker} ${t.label}`);
-    });
-    console.log("");
-    const answer = await prompt(
-      `  Select tier [1-${allTiers.length}] (default: ${allTiers.indexOf(defaultTier) + 1} ${defaultTier.name}): `,
-    );
-    const idx =
-      answer.trim() === "" ? allTiers.indexOf(defaultTier) : parseInt(answer.trim(), 10) - 1;
-    const chosen = allTiers[idx] || defaultTier;
-    console.log(`  Tier: ${chosen.label}`);
-    return chosen.name;
-  }
-
-  // ── Raw-mode TUI (radio — single selection) ───────────────────────
-  let cursor = allTiers.indexOf(defaultTier);
-  let selectedIdx = cursor;
-  const n = allTiers.length;
-
-  const G = USE_COLOR ? "\x1b[32m" : "";
-  const D = USE_COLOR ? "\x1b[2m" : "";
-  const R = USE_COLOR ? "\x1b[0m" : "";
-  const HINT = USE_COLOR
-    ? `  ${G}↑/↓ j/k${R}  ${D}move${R}    ${G}Space${R}  ${D}select${R}    ${G}Enter${R}  ${D}confirm${R}`
-    : "  ↑/↓ j/k  move    Space  select    Enter  confirm";
-
-  const renderLines = () => {
-    const lines = ["  Policy tier — controls which network presets are enabled:"];
-    allTiers.forEach((t, i) => {
-      const radio = i === selectedIdx ? RADIO_ON : RADIO_OFF;
-      const arrow = i === cursor ? ">" : " ";
-      lines.push(`   ${arrow} ${radio} ${t.label}`);
-    });
-    lines.push("");
-    lines.push(HINT);
-    return lines;
-  };
-
-  process.stdout.write("\n");
-  const initial = renderLines();
-  for (const line of initial) process.stdout.write(`${line}\n`);
-  let lineCount = initial.length;
-
-  const redraw = () => {
-    process.stdout.write(`\x1b[${lineCount}A`);
-    const lines = renderLines();
-    for (const line of lines) process.stdout.write(`\r\x1b[2K${line}\n`);
-    lineCount = lines.length;
-  };
-
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.setEncoding("utf8");
-
-  return new Promise((resolve) => {
-    const cleanup = () => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.removeListener("data", onData);
-      process.removeListener("SIGTERM", onSigterm);
-    };
-
-    const onSigterm = () => {
-      cleanup();
-      process.exit(1);
-    };
-    process.once("SIGTERM", onSigterm);
-
-    const onData = (key) => {
-      if (key === "\r" || key === "\n") {
-        cleanup();
-        process.stdout.write("\n");
-        resolve(allTiers[selectedIdx].name);
-      } else if (key === " ") {
-        selectedIdx = cursor;
-        redraw();
-      } else if (key === "\x03") {
-        cleanup();
-        process.exit(1);
-      } else if (key === "\x1b[A" || key === "k") {
-        cursor = (cursor - 1 + n) % n;
-        redraw();
-      } else if (key === "\x1b[B" || key === "j") {
-        cursor = (cursor + 1) % n;
-        redraw();
-      }
-    };
-
-    process.stdin.on("data", onData);
-  });
+  return selectPolicyTierWithDeps(getPolicyUiDeps());
 }
 
-/**
- * Combined preset selector: shows ALL available presets, pre-checks those in
- * the chosen tier, and lets the user include/exclude any preset and toggle
- * per-preset access (read vs read-write).
- *
- * Tier presets are listed first (in tier order), then remaining presets
- * alphabetically. Tier presets are pre-checked; others start unchecked.
- *
- * Keys:
- *   ↑/↓ j/k — move cursor
- *   Space    — include / exclude current preset
- *   r        — toggle read / read-write for current preset
- *   Enter    — confirm
- *
- * @param {string} tierName
- * @param {Array<{name: string}>} allPresets
- * @param {string[]} [extraSelected]  — names pre-checked even if not in tier (e.g. already-applied)
- * @returns {Promise<Array<{name: string, access: string}>>}
- */
 async function selectTierPresetsAndAccess(tierName, allPresets, extraSelected = []) {
-  const tierDef = tiers.getTier(tierName);
-  const tierPresetMap = {};
-  if (tierDef) {
-    for (const p of tierDef.presets) {
-      tierPresetMap[p.name] = p.access;
-    }
-  }
-
-  // Tier presets first (in tier order), then the rest in their original order.
-  const tierNames = tierDef ? tierDef.presets.map((p) => p.name) : [];
-  const tierSet = new Set(tierNames);
-  const ordered = [
-    ...tierNames.map((name) => allPresets.find((p) => p.name === name)).filter(Boolean),
-    ...allPresets.filter((p) => !tierSet.has(p.name)),
-  ];
-
-  // Initial inclusion: tier presets + any already-applied extras.
-  const included = new Set([
-    ...tierNames,
-    ...extraSelected.filter((n) => ordered.find((p) => p.name === n)),
-  ]);
-
-  // Access levels: tier defaults for tier presets, read-write default for others.
-  const accessModes = {};
-  for (const p of ordered) {
-    accessModes[p.name] = tierPresetMap[p.name] ?? "read-write";
-  }
-
-  const G = USE_COLOR ? "\x1b[32m" : "";
-  const O = USE_COLOR ? "\x1b[38;5;208m" : "";
-  const D = USE_COLOR ? "\x1b[2m" : "";
-  const R = USE_COLOR ? "\x1b[0m" : "";
-  const GREEN_CHECK = USE_COLOR ? `[${G}✓${R}]` : "[✓]";
-  const EMPTY_CHECK = USE_COLOR ? `${D}[ ]${R}` : "[ ]";
-  const TOGGLE_RW = USE_COLOR ? `[${O}rw${R}]` : "[rw]";
-  const TOGGLE_R = USE_COLOR ? `${D}[ r]${R}` : "[ r]";
-
-  const label = tierDef ? `  Presets  (${tierDef.label} defaults):` : "  Presets:";
-  const n = ordered.length;
-
-  // ── Non-interactive: return tier defaults silently ─────────────────
-  if (isNonInteractive()) {
-    return ordered
-      .filter((p) => included.has(p.name))
-      .map((p) => ({ name: p.name, access: accessModes[p.name] }));
-  }
-
-  // ── Fallback: non-TTY ─────────────────────────────────────────────
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log("");
-    console.log(label);
-    ordered.forEach((p) => {
-      const isIncluded = included.has(p.name);
-      const isRw = accessModes[p.name] === "read-write";
-      const check = isIncluded ? GREEN_CHECK : EMPTY_CHECK;
-      const badge = isIncluded ? (isRw ? "[rw]" : "[ r]") : "    ";
-      console.log(`    ${check} ${badge} ${p.name}`);
-    });
-    console.log("");
-    const rawInclude = await prompt(
-      "  Include presets (comma-separated names, Enter to keep defaults): ",
-    );
-    if (rawInclude.trim()) {
-      const knownNames = new Set(ordered.map((p) => p.name));
-      included.clear();
-      for (const name of rawInclude
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)) {
-        if (knownNames.has(name)) {
-          included.add(name);
-        } else {
-          console.error(`  Unknown preset name ignored: ${name}`);
-        }
-      }
-    }
-    return ordered
-      .filter((p) => included.has(p.name))
-      .map((p) => ({ name: p.name, access: accessModes[p.name] }));
-  }
-
-  // ── Raw-mode TUI ─────────────────────────────────────────────────
-  let cursor = 0;
-
-  const HINT = USE_COLOR
-    ? `  ${G}↑/↓ j/k${R}  ${D}move${R}    ${G}Space${R}  ${D}include${R}    ${G}r${R}  ${D}toggle rw${R}    ${G}Enter${R}  ${D}confirm${R}`
-    : "  ↑/↓ j/k  move    Space  include    r  toggle rw    Enter  confirm";
-
-  const renderLines = () => {
-    const lines = [label];
-    ordered.forEach((p, i) => {
-      const isIncluded = included.has(p.name);
-      const isRw = accessModes[p.name] === "read-write";
-      const check = isIncluded ? GREEN_CHECK : EMPTY_CHECK;
-      // badge is 4 visible chars + 1 space; blank when unchecked to keep name aligned
-      const badge = isIncluded ? (isRw ? TOGGLE_RW + " " : TOGGLE_R + " ") : "     ";
-      const arrow = i === cursor ? ">" : " ";
-      lines.push(`   ${arrow} ${check} ${badge}${p.name}`);
-    });
-    lines.push("");
-    lines.push(HINT);
-    return lines;
-  };
-
-  process.stdout.write("\n");
-  const initial = renderLines();
-  for (const line of initial) process.stdout.write(`${line}\n`);
-  let lineCount = initial.length;
-
-  const redraw = () => {
-    process.stdout.write(`\x1b[${lineCount}A`);
-    const lines = renderLines();
-    for (const line of lines) process.stdout.write(`\r\x1b[2K${line}\n`);
-    lineCount = lines.length;
-  };
-
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.setEncoding("utf8");
-
-  return new Promise((resolve) => {
-    const cleanup = () => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.removeListener("data", onData);
-      process.removeListener("SIGTERM", onSigterm);
-    };
-
-    const onSigterm = () => {
-      cleanup();
-      process.exit(1);
-    };
-    process.once("SIGTERM", onSigterm);
-
-    const onData = (key) => {
-      if (key === "\r" || key === "\n") {
-        cleanup();
-        process.stdout.write("\n");
-        resolve(
-          ordered
-            .filter((p) => included.has(p.name))
-            .map((p) => ({ name: p.name, access: accessModes[p.name] })),
-        );
-      } else if (key === "\x03") {
-        cleanup();
-        process.exit(1);
-      } else if (key === "\x1b[A" || key === "k") {
-        cursor = (cursor - 1 + n) % n;
-        redraw();
-      } else if (key === "\x1b[B" || key === "j") {
-        cursor = (cursor + 1) % n;
-        redraw();
-      } else if (key === " ") {
-        const name = ordered[cursor].name;
-        if (included.has(name)) {
-          included.delete(name);
-        } else {
-          included.add(name);
-        }
-        redraw();
-      } else if (key === "r" || key === "R") {
-        const name = ordered[cursor].name;
-        accessModes[name] = accessModes[name] === "read-write" ? "read" : "read-write";
-        redraw();
-      }
-    };
-
-    process.stdin.on("data", onData);
-  });
+  return selectTierPresetsAndAccessWithDeps(
+    tierName,
+    allPresets,
+    extraSelected,
+    getPolicyUiDeps(),
+  );
 }
 
-/**
- * Raw-mode TUI preset selector.
- * Keys: ↑/↓ or k/j to move, Space to toggle, a to select/unselect all, Enter to confirm.
- * Falls back to a simple line-based prompt when stdin is not a TTY.
- */
 async function presetsCheckboxSelector(allPresets, initialSelected) {
-  const selected = new Set(initialSelected);
-  const n = allPresets.length;
-
-  // ── Zero-presets guard ────────────────────────────────────────────
-  if (n === 0) {
-    console.log("  No policy presets are available.");
-    return [];
-  }
-
-  const GREEN_CHECK = USE_COLOR ? "[\x1b[32m✓\x1b[0m]" : "[✓]";
-
-  // ── Fallback: non-TTY or redirected stdout (piped input) ──────────
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log("");
-    console.log("  Available policy presets:");
-    allPresets.forEach((p) => {
-      const marker = selected.has(p.name) ? GREEN_CHECK : "[ ]";
-      console.log(`    ${marker} ${p.name.padEnd(14)} — ${p.description}`);
-    });
-    console.log("");
-    const raw = await prompt("  Select presets (comma-separated names, Enter to skip): ");
-    if (!raw.trim()) {
-      console.log("  Skipping policy presets.");
-      return [];
-    }
-    const knownNames = new Set(allPresets.map((p) => p.name));
-    const chosen = [];
-    for (const name of raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)) {
-      if (knownNames.has(name)) {
-        chosen.push(name);
-      } else {
-        console.error(`  Unknown preset name ignored: ${name}`);
-      }
-    }
-    return chosen;
-  }
-
-  // ── Raw-mode TUI ─────────────────────────────────────────────────
-  let cursor = 0;
-
-  const G = USE_COLOR ? "\x1b[32m" : "";
-  const D = USE_COLOR ? "\x1b[2m" : "";
-  const R = USE_COLOR ? "\x1b[0m" : "";
-  const HINT = USE_COLOR
-    ? `  ${G}↑/↓ j/k${R}  ${D}move${R}    ${G}Space${R}  ${D}toggle${R}    ${G}a${R}  ${D}all/none${R}    ${G}Enter${R}  ${D}confirm${R}`
-    : "  ↑/↓ j/k  move    Space  toggle    a  all/none    Enter  confirm";
-
-  const renderLines = () => {
-    const lines = ["  Available policy presets:"];
-    allPresets.forEach((p, i) => {
-      const check = selected.has(p.name) ? GREEN_CHECK : "[ ]";
-      const arrow = i === cursor ? ">" : " ";
-      lines.push(`   ${arrow} ${check} ${p.name.padEnd(14)} — ${p.description}`);
-    });
-    lines.push("");
-    lines.push(HINT);
-    return lines;
-  };
-
-  // Initial paint
-  process.stdout.write("\n");
-  const initial = renderLines();
-  for (const line of initial) process.stdout.write(`${line}\n`);
-  let lineCount = initial.length;
-
-  const redraw = () => {
-    process.stdout.write(`\x1b[${lineCount}A`);
-    const lines = renderLines();
-    for (const line of lines) process.stdout.write(`\r\x1b[2K${line}\n`);
-    lineCount = lines.length;
-  };
-
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.setEncoding("utf8");
-
-  return new Promise((resolve) => {
-    const cleanup = () => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.removeListener("data", onData);
-      process.removeListener("SIGTERM", onSigterm);
-    };
-
-    const onSigterm = () => {
-      cleanup();
-      process.exit(1);
-    };
-    process.once("SIGTERM", onSigterm);
-
-    const onData = (key) => {
-      if (key === "\r" || key === "\n") {
-        cleanup();
-        process.stdout.write("\n");
-        resolve([...selected]);
-      } else if (key === "\x03") {
-        // Ctrl+C
-        cleanup();
-        process.exit(1);
-      } else if (key === "\x1b[A" || key === "k") {
-        cursor = (cursor - 1 + n) % n;
-        redraw();
-      } else if (key === "\x1b[B" || key === "j") {
-        cursor = (cursor + 1) % n;
-        redraw();
-      } else if (key === " ") {
-        const name = allPresets[cursor].name;
-        if (selected.has(name)) selected.delete(name);
-        else selected.add(name);
-        redraw();
-      } else if (key === "a") {
-        if (selected.size === n) selected.clear();
-        else for (const p of allPresets) selected.add(p.name);
-        redraw();
-      }
-    };
-
-    process.stdin.on("data", onData);
-  });
+  return presetsCheckboxSelectorWithDeps(allPresets, initialSelected, getPolicyUiDeps());
 }
 
 // eslint-disable-next-line complexity
 async function setupPoliciesWithSelection(sandboxName, options = {}) {
-  const selectedPresets = Array.isArray(options.selectedPresets) ? options.selectedPresets : null;
-  const onSelection = typeof options.onSelection === "function" ? options.onSelection : null;
-  const webSearchConfig = options.webSearchConfig || null;
-  const enabledChannels = Array.isArray(options.enabledChannels) ? options.enabledChannels : null;
-  const provider = options.provider || null;
-
-  step(8, 8, "Policy presets");
-
-  const allPresets = policies.listPresets();
-  const applied = policies.getAppliedPresets(sandboxName);
-  let chosen = selectedPresets;
-
-  // Resume path: caller supplies the preset list from a previous run.
-  if (chosen && chosen.length > 0) {
-    if (onSelection) onSelection(chosen);
-    if (!waitForSandboxReady(sandboxName)) {
-      console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
-      process.exit(1);
-    }
-    note(`  [resume] Reapplying policy presets: ${chosen.join(", ")}`);
-    for (const name of chosen) {
-      if (applied.includes(name)) continue;
-      policies.applyPreset(sandboxName, name);
-    }
-    return chosen;
-  }
-
-  // Tier selection — determines the default preset list for this install.
-  const tierName = await selectPolicyTier();
-  registry.updateSandbox(sandboxName, { policyTier: tierName });
-  // Seed suggestions from the tier's default preset names (for non-interactive path).
-  const suggestions = tiers.resolveTierPresets(tierName).map((p) => p.name);
-  // Allow credential-based overrides on top of the tier (additive only).
-  if (webSearchConfig && !suggestions.includes("brave")) suggestions.push("brave");
-  // Auto-suggest local-inference preset when a local provider is selected
-  if (provider && LOCAL_INFERENCE_PROVIDERS.includes(provider) && !suggestions.includes("local-inference")) {
-    suggestions.push("local-inference");
-  }
-
-  if (isNonInteractive()) {
-    const policyMode = (process.env.NEMOCLAW_POLICY_MODE || "suggested").trim().toLowerCase();
-    chosen = suggestions;
-
-    if (policyMode === "skip" || policyMode === "none" || policyMode === "no") {
-      note("  [non-interactive] Skipping policy presets.");
-      return [];
-    }
-
-    if (policyMode === "custom" || policyMode === "list") {
-      chosen = parsePolicyPresetEnv(process.env.NEMOCLAW_POLICY_PRESETS);
-      if (chosen.length === 0) {
-        console.error("  NEMOCLAW_POLICY_PRESETS is required when NEMOCLAW_POLICY_MODE=custom.");
-        process.exit(1);
-      }
-    } else if (policyMode === "suggested" || policyMode === "default" || policyMode === "auto") {
-      const envPresets = parsePolicyPresetEnv(process.env.NEMOCLAW_POLICY_PRESETS);
-      if (envPresets.length > 0) chosen = envPresets;
-    } else {
-      console.error(`  Unsupported NEMOCLAW_POLICY_MODE: ${policyMode}`);
-      console.error("  Valid values: suggested, custom, skip");
-      process.exit(1);
-    }
-
-    const knownPresets = new Set(allPresets.map((p) => p.name));
-    const invalidPresets = chosen.filter((name) => !knownPresets.has(name));
-    if (invalidPresets.length > 0) {
-      console.error(`  Unknown policy preset(s): ${invalidPresets.join(", ")}`);
-      process.exit(1);
-    }
-
-    if (onSelection) onSelection(chosen);
-    if (!waitForSandboxReady(sandboxName)) {
-      console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
-      process.exit(1);
-    }
-    note(`  [non-interactive] Applying policy presets: ${chosen.join(", ")}`);
-    for (const name of chosen) {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          policies.applyPreset(sandboxName, name);
-          break;
-        } catch (err) {
-          const message = err && err.message ? err.message : String(err);
-          if (!message.includes("sandbox not found") || attempt === 2) {
-            throw err;
-          }
-          sleep(2);
-        }
-      }
-    }
-    return chosen;
-  }
-
-  // Interactive: combined tier preset selector + access-mode toggle.
-  // extraSelected seeds the initial checked state beyond the tier defaults:
-  // - presets already applied from a previous run
-  // - credential-based additions from suggestions (e.g. brave when webSearchConfig is set)
-  const knownNames = new Set(allPresets.map((p) => p.name));
-  const extraSelected = [
-    ...applied.filter((name) => knownNames.has(name)),
-    ...suggestions.filter((name) => knownNames.has(name) && !applied.includes(name)),
-  ];
-  const resolvedPresets = await selectTierPresetsAndAccess(tierName, allPresets, extraSelected);
-  const interactiveChoice = resolvedPresets.map((p) => p.name);
-
-  if (onSelection) onSelection(interactiveChoice);
-  if (!waitForSandboxReady(sandboxName)) {
-    console.error(`  Sandbox '${sandboxName}' was not ready for policy application.`);
-    process.exit(1);
-  }
-
-  const accessByName = {};
-  for (const p of resolvedPresets) accessByName[p.name] = p.access;
-  const newlySelected = interactiveChoice.filter((name) => !applied.includes(name));
-  const deselected = applied.filter((name) => !interactiveChoice.includes(name));
-
-  for (const name of deselected) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        if (!policies.removePreset(sandboxName, name)) {
-          throw new Error(`Failed to remove preset '${name}'.`);
-        }
-        break;
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        if (!message.includes("sandbox not found") || attempt === 2) {
-          throw err;
-        }
-        sleep(2);
-      }
-    }
-  }
-
-  for (const name of newlySelected) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        // Pass access mode so applyPreset can distinguish read vs read-write
-        // when preset infrastructure supports it.
-        policies.applyPreset(sandboxName, name, { access: accessByName[name] });
-        break;
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        if (!message.includes("sandbox not found") || attempt === 2) {
-          throw err;
-        }
-        sleep(2);
-      }
-    }
-  }
-  return interactiveChoice;
+  return setupPoliciesWithSelectionWithDeps(sandboxName, options, getPolicyUiDeps());
 }
+
 
 // ── Dashboard ────────────────────────────────────────────────────
 
