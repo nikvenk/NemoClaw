@@ -2111,9 +2111,9 @@ const { setupInference } = require(${onboardPath});
     );
 
     // When agent path is taken, openclaw must be marked skipped.
-    assert.match(source, /handleAgentSetup[\s\S]*?markStepSkipped\("openclaw"\)/);
+    assert.match(source, /handleAgentSetup[\s\S]*?recordStepSkipped\("openclaw"\)/);
     // When default openclaw path is taken, agent_setup must be marked skipped.
-    assert.match(source, /setupOpenclaw[\s\S]*?markStepSkipped\("agent_setup"\)/);
+    assert.match(source, /setupOpenclaw[\s\S]*?recordStepSkipped\("agent_setup"\)/);
   });
 
   it("records messaging before sandbox creation and persists selected channels", () => {
@@ -2124,7 +2124,7 @@ const { setupInference } = require(${onboardPath});
 
     assert.match(
       source,
-      /startRecordedStep\("messaging", \{ sandboxName, provider, model \}\);\s*selectedMessagingChannels = await setupMessagingChannels\(\);\s*onboardSession\.markStepComplete\("messaging", \{\s*sandboxName,\s*provider,\s*model,\s*messagingChannels: selectedMessagingChannels,\s*\}\);\s*}\s*startRecordedStep\("sandbox", \{ sandboxName, provider, model \}\);\s*sandboxName = await createSandbox\(/,
+      /recordStepStarted\("messaging", \{ sandboxName, provider, model \}\);\s*selectedMessagingChannels = await setupMessagingChannels\(\);\s*recordStepComplete\("messaging", \{\s*sandboxName,\s*provider,\s*model,\s*messagingChannels: selectedMessagingChannels,\s*\}\);\s*}\s*recordStepStarted\("sandbox", \{ sandboxName, provider, model \}\);\s*sandboxName = await createSandbox\(/,
     );
     assert.match(
       source,

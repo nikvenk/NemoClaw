@@ -64,6 +64,7 @@ const nim = require("./nim");
 const onboardSession = require("./onboard-session");
 const { ONBOARD_STEP_META, isOnboardStepName, toVisibleStepName } = require("./onboard-fsm");
 const { deriveOnboardFlowState, hasCompletedOnboardStep } = require("./onboard-flow-state");
+const { PersistentOnboardDriver } = require("./onboard-persistent-driver");
 const policies = require("./policies");
 const tiers = require("./tiers");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
@@ -5858,6 +5859,7 @@ async function onboard(opts = {}) {
   process.once("exit", releaseOnboardLock);
 
   try {
+    const persistentDriver = new PersistentOnboardDriver({ resume });
     let session;
     let selectedMessagingChannels = [];
     // Merged, absolute fromDockerfile: explicit flag/env takes precedence; on
@@ -5865,7 +5867,7 @@ async function onboard(opts = {}) {
     // is used even when --from is omitted from the resume invocation.
     let fromDockerfile;
     if (resume) {
-      session = onboardSession.loadSession();
+      session = persistentDriver.session;
       if (!session || session.resumable === false) {
         console.error("  No resumable onboarding session was found.");
         console.error("  Run: nemoclaw onboard");
@@ -5916,30 +5918,52 @@ async function onboard(opts = {}) {
         console.error("  Or rerun with the original settings to continue that session.");
         process.exit(1);
       }
-      onboardSession.updateSession((current) => {
+      session = persistentDriver.update((current) => {
         current.mode = isNonInteractive() ? "non-interactive" : "interactive";
         current.failure = null;
         current.status = "in_progress";
         return current;
       });
-      session = onboardSession.loadSession();
     } else {
       fromDockerfile = requestedFromDockerfile ? path.resolve(requestedFromDockerfile) : null;
-      session = onboardSession.saveSession(
+      session = persistentDriver.replaceSession(
         onboardSession.createSession({
           mode: isNonInteractive() ? "non-interactive" : "interactive",
           metadata: { gatewayName: "nemoclaw", fromDockerfile: fromDockerfile || null },
         }),
       );
     }
+    const updateRecordedSession = (mutator) => {
+      session = persistentDriver.update(mutator);
+      return session;
+    };
+    const recordStepStarted = (stepName, updates = {}) => {
+      session = persistentDriver.startStep(stepName, updates);
+      return session;
+    };
+    const recordStepComplete = (stepName, updates = {}) => {
+      session = persistentDriver.completeStep(stepName, updates);
+      return session;
+    };
+    const recordStepSkipped = (stepName) => {
+      session = persistentDriver.skipStep(stepName);
+      return session;
+    };
+    const recordStepFailed = (stepName, message = null) => {
+      session = persistentDriver.failStep(stepName, message);
+      return session;
+    };
+    const recordSessionComplete = (updates = {}) => {
+      session = persistentDriver.completeSession(updates);
+      return session;
+    };
 
     let completed = false;
     process.once("exit", (code) => {
       if (!completed && code !== 0) {
-        const current = onboardSession.loadSession();
-        const failedStep = current?.lastStepStarted;
+        const failedStep = persistentDriver.session?.lastStepStarted;
         if (failedStep) {
-          onboardSession.markStepFailed(failedStep, "Onboarding exited before the step completed.");
+          recordStepFailed(failedStep, "Onboarding exited before the step completed.");
         }
       }
     });
@@ -5952,14 +5976,13 @@ async function onboard(opts = {}) {
 
     const agent = agentOnboard.resolveAgent({ agentFlag: opts.agent, session });
     if (agent) {
-      onboardSession.updateSession((s) => {
+      updateRecordedSession((s) => {
         s.agent = agent.name;
         return s;
       });
-      session = onboardSession.loadSession();
     }
 
-    const resumeFlowState = resume ? deriveOnboardFlowState(session, { resume: true }) : null;
+    const resumeFlowState = resume ? persistentDriver.flowState : null;
 
     let gpu;
     const resumePreflight = resume && resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "preflight");
@@ -5967,9 +5990,9 @@ async function onboard(opts = {}) {
       skippedStepMessage("preflight", "cached");
       gpu = nim.detectGpu();
     } else {
-      startRecordedStep("preflight");
+      recordStepStarted("preflight");
       gpu = await preflight();
-      onboardSession.markStepComplete("preflight");
+      recordStepComplete("preflight");
     }
 
     const gatewayStatus = runCaptureOpenshell(["status"], { ignoreError: true });
@@ -6016,9 +6039,9 @@ async function onboard(opts = {}) {
           note("  [resume] Recorded gateway state is unavailable; recreating it.");
         }
       }
-      startRecordedStep("gateway");
+      recordStepStarted("gateway");
       await startGateway(gpu);
-      onboardSession.markStepComplete("gateway");
+      recordStepComplete("gateway");
     }
 
     let sandboxName = session?.sandboxName || null;
@@ -6045,7 +6068,7 @@ async function onboard(opts = {}) {
         skippedStepMessage("provider_selection", `${provider} / ${model}`);
         hydrateCredentialEnv(credentialEnv);
       } else {
-        startRecordedStep("provider_selection", { sandboxName });
+        recordStepStarted("provider_selection", { sandboxName });
         const selection = await setupNim(gpu);
         model = selection.model;
         provider = selection.provider;
@@ -6053,7 +6076,7 @@ async function onboard(opts = {}) {
         credentialEnv = selection.credentialEnv;
         preferredInferenceApi = selection.preferredInferenceApi;
         nimContainer = selection.nimContainer;
-        onboardSession.markStepComplete("provider_selection", {
+        recordStepComplete("provider_selection", {
           sandboxName,
           provider,
           model,
@@ -6078,7 +6101,7 @@ async function onboard(opts = {}) {
         if (nimContainer) {
           registry.updateSandbox(sandboxName, { nimContainer });
         }
-        onboardSession.markStepComplete("inference", {
+        recordStepComplete("inference", {
           sandboxName,
           provider,
           model,
@@ -6087,7 +6110,7 @@ async function onboard(opts = {}) {
         break;
       }
 
-      startRecordedStep("inference", { sandboxName, provider, model });
+      recordStepStarted("inference", { sandboxName, provider, model });
       const inferenceResult = await setupInference(
         sandboxName,
         model,
@@ -6103,7 +6126,7 @@ async function onboard(opts = {}) {
       if (nimContainer) {
         registry.updateSandbox(sandboxName, { nimContainer });
       }
-      onboardSession.markStepComplete("inference", { sandboxName, provider, model, nimContainer });
+      recordStepComplete("inference", { sandboxName, provider, model, nimContainer });
       break;
     }
 
@@ -6159,16 +6182,16 @@ async function onboard(opts = {}) {
         selectedMessagingChannels = [...session.messagingChannels];
         skippedStepMessage("messaging", selectedMessagingChannels.join(", "));
       } else {
-        startRecordedStep("messaging", { sandboxName, provider, model });
+        recordStepStarted("messaging", { sandboxName, provider, model });
         selectedMessagingChannels = await setupMessagingChannels();
-        onboardSession.markStepComplete("messaging", {
+        recordStepComplete("messaging", {
           sandboxName,
           provider,
           model,
           messagingChannels: selectedMessagingChannels,
         });
       }
-      startRecordedStep("sandbox", { sandboxName, provider, model });
+      recordStepStarted("sandbox", { sandboxName, provider, model });
       sandboxName = await createSandbox(
         gpu,
         model,
@@ -6186,7 +6209,7 @@ async function onboard(opts = {}) {
       // updateSandbox() silently no-ops when the entry is missing, so this must
       // run after createSandbox() / registerSandbox() — not before. Fixes #1881.
       registry.updateSandbox(sandboxName, { model, provider });
-      onboardSession.markStepComplete("sandbox", {
+      recordStepComplete("sandbox", {
         sandboxName,
         provider,
         model,
@@ -6203,26 +6226,27 @@ async function onboard(opts = {}) {
         buildSandboxConfigSyncScript,
         writeSandboxConfigSyncFile,
         cleanupTempDir,
-        startRecordedStep,
+        startRecordedStep: recordStepStarted,
         skippedStepMessage,
       });
-      onboardSession.markStepSkipped("openclaw");
+      recordStepSkipped("openclaw");
     } else {
       const recordedRuntimeSetupComplete =
         resume && resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "runtime_setup");
-      const resumeOpenclaw = recordedRuntimeSetupComplete && sandboxName && isOpenclawReady(sandboxName);
+      const resumeOpenclaw =
+        recordedRuntimeSetupComplete && sandboxName && isOpenclawReady(sandboxName);
       if (resumeOpenclaw) {
         skippedStepMessage("openclaw", sandboxName);
-        onboardSession.markStepComplete("openclaw", { sandboxName, provider, model });
+        recordStepComplete("openclaw", { sandboxName, provider, model });
       } else {
-        startRecordedStep("openclaw", { sandboxName, provider, model });
+        recordStepStarted("openclaw", { sandboxName, provider, model });
         await setupOpenclaw(sandboxName, model, provider);
-        onboardSession.markStepComplete("openclaw", { sandboxName, provider, model });
+        recordStepComplete("openclaw", { sandboxName, provider, model });
       }
-      onboardSession.markStepSkipped("agent_setup");
+      recordStepSkipped("agent_setup");
     }
 
-    const latestSession = onboardSession.loadSession();
+    const latestSession = persistentDriver.session;
     const recordedPolicyPresets = Array.isArray(latestSession?.policyPresets)
       ? latestSession.policyPresets
       : null;
@@ -6233,7 +6257,7 @@ async function onboard(opts = {}) {
         process.exit(1);
       }
       policies.applyPermissivePolicy(sandboxName);
-      onboardSession.markStepComplete("policies", {
+      recordStepComplete("policies", {
         sandboxName,
         provider,
         model,
@@ -6248,14 +6272,14 @@ async function onboard(opts = {}) {
         arePolicyPresetsApplied(sandboxName, recordedPolicyPresets || []);
       if (resumePolicies) {
         skippedStepMessage("policies", (recordedPolicyPresets || []).join(", "));
-        onboardSession.markStepComplete("policies", {
+        recordStepComplete("policies", {
           sandboxName,
           provider,
           model,
           policyPresets: recordedPolicyPresets || [],
         });
       } else {
-        startRecordedStep("policies", {
+        recordStepStarted("policies", {
           sandboxName,
           provider,
           model,
@@ -6270,13 +6294,13 @@ async function onboard(opts = {}) {
           webSearchConfig,
           provider,
           onSelection: (policyPresets) => {
-            onboardSession.updateSession((current) => {
+            updateRecordedSession((current) => {
               current.policyPresets = policyPresets;
               return current;
             });
           },
         });
-        onboardSession.markStepComplete("policies", {
+        recordStepComplete("policies", {
           sandboxName,
           provider,
           model,
@@ -6285,7 +6309,7 @@ async function onboard(opts = {}) {
       }
     }
 
-    onboardSession.completeSession({ sandboxName, provider, model });
+    recordSessionComplete({ sandboxName, provider, model });
     completed = true;
     printDashboard(sandboxName, model, provider, nimContainer, agent);
   } finally {
