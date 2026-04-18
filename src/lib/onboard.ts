@@ -63,8 +63,10 @@ const registry = require("./registry");
 const nim = require("./nim");
 const onboardSession = require("./onboard-session");
 const { ONBOARD_STEP_META, isOnboardStepName, toVisibleStepName } = require("./onboard-fsm");
+const { initializeOnboardRun } = require("./onboard-bootstrap");
 const { deriveOnboardFlowState, hasCompletedOnboardStep } = require("./onboard-flow-state");
-const { PersistentOnboardDriver } = require("./onboard-persistent-driver");
+const { createTrackedOnboardRun } = require("./onboard-recorders");
+const { collectResumeConfigConflicts, detectResumeSandboxConflict } = require("./onboard-resume");
 const policies = require("./policies");
 const tiers = require("./tiers");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
@@ -2012,13 +2014,7 @@ function getRequestedSandboxNameHint() {
 }
 
 function getResumeSandboxConflict(session) {
-  const requestedSandboxName = getRequestedSandboxNameHint();
-  if (!requestedSandboxName || !session?.sandboxName) {
-    return null;
-  }
-  return requestedSandboxName !== session.sandboxName
-    ? { requestedSandboxName, recordedSandboxName: session.sandboxName }
-    : null;
+  return detectResumeSandboxConflict(session, getRequestedSandboxNameHint());
 }
 
 function getRequestedProviderHint(nonInteractive = isNonInteractive()) {
@@ -2050,64 +2046,15 @@ function getEffectiveProviderName(providerKey) {
 }
 
 function getResumeConfigConflicts(session, opts = {}) {
-  const conflicts = [];
   const nonInteractive = opts.nonInteractive ?? isNonInteractive();
-
-  const sandboxConflict = getResumeSandboxConflict(session);
-  if (sandboxConflict) {
-    conflicts.push({
-      field: "sandbox",
-      requested: sandboxConflict.requestedSandboxName,
-      recorded: sandboxConflict.recordedSandboxName,
-    });
-  }
-
   const requestedProvider = getRequestedProviderHint(nonInteractive);
-  const effectiveRequestedProvider = getEffectiveProviderName(requestedProvider);
-  if (
-    effectiveRequestedProvider &&
-    session?.provider &&
-    effectiveRequestedProvider !== session.provider
-  ) {
-    conflicts.push({
-      field: "provider",
-      requested: effectiveRequestedProvider,
-      recorded: session.provider,
-    });
-  }
-
-  const requestedModel = getRequestedModelHint(nonInteractive);
-  if (requestedModel && session?.model && requestedModel !== session.model) {
-    conflicts.push({
-      field: "model",
-      requested: requestedModel,
-      recorded: session.model,
-    });
-  }
-
-  const requestedFrom = opts.fromDockerfile ? path.resolve(opts.fromDockerfile) : null;
-  const recordedFrom = session?.metadata?.fromDockerfile
-    ? path.resolve(session.metadata.fromDockerfile)
-    : null;
-  if (requestedFrom !== recordedFrom) {
-    conflicts.push({
-      field: "fromDockerfile",
-      requested: requestedFrom,
-      recorded: recordedFrom,
-    });
-  }
-
-  const requestedAgent = opts.agent || process.env.NEMOCLAW_AGENT || null;
-  const recordedAgent = session?.agent || null;
-  if (requestedAgent && recordedAgent && requestedAgent !== recordedAgent) {
-    conflicts.push({
-      field: "agent",
-      requested: requestedAgent,
-      recorded: recordedAgent,
-    });
-  }
-
-  return conflicts;
+  return collectResumeConfigConflicts(session, {
+    requestedSandboxName: getRequestedSandboxNameHint(),
+    requestedProvider: getEffectiveProviderName(requestedProvider),
+    requestedModel: getRequestedModelHint(nonInteractive),
+    requestedFromDockerfile: opts.fromDockerfile || null,
+    requestedAgent: opts.agent || process.env.NEMOCLAW_AGENT || null,
+  });
 }
 
 function getContainerRuntime() {
@@ -5847,104 +5794,45 @@ async function onboard(opts = {}) {
   process.once("exit", releaseOnboardLock);
 
   try {
-    const persistentDriver = new PersistentOnboardDriver({ resume });
-    let session;
     let selectedMessagingChannels = [];
     // Merged, absolute fromDockerfile: explicit flag/env takes precedence; on
     // resume falls back to what the original session recorded so the same image
     // is used even when --from is omitted from the resume invocation.
-    let fromDockerfile;
-    if (resume) {
-      session = persistentDriver.session;
-      if (!session || session.resumable === false) {
-        console.error("  No resumable onboarding session was found.");
-        console.error("  Run: nemoclaw onboard");
-        process.exit(1);
-      }
-      const sessionFrom = session?.metadata?.fromDockerfile || null;
-      fromDockerfile = requestedFromDockerfile
-        ? path.resolve(requestedFromDockerfile)
-        : sessionFrom
-          ? path.resolve(sessionFrom)
-          : null;
-      const resumeConflicts = getResumeConfigConflicts(session, {
-        nonInteractive: isNonInteractive(),
-        fromDockerfile: requestedFromDockerfile,
-        agent: opts.agent || null,
-      });
-      if (resumeConflicts.length > 0) {
-        for (const conflict of resumeConflicts) {
-          if (conflict.field === "sandbox") {
-            console.error(
-              `  Resumable state belongs to sandbox '${conflict.recorded}', not '${conflict.requested}'.`,
-            );
-          } else if (conflict.field === "agent") {
-            console.error(
-              `  Session was started with agent '${conflict.recorded}', not '${conflict.requested}'.`,
-            );
-          } else if (conflict.field === "fromDockerfile") {
-            if (!conflict.recorded) {
-              console.error(
-                `  Session was started without --from; add --from '${conflict.requested}' to resume it.`,
-              );
-            } else if (!conflict.requested) {
-              console.error(
-                `  Session was started with --from '${conflict.recorded}'; rerun with that path to resume it.`,
-              );
-            } else {
-              console.error(
-                `  Session was started with --from '${conflict.recorded}', not '${conflict.requested}'.`,
-              );
-            }
-          } else {
-            console.error(
-              `  Resumable state recorded ${conflict.field} '${conflict.recorded}', not '${conflict.requested}'.`,
-            );
-          }
-        }
-        console.error("  Run: nemoclaw onboard              # start a fresh onboarding session");
-        console.error("  Or rerun with the original settings to continue that session.");
-        process.exit(1);
-      }
-      session = persistentDriver.update((current) => {
-        current.mode = isNonInteractive() ? "non-interactive" : "interactive";
-        current.failure = null;
-        current.status = "in_progress";
-        return current;
-      });
-    } else {
-      fromDockerfile = requestedFromDockerfile ? path.resolve(requestedFromDockerfile) : null;
-      session = persistentDriver.replaceSession(
-        onboardSession.createSession({
-          mode: isNonInteractive() ? "non-interactive" : "interactive",
-          metadata: { gatewayName: "nemoclaw", fromDockerfile: fromDockerfile || null },
+    const initializedRun = initializeOnboardRun({
+      resume,
+      mode: isNonInteractive() ? "non-interactive" : "interactive",
+      requestedFromDockerfile,
+      requestedAgent: opts.agent || null,
+      getResumeConflicts: (currentSession) =>
+        getResumeConfigConflicts(currentSession, {
+          nonInteractive: isNonInteractive(),
+          fromDockerfile: requestedFromDockerfile,
+          agent: opts.agent || null,
         }),
-      );
+    });
+    if (!initializedRun.ok) {
+      for (const line of initializedRun.lines) {
+        console.error(line);
+      }
+      process.exit(1);
     }
-    const updateRecordedSession = (mutator) => {
-      session = persistentDriver.update(mutator);
+    const { driver: persistentDriver } = initializedRun.value;
+    const trackedRun = createTrackedOnboardRun(persistentDriver, initializedRun.value.session);
+    let { session, fromDockerfile } = initializedRun.value;
+    const syncSession = (nextSession) => {
+      session = nextSession;
       return session;
     };
-    const recordStepStarted = (stepName, updates = {}) => {
-      session = persistentDriver.startStep(stepName, updates);
-      return session;
-    };
-    const recordStepComplete = (stepName, updates = {}) => {
-      session = persistentDriver.completeStep(stepName, updates);
-      return session;
-    };
-    const recordStepSkipped = (stepName) => {
-      session = persistentDriver.skipStep(stepName);
-      return session;
-    };
-    const recordStepFailed = (stepName, message = null) => {
-      session = persistentDriver.failStep(stepName, message);
-      return session;
-    };
-    const recordSessionComplete = (updates = {}) => {
-      session = persistentDriver.completeSession(updates);
-      return session;
-    };
+    const updateRecordedSession = (mutator) => syncSession(trackedRun.update(mutator));
+    const recordStepStarted = (stepName, updates = {}) =>
+      syncSession(trackedRun.startStep(stepName, updates));
+    const recordStepComplete = (stepName, updates = {}) =>
+      syncSession(trackedRun.completeStep(stepName, updates));
+    const recordStepSkipped = (stepName) => syncSession(trackedRun.skipStep(stepName));
+    const recordStepFailed = (stepName, message = null) =>
+      syncSession(trackedRun.failStep(stepName, message));
+    const recordSessionComplete = (updates = {}) =>
+      syncSession(trackedRun.completeSession(updates));
 
     let completed = false;
     process.once("exit", (code) => {
