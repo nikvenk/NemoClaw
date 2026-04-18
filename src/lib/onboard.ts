@@ -62,6 +62,7 @@ const nim = require("./nim");
 const onboardSession = require("./onboard-session");
 const { ONBOARD_STEP_META, isOnboardStepName, toVisibleStepName } = require("./onboard-fsm");
 const { initializeOnboardRun } = require("./onboard-bootstrap");
+const { verifyGatewayContainerRunning: verifyGatewayContainerRunningWithDeps } = require("./onboard-gateway-liveness");
 const { streamGatewayStart: streamGatewayStartWithDeps } = require("./onboard-gateway-start-stream");
 const {
   getGatewayStartEnv: buildGatewayStartEnv,
@@ -94,6 +95,11 @@ const {
   persistProxyToken: persistProxyTokenWithDeps,
   startOllamaAuthProxy: startOllamaAuthProxyWithDeps,
 } = require("./onboard-ollama-proxy");
+const {
+  prepareOllamaModel: prepareOllamaModelWithDeps,
+  printOllamaExposureWarning: printOllamaExposureWarningWithDeps,
+  promptOllamaModel: promptOllamaModelWithDeps,
+} = require("./onboard-ollama-models");
 const { runCreateSandbox } = require("./onboard-sandbox-create");
 const { runSetupInference } = require("./onboard-inference-provider");
 const {
@@ -210,38 +216,8 @@ let OPENSHELL_BIN = null;
 const GATEWAY_NAME = "nemoclaw";
 const BACK_TO_SELECTION = "__NEMOCLAW_BACK_TO_SELECTION__";
 
-/**
- * Probe whether the gateway Docker container is actually running.
- * openshell CLI metadata can be stale after a manual `docker rm`, so this
- * verifies the container is live before trusting a "healthy" reuse state.
- *
- * Returns "running" | "missing" | "unknown".
- * - "running"  — container exists and State.Running is true
- * - "missing"  — container was removed or exists but is stopped (not reusable)
- * - "unknown"  — any other failure (daemon down, timeout, etc.)
- *
- * Callers should only trigger stale-metadata cleanup on "missing", not on
- * "unknown", to avoid destroying a healthy gateway when Docker is temporarily
- * unavailable.  See #2020.
- */
 function verifyGatewayContainerRunning() {
-  const containerName = `openshell-cluster-${GATEWAY_NAME}`;
-  const result = run(
-    `docker inspect --type container --format '{{.State.Running}}' ${containerName}`,
-    { ignoreError: true, suppressOutput: true },
-  );
-  if (result.status === 0 && String(result.stdout || "").trim() === "true") {
-    return "running";
-  }
-  // Container exists but is stopped (exit 0, Running !== "true")
-  if (result.status === 0) {
-    return "missing";
-  }
-  const stderr = (result.stderr || "").toString();
-  if (stderr.includes("No such object") || stderr.includes("No such container")) {
-    return "missing";
-  }
-  return "unknown";
+  return verifyGatewayContainerRunningWithDeps(GATEWAY_NAME, { run });
 }
 const OPENCLAW_LAUNCH_AGENT_PLIST = "~/Library/LaunchAgents/ai.openclaw.gateway.plist";
 
@@ -1006,221 +982,33 @@ function getOllamaProxyToken(): string | null {
 }
 
 
-async function promptOllamaModel(gpu = null) {
-  const installed = getOllamaModelOptions();
-  const options = installed.length > 0 ? installed : getBootstrapOllamaModelOptions(gpu);
-  const defaultModel = getDefaultOllamaModel(gpu);
-  const defaultIndex = Math.max(0, options.indexOf(defaultModel));
-
-  console.log("");
-  console.log(installed.length > 0 ? "  Ollama models:" : "  Ollama starter models:");
-  options.forEach((option, index) => {
-    console.log(`    ${index + 1}) ${option}`);
-  });
-  console.log(`    ${options.length + 1}) Other...`);
-  if (installed.length === 0) {
-    console.log("");
-    console.log("  No local Ollama models are installed yet. Choose one to pull and load now.");
-  }
-  console.log("");
-
-  const choice = await prompt(`  Choose model [${defaultIndex + 1}]: `);
-  const index = parseInt(choice || String(defaultIndex + 1), 10) - 1;
-  if (index >= 0 && index < options.length) {
-    return options[index];
-  }
-  return promptManualModelId("  Ollama model id: ", "Ollama");
-}
-
-function printOllamaExposureWarning() {
-  console.log("");
-  console.log("  ⚠ Ollama is binding to 0.0.0.0 so the sandbox can reach it via Docker.");
-  console.log("    This exposes the Ollama API to your local network (no auth required).");
-  console.log("    On public WiFi, any device on the same network can send prompts to your GPU.");
-  console.log("    See: CNVD-2025-04094, CVE-2024-37032");
-  console.log("");
-}
-
-function pullOllamaModel(model) {
-  const result = spawnSync("bash", ["-c", `ollama pull ${shellQuote(model)}`], {
-    cwd: ROOT,
-    encoding: "utf8",
-    stdio: "inherit",
-    timeout: 600_000,
-    env: { ...process.env },
-  });
-  if (result.signal === "SIGTERM") {
-    console.error(
-      `  Model pull timed out after 10 minutes. Try a smaller model or check your network connection.`,
-    );
-    return false;
-  }
-  return result.status === 0;
-}
-
-function prepareOllamaModel(model, installedModels = []) {
-  const alreadyInstalled = installedModels.includes(model);
-  if (!alreadyInstalled) {
-    console.log(`  Pulling Ollama model: ${model}`);
-    if (!pullOllamaModel(model)) {
-      return {
-        ok: false,
-        message:
-          `Failed to pull Ollama model '${model}'. ` +
-          "Check the model name and that Ollama can access the registry, then try another model.",
-      };
-    }
-  }
-
-  console.log(`  Loading Ollama model: ${model}`);
-  run(getOllamaWarmupCommand(model), { ignoreError: true });
-  return validateOllamaModel(model);
-}
-
-function getRequestedSandboxNameHint() {
-  return resolveRequestedSandboxNameHint(process.env);
-}
-
-function getResumeSandboxConflict(session) {
-  return detectRequestedResumeSandboxConflict(session, process.env);
-}
-
-function getRequestedProviderHint(nonInteractive = isNonInteractive()) {
-  return resolveRequestedProviderHint(nonInteractive, {
-    env: process.env,
-    error: console.error,
-    exit: (code) => process.exit(code),
-  });
-}
-
-function getRequestedModelHint(nonInteractive = isNonInteractive()) {
-  return resolveRequestedModelHint(nonInteractive, {
-    env: process.env,
-    error: console.error,
-    exit: (code) => process.exit(code),
-    isSafeModelId,
-  });
-}
-
-function getEffectiveProviderName(providerKey) {
-  return resolveEffectiveProviderName(providerKey, REMOTE_PROVIDER_CONFIG);
-}
-
-function getResumeConfigConflicts(session, opts = {}) {
-  return collectRequestedResumeConfigConflicts(session, {
-    nonInteractive: opts.nonInteractive ?? isNonInteractive(),
-    fromDockerfile: opts.fromDockerfile || null,
-    agent: opts.agent || null,
-    env: process.env,
-    error: console.error,
-    exit: (code) => process.exit(code),
-    isSafeModelId,
-    remoteProviderConfig: REMOTE_PROVIDER_CONFIG,
-  });
-}
-
-function getContainerRuntime() {
-  return resolveContainerRuntime({ runCapture, inferContainerRuntime });
-}
-
-function printRemediationActions(actions) {
-  return renderRemediationActions(actions, console.error);
-}
-
-function isOpenshellInstalled() {
-  return detectInstalledOpenshell(resolveOpenshell);
-}
-
-function getFutureShellPathHint(binDir, pathValue = process.env.PATH || "") {
-  return resolveFutureShellPathHint(binDir, pathValue);
-}
-
-function getPortConflictServiceHints(platform = process.platform) {
-  return resolvePortConflictServiceHints(platform, OPENCLAW_LAUNCH_AGENT_PLIST);
-}
-
-function installOpenshell() {
-  const result = installOpenshellWithDeps({
-    scriptPath: path.join(SCRIPTS, "install-openshell.sh"),
-    rootDir: ROOT,
-    env: process.env,
-    spawnSync,
-    existsSync: fs.existsSync,
-    resolveOpenshell,
-    getFutureShellPathHint,
-    errorWriter: console.error,
-  });
-  if (result.updatedPathValue) {
-    process.env.PATH = result.updatedPathValue;
-  }
-  OPENSHELL_BIN = result.openshellBinary;
+function getOllamaModelDeps() {
   return {
-    installed: result.installed,
-    localBin: result.localBin,
-    futureShellPathHint: result.futureShellPathHint,
+    getOllamaModelOptions,
+    getBootstrapOllamaModelOptions,
+    getDefaultOllamaModel,
+    prompt,
+    promptManualModelId,
+    shellQuote,
+    root: ROOT,
+    getOllamaWarmupCommand,
+    run,
+    validateOllamaModel,
   };
 }
 
-function sleep(seconds) {
-  require("child_process").spawnSync("sleep", [String(seconds)]);
+async function promptOllamaModel(gpu = null) {
+  return promptOllamaModelWithDeps(gpu, getOllamaModelDeps());
 }
 
-function destroyGateway() {
-  const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
-    ignoreError: true,
-  });
-  // Clear the local registry so `nemoclaw list` stays consistent with OpenShell state. (#532)
-  if (destroyResult.status === 0) {
-    registry.clearAll();
-  }
-  // openshell gateway destroy doesn't remove Docker volumes, which leaves
-  // corrupted cluster state that breaks the next gateway start. Clean them up.
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+function printOllamaExposureWarning() {
+  return printOllamaExposureWarningWithDeps();
 }
 
-async function ensureNamedCredential(envName, label, helpUrl = null) {
-  let key = getCredential(envName);
-  if (key) {
-    process.env[envName] = key;
-    return key;
-  }
-  return replaceNamedCredential(envName, label, helpUrl);
+function prepareOllamaModel(model, installedModels = []) {
+  return prepareOllamaModelWithDeps(model, installedModels, getOllamaModelDeps());
 }
 
-function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
-  return waitForSandboxReadyWithDeps(
-    sandboxName,
-    {
-      runCaptureOpenshell,
-      sleep,
-    },
-    attempts,
-    delaySeconds,
-  );
-}
-
-// parsePolicyPresetEnv — see urlUtils import above
-// isSafeModelId — see validation import above
-
-function getNonInteractiveProvider() {
-  return resolveNonInteractiveProvider({
-    env: process.env,
-    error: console.error,
-    exit: (code) => process.exit(code),
-  });
-}
-
-function getNonInteractiveModel(providerKey) {
-  return resolveNonInteractiveModel(providerKey, {
-    env: process.env,
-    error: console.error,
-    exit: (code) => process.exit(code),
-    isSafeModelId,
-  });
-}
 
 // ── Step 1: Preflight ────────────────────────────────────────────
 
@@ -1311,6 +1099,14 @@ async function startGatewayForRecovery(_gpu) {
 
 function getGatewayStartEnv() {
   return buildGatewayStartEnv(getInstalledOpenshellVersion());
+}
+
+function getFutureShellPathHint(binDir, pathValue = process.env.PATH || "") {
+  return resolveFutureShellPathHint(binDir, pathValue);
+}
+
+function getPortConflictServiceHints(platform = process.platform, launchAgentPlist = OPENCLAW_LAUNCH_AGENT_PLIST) {
+  return resolvePortConflictServiceHints(platform, launchAgentPlist);
 }
 
 async function recoverGatewayRuntime() {
@@ -1428,6 +1224,139 @@ async function createSandbox(
   );
 }
 
+function getRequestedSandboxNameHint(env = process.env) {
+  return resolveRequestedSandboxNameHint(env);
+}
+
+function getResumeSandboxConflict(session, env = process.env) {
+  return detectRequestedResumeSandboxConflict(session, env);
+}
+
+function getRequestedProviderHint(nonInteractive = isNonInteractive()) {
+  return resolveRequestedProviderHint(nonInteractive, {
+    env: process.env,
+    error: console.error,
+    exit: (code) => process.exit(code),
+  });
+}
+
+function getRequestedModelHint(nonInteractive = isNonInteractive()) {
+  return resolveRequestedModelHint(nonInteractive, {
+    env: process.env,
+    error: console.error,
+    exit: (code) => process.exit(code),
+    isSafeModelId,
+  });
+}
+
+function getEffectiveProviderName(providerKey) {
+  return resolveEffectiveProviderName(providerKey, REMOTE_PROVIDER_CONFIG);
+}
+
+function getResumeConfigConflicts(session, opts = {}) {
+  return collectRequestedResumeConfigConflicts(session, {
+    nonInteractive: opts.nonInteractive ?? isNonInteractive(),
+    fromDockerfile: opts.fromDockerfile || null,
+    agent: opts.agent || null,
+    env: process.env,
+    error: console.error,
+    exit: (code) => process.exit(code),
+    isSafeModelId,
+    remoteProviderConfig: REMOTE_PROVIDER_CONFIG,
+  });
+}
+
+function getNonInteractiveProvider() {
+  return resolveNonInteractiveProvider({
+    env: process.env,
+    error: console.error,
+    exit: (code) => process.exit(code),
+  });
+}
+
+function getNonInteractiveModel(providerKey) {
+  return resolveNonInteractiveModel(providerKey, {
+    env: process.env,
+    error: console.error,
+    exit: (code) => process.exit(code),
+    isSafeModelId,
+  });
+}
+
+function sleep(seconds) {
+  require("child_process").spawnSync("sleep", [String(seconds)]);
+}
+
+function destroyGateway() {
+  const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
+    ignoreError: true,
+  });
+  // Clear the local registry so `nemoclaw list` stays consistent with OpenShell state. (#532)
+  if (destroyResult.status === 0) {
+    registry.clearAll();
+  }
+  // openshell gateway destroy doesn't remove Docker volumes, which leaves
+  // corrupted cluster state that breaks the next gateway start. Clean them up.
+  run(
+    `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm || true`,
+    { ignoreError: true },
+  );
+}
+
+function installOpenshell() {
+  const result = installOpenshellWithDeps({
+    scriptPath: path.join(SCRIPTS, "install-openshell.sh"),
+    rootDir: ROOT,
+    env: process.env,
+    spawnSync,
+    existsSync: fs.existsSync,
+    resolveOpenshell,
+    getFutureShellPathHint,
+    errorWriter: console.error,
+  });
+  if (result.updatedPathValue) {
+    process.env.PATH = result.updatedPathValue;
+  }
+  OPENSHELL_BIN = result.openshellBinary;
+  return {
+    installed: result.installed,
+    localBin: result.localBin,
+    futureShellPathHint: result.futureShellPathHint,
+  };
+}
+
+function isOpenshellInstalled() {
+  return detectInstalledOpenshell(resolveOpenshell);
+}
+
+function getContainerRuntime() {
+  return resolveContainerRuntime({ runCapture, inferContainerRuntime });
+}
+
+function printRemediationActions(actions) {
+  return renderRemediationActions(actions, console.error);
+}
+
+async function ensureNamedCredential(envName, label, helpUrl = null) {
+  let key = getCredential(envName);
+  if (key) {
+    process.env[envName] = key;
+    return key;
+  }
+  return replaceNamedCredential(envName, label, helpUrl);
+}
+
+function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
+  return waitForSandboxReadyWithDeps(
+    sandboxName,
+    {
+      runCaptureOpenshell,
+      sleep,
+    },
+    attempts,
+    delaySeconds,
+  );
+}
 
 // ── Step 3: Inference selection ──────────────────────────────────
 

@@ -16,7 +16,10 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 describe("gateway liveness probe (#2020)", () => {
-  const content = fs.readFileSync(path.join(ROOT, "src/lib/onboard.ts"), "utf-8");
+  const content = fs.readFileSync(
+    path.join(ROOT, "src/lib/onboard-gateway-liveness.ts"),
+    "utf-8",
+  );
   const preflightContent = fs.readFileSync(
     path.join(ROOT, "src/lib/onboard-preflight-run.ts"),
     "utf-8",
@@ -31,7 +34,7 @@ describe("gateway liveness probe (#2020)", () => {
   );
 
   it("verifyGatewayContainerRunning() helper exists and checks Docker state", () => {
-    expect(content).toContain("function verifyGatewayContainerRunning()");
+    expect(content).toContain("verifyGatewayContainerRunning(");
     // Must use docker inspect to probe container state
     expect(content).toContain("docker inspect --type container");
     // Must check .State.Running, not just container existence
