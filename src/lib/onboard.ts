@@ -68,7 +68,7 @@ const { hasCompletedOnboardStep } = require("./onboard-flow-state");
 const { runHostPreparationFlow } = require("./onboard-host-flow");
 const { runInferenceSelectionLoop } = require("./onboard-inference-loop");
 const { runPolicySetupFlow } = require("./onboard-policy-flow");
-const { createTrackedOnboardRun } = require("./onboard-recorders");
+const { createOnboardRunContext } = require("./onboard-run-context");
 const { collectResumeConfigConflicts, detectResumeSandboxConflict } = require("./onboard-resume");
 const { runRuntimeSetupFlow } = require("./onboard-runtime-flow");
 const { runSandboxProvisioningFlow } = require("./onboard-sandbox-flow");
@@ -5821,23 +5821,15 @@ async function onboard(opts = {}) {
       }
       process.exit(1);
     }
-    const { driver: persistentDriver } = initializedRun.value;
-    const trackedRun = createTrackedOnboardRun(persistentDriver, initializedRun.value.session);
-    let { session, fromDockerfile } = initializedRun.value;
-    const syncSession = (nextSession) => {
-      session = nextSession;
-      return session;
-    };
-    const updateRecordedSession = (mutator) => syncSession(trackedRun.update(mutator));
-    const recordStepStarted = (stepName, updates = {}) =>
-      syncSession(trackedRun.startStep(stepName, updates));
+    const runContext = createOnboardRunContext(initializedRun.value);
+    const { driver: persistentDriver, fromDockerfile } = runContext;
+    const updateRecordedSession = (mutator) => runContext.updateSession(mutator);
+    const recordStepStarted = (stepName, updates = {}) => runContext.startStep(stepName, updates);
     const recordStepComplete = (stepName, updates = {}) =>
-      syncSession(trackedRun.completeStep(stepName, updates));
-    const recordStepSkipped = (stepName) => syncSession(trackedRun.skipStep(stepName));
-    const recordStepFailed = (stepName, message = null) =>
-      syncSession(trackedRun.failStep(stepName, message));
-    const recordSessionComplete = (updates = {}) =>
-      syncSession(trackedRun.completeSession(updates));
+      runContext.completeStep(stepName, updates);
+    const recordStepSkipped = (stepName) => runContext.skipStep(stepName);
+    const recordStepFailed = (stepName, message = null) => runContext.failStep(stepName, message);
+    const recordSessionComplete = (updates = {}) => runContext.completeSession(updates);
 
     let completed = false;
     process.once("exit", (code) => {
@@ -5855,7 +5847,7 @@ async function onboard(opts = {}) {
     if (resume) note("  (resume mode)");
     console.log("  ===================");
 
-    const agent = agentOnboard.resolveAgent({ agentFlag: opts.agent, session });
+    const agent = agentOnboard.resolveAgent({ agentFlag: opts.agent, session: runContext.session });
     if (agent) {
       updateRecordedSession((s) => {
         s.agent = agent.name;
@@ -5894,16 +5886,17 @@ async function onboard(opts = {}) {
       onCompleteStep: recordStepComplete,
     });
 
-    let sandboxName = session?.sandboxName || null;
-    let model = session?.model || null;
-    let provider = session?.provider || null;
-    let endpointUrl = session?.endpointUrl || null;
-    let credentialEnv = session?.credentialEnv || null;
-    let preferredInferenceApi = session?.preferredInferenceApi || null;
-    let nimContainer = session?.nimContainer || null;
-    let webSearchConfig = session?.webSearchConfig || null;
-    selectedMessagingChannels = Array.isArray(session?.messagingChannels)
-      ? [...session.messagingChannels]
+    const currentSession = runContext.session;
+    let sandboxName = currentSession.sandboxName || null;
+    let model = currentSession.model || null;
+    let provider = currentSession.provider || null;
+    let endpointUrl = currentSession.endpointUrl || null;
+    let credentialEnv = currentSession.credentialEnv || null;
+    let preferredInferenceApi = currentSession.preferredInferenceApi || null;
+    let nimContainer = currentSession.nimContainer || null;
+    let webSearchConfig = currentSession.webSearchConfig || null;
+    selectedMessagingChannels = Array.isArray(currentSession.messagingChannels)
+      ? [...currentSession.messagingChannels]
       : [];
     ({
       sandboxName,
@@ -5970,10 +5963,10 @@ async function onboard(opts = {}) {
       },
       {
         resume,
-        sessionMessagingChannels: Array.isArray(session?.messagingChannels)
-          ? [...session.messagingChannels]
+        sessionMessagingChannels: Array.isArray(currentSession.messagingChannels)
+          ? [...currentSession.messagingChannels]
           : null,
-        sessionWebSearchConfig: session?.webSearchConfig || null,
+        sessionWebSearchConfig: currentSession.webSearchConfig || null,
         hasCompletedMessaging: !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "messaging"),
         hasCompletedSandbox: !!resumeFlowState && hasCompletedOnboardStep(resumeFlowState, "sandbox"),
         setupMessagingChannels,
@@ -6005,7 +5998,7 @@ async function onboard(opts = {}) {
         provider,
         agent,
         resume,
-        session,
+        session: runContext.session,
       },
       {
         hasCompletedRuntimeSetup:
@@ -6017,7 +6010,7 @@ async function onboard(opts = {}) {
             nextProvider,
             nextAgent,
             resume,
-            session,
+            runContext.session,
             {
               step,
               runCaptureOpenshell,
