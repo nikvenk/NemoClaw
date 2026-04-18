@@ -206,7 +206,8 @@ function lockAgentConfig(sandboxName: string, target: { configPath: string; conf
 
   try {
     const attrs = kubectlExecCapture(sandboxName, ["lsattr", "-d", target.configPath]);
-    if (!attrs.includes("i")) issues.push("immutable bit not set");
+    const [flags] = attrs.trim().split(/\s+/, 1);
+    if (!flags.includes("i")) issues.push("immutable bit not set");
   } catch {
     // lsattr may not be available on all images — skip
   }

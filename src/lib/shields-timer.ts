@@ -85,23 +85,10 @@ setTimeout(() => {
       process.exit(1);
     }
 
-    // Update state first — policy restore can take seconds and callers
-    // check state to determine whether shields are up or down.
-    updateState({
-      shieldsDown: false,
-      shieldsDownAt: null,
-      shieldsDownTimeout: null,
-      shieldsDownReason: null,
-      shieldsDownPolicy: null,
-    });
-
     // Restore policy (slow — openshell policy set --wait blocks)
     const result = run(buildPolicySetCommand(snapshotPath, sandboxName), { ignoreError: true });
 
     if (result.status !== 0) {
-      // Policy restore failed — revert state so callers know shields are
-      // still down. The sandbox remains relaxed.
-      updateState({ shieldsDown: true });
       appendAudit({
         action: "shields_up_failed",
         sandbox: sandboxName,
@@ -114,6 +101,7 @@ setTimeout(() => {
     }
 
     // Re-lock config file (each operation independent)
+    let lockVerified = true;
     if (configPath) {
       const lockErrors = [];
       try { kubectlExec(["chmod", "444", configPath]); } catch { lockErrors.push("chmod 444"); }
@@ -124,25 +112,74 @@ setTimeout(() => {
       }
       try { kubectlExec(["chattr", "+i", configPath]); } catch { lockErrors.push("chattr +i"); }
 
-      if (lockErrors.length > 0) {
+      // Verify the lock took effect
+      const issues = [];
+      try {
+        const perms = execFileSync("docker", [
+          "exec", K3S_CONTAINER,
+          "kubectl", "exec", "-n", "openshell", sandboxName, "-c", "agent", "--",
+          "stat", "-c", "%a %U:%G", configPath,
+        ], { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 }).toString().trim();
+        const [mode, owner] = perms.split(" ");
+        if (!/^4[0-4][0-4]$/.test(mode)) issues.push(`file mode=${mode}`);
+        if (owner !== "root:root") issues.push(`file owner=${owner}`);
+      } catch {
+        issues.push("file stat failed");
+      }
+
+      try {
+        const attrs = execFileSync("docker", [
+          "exec", K3S_CONTAINER,
+          "kubectl", "exec", "-n", "openshell", sandboxName, "-c", "agent", "--",
+          "lsattr", "-d", configPath,
+        ], { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 }).toString().trim();
+        const [flags] = attrs.split(/\s+/, 1);
+        if (!flags.includes("i")) issues.push("immutable bit not set");
+      } catch {
+        // lsattr may not be available — skip
+      }
+
+      if (issues.length > 0 || lockErrors.length > 0) {
+        lockVerified = issues.length === 0;
         appendAudit({
           action: "shields_auto_restore_lock_warning",
           sandbox: sandboxName,
           timestamp: now,
           restored_by: "auto_timer",
-          warning: `Some lock operations failed: ${lockErrors.join(", ")}`,
+          warning: `Lock issues: ${[...lockErrors, ...issues].join(", ")}`,
+          lock_verified: lockVerified,
         });
       }
     }
 
-    // Audit
-    appendAudit({
-      action: "shields_auto_restore",
-      sandbox: sandboxName,
-      timestamp: now,
-      restored_by: "auto_timer",
-      policy_snapshot: snapshotPath,
-    });
+    // Only mark shields as UP if the lock was verified (or no config path)
+    if (lockVerified) {
+      updateState({
+        shieldsDown: false,
+        shieldsDownAt: null,
+        shieldsDownTimeout: null,
+        shieldsDownReason: null,
+        shieldsDownPolicy: null,
+      });
+
+      appendAudit({
+        action: "shields_auto_restore",
+        sandbox: sandboxName,
+        timestamp: now,
+        restored_by: "auto_timer",
+        policy_snapshot: snapshotPath,
+      });
+    } else {
+      appendAudit({
+        action: "shields_up_failed",
+        sandbox: sandboxName,
+        timestamp: now,
+        restored_by: "auto_timer",
+        error: "Config re-lock verification failed — shields remain DOWN",
+      });
+      cleanupMarker();
+      process.exit(1);
+    }
   } catch (err) {
     appendAudit({
       action: "shields_up_failed",
