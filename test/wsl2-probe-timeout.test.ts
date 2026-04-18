@@ -41,9 +41,9 @@ describe("WSL2 inference verification timeouts (issue #987)", () => {
   describe("retry logic in probeOpenAiLikeEndpoint", () => {
     // The retry logic is embedded in probeOpenAiLikeEndpoint which is not
     // exported. Verify the retry triggers on the correct curl exit codes by
-    // scanning the compiled source for the guard condition.
+    // scanning the compiled helper source for the guard condition.
     const onboardSrc = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "dist", "lib", "onboard.js"),
+      path.join(import.meta.dirname, "..", "dist", "lib", "onboard-inference-validation.js"),
       "utf-8",
     );
 

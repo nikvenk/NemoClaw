@@ -13,6 +13,13 @@ import path from "node:path";
 import { describe, it, expect } from "vitest";
 
 const ONBOARD_JS = path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts");
+const ONBOARD_INFERENCE_VALIDATION_TS = path.join(
+  import.meta.dirname,
+  "..",
+  "src",
+  "lib",
+  "onboard-inference-validation.ts",
+);
 const ONBOARD_SANDBOX_CREATE_TS = path.join(
   import.meta.dirname,
   "..",
@@ -119,7 +126,7 @@ describe("credential exposure in process arguments", () => {
   });
 
   it("api-key paste-guard uses extensible prefix list and regex fallback", () => {
-    const src = fs.readFileSync(ONBOARD_JS, "utf-8");
+    const src = fs.readFileSync(ONBOARD_INFERENCE_VALIDATION_TS, "utf-8");
 
     // Known prefix list must include at least NVIDIA and GitHub prefixes
     expect(src).toMatch(/API_KEY_PREFIXES/);

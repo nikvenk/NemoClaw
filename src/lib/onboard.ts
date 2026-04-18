@@ -69,6 +69,17 @@ const {
 } = require("./onboard-gateway-runtime");
 const { runSetupNim: setupNimWithDeps } = require("./onboard-nim-setup");
 const { runOnboardPreflight } = require("./onboard-preflight-run");
+const {
+  getProbeAuthMode: getProbeAuthModeWithDeps,
+  getValidationProbeCurlArgs: getValidationProbeCurlArgsWithDeps,
+  hasResponsesToolCall: hasResponsesToolCallWithDeps,
+  promptValidationRecovery: promptValidationRecoveryWithDeps,
+  shouldRequireResponsesToolCalling: shouldRequireResponsesToolCallingWithDeps,
+  validateAnthropicSelectionWithRetryMessage: validateAnthropicSelectionWithRetryMessageWithDeps,
+  validateCustomAnthropicSelection: validateCustomAnthropicSelectionWithDeps,
+  validateCustomOpenAiLikeSelection: validateCustomOpenAiLikeSelectionWithDeps,
+  validateOpenAiLikeSelection: validateOpenAiLikeSelectionWithDeps,
+} = require("./onboard-inference-validation");
 const { runCreateSandbox } = require("./onboard-sandbox-create");
 const { runSetupInference } = require("./onboard-inference-provider");
 const {
@@ -718,114 +729,35 @@ const {
 
 // validateNvidiaApiKeyValue — see validation import above
 
-async function replaceNamedCredential(envName, label, helpUrl = null, validator = null) {
-  if (helpUrl) {
-    console.log("");
-    console.log(`  Get your ${label} from: ${helpUrl}`);
-    console.log("");
-  }
-
-  while (true) {
-    const key = normalizeCredentialValue(await prompt(`  ${label}: `, { secret: true }));
-    if (!key) {
-      console.error(`  ${label} is required.`);
-      continue;
-    }
-    const validationError = typeof validator === "function" ? validator(key) : null;
-    if (validationError) {
-      console.error(validationError);
-      continue;
-    }
-    saveCredential(envName, key);
-    process.env[envName] = key;
-    console.log("");
-    console.log(`  Key saved to ~/.nemoclaw/credentials.json (mode 600)`);
-    console.log("");
-    return key;
-  }
+function getInferenceValidationDeps() {
+  return {
+    isNonInteractive,
+    prompt,
+    normalizeCredentialValue,
+    saveCredential,
+    validateNvidiaApiKeyValue,
+    getTransportRecoveryMessage,
+    exitOnboardFromPrompt,
+    runCurlProbe,
+    runStreamingEventProbe,
+    getCurlTimingArgs,
+    isWsl,
+    getCredential,
+    getProbeRecovery,
+    isNvcfFunctionNotFoundForAccount,
+    nvcfFunctionNotFoundMessage,
+    shouldForceCompletionsApi,
+  };
 }
 
 async function promptValidationRecovery(label, recovery, credentialEnv = null, helpUrl = null) {
-  if (isNonInteractive()) {
-    process.exit(1);
-  }
-
-  if (recovery.kind === "credential" && credentialEnv) {
-    console.log(
-      `  ${label} authorization failed. Re-enter the API key or choose a different provider/model.`,
-    );
-    console.log("  ⚠️  Do NOT paste your API key here — use the options below:");
-    const choice = (
-      await prompt("  Options: retry (re-enter key), back (change provider), exit [retry]: ", {
-        secret: true,
-      })
-    )
-      .trim()
-      .toLowerCase();
-    // Guard against the user accidentally pasting an API key at this prompt.
-    // Tokens don't contain spaces; human sentences do — the no-space + length check
-    // avoids false-positives on long typed sentences.
-    const API_KEY_PREFIXES = ["nvapi-", "ghp_", "gcm-", "sk-", "gpt-", "gemini-", "nvcf-"];
-    const looksLikeToken =
-      API_KEY_PREFIXES.some((p) => choice.startsWith(p)) ||
-      (!choice.includes(" ") && choice.length > 40) ||
-      // Regex fallback: base64-safe token pattern (20+ chars, no spaces, mixed alphanum)
-      /^[A-Za-z0-9_\-\.]{20,}$/.test(choice);
-    const validator = credentialEnv === "NVIDIA_API_KEY" ? validateNvidiaApiKeyValue : null;
-    if (looksLikeToken) {
-      console.log("  ⚠️  That looks like an API key — do not paste credentials here.");
-      console.log("  Treating as 'retry'. You will be prompted to enter the key securely.");
-      await replaceNamedCredential(credentialEnv, `${label} API key`, helpUrl, validator);
-      return "credential";
-    }
-    if (choice === "back") {
-      console.log("  Returning to provider selection.");
-      console.log("");
-      return "selection";
-    }
-    if (choice === "exit" || choice === "quit") {
-      exitOnboardFromPrompt();
-    }
-    if (choice === "" || choice === "retry") {
-      await replaceNamedCredential(credentialEnv, `${label} API key`, helpUrl, validator);
-      return "credential";
-    }
-    console.log("  Please choose a provider/model again.");
-    console.log("");
-    return "selection";
-  }
-
-  if (recovery.kind === "transport") {
-    console.log(getTransportRecoveryMessage(recovery.failure || {}));
-    const choice = (await prompt("  Type 'retry', 'back', or 'exit' [retry]: "))
-      .trim()
-      .toLowerCase();
-    if (choice === "back") {
-      console.log("  Returning to provider selection.");
-      console.log("");
-      return "selection";
-    }
-    if (choice === "exit" || choice === "quit") {
-      exitOnboardFromPrompt();
-    }
-    if (choice === "" || choice === "retry") {
-      console.log("");
-      return "retry";
-    }
-    console.log("  Please choose a provider/model again.");
-    console.log("");
-    return "selection";
-  }
-
-  if (recovery.kind === "model") {
-    console.log(`  Please enter a different ${label} model name.`);
-    console.log("");
-    return "model";
-  }
-
-  console.log("  Please choose a provider/model again.");
-  console.log("");
-  return "selection";
+  return promptValidationRecoveryWithDeps(
+    label,
+    recovery,
+    credentialEnv,
+    helpUrl,
+    getInferenceValidationDeps(),
+  );
 }
 
 /**
@@ -1364,337 +1296,20 @@ function patchStagedDockerfile(
   fs.writeFileSync(dockerfilePath, dockerfile);
 }
 
-function parseJsonObject(body) {
-  if (!body) return null;
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
-  }
-}
-
 function hasResponsesToolCall(body) {
-  const parsed = parseJsonObject(body);
-  if (!parsed || !Array.isArray(parsed.output)) return false;
-
-  const stack = [...parsed.output];
-  while (stack.length > 0) {
-    const item = stack.pop();
-    if (!item || typeof item !== "object") continue;
-    if (item.type === "function_call" || item.type === "tool_call") return true;
-    if (Array.isArray(item.content)) {
-      stack.push(...item.content);
-    }
-  }
-
-  return false;
+  return hasResponsesToolCallWithDeps(body);
 }
 
 function shouldRequireResponsesToolCalling(provider) {
-  return (
-    provider === "nvidia-prod" || provider === "gemini-api" || provider === "compatible-endpoint"
-  );
+  return shouldRequireResponsesToolCallingWithDeps(provider);
 }
 
-// Google Gemini rejects requests that carry both an Authorization: Bearer
-// header and a ?key= query parameter ("Multiple authentication credentials
-// received"). Send the API key as ?key= only for Gemini. See issue #1960.
 function getProbeAuthMode(provider) {
-  return provider === "gemini-api" ? "query-param" : undefined;
+  return getProbeAuthModeWithDeps(provider);
 }
 
-// shouldSkipResponsesProbe and isNvcfFunctionNotFoundForAccount /
-// nvcfFunctionNotFoundMessage — see validation import above. They live in
-// src/lib/validation.ts so they can be unit-tested independently.
-
-// Per-validation-probe curl timing. Tighter than the default 60s in
-// getCurlTimingArgs() because validation must not hang the wizard for a
-// minute on a misbehaving model. See issue #1601 (Bug 3).
 function getValidationProbeCurlArgs(opts) {
-  if (isWsl(opts)) {
-    return ["--connect-timeout", "20", "--max-time", "30"];
-  }
-  return ["--connect-timeout", "10", "--max-time", "15"];
-}
-
-function probeResponsesToolCalling(endpointUrl, model, apiKey, options = {}) {
-  const useQueryParam = options.authMode === "query-param";
-  const normalizedKey = apiKey ? normalizeCredentialValue(apiKey) : "";
-  const baseUrl = String(endpointUrl).replace(/\/+$/, "");
-  const authHeader = !useQueryParam && normalizedKey
-    ? ["-H", `Authorization: Bearer ${normalizedKey}`]
-    : [];
-  const url = useQueryParam && normalizedKey
-    ? `${baseUrl}/responses?key=${encodeURIComponent(normalizedKey)}`
-    : `${baseUrl}/responses`;
-  const result = runCurlProbe([
-    "-sS",
-    ...getValidationProbeCurlArgs(),
-    "-H",
-    "Content-Type: application/json",
-    ...authHeader,
-    "-d",
-    JSON.stringify({
-      model,
-      input: "Call the emit_ok function with value OK. Do not answer with plain text.",
-      tool_choice: "required",
-      tools: [
-        {
-          type: "function",
-          name: "emit_ok",
-          description: "Returns the probe value for validation.",
-          parameters: {
-            type: "object",
-            properties: {
-              value: { type: "string" },
-            },
-            required: ["value"],
-            additionalProperties: false,
-          },
-        },
-      ],
-    }),
-    url,
-  ]);
-
-  if (!result.ok) {
-    return result;
-  }
-  if (hasResponsesToolCall(result.body)) {
-    return result;
-  }
-  return {
-    ok: false,
-    httpStatus: result.httpStatus,
-    curlStatus: result.curlStatus,
-    body: result.body,
-    stderr: result.stderr,
-    message: `HTTP ${result.httpStatus}: Responses API did not return a tool call`,
-  };
-}
-
-function probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, options = {}) {
-  const useQueryParam = options.authMode === "query-param";
-  const normalizedKey = apiKey ? normalizeCredentialValue(apiKey) : "";
-  const baseUrl = String(endpointUrl).replace(/\/+$/, "");
-  const authHeader = !useQueryParam && normalizedKey
-    ? ["-H", `Authorization: Bearer ${normalizedKey}`]
-    : [];
-  const appendKey = (path) =>
-    useQueryParam && normalizedKey ? `${baseUrl}${path}?key=${encodeURIComponent(normalizedKey)}` : `${baseUrl}${path}`;
-
-  const responsesProbe =
-    options.requireResponsesToolCalling === true
-      ? {
-          name: "Responses API with tool calling",
-          api: "openai-responses",
-          execute: () => probeResponsesToolCalling(endpointUrl, model, apiKey, { authMode: options.authMode }),
-        }
-      : {
-          name: "Responses API",
-          api: "openai-responses",
-          execute: () =>
-            runCurlProbe([
-              "-sS",
-              ...getValidationProbeCurlArgs(),
-              "-H",
-              "Content-Type: application/json",
-              ...authHeader,
-              "-d",
-              JSON.stringify({
-                model,
-                input: "Reply with exactly: OK",
-              }),
-              appendKey("/responses"),
-            ]),
-        };
-
-  const chatCompletionsProbe = {
-    name: "Chat Completions API",
-    api: "openai-completions",
-    execute: () =>
-      runCurlProbe([
-        "-sS",
-        ...getValidationProbeCurlArgs(),
-        "-H",
-        "Content-Type: application/json",
-        ...authHeader,
-        "-d",
-        JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "Reply with exactly: OK" }],
-        }),
-        appendKey("/chat/completions"),
-      ]),
-  };
-
-  // NVIDIA Build does not expose /v1/responses; probing it always returns
-  // "404 page not found" and only adds noise to error messages. Skip it
-  // entirely for that provider. See issue #1601.
-  const probes = options.skipResponsesProbe
-    ? [chatCompletionsProbe]
-    : [responsesProbe, chatCompletionsProbe];
-
-  const failures = [];
-  for (const probe of probes) {
-    const result = probe.execute();
-    if (result.ok) {
-      // Streaming event validation — catch backends like SGLang that return
-      // valid non-streaming responses but emit incomplete SSE events in
-      // streaming mode. Only run for /responses probes on custom endpoints
-      // where probeStreaming was requested.
-      if (probe.api === "openai-responses" && options.probeStreaming === true) {
-        const streamResult = runStreamingEventProbe([
-          "-sS",
-          ...getValidationProbeCurlArgs(),
-          "-H",
-          "Content-Type: application/json",
-          ...authHeader,
-          "-d",
-          JSON.stringify({
-            model,
-            input: "Reply with exactly: OK",
-            stream: true,
-          }),
-          appendKey("/responses"),
-        ]);
-        if (!streamResult.ok && streamResult.missingEvents.length > 0) {
-          // Backend responds but lacks required streaming events — fall back
-          // to /chat/completions silently.
-          console.log(`  ℹ ${streamResult.message}`);
-          failures.push({
-            name: probe.name + " (streaming)",
-            httpStatus: 0,
-            curlStatus: 0,
-            message: streamResult.message,
-            body: "",
-          });
-          continue;
-        }
-        if (!streamResult.ok) {
-          // Transport or execution failure — surface as a hard error instead
-          // of silently switching APIs.
-          return {
-            ok: false,
-            message: `${probe.name} (streaming): ${streamResult.message}`,
-            failures: [
-              {
-                name: probe.name + " (streaming)",
-                httpStatus: 0,
-                curlStatus: 0,
-                message: streamResult.message,
-                body: "",
-              },
-            ],
-          };
-        }
-      }
-      return { ok: true, api: probe.api, label: probe.name };
-    }
-    // Preserve the raw response body alongside the summarized message so the
-    // NVCF "Function not found for account" detector below can fall back to
-    // the raw body if summarizeProbeError ever stops surfacing the marker
-    // through `message`.
-    failures.push({
-      name: probe.name,
-      httpStatus: result.httpStatus,
-      curlStatus: result.curlStatus,
-      message: result.message,
-      body: result.body,
-    });
-  }
-
-  // Single retry with doubled timeouts on timeout/connection failure.
-  // WSL2's virtualized network stack can cause the initial probe to time out
-  // before the TLS handshake completes. See issue #987.
-  const isTimeoutOrConnFailure = (cs) => cs === 28 || cs === 6 || cs === 7;
-  let retriedAfterTimeout = false;
-  if (failures.length > 0 && isTimeoutOrConnFailure(failures[0].curlStatus)) {
-    retriedAfterTimeout = true;
-    const baseArgs = getValidationProbeCurlArgs();
-    const doubledArgs = baseArgs.map((arg) =>
-      /^\d+$/.test(arg) ? String(Number(arg) * 2) : arg,
-    );
-    const retryResult = runCurlProbe([
-      "-sS",
-      ...doubledArgs,
-      "-H",
-      "Content-Type: application/json",
-      ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
-      "-d",
-      JSON.stringify({
-        model,
-        messages: [{ role: "user", content: "Reply with exactly: OK" }],
-      }),
-      `${String(endpointUrl).replace(/\/+$/, "")}/chat/completions`,
-    ]);
-    if (retryResult.ok) {
-      return { ok: true, api: "openai-completions", label: "Chat Completions API" };
-    }
-  }
-
-  // Detect the NVCF "Function not found for account" error and reframe it
-  // with an actionable next step instead of dumping the raw NVCF body.
-  // See issue #1601 (Bug 2).
-  const accountFailure = failures.find(
-    (failure) =>
-      isNvcfFunctionNotFoundForAccount(failure.message) ||
-      isNvcfFunctionNotFoundForAccount(failure.body),
-  );
-  if (accountFailure) {
-    return {
-      ok: false,
-      message: nvcfFunctionNotFoundMessage(model),
-      failures,
-    };
-  }
-
-  const baseMessage = failures.map((failure) => `${failure.name}: ${failure.message}`).join(" | ");
-  const wslHint =
-    isWsl() && retriedAfterTimeout
-      ? " · WSL2 detected \u2014 network verification may be slower than expected. " +
-        "Run `nemoclaw onboard` with the `--skip-verify` flag if this endpoint is known to be reachable."
-      : "";
-  return {
-    ok: false,
-    message: baseMessage + wslHint,
-    failures,
-  };
-}
-
-function probeAnthropicEndpoint(endpointUrl, model, apiKey) {
-  const result = runCurlProbe([
-    "-sS",
-    ...getCurlTimingArgs(),
-    "-H",
-    `x-api-key: ${normalizeCredentialValue(apiKey)}`,
-    "-H",
-    "anthropic-version: 2023-06-01",
-    "-H",
-    "content-type: application/json",
-    "-d",
-    JSON.stringify({
-      model,
-      max_tokens: 16,
-      messages: [{ role: "user", content: "Reply with exactly: OK" }],
-    }),
-    `${String(endpointUrl).replace(/\/+$/, "")}/v1/messages`,
-  ]);
-  if (result.ok) {
-    return { ok: true, api: "anthropic-messages", label: "Anthropic Messages API" };
-  }
-  return {
-    ok: false,
-    message: result.message,
-    failures: [
-      {
-        name: "Anthropic Messages API",
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: result.message,
-      },
-    ],
-  };
+  return getValidationProbeCurlArgsWithDeps(opts, getInferenceValidationDeps());
 }
 
 async function validateOpenAiLikeSelection(
@@ -1706,28 +1321,16 @@ async function validateOpenAiLikeSelection(
   helpUrl = null,
   options = {},
 ) {
-  const apiKey = credentialEnv ? getCredential(credentialEnv) : "";
-  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, options);
-  if (!probe.ok) {
-    console.error(`  ${label} endpoint validation failed.`);
-    console.error(`  ${probe.message}`);
-    if (isNonInteractive()) {
-      process.exit(1);
-    }
-    const retry = await promptValidationRecovery(
-      label,
-      getProbeRecovery(probe),
-      credentialEnv,
-      helpUrl,
-    );
-    if (retry === "selection") {
-      console.log(`  ${retryMessage}`);
-      console.log("");
-    }
-    return { ok: false, retry };
-  }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
-  return { ok: true, api: probe.api };
+  return validateOpenAiLikeSelectionWithDeps(
+    label,
+    endpointUrl,
+    model,
+    credentialEnv,
+    retryMessage,
+    helpUrl,
+    options,
+    getInferenceValidationDeps(),
+  );
 }
 
 async function validateAnthropicSelectionWithRetryMessage(
@@ -1738,28 +1341,15 @@ async function validateAnthropicSelectionWithRetryMessage(
   retryMessage = "Please choose a provider/model again.",
   helpUrl = null,
 ) {
-  const apiKey = getCredential(credentialEnv);
-  const probe = probeAnthropicEndpoint(endpointUrl, model, apiKey);
-  if (!probe.ok) {
-    console.error(`  ${label} endpoint validation failed.`);
-    console.error(`  ${probe.message}`);
-    if (isNonInteractive()) {
-      process.exit(1);
-    }
-    const retry = await promptValidationRecovery(
-      label,
-      getProbeRecovery(probe),
-      credentialEnv,
-      helpUrl,
-    );
-    if (retry === "selection") {
-      console.log(`  ${retryMessage}`);
-      console.log("");
-    }
-    return { ok: false, retry };
-  }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
-  return { ok: true, api: probe.api };
+  return validateAnthropicSelectionWithRetryMessageWithDeps(
+    label,
+    endpointUrl,
+    model,
+    credentialEnv,
+    retryMessage,
+    helpUrl,
+    getInferenceValidationDeps(),
+  );
 }
 
 async function validateCustomOpenAiLikeSelection(
@@ -1769,32 +1359,14 @@ async function validateCustomOpenAiLikeSelection(
   credentialEnv,
   helpUrl = null,
 ) {
-  const apiKey = getCredential(credentialEnv);
-  const probe = probeOpenAiLikeEndpoint(endpointUrl, model, apiKey, {
-    requireResponsesToolCalling: true,
-    skipResponsesProbe: shouldForceCompletionsApi(process.env.NEMOCLAW_PREFERRED_API),
-    probeStreaming: true,
-  });
-  if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
-    return { ok: true, api: probe.api };
-  }
-  console.error(`  ${label} endpoint validation failed.`);
-  console.error(`  ${probe.message}`);
-  if (isNonInteractive()) {
-    process.exit(1);
-  }
-  const retry = await promptValidationRecovery(
+  return validateCustomOpenAiLikeSelectionWithDeps(
     label,
-    getProbeRecovery(probe, { allowModelRetry: true }),
+    endpointUrl,
+    model,
     credentialEnv,
     helpUrl,
+    getInferenceValidationDeps(),
   );
-  if (retry === "selection") {
-    console.log("  Please choose a provider/model again.");
-    console.log("");
-  }
-  return { ok: false, retry };
 }
 
 async function validateCustomAnthropicSelection(
@@ -1804,29 +1376,16 @@ async function validateCustomAnthropicSelection(
   credentialEnv,
   helpUrl = null,
 ) {
-  const apiKey = getCredential(credentialEnv);
-  const probe = probeAnthropicEndpoint(endpointUrl, model, apiKey);
-  if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
-    return { ok: true, api: probe.api };
-  }
-  console.error(`  ${label} endpoint validation failed.`);
-  console.error(`  ${probe.message}`);
-  if (isNonInteractive()) {
-    process.exit(1);
-  }
-  const retry = await promptValidationRecovery(
+  return validateCustomAnthropicSelectionWithDeps(
     label,
-    getProbeRecovery(probe, { allowModelRetry: true }),
+    endpointUrl,
+    model,
     credentialEnv,
     helpUrl,
+    getInferenceValidationDeps(),
   );
-  if (retry === "selection") {
-    console.log("  Please choose a provider/model again.");
-    console.log("");
-  }
-  return { ok: false, retry };
 }
+
 
 const { promptManualModelId, promptCloudModel, promptRemoteModel, promptInputModel } = modelPrompts;
 const { validateAnthropicModel, validateOpenAiLikeModel } = providerModels;
