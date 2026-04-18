@@ -38,7 +38,14 @@ fetch_hash() {
     --retry 3 --retry-delay 1 --retry-all-errors \
     -o "$tmpfile" "$url"
 
-  sha256sum "$tmpfile" | cut -d' ' -f1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$tmpfile" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$tmpfile" | awk '{print $1}'
+  else
+    echo "ERROR: No SHA-256 tool available (sha256sum/shasum)." >&2
+    return 1
+  fi
 }
 
 extract_pinned() {
