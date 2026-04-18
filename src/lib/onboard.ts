@@ -80,8 +80,16 @@ const {
   validateCustomOpenAiLikeSelection: validateCustomOpenAiLikeSelectionWithDeps,
   validateOpenAiLikeSelection: validateOpenAiLikeSelectionWithDeps,
 } = require("./onboard-inference-validation");
+const {
+  getSandboxInferenceConfig: getSandboxInferenceConfigWithDeps,
+  patchStagedDockerfile: patchStagedDockerfileWithDeps,
+} = require("./onboard-sandbox-build-config");
 const { runCreateSandbox } = require("./onboard-sandbox-create");
 const { runSetupInference } = require("./onboard-inference-provider");
+const {
+  configureWebSearch: configureWebSearchWithDeps,
+  ensureValidatedBraveSearchCredential: ensureValidatedBraveSearchCredentialWithDeps,
+} = require("./onboard-web-search-config");
 const {
   arePolicyPresetsApplied: arePolicyPresetsAppliedWithDeps,
   presetsCheckboxSelector: presetsCheckboxSelectorWithDeps,
@@ -966,203 +974,39 @@ function writeSandboxConfigSyncFile(script) {
   return scriptFile;
 }
 
-function encodeDockerJsonArg(value) {
-  return Buffer.from(JSON.stringify(value || {}), "utf8").toString("base64");
-}
-
-function isAffirmativeAnswer(value) {
-  return ["y", "yes"].includes(
-    String(value || "")
-      .trim()
-      .toLowerCase(),
-  );
-}
-
-function validateBraveSearchApiKey(apiKey) {
-  return runCurlProbe([
-    "-sS",
-    "--compressed",
-    "-H",
-    "Accept: application/json",
-    "-H",
-    "Accept-Encoding: gzip",
-    "-H",
-    `X-Subscription-Token: ${apiKey}`,
-    "--get",
-    "--data-urlencode",
-    "q=ping",
-    "--data-urlencode",
-    "count=1",
-    "https://api.search.brave.com/res/v1/web/search",
-  ]);
-}
-
-async function promptBraveSearchRecovery(validation) {
-  const recovery = classifyValidationFailure(validation);
-
-  if (recovery.kind === "credential") {
-    console.log("  Brave Search rejected that API key.");
-  } else if (recovery.kind === "transport") {
-    console.log(getTransportRecoveryMessage(validation));
-  } else {
-    console.log("  Brave Search validation did not succeed.");
-  }
-
-  const answer = (await prompt("  Type 'retry', 'skip', or 'exit' [retry]: ")).trim().toLowerCase();
-  if (answer === "skip") return "skip";
-  if (answer === "exit" || answer === "quit") {
-    exitOnboardFromPrompt();
-  }
-  return "retry";
-}
-
-async function promptBraveSearchApiKey() {
-  console.log("");
-  console.log(`  Get your Brave Search API key from: ${BRAVE_SEARCH_HELP_URL}`);
-  console.log("");
-
-  while (true) {
-    const key = normalizeCredentialValue(
-      await prompt("  Brave Search API key: ", { secret: true }),
-    );
-    if (!key) {
-      console.error("  Brave Search API key is required.");
-      continue;
-    }
-    return key;
-  }
+function getWebSearchConfigDeps() {
+  return {
+    isNonInteractive,
+    prompt,
+    normalizeCredentialValue,
+    getCredential,
+    saveCredential,
+    runCurlProbe,
+    classifyValidationFailure,
+    getTransportRecoveryMessage,
+    exitOnboardFromPrompt,
+    note,
+    braveApiKeyEnv: webSearch.BRAVE_API_KEY_ENV,
+    braveSearchHelpUrl: BRAVE_SEARCH_HELP_URL,
+  };
 }
 
 async function ensureValidatedBraveSearchCredential(nonInteractive = isNonInteractive()) {
-  const savedApiKey = getCredential(webSearch.BRAVE_API_KEY_ENV);
-  let apiKey = savedApiKey || normalizeCredentialValue(process.env[webSearch.BRAVE_API_KEY_ENV]);
-  let usingSavedKey = Boolean(savedApiKey);
-
-  while (true) {
-    if (!apiKey) {
-      if (nonInteractive) {
-        throw new Error(
-          "Brave Search requires BRAVE_API_KEY or a saved Brave Search credential in non-interactive mode.",
-        );
-      }
-      apiKey = await promptBraveSearchApiKey();
-      usingSavedKey = false;
-    }
-
-    const validation = validateBraveSearchApiKey(apiKey);
-    if (validation.ok) {
-      saveCredential(webSearch.BRAVE_API_KEY_ENV, apiKey);
-      process.env[webSearch.BRAVE_API_KEY_ENV] = apiKey;
-      return apiKey;
-    }
-
-    const prefix = usingSavedKey
-      ? "  Saved Brave Search API key validation failed."
-      : "  Brave Search API key validation failed.";
-    console.error(prefix);
-    if (validation.message) {
-      console.error(`  ${validation.message}`);
-    }
-
-    if (nonInteractive) {
-      throw new Error(
-        validation.message ||
-          "Brave Search API key validation failed in non-interactive mode.",
-      );
-    }
-
-    const action = await promptBraveSearchRecovery(validation);
-    if (action === "skip") {
-      console.log("  Skipping Brave Web Search setup.");
-      console.log("");
-      return null;
-    }
-
-    apiKey = null;
-    usingSavedKey = false;
-  }
+  return ensureValidatedBraveSearchCredentialWithDeps(nonInteractive, getWebSearchConfigDeps());
 }
 
 async function configureWebSearch(existingConfig = null) {
-  if (existingConfig) {
-    return { fetchEnabled: true };
-  }
+  return configureWebSearchWithDeps(existingConfig, getWebSearchConfigDeps());
+}
 
-  if (isNonInteractive()) {
-    const braveApiKey = normalizeCredentialValue(process.env[webSearch.BRAVE_API_KEY_ENV]);
-    if (!braveApiKey) {
-      return null;
-    }
-    note("  [non-interactive] Brave Web Search requested.");
-    const validation = validateBraveSearchApiKey(braveApiKey);
-    if (!validation.ok) {
-      console.error("  Brave Search API key validation failed.");
-      if (validation.message) {
-        console.error(`  ${validation.message}`);
-      }
-      process.exit(1);
-    }
-    saveCredential(webSearch.BRAVE_API_KEY_ENV, braveApiKey);
-    process.env[webSearch.BRAVE_API_KEY_ENV] = braveApiKey;
-    return { fetchEnabled: true };
-  }
-  const enableAnswer = await prompt("  Enable Brave Web Search? [y/N]: ");
-  if (!isAffirmativeAnswer(enableAnswer)) {
-    return null;
-  }
-
-  const braveApiKey = await ensureValidatedBraveSearchCredential();
-  if (!braveApiKey) {
-    return null;
-  }
-
-  console.log("  ✓ Enabled Brave Web Search");
-  console.log("");
-  return { fetchEnabled: true };
+function getSandboxBuildConfigDeps() {
+  return {
+    sandboxBaseImage: SANDBOX_BASE_IMAGE,
+  };
 }
 
 function getSandboxInferenceConfig(model, provider = null, preferredInferenceApi = null) {
-  let providerKey;
-  let primaryModelRef;
-  let inferenceBaseUrl = "https://inference.local/v1";
-  let inferenceApi = preferredInferenceApi || "openai-completions";
-  let inferenceCompat = null;
-
-  switch (provider) {
-    case "openai-api":
-      providerKey = "openai";
-      primaryModelRef = `openai/${model}`;
-      break;
-    case "anthropic-prod":
-    case "compatible-anthropic-endpoint":
-      providerKey = "anthropic";
-      primaryModelRef = `anthropic/${model}`;
-      inferenceBaseUrl = "https://inference.local";
-      inferenceApi = "anthropic-messages";
-      break;
-    case "gemini-api":
-      providerKey = "inference";
-      primaryModelRef = `inference/${model}`;
-      inferenceCompat = {
-        supportsStore: false,
-      };
-      break;
-    case "compatible-endpoint":
-      providerKey = "inference";
-      primaryModelRef = `inference/${model}`;
-      inferenceCompat = {
-        supportsStore: false,
-      };
-      break;
-    case "nvidia-prod":
-    case "nvidia-nim":
-    default:
-      providerKey = "inference";
-      primaryModelRef = `inference/${model}`;
-      break;
-  }
-
-  return { providerKey, primaryModelRef, inferenceBaseUrl, inferenceApi, inferenceCompat };
+  return getSandboxInferenceConfigWithDeps(model, provider, preferredInferenceApi);
 }
 
 function patchStagedDockerfile(
@@ -1178,122 +1022,20 @@ function patchStagedDockerfile(
   discordGuilds = {},
   baseImageRef = null,
 ) {
-  const { providerKey, primaryModelRef, inferenceBaseUrl, inferenceApi, inferenceCompat } =
-    getSandboxInferenceConfig(model, provider, preferredInferenceApi);
-  let dockerfile = fs.readFileSync(dockerfilePath, "utf8");
-  // Pin the base image to a specific digest when available (#1904).
-  // The ref must come from pullAndResolveBaseImageDigest() — never from
-  // blueprint.yaml, whose digest belongs to a different registry.
-  // Only rewrite when the current value already points at our sandbox-base
-  // image — custom --from Dockerfiles may use a different base.
-  if (baseImageRef) {
-    dockerfile = dockerfile.replace(/^ARG BASE_IMAGE=(.*)$/m, (line, currentValue) => {
-      const trimmed = String(currentValue).trim();
-      if (trimmed.startsWith(`${SANDBOX_BASE_IMAGE}:`) || trimmed.startsWith(`${SANDBOX_BASE_IMAGE}@`)) {
-        return `ARG BASE_IMAGE=${baseImageRef}`;
-      }
-      return line;
-    });
-  }
-  dockerfile = dockerfile.replace(/^ARG NEMOCLAW_MODEL=.*$/m, `ARG NEMOCLAW_MODEL=${model}`);
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_PROVIDER_KEY=.*$/m,
-    `ARG NEMOCLAW_PROVIDER_KEY=${providerKey}`,
+  return patchStagedDockerfileWithDeps(
+    dockerfilePath,
+    model,
+    chatUiUrl,
+    buildId,
+    provider,
+    preferredInferenceApi,
+    webSearchConfig,
+    messagingChannels,
+    messagingAllowedIds,
+    discordGuilds,
+    baseImageRef,
+    getSandboxBuildConfigDeps(),
   );
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_PRIMARY_MODEL_REF=.*$/m,
-    `ARG NEMOCLAW_PRIMARY_MODEL_REF=${primaryModelRef}`,
-  );
-  dockerfile = dockerfile.replace(/^ARG CHAT_UI_URL=.*$/m, `ARG CHAT_UI_URL=${chatUiUrl}`);
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_INFERENCE_BASE_URL=.*$/m,
-    `ARG NEMOCLAW_INFERENCE_BASE_URL=${inferenceBaseUrl}`,
-  );
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_INFERENCE_API=.*$/m,
-    `ARG NEMOCLAW_INFERENCE_API=${inferenceApi}`,
-  );
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_INFERENCE_COMPAT_B64=.*$/m,
-    `ARG NEMOCLAW_INFERENCE_COMPAT_B64=${encodeDockerJsonArg(inferenceCompat)}`,
-  );
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_BUILD_ID=.*$/m,
-    `ARG NEMOCLAW_BUILD_ID=${buildId}`,
-  );
-  // Honor NEMOCLAW_CONTEXT_WINDOW / NEMOCLAW_MAX_TOKENS / NEMOCLAW_REASONING
-  // so the user can tune model metadata without editing the Dockerfile.
-  const POSITIVE_INT_RE = /^[1-9][0-9]*$/;
-  const contextWindow = process.env.NEMOCLAW_CONTEXT_WINDOW;
-  if (contextWindow && POSITIVE_INT_RE.test(contextWindow)) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_CONTEXT_WINDOW=.*$/m,
-      `ARG NEMOCLAW_CONTEXT_WINDOW=${contextWindow}`,
-    );
-  }
-  const maxTokens = process.env.NEMOCLAW_MAX_TOKENS;
-  if (maxTokens && POSITIVE_INT_RE.test(maxTokens)) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_MAX_TOKENS=.*$/m,
-      `ARG NEMOCLAW_MAX_TOKENS=${maxTokens}`,
-    );
-  }
-  const reasoning = process.env.NEMOCLAW_REASONING;
-  if (reasoning === "true" || reasoning === "false") {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_REASONING=.*$/m,
-      `ARG NEMOCLAW_REASONING=${reasoning}`,
-    );
-  }
-  // Honor NEMOCLAW_PROXY_HOST / NEMOCLAW_PROXY_PORT exported in the host
-  // shell so the sandbox-side nemoclaw-start.sh sees them via $ENV at runtime.
-  // Without this, the host export is silently dropped at image build time and
-  // the sandbox falls back to the default 10.200.0.1:3128 proxy. See #1409.
-  const PROXY_HOST_RE = /^[A-Za-z0-9._:-]+$/;
-  const PROXY_PORT_RE = /^[0-9]{1,5}$/;
-  const proxyHostEnv = process.env.NEMOCLAW_PROXY_HOST;
-  if (proxyHostEnv && PROXY_HOST_RE.test(proxyHostEnv)) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_PROXY_HOST=.*$/m,
-      `ARG NEMOCLAW_PROXY_HOST=${proxyHostEnv}`,
-    );
-  }
-  const proxyPortEnv = process.env.NEMOCLAW_PROXY_PORT;
-  if (proxyPortEnv && PROXY_PORT_RE.test(proxyPortEnv)) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_PROXY_PORT=.*$/m,
-      `ARG NEMOCLAW_PROXY_PORT=${proxyPortEnv}`,
-    );
-  }
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_WEB_SEARCH_ENABLED=.*$/m,
-    `ARG NEMOCLAW_WEB_SEARCH_ENABLED=${webSearchConfig ? "1" : "0"}`,
-  );
-  // Onboard flow expects immediate dashboard access without device pairing,
-  // so disable device auth for images built during onboard (see #1217).
-  dockerfile = dockerfile.replace(
-    /^ARG NEMOCLAW_DISABLE_DEVICE_AUTH=.*$/m,
-    `ARG NEMOCLAW_DISABLE_DEVICE_AUTH=1`,
-  );
-  if (messagingChannels.length > 0) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_MESSAGING_CHANNELS_B64=.*$/m,
-      `ARG NEMOCLAW_MESSAGING_CHANNELS_B64=${encodeDockerJsonArg(messagingChannels)}`,
-    );
-  }
-  if (Object.keys(messagingAllowedIds).length > 0) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=.*$/m,
-      `ARG NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=${encodeDockerJsonArg(messagingAllowedIds)}`,
-    );
-  }
-  if (Object.keys(discordGuilds).length > 0) {
-    dockerfile = dockerfile.replace(
-      /^ARG NEMOCLAW_DISCORD_GUILDS_B64=.*$/m,
-      `ARG NEMOCLAW_DISCORD_GUILDS_B64=${encodeDockerJsonArg(discordGuilds)}`,
-    );
-  }
-  fs.writeFileSync(dockerfilePath, dockerfile);
 }
 
 function hasResponsesToolCall(body) {
