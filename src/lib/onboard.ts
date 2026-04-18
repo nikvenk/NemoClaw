@@ -67,6 +67,13 @@ const { initializeOnboardRun } = require("./onboard-bootstrap");
 const { createOnboardingOrchestratorDeps } = require("./onboard-orchestrator-deps");
 const { runOnboardingOrchestrator } = require("./onboard-orchestrator");
 const { createOnboardRunContext } = require("./onboard-run-context");
+const {
+  buildOnboardLockCommand,
+  getDangerouslySkipPermissionsWarningLines,
+  getOnboardBannerLines,
+  getOnboardLockConflictLines,
+  resolveOnboardShellState,
+} = require("./onboard-shell");
 const { collectResumeConfigConflicts, detectResumeSandboxConflict } = require("./onboard-resume");
 const policies = require("./policies");
 const tiers = require("./tiers");
@@ -5735,28 +5742,16 @@ function skippedStepMessage(stepName, detail, reason = "resume") {
 
 // eslint-disable-next-line complexity
 async function onboard(opts = {}) {
-  NON_INTERACTIVE = opts.nonInteractive || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
-  RECREATE_SANDBOX = opts.recreateSandbox || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
-  const dangerouslySkipPermissions =
-    opts.dangerouslySkipPermissions || process.env.NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS === "1";
+  const shellState = resolveOnboardShellState(opts, process.env);
+  NON_INTERACTIVE = shellState.nonInteractive;
+  RECREATE_SANDBOX = shellState.recreateSandbox;
+  const { dangerouslySkipPermissions, requestedFromDockerfile, resume } = shellState;
   if (dangerouslySkipPermissions) {
-    console.error("");
-    console.error(
-      "  \u26a0  --dangerously-skip-permissions: sandbox security restrictions disabled.",
-    );
-    console.error("     Network:    all known endpoints open (no method/path filtering)");
-    console.error("     Filesystem: sandbox home directory is writable");
-    console.error("     Use for development/testing only.");
-    console.error("");
+    for (const line of getDangerouslySkipPermissionsWarningLines()) {
+      console.error(line);
+    }
   }
   delete process.env.OPENSHELL_GATEWAY;
-  const resume = opts.resume === true;
-  // In non-interactive mode also accept the env var so CI pipelines can set it.
-  // This is the explicitly requested value; on resume it may be absent and the
-  // session-recorded path is used instead (see below).
-  const requestedFromDockerfile =
-    opts.fromDockerfile ||
-    (isNonInteractive() ? process.env.NEMOCLAW_FROM_DOCKERFILE || null : null);
   const noticeAccepted = await ensureUsageNoticeConsent({
     nonInteractive: isNonInteractive(),
     acceptedByFlag: opts.acceptThirdPartySoftware === true,
@@ -5771,18 +5766,16 @@ async function onboard(opts = {}) {
   // problem: an unsupported provider value.
   getRequestedProviderHint();
   const lockResult = onboardSession.acquireOnboardLock(
-    `nemoclaw onboard${resume ? " --resume" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
+    buildOnboardLockCommand({
+      resume,
+      nonInteractive: shellState.nonInteractive,
+      requestedFromDockerfile,
+    }),
   );
   if (!lockResult.acquired) {
-    console.error("  Another NemoClaw onboarding run is already in progress.");
-    if (lockResult.holderPid) {
-      console.error(`  Lock holder PID: ${lockResult.holderPid}`);
+    for (const line of getOnboardLockConflictLines(lockResult)) {
+      console.error(line);
     }
-    if (lockResult.holderStartedAt) {
-      console.error(`  Started: ${lockResult.holderStartedAt}`);
-    }
-    console.error("  Wait for it to finish, or remove the stale lock if the previous run crashed:");
-    console.error(`    rm -f "${lockResult.lockFile}"`);
     process.exit(1);
   }
 
@@ -5828,11 +5821,18 @@ async function onboard(opts = {}) {
       }
     });
 
-    console.log("");
-    console.log("  NemoClaw Onboarding");
-    if (isNonInteractive()) note("  (non-interactive mode)");
-    if (resume) note("  (resume mode)");
-    console.log("  ===================");
+    for (const line of getOnboardBannerLines({
+      nonInteractive: shellState.nonInteractive,
+      resume,
+    })) {
+      if (line.length === 0) {
+        console.log("");
+      } else if (line.startsWith("  (")) {
+        note(line);
+      } else {
+        console.log(line);
+      }
+    }
 
     const orchestrationResult = await runOnboardingOrchestrator(
       runContext,
