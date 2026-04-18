@@ -9,16 +9,18 @@ import { describe, it, expect } from "vitest";
 
 describe("sandboxName command hardening in onboard.js", () => {
   const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+    path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox-create.ts"),
     "utf-8",
   );
 
   it("re-validates sandboxName at the createSandbox boundary", () => {
-    expect(src).toMatch(/const sandboxName = validateName\(/);
+    expect(src).toMatch(/const sandboxName = deps\.validateName\(/);
   });
 
   it("runs setup-dns-proxy.sh through the argv helper instead of bash -c interpolation", () => {
-    expect(src).toMatch(/runFile\("bash",\s*\[path\.join\(SCRIPTS, "setup-dns-proxy\.sh"\),/);
+    expect(src).toMatch(
+      /runFile\("bash",\s*\[path\.join\(deps\.scriptsDir, "setup-dns-proxy\.sh"\),/,
+    );
   });
 
   it("does not have raw sandboxName interpolation in run or runCapture template literals", () => {

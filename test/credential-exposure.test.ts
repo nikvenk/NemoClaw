@@ -13,6 +13,13 @@ import path from "node:path";
 import { describe, it, expect } from "vitest";
 
 const ONBOARD_JS = path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts");
+const ONBOARD_SANDBOX_CREATE_TS = path.join(
+  import.meta.dirname,
+  "..",
+  "src",
+  "lib",
+  "onboard-sandbox-create.ts",
+);
 const RUNNER_TS = path.join(import.meta.dirname, "..", "nemoclaw", "src", "blueprint", "runner.ts");
 const SERVICES_TS = path.join(import.meta.dirname, "..", "src", "lib", "services.ts");
 
@@ -73,7 +80,7 @@ describe("credential exposure in process arguments", () => {
   });
 
   it("onboard.ts uses subprocess allowlist (not blocklist) for sandbox env", () => {
-    const src = fs.readFileSync(ONBOARD_JS, "utf-8");
+    const src = fs.readFileSync(ONBOARD_SANDBOX_CREATE_TS, "utf-8");
 
     // The sandbox create path must use the shared subprocess-env.ts
     // allowlist, NOT the old blocklist. The allowlist inverts the

@@ -5515,11 +5515,14 @@ const { createSandbox } = require(${onboardPath});
 
   it("regression #1904: createSandbox calls pullAndResolveBaseImageDigest before patchStagedDockerfile", () => {
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox-create.ts"),
       "utf-8",
     );
     const pullPos = source.indexOf("pullAndResolveBaseImageDigest()");
-    assert.ok(pullPos !== -1, "pullAndResolveBaseImageDigest() call not found in onboard.ts");
+    assert.ok(
+      pullPos !== -1,
+      "pullAndResolveBaseImageDigest() call not found in onboard-sandbox-create.ts",
+    );
     const patchPos = source.indexOf("patchStagedDockerfile(", pullPos);
     assert.ok(
       patchPos > pullPos,

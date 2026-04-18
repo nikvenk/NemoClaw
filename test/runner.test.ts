@@ -553,7 +553,10 @@ describe("regression guards", () => {
   describe("credential exposure guards (#429)", () => {
     it("onboard createSandbox does not pass NVIDIA_API_KEY to sandbox env", () => {
       const fs = require("fs");
-      const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"), "utf-8");
+      const src = fs.readFileSync(
+        path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox-create.ts"),
+        "utf-8",
+      );
       // Find the envArgs block in createSandbox — it should not contain NVIDIA_API_KEY
       const envArgsMatch = src.match(/const envArgs = \[[\s\S]*?\];/);
       expect(envArgsMatch).toBeTruthy();
