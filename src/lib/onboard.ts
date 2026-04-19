@@ -65,6 +65,20 @@ const { initializeOnboardRun } = require("./onboard-bootstrap");
 const { verifyGatewayContainerRunning: verifyGatewayContainerRunningWithDeps } = require("./onboard-gateway-liveness");
 const { streamGatewayStart: streamGatewayStartWithDeps } = require("./onboard-gateway-start-stream");
 const {
+  destroyGateway: destroyGatewayWithDeps,
+  getContainerRuntime: getContainerRuntimeWithDeps,
+  getSandboxReuseState: getSandboxReuseStateWithDeps,
+  installOpenshell: installOpenshellWithDepsRuntime,
+  isInferenceRouteReady: isInferenceRouteReadyWithDeps,
+  isOpenshellInstalled: isOpenshellInstalledWithDepsRuntime,
+  printRemediationActions: printRemediationActionsWithDeps,
+  pruneKnownHostsEntries: pruneKnownHostsEntriesWithDeps,
+  repairRecordedSandbox: repairRecordedSandboxWithDeps,
+  sleep: sleepWithDeps,
+  verifyInferenceRoute: verifyInferenceRouteWithDeps,
+  waitForSandboxReady: waitForSandboxReadyWithDepsRuntime,
+} = require("./onboard-runtime-helpers");
+const {
   getBlueprintMaxOpenshellVersion: getBlueprintMaxOpenshellVersionWithDeps,
   getBlueprintMinOpenshellVersion: getBlueprintMinOpenshellVersionWithDeps,
   getInstalledOpenshellVersion: getInstalledOpenshellVersionWithDeps,
@@ -358,30 +372,22 @@ const {
  * Preserves blank lines and comments. Returns the cleaned string.
  */
 function pruneKnownHostsEntries(contents) {
-  return contents
-    .split("\n")
-    .filter((l) => {
-      const trimmed = l.trim();
-      if (!trimmed || trimmed.startsWith("#")) return true;
-      const hostField = trimmed.split(/\s+/)[0];
-      return !hostField.split(",").some((h) => h.startsWith("openshell-"));
-    })
-    .join("\n");
+  return pruneKnownHostsEntriesWithDeps(contents);
 }
 
 function getSandboxReuseState(sandboxName) {
-  if (!sandboxName) return "missing";
-  const getOutput = runCaptureOpenshell(["sandbox", "get", sandboxName], { ignoreError: true });
-  const listOutput = runCaptureOpenshell(["sandbox", "list"], { ignoreError: true });
-  return getSandboxStateFromOutputs(sandboxName, getOutput, listOutput);
+  return getSandboxReuseStateWithDeps(sandboxName, { runCaptureOpenshell });
 }
 
 function repairRecordedSandbox(sandboxName) {
-  if (!sandboxName) return;
-  note(`  [resume] Cleaning up recorded sandbox '${sandboxName}' before recreating it.`);
-  runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
-  runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
-  registry.removeSandbox(sandboxName);
+  return repairRecordedSandboxWithDeps(sandboxName, {
+    note,
+    dashboardPort: DASHBOARD_PORT,
+    runOpenshell,
+    removeSandbox: (name) => {
+      registry.removeSandbox(name);
+    },
+  });
 }
 
 const { streamSandboxCreate } = sandboxCreateStream;
@@ -588,18 +594,11 @@ function makeConflictProbe() {
 }
 
 function verifyInferenceRoute(_provider, _model) {
-  const output = runCaptureOpenshell(["inference", "get"], { ignoreError: true });
-  if (!output || /Gateway inference:\s*[\r\n]+\s*Not configured/i.test(output)) {
-    console.error("  OpenShell inference route was not configured.");
-    process.exit(1);
-  }
+  return verifyInferenceRouteWithDeps(_provider, _model, runCaptureOpenshell);
 }
 
 function isInferenceRouteReady(provider, model) {
-  const live = parseGatewayInference(
-    runCaptureOpenshell(["inference", "get"], { ignoreError: true }),
-  );
-  return Boolean(live && live.provider === provider && live.model === model);
+  return isInferenceRouteReadyWithDeps(provider, model, runCaptureOpenshell);
 }
 
 function sandboxExistsInGateway(sandboxName) {
@@ -1139,33 +1138,24 @@ function getNonInteractiveModel(providerKey) {
 }
 
 function sleep(seconds) {
-  require("child_process").spawnSync("sleep", [String(seconds)]);
+  return sleepWithDeps(seconds);
 }
 
 function destroyGateway() {
-  const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
-    ignoreError: true,
+  return destroyGatewayWithDeps(GATEWAY_NAME, {
+    runOpenshell,
+    clearRegistryAll: () => {
+      registry.clearAll();
+    },
+    run,
   });
-  // Clear the local registry so `nemoclaw list` stays consistent with OpenShell state. (#532)
-  if (destroyResult.status === 0) {
-    registry.clearAll();
-  }
-  // openshell gateway destroy doesn't remove Docker volumes, which leaves
-  // corrupted cluster state that breaks the next gateway start. Clean them up.
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
 }
 
 function installOpenshell() {
-  const result = installOpenshellWithDeps({
+  const result = installOpenshellWithDepsRuntime({
     scriptPath: path.join(SCRIPTS, "install-openshell.sh"),
     rootDir: ROOT,
     env: process.env,
-    spawnSync,
-    existsSync: fs.existsSync,
-    resolveOpenshell,
     getFutureShellPathHint,
     errorWriter: console.error,
   });
@@ -1181,15 +1171,15 @@ function installOpenshell() {
 }
 
 function isOpenshellInstalled() {
-  return detectInstalledOpenshell(resolveOpenshell);
+  return isOpenshellInstalledWithDepsRuntime();
 }
 
 function getContainerRuntime() {
-  return resolveContainerRuntime({ runCapture, inferContainerRuntime });
+  return getContainerRuntimeWithDeps(runCapture);
 }
 
 function printRemediationActions(actions) {
-  return renderRemediationActions(actions, console.error);
+  return printRemediationActionsWithDeps(actions, console.error);
 }
 
 async function ensureNamedCredential(envName, label, helpUrl = null) {
@@ -1202,11 +1192,10 @@ async function ensureNamedCredential(envName, label, helpUrl = null) {
 }
 
 function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
-  return waitForSandboxReadyWithDeps(
+  return waitForSandboxReadyWithDepsRuntime(
     sandboxName,
     {
       runCaptureOpenshell,
-      sleep,
     },
     attempts,
     delaySeconds,
