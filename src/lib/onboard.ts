@@ -136,28 +136,14 @@ const {
   configureWebSearch: configureWebSearchWithDeps,
   ensureValidatedBraveSearchCredential: ensureValidatedBraveSearchCredentialWithDeps,
 } = require("./onboard-web-search-config");
-const {
-  arePolicyPresetsApplied: arePolicyPresetsAppliedWithDeps,
-  presetsCheckboxSelector: presetsCheckboxSelectorWithDeps,
-  selectPolicyTier: selectPolicyTierWithDeps,
-  selectTierPresetsAndAccess: selectTierPresetsAndAccessWithDeps,
-  setupPoliciesLegacy: setupPoliciesLegacyWithDeps,
-  setupPoliciesWithSelection: setupPoliciesWithSelectionWithDeps,
-} = require("./onboard-policy-ui");
 const { MESSAGING_CHANNELS } = require("./onboard-messaging");
 const { promptValidatedSandboxName: promptValidatedSandboxNameWithDeps } = require("./onboard-sandbox-name");
 const {
   buildAuthenticatedDashboardUrl,
-  ensureDashboardForward: ensureDashboardForwardWithDeps,
-  fetchGatewayAuthTokenFromSandbox: fetchGatewayAuthTokenFromSandboxWithDeps,
-  getDashboardAccessInfo: getDashboardAccessInfoWithDeps,
   getDashboardForwardPort,
-  getDashboardForwardStartCommand: getDashboardForwardStartCommandWithDeps,
   getDashboardForwardTarget,
-  getDashboardGuidanceLines,
-  getWslHostAddress,
 } = require("./onboard-dashboard");
-const { printOnboardDashboard } = require("./onboard-dashboard-print");
+const { createDashboardApi, createPolicyUiApi } = require("./onboard-ui-api");
 const { runOnboardingEntry } = require("./onboard-entry");
 const { createOnboardingOrchestratorDeps } = require("./onboard-orchestrator-deps");
 const { runOnboardingOrchestrator } = require("./onboard-orchestrator");
@@ -1158,7 +1144,7 @@ const inferenceRuntimeApi = createInferenceRuntimeApi({
   openshellShellCommand,
   shellQuote,
   cleanupTempDir,
-  fetchGatewayAuthTokenFromSandbox,
+  fetchGatewayAuthTokenFromSandbox: (sandboxName) => fetchGatewayAuthTokenFromSandbox(sandboxName),
   secureTempFile,
 });
 
@@ -1173,63 +1159,32 @@ const {
 
 // ── Step 7: Policy presets ───────────────────────────────────────
 
-function getPolicyUiDeps() {
-  return {
-    step,
-    prompt,
-    note,
-    sleep,
-    isNonInteractive,
-    parsePolicyPresetEnv,
-    waitForSandboxReady,
-    localInferenceProviders: LOCAL_INFERENCE_PROVIDERS,
-    useColor: USE_COLOR,
-    policies,
-    tiers,
-    updateSandbox: (name, patch) => {
-      registry.updateSandbox(name, patch);
-    },
-  };
-}
+const policyUiApi = createPolicyUiApi({
+  step,
+  prompt,
+  note,
+  sleep,
+  isNonInteractive,
+  parsePolicyPresetEnv,
+  waitForSandboxReady,
+  localInferenceProviders: LOCAL_INFERENCE_PROVIDERS,
+  useColor: USE_COLOR,
+  policies,
+  tiers,
+  updateSandbox: (name, patch) => {
+    registry.updateSandbox(name, patch);
+  },
+  getSuggestedPolicyPresets,
+});
 
-// eslint-disable-next-line complexity
-async function _setupPolicies(sandboxName, options = {}) {
-  return setupPoliciesLegacyWithDeps(
-    sandboxName,
-    {
-      ...options,
-      getSuggestedPolicyPresets,
-    },
-    getPolicyUiDeps(),
-  );
-}
-
-function arePolicyPresetsApplied(sandboxName, selectedPresets = []) {
-  return arePolicyPresetsAppliedWithDeps(sandboxName, selectedPresets, getPolicyUiDeps());
-}
-
-async function selectPolicyTier() {
-  return selectPolicyTierWithDeps(getPolicyUiDeps());
-}
-
-async function selectTierPresetsAndAccess(tierName, allPresets, extraSelected = []) {
-  return selectTierPresetsAndAccessWithDeps(
-    tierName,
-    allPresets,
-    extraSelected,
-    getPolicyUiDeps(),
-  );
-}
-
-async function presetsCheckboxSelector(allPresets, initialSelected) {
-  return presetsCheckboxSelectorWithDeps(allPresets, initialSelected, getPolicyUiDeps());
-}
-
-// eslint-disable-next-line complexity
-async function setupPoliciesWithSelection(sandboxName, options = {}) {
-  return setupPoliciesWithSelectionWithDeps(sandboxName, options, getPolicyUiDeps());
-}
-
+const {
+  setupPoliciesLegacy: _setupPolicies,
+  arePolicyPresetsApplied,
+  selectPolicyTier,
+  selectTierPresetsAndAccess,
+  presetsCheckboxSelector,
+  setupPoliciesWithSelection,
+} = policyUiApi;
 
 // ── Dashboard ────────────────────────────────────────────────────
 
@@ -1239,52 +1194,27 @@ const CONTROL_UI_PORT = DASHBOARD_PORT;
 // isLoopbackHostname — see urlUtils import above
 const { resolveDashboardForwardTarget, buildControlUiUrls } = dashboard;
 
-function ensureDashboardForward(
-  sandboxName,
-  chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
-) {
-  return ensureDashboardForwardWithDeps(sandboxName, {
-    chatUiUrl,
-    runOpenshell,
-    warningWriter: console.warn,
-  });
-}
+const dashboardApi = createDashboardApi({
+  controlUiPort: CONTROL_UI_PORT,
+  runOpenshell,
+  warningWriter: console.warn,
+  openshellShellCommand,
+  runCapture,
+  nimStatusByName: (containerName) => nim.nimStatusByName(containerName),
+  nimStatus: (sandboxName) => nim.nimStatus(sandboxName),
+  note,
+  log: console.log,
+  printAgentDashboardUi: agentOnboard.printDashboardUi,
+  buildControlUiUrls,
+});
 
-function fetchGatewayAuthTokenFromSandbox(sandboxName) {
-  return fetchGatewayAuthTokenFromSandboxWithDeps(sandboxName, { runOpenshell });
-}
-
-function getDashboardForwardStartCommand(sandboxName, options = {}) {
-  return getDashboardForwardStartCommandWithDeps(sandboxName, {
-    ...options,
-    openshellShellCommand,
-  });
-}
-
-function getDashboardAccessInfo(sandboxName, options = {}) {
-  return getDashboardAccessInfoWithDeps(sandboxName, {
-    ...options,
-    fetchToken: (name) => fetchGatewayAuthTokenFromSandbox(name),
-    runCapture: options.runCapture || runCapture,
-  });
-}
-
-function printDashboard(sandboxName, model, provider, nimContainer = null, agent = null) {
-  return printOnboardDashboard(sandboxName, model, provider, nimContainer, agent, {
-    getNimStatus: (targetSandboxName, targetNimContainer) =>
-      targetNimContainer ? nim.nimStatusByName(targetNimContainer) : nim.nimStatus(targetSandboxName),
-    fetchGatewayAuthTokenFromSandbox,
-    getDashboardAccessInfo: (targetSandboxName, options) =>
-      getDashboardAccessInfo(targetSandboxName, options),
-    getDashboardGuidanceLines,
-    note,
-    log: console.log,
-    printAgentDashboardUi: agentOnboard.printDashboardUi,
-    buildControlUiUrls,
-    getWslHostAddress,
-    buildAuthenticatedDashboardUrl,
-  });
-}
+const {
+  ensureDashboardForward,
+  fetchGatewayAuthTokenFromSandbox,
+  getDashboardForwardStartCommand,
+  getDashboardAccessInfo,
+  printDashboard,
+} = dashboardApi;
 
 const TOTAL_ONBOARD_STEPS = 8;
 
@@ -1449,7 +1379,6 @@ module.exports = {
   getDashboardAccessInfo,
   getDashboardForwardPort,
   getDashboardForwardStartCommand,
-  getDashboardGuidanceLines,
   startGatewayForRecovery,
   runCaptureOpenshell,
   setupInference,
