@@ -109,14 +109,52 @@ describe("InMemoryOnboardDriver", () => {
     const driver = InMemoryOnboardDriver.fresh({ requestedSandboxName: "alpha" });
     driver.enterWorkflow().finishPreflight();
 
-    const state = driver.state as { phase: string };
-    expect(Object.isFrozen(state)).toBe(true);
+    const snapshot = driver.state as { phase: string };
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(snapshot).not.toBe(driver.state);
     try {
-      state.phase = "boot";
+      snapshot.phase = "boot";
     } catch {
       // expected in strict mode
     }
     expect(driver.state.phase).toBe("gateway");
+
+    driver.finishGateway();
+    expect(snapshot.phase).toBe("gateway");
+    expect(driver.state.phase).toBe("provider_selection");
+  });
+
+  it("clears provider-specific metadata when a later selection omits it", () => {
+    const driver = InMemoryOnboardDriver.fresh({ requestedSandboxName: "alpha" });
+    driver
+      .enterWorkflow()
+      .finishPreflight()
+      .finishGateway()
+      .finishProviderSelection({
+        provider: "compatible-openai",
+        model: "stale-model",
+        endpointUrl: "https://old.example.com/v1",
+        credentialEnv: "COMPATIBLE_API_KEY",
+        preferredInferenceApi: "responses",
+        nimContainer: "nim-stale",
+      });
+
+    const resumed = driver.reloadForResume();
+    resumed.finishProviderSelection({
+      provider: "openai-api",
+      model: "gpt-5.4",
+      endpointUrl: null,
+      credentialEnv: null,
+      preferredInferenceApi: null,
+      nimContainer: null,
+    });
+
+    expect(resumed.session.provider).toBe("openai-api");
+    expect(resumed.session.model).toBe("gpt-5.4");
+    expect(resumed.session.endpointUrl).toBeNull();
+    expect(resumed.session.credentialEnv).toBeNull();
+    expect(resumed.session.preferredInferenceApi).toBeNull();
+    expect(resumed.session.nimContainer).toBeNull();
   });
 
   it("defensively copies messaging channels and policy presets before storing them", () => {

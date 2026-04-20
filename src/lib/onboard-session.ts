@@ -92,13 +92,13 @@ export interface LockResult {
 }
 
 export interface SessionUpdates {
-  sandboxName?: string;
-  provider?: string;
-  model?: string;
-  endpointUrl?: string;
-  credentialEnv?: string;
-  preferredInferenceApi?: string;
-  nimContainer?: string;
+  sandboxName?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  endpointUrl?: string | null;
+  credentialEnv?: string | null;
+  preferredInferenceApi?: string | null;
+  nimContainer?: string | null;
   webSearchConfig?: WebSearchConfig | null;
   messagingChannels?: string[] | null;
   policyPresets?: string[];
@@ -624,14 +624,21 @@ export function releaseOnboardLock(): void {
 export function filterSafeUpdates(updates: SessionUpdates): Partial<Session> {
   const safe: Partial<Session> = {};
   if (!isObject(updates)) return safe;
-  if (typeof updates.sandboxName === "string") safe.sandboxName = updates.sandboxName;
-  if (typeof updates.provider === "string") safe.provider = updates.provider;
-  if (typeof updates.model === "string") safe.model = updates.model;
-  if (typeof updates.endpointUrl === "string") safe.endpointUrl = redactUrl(updates.endpointUrl);
-  if (typeof updates.credentialEnv === "string") safe.credentialEnv = updates.credentialEnv;
-  if (typeof updates.preferredInferenceApi === "string")
+  if (updates.sandboxName === null) safe.sandboxName = null;
+  else if (typeof updates.sandboxName === "string") safe.sandboxName = updates.sandboxName;
+  if (updates.provider === null) safe.provider = null;
+  else if (typeof updates.provider === "string") safe.provider = updates.provider;
+  if (updates.model === null) safe.model = null;
+  else if (typeof updates.model === "string") safe.model = updates.model;
+  if (updates.endpointUrl === null) safe.endpointUrl = null;
+  else if (typeof updates.endpointUrl === "string") safe.endpointUrl = redactUrl(updates.endpointUrl);
+  if (updates.credentialEnv === null) safe.credentialEnv = null;
+  else if (typeof updates.credentialEnv === "string") safe.credentialEnv = updates.credentialEnv;
+  if (updates.preferredInferenceApi === null) safe.preferredInferenceApi = null;
+  else if (typeof updates.preferredInferenceApi === "string")
     safe.preferredInferenceApi = updates.preferredInferenceApi;
-  if (typeof updates.nimContainer === "string") safe.nimContainer = updates.nimContainer;
+  if (updates.nimContainer === null) safe.nimContainer = null;
+  else if (typeof updates.nimContainer === "string") safe.nimContainer = updates.nimContainer;
   if (isObject(updates.webSearchConfig) && updates.webSearchConfig.fetchEnabled === true) {
     safe.webSearchConfig = { fetchEnabled: true };
   } else if (updates.webSearchConfig === null) {
@@ -644,9 +651,6 @@ export function filterSafeUpdates(updates: SessionUpdates): Partial<Session> {
   }
   if (Array.isArray(updates.policyPresets)) {
     safe.policyPresets = updates.policyPresets.filter((value) => typeof value === "string");
-  }
-  if (Array.isArray(updates.messagingChannels)) {
-    safe.messagingChannels = updates.messagingChannels.filter((value) => typeof value === "string");
   }
   if (isObject(updates.metadata) && typeof updates.metadata.gatewayName === "string") {
     safe.metadata = {

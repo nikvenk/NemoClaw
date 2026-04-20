@@ -127,6 +127,37 @@ describe("onboard session", () => {
     expect(loaded.metadata.token).toBeUndefined();
   });
 
+  it("clears provider-specific metadata when a later selection omits it", () => {
+    session.saveSession(
+      session.createSession({
+        sandboxName: "alpha",
+        provider: "compatible-openai",
+        model: "stale-model",
+        endpointUrl: "https://old.example.com/v1",
+        credentialEnv: "COMPATIBLE_API_KEY",
+        preferredInferenceApi: "responses",
+        nimContainer: "nim-stale",
+      }),
+    );
+
+    session.markStepComplete("provider_selection", {
+      provider: "openai-api",
+      model: "gpt-5.4",
+      endpointUrl: null,
+      credentialEnv: null,
+      preferredInferenceApi: null,
+      nimContainer: null,
+    });
+
+    const loaded = session.loadSession();
+    expect(loaded.provider).toBe("openai-api");
+    expect(loaded.model).toBe("gpt-5.4");
+    expect(loaded.endpointUrl).toBeNull();
+    expect(loaded.credentialEnv).toBeNull();
+    expect(loaded.preferredInferenceApi).toBeNull();
+    expect(loaded.nimContainer).toBeNull();
+  });
+
   it("persists messagingChannels across save/load roundtrips", () => {
     const created = session.createSession();
     created.messagingChannels = ["telegram", "slack"];

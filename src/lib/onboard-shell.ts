@@ -38,9 +38,15 @@ export function resolveOnboardShellState(
   };
 }
 
-export function buildOnboardLockCommand(state: Pick<OnboardShellState, "resume" | "nonInteractive" | "requestedFromDockerfile">): string {
+function quoteShellArg(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildOnboardLockCommand(
+  state: Pick<OnboardShellState, "resume" | "nonInteractive" | "requestedFromDockerfile">,
+): string {
   const fromArg = state.requestedFromDockerfile
-    ? ` --from ${JSON.stringify(state.requestedFromDockerfile)}`
+    ? ` --from ${quoteShellArg(state.requestedFromDockerfile)}`
     : "";
   return `nemoclaw onboard${state.resume ? " --resume" : ""}${state.nonInteractive ? " --non-interactive" : ""}${fromArg}`;
 }

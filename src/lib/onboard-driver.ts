@@ -165,10 +165,10 @@ export class InMemoryOnboardDriver {
     applyStepComplete(this.#session, "provider_selection", {
       provider: selection.provider,
       model: selection.model,
-      endpointUrl: selection.endpointUrl ?? undefined,
-      credentialEnv: selection.credentialEnv ?? undefined,
-      preferredInferenceApi: selection.preferredInferenceApi ?? undefined,
-      nimContainer: selection.nimContainer ?? undefined,
+      endpointUrl: selection.endpointUrl ?? null,
+      credentialEnv: selection.credentialEnv ?? null,
+      preferredInferenceApi: selection.preferredInferenceApi ?? null,
+      nimContainer: selection.nimContainer ?? null,
     });
     if (this.#state.phase === "provider_selection") {
       this.#state = transitionOnboardState(this.#state, {

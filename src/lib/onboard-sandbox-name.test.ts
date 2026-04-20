@@ -31,6 +31,25 @@ describe("promptValidatedSandboxName", () => {
     expect(errorWriter).toHaveBeenCalledWith("  Names must start with a letter, not a digit.");
   });
 
+  it("checks reserved names after validation canonicalizes the input", async () => {
+    const errorWriter = vi.fn();
+    const answers = ["Status", "my-assistant"];
+    const result = await promptValidatedSandboxName({
+      promptOrDefault: async () => answers.shift() ?? "my-assistant",
+      validateName: (value) => value.toLowerCase(),
+      isNonInteractive: () => false,
+      errorWriter,
+      exit: ((code: number) => {
+        throw new Error(`exit:${code}`);
+      }) as never,
+    });
+
+    expect(result).toBe("my-assistant");
+    expect(errorWriter).toHaveBeenCalledWith(
+      "  Reserved name: 'status' is a NemoClaw CLI command.",
+    );
+  });
+
   it("exits immediately in non-interactive mode when the name is invalid", async () => {
     await expect(
       promptValidatedSandboxName({

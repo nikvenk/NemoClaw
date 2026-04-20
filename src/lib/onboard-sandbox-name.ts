@@ -45,8 +45,10 @@ export async function promptValidatedSandboxName(
 
     try {
       const validatedSandboxName = deps.validateName(sandboxName, "sandbox name");
-      if (RESERVED_SANDBOX_NAMES.has(sandboxName)) {
-        errorWriter(`  Reserved name: '${sandboxName}' is a NemoClaw CLI command.`);
+      if (RESERVED_SANDBOX_NAMES.has(validatedSandboxName)) {
+        errorWriter(
+          `  Reserved name: '${validatedSandboxName}' is a NemoClaw CLI command.`,
+        );
         errorWriter("  Choose a different name to avoid routing conflicts.");
         if (deps.isNonInteractive()) {
           exit(1);

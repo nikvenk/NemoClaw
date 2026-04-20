@@ -147,15 +147,22 @@ function normalizeSessionUpdates(
     return {};
   }
   const normalized: SessionUpdates = {};
-  if (typeof updates.sandboxName === "string") normalized.sandboxName = updates.sandboxName;
-  if (typeof updates.provider === "string") normalized.provider = updates.provider;
-  if (typeof updates.model === "string") normalized.model = updates.model;
-  if (typeof updates.endpointUrl === "string") normalized.endpointUrl = updates.endpointUrl;
-  if (typeof updates.credentialEnv === "string") normalized.credentialEnv = updates.credentialEnv;
-  if (typeof updates.preferredInferenceApi === "string") {
+  if (updates.sandboxName === null) normalized.sandboxName = null;
+  else if (typeof updates.sandboxName === "string") normalized.sandboxName = updates.sandboxName;
+  if (updates.provider === null) normalized.provider = null;
+  else if (typeof updates.provider === "string") normalized.provider = updates.provider;
+  if (updates.model === null) normalized.model = null;
+  else if (typeof updates.model === "string") normalized.model = updates.model;
+  if (updates.endpointUrl === null) normalized.endpointUrl = null;
+  else if (typeof updates.endpointUrl === "string") normalized.endpointUrl = updates.endpointUrl;
+  if (updates.credentialEnv === null) normalized.credentialEnv = null;
+  else if (typeof updates.credentialEnv === "string") normalized.credentialEnv = updates.credentialEnv;
+  if (updates.preferredInferenceApi === null) normalized.preferredInferenceApi = null;
+  else if (typeof updates.preferredInferenceApi === "string") {
     normalized.preferredInferenceApi = updates.preferredInferenceApi;
   }
-  if (typeof updates.nimContainer === "string") normalized.nimContainer = updates.nimContainer;
+  if (updates.nimContainer === null) normalized.nimContainer = null;
+  else if (typeof updates.nimContainer === "string") normalized.nimContainer = updates.nimContainer;
   if (Array.isArray(updates.messagingChannels)) {
     normalized.messagingChannels = updates.messagingChannels;
   }

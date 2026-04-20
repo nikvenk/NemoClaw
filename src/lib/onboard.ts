@@ -1229,7 +1229,9 @@ const {
   printDashboard,
 } = dashboardApi;
 
-const TOTAL_ONBOARD_STEPS = 8;
+const TOTAL_ONBOARD_STEPS = Math.max(
+  ...Object.values(ONBOARD_STEP_META).map((meta) => meta.number),
+);
 
 function skippedStepMessage(stepName, detail, reason = "resume") {
   const visibleStepName = isOnboardStepName(stepName) ? toVisibleStepName(stepName) : null;

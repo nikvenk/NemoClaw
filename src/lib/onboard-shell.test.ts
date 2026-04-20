@@ -39,7 +39,15 @@ describe("onboard-shell", () => {
         nonInteractive: true,
         requestedFromDockerfile: "/tmp/Custom.Dockerfile",
       }),
-    ).toBe('nemoclaw onboard --resume --non-interactive --from "/tmp/Custom.Dockerfile"');
+    ).toBe("nemoclaw onboard --resume --non-interactive --from '/tmp/Custom.Dockerfile'");
+
+    expect(
+      buildOnboardLockCommand({
+        resume: false,
+        nonInteractive: false,
+        requestedFromDockerfile: "/tmp/agent's Dockerfile",
+      }),
+    ).toBe("nemoclaw onboard --from '/tmp/agent'\\''s Dockerfile'");
   });
 
   it("renders banner and warning lines for the shell", () => {

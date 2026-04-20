@@ -173,6 +173,135 @@ describe("runOnboardingOrchestrator", () => {
     expect(policyRun).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves explicit null session updates from extracted flow callbacks", async () => {
+    const { initializeOnboardRun } = require("../../dist/lib/onboard-bootstrap");
+    const { createOnboardRunContext } = require("../../dist/lib/onboard-run-context");
+    const { runOnboardingOrchestrator } = require("../../dist/lib/onboard-orchestrator");
+
+    const initializedRun = initializeOnboardRun({
+      resume: false,
+      mode: "interactive",
+      requestedFromDockerfile: null,
+      requestedAgent: null,
+    });
+    expect(initializedRun.ok).toBe(true);
+    if (!initializedRun.ok) {
+      throw new Error("expected onboarding initialization to succeed");
+    }
+
+    const runContext = createOnboardRunContext(initializedRun.value);
+    runContext.updateSession((session) => {
+      session.endpointUrl = "https://old.example.com/v1";
+      session.credentialEnv = "COMPATIBLE_API_KEY";
+      session.preferredInferenceApi = "responses";
+      session.nimContainer = "nim-stale";
+      return session;
+    });
+
+    await runOnboardingOrchestrator(runContext, {
+      resume: false,
+      dangerouslySkipPermissions: false,
+      requestedAgent: null,
+      resolveAgent: () => null,
+      note: () => {},
+      log: () => {},
+      skippedStepMessage: () => {},
+      showPolicyHeader: () => {},
+      host: {
+        run: async () => ({ gpu: null, gatewayReuseState: "missing" }),
+        preflight: async () => null,
+        detectGpu: () => null,
+        getGatewayStatus: () => "status",
+        getNamedGatewayInfo: () => "named-info",
+        getActiveGatewayInfo: () => "active-info",
+        getGatewayReuseState: () => "missing",
+        verifyGatewayContainerRunning: () => "running",
+        stopDashboardForward: () => {},
+        destroyGateway: () => {},
+        clearRegistryAll: () => {},
+        startGateway: async () => {},
+      },
+      inference: {
+        run: async (state, deps) => {
+          deps.onCompleteStep("provider_selection", {
+            provider: "openai-api",
+            model: "gpt-5.4",
+            endpointUrl: null,
+            credentialEnv: null,
+            preferredInferenceApi: null,
+            nimContainer: null,
+          });
+          return {
+            ...state,
+            model: "gpt-5.4",
+            provider: "openai-api",
+            endpointUrl: null,
+            credentialEnv: null,
+            preferredInferenceApi: null,
+            nimContainer: null,
+          };
+        },
+        gpu: null,
+        setupNim: async () => {
+          throw new Error("unused in orchestrator test");
+        },
+        setupInference: async () => {},
+        isInferenceRouteReady: () => false,
+        hydrateCredentialEnv: () => {},
+        getOpenshellBinary: () => "/usr/bin/openshell",
+        setOpenshellBinary: () => {},
+        clearSensitiveEnv: () => {},
+        updateSandboxNimContainer: () => {},
+      },
+      sandbox: {
+        run: async () => ({
+          gpu: null,
+          sandboxName: "alpha",
+          model: "gpt-5.4",
+          provider: "openai-api",
+          preferredInferenceApi: null,
+          webSearchConfig: null,
+          selectedMessagingChannels: [],
+          nimContainer: null,
+          fromDockerfile: null,
+          agent: null,
+          dangerouslySkipPermissions: false,
+        }),
+        sessionMessagingChannels: null,
+        sessionWebSearchConfig: null,
+        hasCompletedMessaging: false,
+        hasCompletedSandbox: false,
+        setupMessagingChannels: async () => [],
+        configureWebSearch: async () => null,
+        ensureValidatedBraveSearchCredential: async () => null,
+        getSandboxReuseState: () => "missing",
+        removeSandbox: () => {},
+        repairRecordedSandbox: () => {},
+        createSandbox: async () => "alpha",
+        persistRegistryModelProvider: () => {},
+      },
+      runtime: {
+        run: async () => {},
+        hasCompletedRuntimeSetup: false,
+        handleAgentSetup: async () => {},
+        isOpenclawReady: () => false,
+        setupOpenclaw: async () => {},
+      },
+      policy: {
+        run: async () => ({ kind: "complete", policyPresets: [] }),
+        waitForSandboxReady: () => true,
+        applyPermissivePolicy: () => {},
+        arePolicyPresetsApplied: () => false,
+        setupPoliciesWithSelection: async () => [],
+      },
+    });
+
+    expect(runContext.session.endpointUrl).toBeNull();
+    expect(runContext.session.credentialEnv).toBeNull();
+    expect(runContext.session.preferredInferenceApi).toBeNull();
+    expect(runContext.session.nimContainer).toBeNull();
+  });
+
   it("leaves the session in progress when policy setup returns sandbox_not_ready", async () => {
     const { initializeOnboardRun } = require("../../dist/lib/onboard-bootstrap");
     const { createOnboardRunContext } = require("../../dist/lib/onboard-run-context");

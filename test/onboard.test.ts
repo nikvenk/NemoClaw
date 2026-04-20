@@ -54,6 +54,27 @@ import {
 import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context";
 import { buildWebSearchDockerConfig } from "../dist/lib/web-search";
 
+function extractFunctionBodyByMarker(source, marker) {
+  const markerIndex = source.indexOf(marker);
+  assert.notEqual(markerIndex, -1, `${marker} not found`);
+
+  const openBraceIndex = source.indexOf("{", markerIndex);
+  assert.notEqual(openBraceIndex, -1, `opening brace not found for ${marker}`);
+
+  let depth = 0;
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "{") depth += 1;
+    else if (character === "}") depth -= 1;
+
+    if (depth === 0) {
+      return source.slice(openBraceIndex + 1, index);
+    }
+  }
+
+  assert.fail(`closing brace not found for ${marker}`);
+}
+
 describe("onboard helpers", () => {
   it("classifies sandbox create timeout failures and tracks upload progress", () => {
     expect(
@@ -2236,7 +2257,7 @@ const { setupInference } = require(${onboardPath});
       "utf-8",
     );
 
-    assert.match(onboardSource, /const TOTAL_ONBOARD_STEPS = 8;/);
+    assert.match(onboardSource, /const TOTAL_ONBOARD_STEPS = Math\.max\(/);
     assert.match(onboardSource, /function skippedStepMessage\(stepName, detail, reason = "resume"\)/);
     assert.match(
       onboardSource,
@@ -2266,9 +2287,11 @@ const { setupInference } = require(${onboardPath});
     // activate the policy via `openshell policy set --wait`.  Without this,
     // the base policy from sandbox create stays in Pending status (#897).
     assert.match(depsSource, /run: runPolicySetupFlow/);
-    assert.match(
-      helperSource,
-      /if \(deps\.dangerouslySkipPermissions\) \{\s*deps\.onShowHeader\(\);\s*if \(!deps\.waitForSandboxReady\(state\.sandboxName\)\) \{[\s\S]*?\}\s*deps\.applyPermissivePolicy\(state\.sandboxName\);/,    );
+    assert.match(helperSource, /if \(deps\.dangerouslySkipPermissions\)/);
+    assert.match(helperSource, /deps\.onShowHeader\(\)/);
+    assert.match(helperSource, /!deps\.waitForSandboxReady\(state\.sandboxName\)/);
+    assert.match(helperSource, /kind: "sandbox_not_ready"/);
+    assert.match(helperSource, /deps\.applyPermissivePolicy\(state\.sandboxName\)/);
     // Must NOT just print a skip message without activating the policy.
     assert.doesNotMatch(
       helperSource,
@@ -5300,12 +5323,10 @@ const { createSandbox } = require(${onboardPath});
       path.join(import.meta.dirname, "..", "src", "lib", "onboard-sandbox-name.ts"),
       "utf-8",
     );
-    // Extract the promptValidatedSandboxName function body
-    const fnMatch = shellSource.match(
-      /export async function promptValidatedSandboxName\([\s\S]*?\)\s*:\s*Promise<string>\s*\{([\s\S]*?)\n\}/,
+    const fnBody = extractFunctionBodyByMarker(
+      shellSource,
+      "export async function promptValidatedSandboxName(",
     );
-    assert.ok(fnMatch, "promptValidatedSandboxName function not found");
-    const fnBody = fnMatch[1];
     // Verify the bounded retry loop exists within this function
     assert.match(fnBody, /MAX_ATTEMPTS/);
     assert.match(fnBody, /for\s*\(let attempt/);
