@@ -6620,8 +6620,12 @@ async function onboard(opts = {}) {
 
     const sandboxReuseState = getSandboxReuseState(sandboxName);
     const webSearchConfigChanged = Boolean(session?.webSearchConfig) !== Boolean(webSearchConfig);
+    // When the gateway was recreated during resume, the sandbox pod state
+    // from the old gateway is stale — k8s metadata may claim "ready" but
+    // the pod isn't actually functional.  Force sandbox recreation.
     const resumeSandbox =
       resume &&
+      !gatewayRecreatedDuringResume &&
       !webSearchConfigChanged &&
       session?.steps?.sandbox?.status === "complete" &&
       sandboxReuseState === "ready";
