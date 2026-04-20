@@ -15,10 +15,14 @@ describe("security configuration hardening", () => {
       /- name: workspace[\s\S]*?(?=\n\s*-\s*name: |\n\s*initContainers:|\n\s*volumes:|$)/,
     );
     expect(workspaceMatch).not.toBeNull();
-    // Pod-level hardening (applies to both Docker and VM backends)
+    const workspaceSection = workspaceMatch[0];
     expect(manifest).toMatch(/automountServiceAccountToken:\s*false/);
     expect(manifest).toMatch(/enableServiceLinks:\s*false/);
+    expect(workspaceSection).toMatch(/allowPrivilegeEscalation:\s*false/);
+    expect(workspaceSection).toMatch(/capabilities:\s*[\r\n]+\s*drop:\s*[\r\n]+\s*-\s*ALL/);
+    expect(workspaceSection).toMatch(/seccompProfile:\s*[\r\n]+\s*type:\s*RuntimeDefault/);
     expect(manifest).toMatch(/- name: NEMOCLAW_POLICY_MODE[\s\S]*value:\s*"suggested"/);
+    expect(manifest).toContain('export COMPATIBLE_API_KEY="${COMPATIBLE_API_KEY:-dummy}"');
     const compatibleApiKeySection = manifest.match(
       /- name: COMPATIBLE_API_KEY[\s\S]*?(?=\n\s*-\s*name: |\n\s*volumeMounts:|\n\s*command:|$)/,
     )?.[0];
@@ -27,25 +31,10 @@ describe("security configuration hardening", () => {
       /secretKeyRef:[\s\S]*name:\s*nemoclaw-compatible-api-key/,
     );
     expect(compatibleApiKeySection).toMatch(/optional:\s*true/);
-
-    // VM backend: privileged is required for /dev/kvm — validate it is
-    // explicitly declared so reviewers notice the escalation.
-    const isVmBackend = manifest.includes("NEMOCLAW_GATEWAY_BACKEND");
-    if (isVmBackend) {
-      const workspaceSection = workspaceMatch[0];
-      expect(workspaceSection).toMatch(/privileged:\s*true/);
-    } else {
-      // Docker backend: container-level hardening + secure download
-      const workspaceSection = workspaceMatch[0];
-      expect(workspaceSection).toMatch(/allowPrivilegeEscalation:\s*false/);
-      expect(workspaceSection).toMatch(/capabilities:\s*[\r\n]+\s*drop:\s*[\r\n]+\s*-\s*ALL/);
-      expect(workspaceSection).toMatch(/seccompProfile:\s*[\r\n]+\s*type:\s*RuntimeDefault/);
-      expect(manifest).toContain('export COMPATIBLE_API_KEY="${COMPATIBLE_API_KEY:-dummy}"');
-      expect(manifest).toContain("curl --proto '=https' --tlsv1.2 --fail --show-error --silent");
-      expect(manifest).toContain("--output /tmp/nemoclaw-install.sh");
-      expect(manifest).toContain("chmod 700 /tmp/nemoclaw-install.sh");
-      expect(manifest).toContain("bash /tmp/nemoclaw-install.sh");
-      expect(manifest).not.toMatch(/curl\b[^\n|]*\|\s*(?:ba|z|k)?sh\b/i);
-    }
+    expect(manifest).toContain("curl --proto '=https' --tlsv1.2 --fail --show-error --silent");
+    expect(manifest).toContain("--output /tmp/nemoclaw-install.sh");
+    expect(manifest).toContain("chmod 700 /tmp/nemoclaw-install.sh");
+    expect(manifest).toContain("bash /tmp/nemoclaw-install.sh");
+    expect(manifest).not.toMatch(/curl\b[^\n|]*\|\s*(?:ba|z|k)?sh\b/i);
   });
 });

@@ -221,12 +221,22 @@ describe("platform helpers", () => {
       ).toBe("docker");
     });
 
-    it("prefers vm when both available", () => {
+    it("prefers docker when both available", () => {
       expect(
         detectGatewayBackend({
           env: {},
           vmAvailable: true,
           dockerAvailable: true,
+        }),
+      ).toBe("docker");
+    });
+
+    it("falls back to vm when docker is not available", () => {
+      expect(
+        detectGatewayBackend({
+          env: {},
+          vmAvailable: true,
+          dockerAvailable: false,
         }),
       ).toBe("vm");
     });
@@ -239,16 +249,6 @@ describe("platform helpers", () => {
           dockerAvailable: true,
         }),
       ).toBe("docker");
-    });
-
-    it("prefers vm even when GPU is present (inference routed via inference.local)", () => {
-      expect(
-        detectGatewayBackend({
-          env: {},
-          vmAvailable: true,
-          dockerAvailable: true,
-        }),
-      ).toBe("vm");
     });
 
     it("returns unknown when nothing is available", () => {

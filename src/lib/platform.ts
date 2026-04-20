@@ -134,11 +134,12 @@ function detectGatewayBackend(opts = {}) {
       ? opts.dockerAvailable
       : detectDockerHost(opts) !== null;
 
-  // GPU inference is routed through inference.local (OpenShell L7 proxy
-  // → host inference server), so the sandbox/gateway never needs direct
-  // GPU access. The VM backend works for all scenarios.
-  if (vmAvailable) return "vm";
+  // Default to Docker when available — it is the established, documented
+  // path.  The VM backend (openshell-vm / libkrun microVM) can be opted
+  // into via NEMOCLAW_GATEWAY_BACKEND=vm for environments without Docker
+  // or where a lighter-weight gateway is preferred.
   if (dockerAvailable) return "docker";
+  if (vmAvailable) return "vm";
   return "unknown";
 }
 
