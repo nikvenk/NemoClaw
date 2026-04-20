@@ -24,8 +24,9 @@ describe("Gemini dual-auth credential fix (issue #1960)", () => {
   });
 
   describe("compiled probe uses ?key= for Gemini instead of Bearer header", () => {
+    // Probe functions moved to onboard-inference-probes.ts
     const onboardSrc = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "dist", "lib", "onboard.js"),
+      path.join(import.meta.dirname, "..", "dist", "lib", "onboard-inference-probes.js"),
       "utf-8",
     );
 
