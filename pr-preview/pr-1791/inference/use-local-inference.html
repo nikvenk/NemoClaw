@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/documentation_options.js?v=c22ea008"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'latest';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.18';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -391,6 +391,7 @@
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="current nav bd-sidenav">
@@ -415,14 +416,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
-</ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../workspace/workspace-files.html">Workspace Files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Back Up and Restore</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Backup &amp; Restore</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -520,17 +521,32 @@ On macOS, the wizard also offers to install Ollama through Homebrew if it is not
 <p>Select <strong>Local Ollama</strong> from the provider list.
 NemoClaw lists installed models or offers starter models if none are installed.
 It pulls the selected model, loads it into memory, and validates it before continuing.</p>
-<section id="linux-with-docker">
-<h3>Linux with Docker<a class="headerlink" href="#linux-with-docker" title="Link to this heading">#</a></h3>
-<p>On Linux hosts that run NemoClaw with Docker, the sandbox reaches Ollama through
-<code class="docutils literal notranslate"><span class="pre">http://host.openshell.internal:11434</span></code>, not the host shell’s <code class="docutils literal notranslate"><span class="pre">localhost</span></code> socket.
-If Ollama is already running, make sure it listens on <code class="docutils literal notranslate"><span class="pre">0.0.0.0:11434</span></code> instead of
-<code class="docutils literal notranslate"><span class="pre">127.0.0.1:11434</span></code>.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">OLLAMA_HOST</span><span class="o">=</span><span class="m">0</span>.0.0.0:11434<span class="w"> </span>ollama<span class="w"> </span>serve
-</pre></div>
-</div>
-<p>If Ollama only binds loopback, NemoClaw can detect it on the host, but the
-sandbox-side validation step fails because containers cannot reach it.</p>
+<section id="authenticated-reverse-proxy">
+<h3>Authenticated Reverse Proxy<a class="headerlink" href="#authenticated-reverse-proxy" title="Link to this heading">#</a></h3>
+<p>NemoClaw keeps Ollama bound to <code class="docutils literal notranslate"><span class="pre">127.0.0.1:11434</span></code> and starts a token-gated
+reverse proxy on <code class="docutils literal notranslate"><span class="pre">0.0.0.0:11435</span></code>.
+Containers and other hosts on the local network reach Ollama only through the
+proxy, which validates a Bearer token before forwarding requests.
+Ollama itself is never exposed without authentication.</p>
+<p>The onboard wizard manages the proxy automatically:</p>
+<ul class="simple">
+<li><p>Generates a random 24-byte token on first run and stores it in
+<code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/ollama-proxy-token</span></code> with <code class="docutils literal notranslate"><span class="pre">0600</span></code> permissions.</p></li>
+<li><p>Starts the proxy after Ollama and verifies it before continuing.</p></li>
+<li><p>Cleans up stale proxy processes from previous runs.</p></li>
+<li><p>Reuses the persisted token after a host reboot so you do not need to re-run
+onboard.</p></li>
+</ul>
+<p>The sandbox provider is configured to use proxy port <code class="docutils literal notranslate"><span class="pre">11435</span></code> with the generated
+token as its <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code> credential.
+OpenShell’s L7 proxy injects the token at egress, so the agent inside the
+sandbox never sees the token directly.</p>
+<p><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/api/tags</span></code> is exempt from authentication so container health checks
+continue to work.
+All other endpoints (including <code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/api/tags</span></code>) require the Bearer token.</p>
+<p>If Ollama is already running on a non-loopback address when you start onboard,
+the wizard restarts it on <code class="docutils literal notranslate"><span class="pre">127.0.0.1:11434</span></code> so the proxy is the only network
+path to the model server.</p>
 </section>
 <section id="non-interactive-setup">
 <h3>Non-Interactive Setup<a class="headerlink" href="#non-interactive-setup" title="Link to this heading">#</a></h3>
@@ -561,8 +577,9 @@ sandbox-side validation step fails because containers cannot reach it.</p>
 <section id="openai-compatible-server">
 <h2>OpenAI-Compatible Server<a class="headerlink" href="#openai-compatible-server" title="Link to this heading">#</a></h2>
 <p>This option works with any server that implements <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code>, including vLLM, TensorRT-LLM, llama.cpp, LocalAI, and others.
-If the server also supports <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code>, NemoClaw only favors that path when onboarding can verify tool-calling behavior that matches what OpenClaw actually sends.
-Otherwise NemoClaw falls back to <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code>.</p>
+For compatible endpoints, NemoClaw uses <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code> by default.
+This avoids a class of failures where local backends accept <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code> requests but silently drop the system prompt and tool definitions.
+To opt in to <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code>, set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PREFERRED_API=openai-responses</span></code> before running onboard.</p>
 <p>Start your model server.
 The examples below use vLLM, but any OpenAI-compatible server works.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>vllm<span class="w"> </span>serve<span class="w"> </span>meta-llama/Llama-3.1-8B-Instruct<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
@@ -577,8 +594,8 @@ Enter the base URL of your local server, for example <code class="docutils liter
 <p>The wizard prompts for an API key.
 If your server does not require authentication, enter any non-empty string (for example, <code class="docutils literal notranslate"><span class="pre">dummy</span></code>).</p>
 <p>NemoClaw validates the endpoint by sending a test inference request before continuing.
-For OpenAI-compatible endpoints, the validation prefers <code class="docutils literal notranslate"><span class="pre">/responses</span></code> only when the probe produces a compatible function or tool call.
-Endpoints that return <code class="docutils literal notranslate"><span class="pre">200</span> <span class="pre">OK</span></code> on <code class="docutils literal notranslate"><span class="pre">/responses</span></code> but do not format tool calls the way OpenClaw expects are configured to use <code class="docutils literal notranslate"><span class="pre">/chat/completions</span></code> instead.</p>
+The wizard probes <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code> by default for the compatible-endpoint provider.
+If you set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PREFERRED_API=openai-responses</span></code>, NemoClaw probes <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code> instead and only selects it when the response includes the streaming events OpenClaw requires.</p>
 <section id="id1">
 <h3>Non-Interactive Setup<a class="headerlink" href="#id1" title="Link to this heading">#</a></h3>
 <p>Set the following environment variables for scripted or CI/CD deployments.</p>
@@ -611,6 +628,40 @@ Endpoints that return <code class="docutils literal notranslate"><span class="pr
 </tbody>
 </table>
 </div>
+</section>
+<section id="selecting-the-api-path">
+<h3>Selecting the API Path<a class="headerlink" href="#selecting-the-api-path" title="Link to this heading">#</a></h3>
+<p>For the compatible-endpoint provider, <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code> is the default.
+NemoClaw tests streaming events during onboarding and uses chat completions
+without probing the Responses API.</p>
+<p>To opt in to <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code>, set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PREFERRED_API</span></code> before running onboard:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">NEMOCLAW_PREFERRED_API</span><span class="o">=</span>openai-responses<span class="w"> </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>The wizard then probes <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code> and only selects it when streaming
+support is complete.
+If the probe fails, the wizard falls back to <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code>
+automatically.
+You can use this variable in both interactive and non-interactive mode.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Variable</p></th>
+<th class="head"><p>Values</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PREFERRED_API</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai-completions</span></code>, <code class="docutils literal notranslate"><span class="pre">openai-responses</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai-completions</span></code> for compatible endpoints</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>If you already onboarded and the sandbox is failing at runtime, re-run
+<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> to re-probe the endpoint and bake the correct API path
+into the image.
+Refer to <a class="reference internal" href="switch-inference-providers.html"><span class="std std-doc">Switch Inference Models</span></a> for details.</p>
 </section>
 </section>
 <section id="anthropic-compatible-server">
@@ -769,12 +820,13 @@ Refer to <a class="reference internal" href="switch-inference-providers.html"><s
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ollama">Ollama</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#linux-with-docker">Linux with Docker</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#authenticated-reverse-proxy">Authenticated Reverse Proxy</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#non-interactive-setup">Non-Interactive Setup</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#openai-compatible-server">OpenAI-Compatible Server</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Non-Interactive Setup</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#selecting-the-api-path">Selecting the API Path</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#anthropic-compatible-server">Anthropic-Compatible Server</a></li>

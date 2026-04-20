@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/documentation_options.js?v=c22ea008"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'latest';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.18';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -391,6 +391,7 @@
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -415,14 +416,14 @@
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Set Up Telegram</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
-</ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../workspace/workspace-files.html">Workspace Files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Back Up and Restore</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Backup &amp; Restore</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -538,6 +539,12 @@ Group chats stay open by default so rebuilt sandboxes do not silently drop Teleg
 <p>Complete the rest of the wizard so the blueprint can create OpenShell providers (for example <code class="docutils literal notranslate"><span class="pre">&lt;sandbox&gt;-telegram-bridge</span></code>), bake channel configuration into the image (<code class="docutils literal notranslate"><span class="pre">NEMOCLAW_MESSAGING_CHANNELS_B64</span></code>), and start the sandbox.</p>
 <p>Channel entries in <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/openclaw.json</span></code> are fixed at image build time. Landlock keeps that path read-only at runtime, so you cannot patch messaging config inside a running sandbox.</p>
 <p>If you add or change <code class="docutils literal notranslate"><span class="pre">TELEGRAM_BOT_TOKEN</span></code> (or toggle channels) after a sandbox already exists, you typically need to run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> again so the image and provider attachments are rebuilt with the new settings.</p>
+<p>NemoClaw stores a SHA-256 hash of each messaging token in the sandbox registry at creation time.
+When you re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--non-interactive</span></code> with a new token, NemoClaw detects the change, backs up workspace state, deletes the sandbox, recreates it with the new credential, and restores the backup.
+This makes credential rotation safe to script.</p>
+<p>Telegram, Discord, and Slack each allow only one active consumer per bot token.
+If you enable a messaging channel and another sandbox already uses the same token, onboard prompts you to confirm before continuing in interactive mode and exits non-zero in non-interactive mode.
+<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code> also reports cross-sandbox overlaps so you can resolve duplicates before messages start dropping.</p>
 <p>For a full first-time flow, refer to <a class="reference internal" href="../get-started/quickstart.html"><span class="std std-doc">Quickstart</span></a>.</p>
 </section>
 <section id="confirm-delivery">

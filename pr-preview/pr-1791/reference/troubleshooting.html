@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/documentation_options.js?v=c22ea008"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'latest';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.18';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -391,6 +391,7 @@
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -415,14 +416,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
-</ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../workspace/workspace-files.html">Workspace Files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Back Up and Restore</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../workspace/backup-restore.html">Backup &amp; Restore</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Monitoring</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html">Monitor Sandbox Activity</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Reference</span></p>
 <ul class="current nav bd-sidenav">
@@ -580,10 +581,19 @@ Instead, configure npm to use a directory you own:</p>
 </div>
 <p>Add the <code class="docutils literal notranslate"><span class="pre">export</span></code> line to your <code class="docutils literal notranslate"><span class="pre">~/.bashrc</span></code> or <code class="docutils literal notranslate"><span class="pre">~/.zshrc</span></code> to make it permanent, then re-run the installer.</p>
 </section>
+<section id="installer-fails-on-nvidia-jetson">
+<h3>Installer fails on NVIDIA Jetson<a class="headerlink" href="#installer-fails-on-nvidia-jetson" title="Link to this heading">#</a></h3>
+<p>The installer auto-detects NVIDIA Jetson devices (Orin and Thor) and applies required host configuration before the normal install flow.
+If the Jetson setup step fails, verify that you have <code class="docutils literal notranslate"><span class="pre">sudo</span></code> access and that Docker is installed and running.</p>
+<p>For JetPack 6 (L4T 36.x), the setup switches iptables to legacy mode and adjusts the Docker daemon configuration.
+For JetPack 7 (L4T 38.x / Thor), only bridge netfilter and sysctl settings are applied.
+BSP R39 and later do not require host customization and are handled automatically.</p>
+<p>If the L4T version is not recognized, the setup step is skipped and the installer continues normally.</p>
+</section>
 <section id="port-already-in-use">
 <h3>Port already in use<a class="headerlink" href="#port-already-in-use" title="Link to this heading">#</a></h3>
-<p>The NemoClaw gateway uses port <code class="docutils literal notranslate"><span class="pre">18789</span></code> by default.
-If another process is already bound to this port, onboarding fails.
+<p>The NemoClaw dashboard uses port <code class="docutils literal notranslate"><span class="pre">18789</span></code> by default and the gateway uses port <code class="docutils literal notranslate"><span class="pre">8080</span></code>.
+If another process is already bound to one of these ports, onboarding fails.
 Identify the conflicting process, verify it is safe to stop, and terminate it:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>lsof<span class="w"> </span>-i<span class="w"> </span>:18789
 <span class="gp">$ </span><span class="nb">kill</span><span class="w"> </span>&lt;PID&gt;
@@ -591,6 +601,30 @@ Identify the conflicting process, verify it is safe to stop, and terminate it:</
 </div>
 <p>If the process does not exit, use <code class="docutils literal notranslate"><span class="pre">kill</span> <span class="pre">-9</span> <span class="pre">&lt;PID&gt;</span></code> to force-terminate it.
 Then retry onboarding.</p>
+<p>Alternatively, override the conflicting port with an environment variable instead of stopping the other process:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">NEMOCLAW_DASHBOARD_PORT</span><span class="o">=</span><span class="m">19000</span><span class="w"> </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="commands.html#environment-variables"><span class="std std-ref">Environment Variables</span></a> for the full list of port overrides.</p>
+</section>
+<section id="running-multiple-sandboxes-simultaneously">
+<h3>Running multiple sandboxes simultaneously<a class="headerlink" href="#running-multiple-sandboxes-simultaneously" title="Link to this heading">#</a></h3>
+<p>Each sandbox requires its own dashboard port.
+If you onboard a second sandbox without overriding the port, onboarding fails because port <code class="docutils literal notranslate"><span class="pre">18789</span></code> is already claimed by the first sandbox.</p>
+<p>Assign a distinct port to each sandbox at onboard time:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w">                              </span><span class="c1"># first sandbox — uses default 18789</span>
+<span class="gp">$ </span><span class="nv">NEMOCLAW_DASHBOARD_PORT</span><span class="o">=</span><span class="m">19000</span><span class="w"> </span>nemoclaw<span class="w"> </span>onboard<span class="w">  </span><span class="c1"># second sandbox — uses 19000</span>
+</pre></div>
+</div>
+<p>Each sandbox then has its own SSH tunnel and its own dashboard URL:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>http://localhost:18789   ← first sandbox
+http://localhost:19000   ← second sandbox
+</pre></div>
+</div>
+<p>You can verify which tunnel belongs to which sandbox with:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>forward<span class="w"> </span>list
+</pre></div>
+</div>
 </section>
 </section>
 <section id="onboarding">
@@ -606,11 +640,25 @@ Current OpenShell releases handle that behavior themselves, so NemoClaw no longe
 <p>Podman is not a tested runtime.
 If onboarding or sandbox lifecycle fails, switch to a tested runtime (Docker Desktop, Colima, or Docker Engine) and rerun onboarding.</p>
 </section>
+<section id="openshell-version-above-maximum">
+<h3>OpenShell version above maximum<a class="headerlink" href="#openshell-version-above-maximum" title="Link to this heading">#</a></h3>
+<p>Each NemoClaw release validates against a range of tested OpenShell versions.
+If the installed OpenShell version exceeds the configured maximum, <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> exits with an error:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>✗ openshell &lt;version&gt; is above the maximum supported by this NemoClaw release.
+  blueprint.yaml max_openshell_version: &lt;max&gt;
+</pre></div>
+</div>
+<p>Upgrade NemoClaw to a version that supports your OpenShell release, or install a supported OpenShell version from the <a class="reference external" href="https://github.com/NVIDIA/OpenShell/releases" rel="noreferer noopener" target="_blank">OpenShell releases page</a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">install-openshell.sh</span></code> script also enforces this constraint and pins fresh installs to the validated maximum version.</p>
+</section>
 <section id="invalid-sandbox-name">
 <h3>Invalid sandbox name<a class="headerlink" href="#invalid-sandbox-name" title="Link to this heading">#</a></h3>
 <p>Sandbox names must follow RFC 1123 subdomain rules: lowercase alphanumeric characters and hyphens only, and must start and end with an alphanumeric character.
 Uppercase letters are automatically lowercased.</p>
-<p>If the name does not match these rules, the wizard exits with an error.
+<p>Names that collide with global CLI commands are also rejected.
+Reserved names include <code class="docutils literal notranslate"><span class="pre">onboard</span></code>, <code class="docutils literal notranslate"><span class="pre">list</span></code>, <code class="docutils literal notranslate"><span class="pre">deploy</span></code>, <code class="docutils literal notranslate"><span class="pre">setup</span></code>, <code class="docutils literal notranslate"><span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">stop</span></code>, <code class="docutils literal notranslate"><span class="pre">status</span></code>, <code class="docutils literal notranslate"><span class="pre">debug</span></code>, <code class="docutils literal notranslate"><span class="pre">uninstall</span></code>, <code class="docutils literal notranslate"><span class="pre">credentials</span></code>, and <code class="docutils literal notranslate"><span class="pre">help</span></code>.
+Using a reserved name would cause the CLI to route to the global command instead of the sandbox.</p>
+<p>If the name does not match these rules or is reserved, the wizard exits with an error.
 Choose a name such as <code class="docutils literal notranslate"><span class="pre">my-assistant</span></code> or <code class="docutils literal notranslate"><span class="pre">dev1</span></code>.</p>
 </section>
 <section id="sandbox-creation-fails-on-dgx">
@@ -625,6 +673,37 @@ The wizard cleans up stale port forwards and waits for gateway readiness automat
 NemoClaw checks both paths.
 If neither is found, verify that Colima is running:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>colima<span class="w"> </span>status
+</pre></div>
+</div>
+</section>
+<section id="re-onboard-fails-because-port-18789-is-held-by-ssh">
+<h3>Re-onboard fails because port 18789 is held by SSH<a class="headerlink" href="#re-onboard-fails-because-port-18789-is-held-by-ssh" title="Link to this heading">#</a></h3>
+<p>After destroying a sandbox and gateway, the SSH port-forward process for the
+dashboard can be left running.
+Re-running onboard then fails preflight with <code class="docutils literal notranslate"><span class="pre">Port</span> <span class="pre">18789</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">available.</span> <span class="pre">Blocked</span> <span class="pre">by:</span> <span class="pre">ssh</span></code>.</p>
+<p>Current NemoClaw detects this case and kills the orphaned SSH process
+automatically before retrying the port check.
+If you see the error on an older release, identify the SSH process and
+terminate it manually:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>lsof<span class="w"> </span>-i<span class="w"> </span>:18789
+<span class="gp">$ </span><span class="nb">kill</span><span class="w"> </span>&lt;PID&gt;
+</pre></div>
+</div>
+<p>Then re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+</section>
+<section id="updated-messaging-token-is-not-picked-up">
+<h3>Updated messaging token is not picked up<a class="headerlink" href="#updated-messaging-token-is-not-picked-up" title="Link to this heading">#</a></h3>
+<p>Re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--non-interactive</span></code> with a new
+<code class="docutils literal notranslate"><span class="pre">TELEGRAM_BOT_TOKEN</span></code>, <code class="docutils literal notranslate"><span class="pre">DISCORD_BOT_TOKEN</span></code>, or <code class="docutils literal notranslate"><span class="pre">SLACK_BOT_TOKEN</span></code> previously
+reported success while the sandbox kept polling with the old credential.
+Current NemoClaw stores SHA-256 hashes of messaging credentials in the
+sandbox registry at creation time and detects when a token has changed.
+When rotation is detected, NemoClaw automatically backs up workspace state,
+deletes the sandbox, recreates it with the new credential, and restores the
+backup.</p>
+<p>If you suspect a sandbox is still using a stale token, re-run onboarding so
+the credential check runs:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--non-interactive
 </pre></div>
 </div>
 </section>
@@ -689,6 +768,20 @@ The wizard prompts for confirmation before destroying an existing sandbox. If yo
 Back up your workspace first by following the instructions at <a class="reference internal" href="../workspace/backup-restore.html"><span class="std std-doc">Back Up and Restore</span></a>.</p>
 </div>
 </section>
+<section id="sandbox-is-running-an-outdated-agent-version">
+<h3>Sandbox is running an outdated agent version<a class="headerlink" href="#sandbox-is-running-an-outdated-agent-version" title="Link to this heading">#</a></h3>
+<p>After upgrading NemoClaw, <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code> and <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">status</span></code> warn if the sandbox is running an older agent version than the current image.</p>
+<p>To upgrade the sandbox while preserving workspace state, run:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>rebuild
+</pre></div>
+</div>
+<p>The rebuild command backs up state, destroys the old sandbox, recreates it with the current image, and restores state.
+Create a snapshot before rebuilding if you want an additional safety net:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>snapshot<span class="w"> </span>create
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>rebuild
+</pre></div>
+</div>
+</section>
 <section id="sandbox-shows-as-stopped">
 <h3>Sandbox shows as stopped<a class="headerlink" href="#sandbox-shows-as-stopped" title="Link to this heading">#</a></h3>
 <p>The sandbox may have been stopped or deleted.
@@ -700,6 +793,18 @@ Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span>
 When checking status inside an active sandbox, host-side sandbox state and inference configuration are not inspectable.
 The status command detects the sandbox context and reports “active (inside sandbox)” instead.</p>
 <p>Run <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">list</span></code> on the host to check the underlying sandbox state.</p>
+</section>
+<section id="openclaw-update-hangs-or-times-out-inside-the-sandbox">
+<h3><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">update</span></code> hangs or times out inside the sandbox<a class="headerlink" href="#openclaw-update-hangs-or-times-out-inside-the-sandbox" title="Link to this heading">#</a></h3>
+<p>This is expected for the current NemoClaw deployment model.
+NemoClaw installs <code class="docutils literal notranslate"><span class="pre">openclaw</span></code> into the sandbox image at build time, so the CLI is image-pinned rather than updated in place inside a running sandbox.</p>
+<p>Do not run <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">update</span></code> inside the sandbox.
+Instead:</p>
+<ol class="arabic simple">
+<li><p>Upgrade to a NemoClaw release that includes the newer <code class="docutils literal notranslate"><span class="pre">openclaw</span></code> version.</p></li>
+<li><p>If you build NemoClaw from source, bump the pinned <code class="docutils literal notranslate"><span class="pre">openclaw</span></code> version in <code class="docutils literal notranslate"><span class="pre">Dockerfile.base</span></code> and rebuild the sandbox base image.</p></li>
+<li><p>Back up any workspace files you need, then recreate the sandbox so it uses the rebuilt image.</p></li>
+</ol>
 </section>
 <section id="inference-requests-time-out">
 <h3>Inference requests time out<a class="headerlink" href="#inference-requests-time-out" title="Link to this heading">#</a></h3>
@@ -718,6 +823,27 @@ If large prompts still cause timeouts, increase it with <code class="docutils li
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
 </pre></div>
 </div>
+</section>
+<section id="agent-fails-at-runtime-after-onboarding-succeeds-with-a-compatible-endpoint">
+<h3>Agent fails at runtime after onboarding succeeds with a compatible endpoint<a class="headerlink" href="#agent-fails-at-runtime-after-onboarding-succeeds-with-a-compatible-endpoint" title="Link to this heading">#</a></h3>
+<p>Some OpenAI-compatible servers (such as SGLang) expose <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code> but their
+streaming mode is incomplete.
+OpenClaw requires granular streaming events like <code class="docutils literal notranslate"><span class="pre">response.output_text.delta</span></code>
+that these backends do not emit.</p>
+<p>For the compatible-endpoint provider, NemoClaw now defaults to
+<code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code> and skips the Responses API probe entirely unless you
+opt in.
+If you onboarded an older release that selected <code class="docutils literal notranslate"><span class="pre">/v1/responses</span></code>, re-run
+onboarding so the wizard rebuilds the image with chat completions:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>If you previously set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_PREFERRED_API=openai-responses</span></code> to force the
+Responses API, unset it before re-running onboard.</p>
+<p>Do not rely on <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_API_OVERRIDE</span></code> alone — it patches the config
+at container startup but does not update the Dockerfile ARG baked into the
+image.
+A fresh <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> is the reliable fix.</p>
 </section>
 <section id="nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox">
 <h3><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox<a class="headerlink" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox" title="Link to this heading">#</a></h3>
@@ -766,6 +892,32 @@ If logs show errors such as <code class="docutils literal notranslate"><span cla
 <li><p>treat the failure as a native Discord gateway problem, not as a bridge startup problem</p></li>
 </ul>
 </section>
+<section id="messaging-bridge-appears-running-but-no-messages-arrive">
+<h3>Messaging bridge appears running but no messages arrive<a class="headerlink" href="#messaging-bridge-appears-running-but-no-messages-arrive" title="Link to this heading">#</a></h3>
+<p>Bot tokens for Telegram (<code class="docutils literal notranslate"><span class="pre">getUpdates</span></code>), Discord (gateway), and Slack (Socket Mode) only allow one active consumer per token. If two NemoClaw sandboxes are configured with the same bot token, each one kicks the other off its polling connection and neither delivers messages. <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code> still reports the bridge as running because the gateway process itself is alive.</p>
+<p>To diagnose, open a shell in the sandbox and inspect the gateway log:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>term<span class="w"> </span>&lt;sandbox-name&gt;
+<span class="gp">$ </span>tail<span class="w"> </span>-f<span class="w"> </span>/tmp/gateway.log
+</pre></div>
+</div>
+<p>A repeating line like the following confirms the conflict:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[telegram] getUpdates conflict: 409: Conflict: terminated by other getUpdates request; retrying in 30s.
+</pre></div>
+</div>
+<p>To fix, run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;other-sandbox&gt;</span> <span class="pre">destroy</span></code> on whichever sandbox should stop polling, or rerun onboarding on it with the channel disabled. Current NemoClaw warns at <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> time when another sandbox already has the same channel enabled, but sandboxes created before that check was added may still be in a conflict loop.</p>
+</section>
+<section id="landlock-filesystem-restrictions-silently-degraded">
+<h3>Landlock filesystem restrictions silently degraded<a class="headerlink" href="#landlock-filesystem-restrictions-silently-degraded" title="Link to this heading">#</a></h3>
+<p>After sandbox creation, NemoClaw checks whether the host kernel supports Landlock (Linux 5.13+).
+If the kernel is too old or you are running on macOS (where the Docker VM kernel may lack Landlock), a warning prints:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>⚠ Landlock: Docker VM kernel &lt;version&gt; does not support Landlock (requires ≥5.13).
+  Sandbox filesystem restrictions will silently degrade (best_effort mode).
+</pre></div>
+</div>
+<p>This warning is informational and does not block sandbox creation.
+The sandbox runs without kernel-level filesystem restrictions, relying on container mount configuration instead.
+For full filesystem enforcement, run on a Linux kernel 5.13 or later (Ubuntu 22.04 LTS and later include Landlock support).</p>
+</section>
 <section id="sandbox-lost-after-gateway-restart">
 <h3>Sandbox lost after gateway restart<a class="headerlink" href="#sandbox-lost-after-gateway-restart" title="Link to this heading">#</a></h3>
 <p>Sandboxes created with OpenShell versions older than 0.0.26 can become unreachable after a gateway restart because SSH secrets were not persisted.
@@ -794,6 +946,50 @@ Open the TUI to see blocked requests and approve them:</p>
 <p>To permanently allow an endpoint, add it to the network policy.
 Refer to <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize the Network Policy</span></a> for details.</p>
 </section>
+<section id="dashboard-not-reachable-after-setting-nemoclaw-dashboard-port">
+<h3>Dashboard not reachable after setting <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code><a class="headerlink" href="#dashboard-not-reachable-after-setting-nemoclaw-dashboard-port" title="Link to this heading">#</a></h3>
+<p>If you ran <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT=&lt;port&gt;</span> <span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> and onboarding completed
+but the dashboard URL is unreachable (browser shows connection refused or the page fails
+to load), the sandbox was most likely created with an older NemoClaw version that had a
+bug where <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code> was parsed on the host but not passed into the sandbox
+at startup. The gateway inside the sandbox continued listening on the default port 18789
+while the SSH tunnel forwarded the custom port — leaving nothing at the other end of the
+tunnel.</p>
+<p>Re-run onboarding on the current NemoClaw release with the desired port. This rebuilds
+the sandbox image with the gateway bound to the configured port:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">NEMOCLAW_DASHBOARD_PORT</span><span class="o">=</span><span class="m">19000</span><span class="w"> </span>nemoclaw<span class="w"> </span>onboard
+</pre></div>
+</div>
+<p>If you need to run multiple sandboxes at different ports at the same time, see
+<a class="reference internal" href="#running-multiple-sandboxes-simultaneously">Running multiple sandboxes simultaneously</a>.</p>
+</section>
+<section id="ollama-auth-proxy-did-not-start">
+<h3>Ollama auth proxy did not start<a class="headerlink" href="#ollama-auth-proxy-did-not-start" title="Link to this heading">#</a></h3>
+<p>NemoClaw keeps Ollama bound to <code class="docutils literal notranslate"><span class="pre">127.0.0.1:11434</span></code> and starts a token-gated
+reverse proxy on <code class="docutils literal notranslate"><span class="pre">0.0.0.0:11435</span></code> so the sandbox can reach Ollama without
+exposing it to the local network.
+If the proxy fails to start, onboarding exits before configuring inference.</p>
+<p>Check whether the proxy port is occupied by another process:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>lsof<span class="w"> </span>-i<span class="w"> </span>:11435
+</pre></div>
+</div>
+<p>Stop the conflicting process and re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.
+The wizard cleans up stale proxy processes from previous runs automatically,
+so most failures resolve by retrying.</p>
+<p>The proxy token is persisted to <code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/ollama-proxy-token</span></code> with <code class="docutils literal notranslate"><span class="pre">0600</span></code>
+permissions.
+If the file is missing or unreadable after a host reboot, re-running
+<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> regenerates it.</p>
+</section>
+<section id="local-inference-health-check-resolves-to-ipv6">
+<h3>Local inference health check resolves to IPv6<a class="headerlink" href="#local-inference-health-check-resolves-to-ipv6" title="Link to this heading">#</a></h3>
+<p>Local inference health checks now use <code class="docutils literal notranslate"><span class="pre">127.0.0.1</span></code> instead of <code class="docutils literal notranslate"><span class="pre">localhost</span></code>.
+On systems where <code class="docutils literal notranslate"><span class="pre">localhost</span></code> resolves to <code class="docutils literal notranslate"><span class="pre">::1</span></code> first, older NemoClaw releases
+could probe the wrong address and report the local backend as unreachable
+even when it was running.
+If you see this on a current NemoClaw release, verify that the local backend
+binds an IPv4 address and not only <code class="docutils literal notranslate"><span class="pre">::1</span></code>.</p>
+</section>
 <section id="blueprint-run-failed">
 <h3>Blueprint run failed<a class="headerlink" href="#blueprint-run-failed" title="Link to this heading">#</a></h3>
 <p>View the error output for the failed blueprint run:</p>
@@ -801,6 +997,59 @@ Refer to <a class="reference internal" href="../network-policy/customize-network
 </pre></div>
 </div>
 <p>Use <code class="docutils literal notranslate"><span class="pre">--follow</span></code> to stream logs in real time while debugging.</p>
+</section>
+</section>
+<section id="windows-subsystem-for-linux">
+<span id="windows-wsl-2"></span><h2>Windows Subsystem for Linux<a class="headerlink" href="#windows-subsystem-for-linux" title="Link to this heading">#</a></h2>
+<p>For environment setup steps, see <a class="reference internal" href="../get-started/windows-setup.html"><span class="std std-doc">Windows Prerequisites</span></a>.</p>
+<section id="wsl-install-no-distribution-returns-forbidden-403">
+<h3><code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">--install</span> <span class="pre">--no-distribution</span></code> returns Forbidden (403)<a class="headerlink" href="#wsl-install-no-distribution-returns-forbidden-403" title="Link to this heading">#</a></h3>
+<p>Check your network connectivity.
+If you are behind a VPN, try reconnecting or switching to a different network.</p>
+</section>
+<section id="wsl-d-ubuntu-says-there-is-no-distribution-with-the-supplied-name">
+<h3><code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">-d</span> <span class="pre">Ubuntu</span></code> says “There is no distribution with the supplied name”<a class="headerlink" href="#wsl-d-ubuntu-says-there-is-no-distribution-with-the-supplied-name" title="Link to this heading">#</a></h3>
+<p>The Ubuntu package was installed with <code class="docutils literal notranslate"><span class="pre">--no-launch</span></code> but never registered.
+Run <code class="docutils literal notranslate"><span class="pre">ubuntu.exe</span> <span class="pre">install</span> <span class="pre">--root</span></code> from PowerShell to register it, or reinstall without <code class="docutils literal notranslate"><span class="pre">--no-launch</span></code>:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl<span class="w"> </span>--unregister<span class="w"> </span>Ubuntu
+<span class="gp">$ </span>wsl<span class="w"> </span>--install<span class="w"> </span>-d<span class="w"> </span>Ubuntu
+</pre></div>
+</div>
+</section>
+<section id="docker-info-fails-inside-wsl">
+<h3><code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">info</span></code> fails inside WSL<a class="headerlink" href="#docker-info-fails-inside-wsl" title="Link to this heading">#</a></h3>
+<p>Confirm that Docker Desktop is running and that WSL integration is enabled for Ubuntu (Settings &gt; Resources &gt; WSL integration).
+Then restart WSL:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl<span class="w"> </span>--shutdown
+<span class="gp">$ </span>wsl<span class="w"> </span>-d<span class="w"> </span>Ubuntu
+<span class="gp">$ </span>docker<span class="w"> </span>info
+</pre></div>
+</div>
+</section>
+<section id="ollama-inference-fails-or-hangs-in-wsl">
+<h3>Ollama inference fails or hangs in WSL<a class="headerlink" href="#ollama-inference-fails-or-hangs-in-wsl" title="Link to this heading">#</a></h3>
+<p>Ollama configures context length based on your hardware.
+On some GPUs (for example RTX 3500), the default context length is not sufficient for OpenClaw.
+Force a larger context length:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>pkill<span class="w"> </span>-f<span class="w"> </span><span class="s1">&#39;ollama serve&#39;</span>
+<span class="gp">$ </span><span class="nv">OLLAMA_CONTEXT_LENGTH</span><span class="o">=</span><span class="m">16384</span><span class="w"> </span>ollama<span class="w"> </span>serve
+</pre></div>
+</div>
+<p>Verify that Ollama inference works:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Hello&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>ollama<span class="w"> </span>run<span class="w"> </span>&lt;model-id&gt;
+</pre></div>
+</div>
+<p>Replace <code class="docutils literal notranslate"><span class="pre">&lt;model-id&gt;</span></code> with the model you selected during onboarding (for example <code class="docutils literal notranslate"><span class="pre">qwen3.5:4b</span></code>).</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">ollama</span> <span class="pre">serve</span></code> fails with <code class="docutils literal notranslate"><span class="pre">Error:</span> <span class="pre">listen</span> <span class="pre">tcp</span> <span class="pre">127.0.0.1:11434:</span> <span class="pre">bind:</span> <span class="pre">address</span> <span class="pre">already</span> <span class="pre">in</span> <span class="pre">use</span></code>, check whether Ollama is configured for automatic startup:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>ollama
+</pre></div>
+</div>
+<p>If it is active, stop it first, then start with the custom context length:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>sudo<span class="w"> </span>systemctl<span class="w"> </span>stop<span class="w"> </span>ollama
+<span class="gp">$ </span><span class="nv">OLLAMA_CONTEXT_LENGTH</span><span class="o">=</span><span class="m">16384</span><span class="w"> </span>ollama<span class="w"> </span>serve
+</pre></div>
+</div>
+<p>For additional troubleshooting, see the <a class="reference internal" href="../get-started/quickstart.html"><span class="std std-doc">Quickstart</span></a> and <a class="reference internal" href="../get-started/windows-setup.html"><span class="std std-doc">Windows Setup</span></a> pages.</p>
 </section>
 </section>
 <section id="podman">
@@ -870,29 +1119,49 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#macos-first-run-failures">macOS first-run failures</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#permission-errors-during-installation">Permission errors during installation</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#npm-install-fails-with-permission-errors">npm install fails with permission errors</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#installer-fails-on-nvidia-jetson">Installer fails on NVIDIA Jetson</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#port-already-in-use">Port already in use</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running-multiple-sandboxes-simultaneously">Running multiple sandboxes simultaneously</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#onboarding">Onboarding</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cgroup-v2-errors-during-onboard">Cgroup v2 errors during onboard</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openshell-version-above-maximum">OpenShell version above maximum</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#invalid-sandbox-name">Invalid sandbox name</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-creation-fails-on-dgx">Sandbox creation fails on DGX</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#colima-socket-not-detected-macos">Colima socket not detected (macOS)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#re-onboard-fails-because-port-18789-is-held-by-ssh">Re-onboard fails because port 18789 is held by SSH</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#updated-messaging-token-is-not-picked-up">Updated messaging token is not picked up</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-creation-killed-by-oom-exit-137">Sandbox creation killed by OOM (exit 137)</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime">Runtime</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#reconnect-after-a-host-reboot">Reconnect after a host reboot</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-is-running-an-outdated-agent-version">Sandbox is running an outdated agent version</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-shows-as-stopped">Sandbox shows as stopped</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#status-shows-not-running-inside-the-sandbox">Status shows “not running” inside the sandbox</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-update-hangs-or-times-out-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">update</span></code> hangs or times out inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-requests-time-out">Inference requests time out</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-fails-at-runtime-after-onboarding-succeeds-with-a-compatible-endpoint">Agent fails at runtime after onboarding succeeds with a compatible endpoint</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox"><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-doctor-fix-cannot-repair-discord-channel-config-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> cannot repair Discord channel config inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#discord-bot-logs-in-but-the-channel-still-does-not-work">Discord bot logs in, but the channel still does not work</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#messaging-bridge-appears-running-but-no-messages-arrive">Messaging bridge appears running but no messages arrive</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#landlock-filesystem-restrictions-silently-degraded">Landlock filesystem restrictions silently degraded</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-lost-after-gateway-restart">Sandbox lost after gateway restart</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-external-hosts-through-a-proxy">Agent cannot reach external hosts through a proxy</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cannot-reach-an-external-host">Agent cannot reach an external host</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#dashboard-not-reachable-after-setting-nemoclaw-dashboard-port">Dashboard not reachable after setting <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ollama-auth-proxy-did-not-start">Ollama auth proxy did not start</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#local-inference-health-check-resolves-to-ipv6">Local inference health check resolves to IPv6</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blueprint-run-failed">Blueprint run failed</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#windows-subsystem-for-linux">Windows Subsystem for Linux</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#wsl-install-no-distribution-returns-forbidden-403"><code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">--install</span> <span class="pre">--no-distribution</span></code> returns Forbidden (403)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#wsl-d-ubuntu-says-there-is-no-distribution-with-the-supplied-name"><code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">-d</span> <span class="pre">Ubuntu</span></code> says “There is no distribution with the supplied name”</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-info-fails-inside-wsl"><code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">info</span></code> fails inside WSL</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ollama-inference-fails-or-hangs-in-wsl">Ollama inference fails or hangs in WSL</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#podman">Podman</a></li>

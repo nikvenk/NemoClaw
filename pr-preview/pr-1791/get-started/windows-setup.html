@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>NemoClaw Agent Skills for AI Coding Assistants &#8212; NVIDIA NemoClaw Developer Guide</title>
+    <title>Windows Prerequisites &#8212; NVIDIA NemoClaw Developer Guide</title>
   
   
   
@@ -52,7 +52,7 @@
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
     <script src="../_static/search-assets.bundle.js?v=099b119e"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'resources/agent-skills';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'get-started/windows-setup';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
@@ -61,12 +61,12 @@
             false;
         </script>
 
-    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/resources/agent-skills.html" />
+    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/get-started/windows-setup.html" />
     <link rel="icon" href="../_static/favicon.png"/>
 
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="License" href="license.html" />
-    <link rel="prev" title="Troubleshooting" href="../reference/troubleshooting.html" />
+    <link rel="next" title="Inference Options" href="../inference/inference-options.html" />
+    <link rel="prev" title="Quickstart" href="quickstart.html" />
 
 
 
@@ -389,9 +389,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../about/release-notes.html">Release Notes</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -433,10 +433,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../reference/troubleshooting.html">Troubleshooting</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Resources</span></p>
-<ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Agent Skills</a></li>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../resources/agent-skills.html">Agent Skills</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/blob/main/SECURITY.md">Report Vulnerabilities</a></li>
-<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resources/license.html">License</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://discord.gg/XFpfPv9Uvx">Discord</a></li>
 </ul>
 </div>
@@ -472,7 +472,7 @@
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">NemoClaw Agent Skills for AI Coding Assistants</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Windows Prerequisites</span></li>
   </ul>
 </nav>
 </div>
@@ -493,143 +493,87 @@
   SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
   SPDX-License-Identifier: Apache-2.0
 -->
-<section class="tex2jax_ignore mathjax_ignore" id="nemoclaw-agent-skills-for-ai-coding-assistants">
-<h1>NemoClaw Agent Skills for AI Coding Assistants<a class="headerlink" href="#nemoclaw-agent-skills-for-ai-coding-assistants" title="Link to this heading">#</a></h1>
-<p>NemoClaw ships agent skills that are generated directly from this documentation.
-Each skill is a converted version of one or more doc pages, structured so AI coding assistants can consume it as context.
-This means you can interact with the full NemoClaw documentation as skills inside your agent chat session, instead of reading the docs separately.</p>
-<p>Ask your assistant a question about NemoClaw and it responds with the same guidance found in these docs, adapted to your current situation.
-Skills cover installation, inference configuration, network policy management, monitoring, deployment, security, workspace management, and the CLI reference.</p>
+<section class="tex2jax_ignore mathjax_ignore" id="windows-prerequisites">
+<h1>Windows Prerequisites<a class="headerlink" href="#windows-prerequisites" title="Link to this heading">#</a></h1>
+<p>NemoClaw runs inside Windows Subsystem for Linux (WSL 2) on Windows.
+Complete these steps before following the <a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a>.
+Linux and macOS users do not need this page and can go directly to the Quickstart.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are a contributor and have cloned the full NemoClaw repository, the full set of skills including contributor and maintainer skills are already available at the project root.
-Open the <code class="docutils literal notranslate"><span class="pre">NemoClaw</span></code> directory in your coding assistant and the skills load automatically.
-This page is for users who installed NemoClaw with the installer and do not have a local clone.</p>
+<p>This guide has been tested on x86-64.</p>
 </div>
-<section id="get-the-skills">
-<h2>Get the Skills<a class="headerlink" href="#get-the-skills" title="Link to this heading">#</a></h2>
-<p>Fetch only the skills from the NemoClaw repository without downloading the full source tree.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git<span class="w"> </span>clone<span class="w"> </span>--filter<span class="o">=</span>blob:none<span class="w"> </span>--no-checkout<span class="w"> </span>https://github.com/NVIDIA/NemoClaw.git
-<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>NemoClaw
-<span class="gp">$ </span>git<span class="w"> </span>sparse-checkout<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--no-cone<span class="w"> </span><span class="s1">&#39;/.agents/skills/nemoclaw-user-*/**&#39;</span><span class="w"> </span><span class="s1">&#39;/.agents/skills/nemoclaw-skills-guide/**&#39;</span><span class="w"> </span><span class="s1">&#39;/.claude/**&#39;</span><span class="w"> </span><span class="s1">&#39;/AGENTS.md&#39;</span><span class="w"> </span><span class="s1">&#39;/CLAUDE.md&#39;</span>
-<span class="gp">$ </span>git<span class="w"> </span>checkout
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<p>Verify the following before you begin:</p>
+<ul class="simple">
+<li><p>Windows 10 (build 19041 or later) or Windows 11.</p></li>
+<li><p>Hardware requirements are the same as the <a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a>.</p></li>
+</ul>
+</section>
+<section id="enable-wsl-2">
+<h2>Enable WSL 2<a class="headerlink" href="#enable-wsl-2" title="Link to this heading">#</a></h2>
+<p>Open an elevated PowerShell (Run as Administrator):</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl<span class="w"> </span>--install<span class="w"> </span>--no-distribution
 </pre></div>
 </div>
-<p>Open the <code class="docutils literal notranslate"><span class="pre">NemoClaw</span></code> directory in your AI coding assistant.
-The assistant discovers the skills in <code class="docutils literal notranslate"><span class="pre">.agents/skills/</span></code> and uses them to answer NemoClaw questions with project-specific guidance.</p>
-<p>You can keep the skills inside the cloned directory or copy <code class="docutils literal notranslate"><span class="pre">.agents/skills/</span></code> to a global location (such as <code class="docutils literal notranslate"><span class="pre">~/.cursor/skills/</span></code> or <code class="docutils literal notranslate"><span class="pre">~/.claude/skills/</span></code>) so they are available across all your projects.
-The choice depends on whether you want NemoClaw skills scoped to one workspace or accessible everywhere.</p>
+<p>This enables both the Windows Subsystem for Linux and Virtual Machine Platform features.</p>
+<p>Reboot if prompted.</p>
 </section>
-<section id="update-the-skills">
-<h2>Update the Skills<a class="headerlink" href="#update-the-skills" title="Link to this heading">#</a></h2>
-<p>The sparse checkout filter is saved, so <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> fetches only updated skills without downloading the full source tree.
-Run <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> after each NemoClaw release to pick up new and updated skills.</p>
-</section>
-<section id="available-skills">
-<h2>Available Skills<a class="headerlink" href="#available-skills" title="Link to this heading">#</a></h2>
-<p>The following user skills ship with NemoClaw.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Skill</p></th>
-<th class="head"><p>Summary</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-overview</span></code></p></td>
-<td><p>What NemoClaw is, ecosystem placement (OpenClaw + OpenShell + NemoClaw), how it works internally, and release notes.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-get-started</span></code></p></td>
-<td><p>Install NemoClaw, launch a sandbox, and run the first agent prompt.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-configure-inference</span></code></p></td>
-<td><p>Choose inference providers during onboarding, switch models without restarting, and set up local inference servers (Ollama, vLLM, TensorRT-LLM, NIM).</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-manage-policy</span></code></p></td>
-<td><p>Approve or deny blocked egress requests in the TUI and customize the sandbox network policy (add, remove, or modify allowed endpoints).</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-monitor-sandbox</span></code></p></td>
-<td><p>Check sandbox health, read logs, and trace agent behavior to diagnose problems.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-deploy-remote</span></code></p></td>
-<td><p>Deploy NemoClaw to a remote GPU instance, set up the Telegram bridge, and review sandbox container hardening.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-configure-security</span></code></p></td>
-<td><p>Review the risk framework for every configurable security control, understand credential storage, and assess posture trade-offs.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-workspace</span></code></p></td>
-<td><p>Back up and restore OpenClaw workspace files (soul.md, identity.md, memory.md, agents.md) and understand file persistence across sandbox restarts.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-reference</span></code></p></td>
-<td><p>CLI command reference, plugin and blueprint architecture, baseline network policies, and troubleshooting guide.</p></td>
-</tr>
-</tbody>
-</table>
+<section id="install-and-register-ubuntu">
+<h2>Install and Register Ubuntu<a class="headerlink" href="#install-and-register-ubuntu" title="Link to this heading">#</a></h2>
+<p>After reboot, open an elevated PowerShell again:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl<span class="w"> </span>--install<span class="w"> </span>-d<span class="w"> </span>Ubuntu
+</pre></div>
+</div>
+<p>Let the distribution launch and complete first-run setup (pick a Unix username and password), then type <code class="docutils literal notranslate"><span class="pre">exit</span></code> to return to PowerShell.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Do not use the <code class="docutils literal notranslate"><span class="pre">--no-launch</span></code> flag.
+The <code class="docutils literal notranslate"><span class="pre">--no-launch</span></code> flag downloads the package but does not register the distribution with WSL.
+Commands like <code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">-d</span> <span class="pre">Ubuntu</span></code> fail with “There is no distribution with the supplied name” until the distribution has been launched at least once.</p>
+</div>
+<p>Verify the distribution is registered and running WSL 2:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl<span class="w"> </span>-l<span class="w"> </span>-v
+</pre></div>
+</div>
+<p>Expected output:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>  NAME      STATE           VERSION
+* Ubuntu    Running         2
+</pre></div>
 </div>
 </section>
-<section id="example-questions-and-triggered-skills">
-<h2>Example Questions and Triggered Skills<a class="headerlink" href="#example-questions-and-triggered-skills" title="Link to this heading">#</a></h2>
-<p>After opening the cloned repository in your coding assistant, ask a NemoClaw question in natural language.
-The assistant matches your question to the relevant skill and follows the guidance it contains.</p>
-<p>Examples of questions your assistant can answer with these skills:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Question</p></th>
-<th class="head"><p>Skill triggered</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>“How do I install NemoClaw?”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-get-started</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p>“Switch my inference provider to Ollama.”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-configure-inference</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p>“A network request was blocked. How do I approve it?”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-manage-policy</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p>“Show me the sandbox logs.”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-monitor-sandbox</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p>“How do I deploy NemoClaw to a remote GPU?”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-deploy-remote</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p>“What security controls can I configure?”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-configure-security</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p>“Back up my agent workspace files.”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-workspace</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p>“What CLI commands are available?”</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">nemoclaw-user-reference</span></code></p></td>
-</tr>
-</tbody>
-</table>
+<section id="install-docker-desktop">
+<h2>Install Docker Desktop<a class="headerlink" href="#install-docker-desktop" title="Link to this heading">#</a></h2>
+<p>Install <a class="reference external" href="https://www.docker.com/products/docker-desktop/" rel="noreferer noopener" target="_blank">Docker Desktop</a> with the WSL 2 backend (the default on Windows 11).</p>
+<p>After installation, open Docker Desktop Settings and confirm that WSL integration is enabled for your Ubuntu distribution (Settings &gt; Resources &gt; WSL integration).</p>
+<p>Verify from inside WSL:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>wsl
+<span class="gp">$ </span>docker<span class="w"> </span>info
+</pre></div>
 </div>
-<p>You can also reference a skill directly by name if you know which one you need.</p>
+<p><code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">info</span></code> prints server information.
+If you see “Cannot connect to the Docker daemon”, confirm that Docker Desktop is running and that WSL integration is enabled.</p>
 </section>
-<section id="ai-coding-assistants-that-you-can-use-with-nemoclaw-skills">
-<h2>AI Coding Assistants that You Can Use with NemoClaw Skills<a class="headerlink" href="#ai-coding-assistants-that-you-can-use-with-nemoclaw-skills" title="Link to this heading">#</a></h2>
-<p>The NemoClaw agent skills follow the <a class="reference external" href="https://agentskills.io/skill-creation/best-practices" rel="noreferer noopener" target="_blank">Agent Skills best practices</a> and the <a class="reference external" href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices" rel="noreferer noopener" target="_blank">Claude Skills best practices</a>.
-The following table shows how each AI coding assistant can use the NemoClaw skills.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Assistant</p></th>
-<th class="head"><p>Skill discovery</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Cursor</p></td>
-<td><p>Reads <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> at the project root, which references <code class="docutils literal notranslate"><span class="pre">.agents/skills/</span></code>.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Claude Code</p></td>
-<td><p>Follows the <code class="docutils literal notranslate"><span class="pre">.claude/skills/</span></code> symlink, which points to <code class="docutils literal notranslate"><span class="pre">.agents/skills/</span></code>.</p></td>
-</tr>
-<tr class="row-even"><td><p>Other assistants</p></td>
-<td><p>Point the assistant to <code class="docutils literal notranslate"><span class="pre">.agents/skills/</span></code> if it supports project-level skill loading.</p></td>
-</tr>
-</tbody>
-</table>
+<section id="set-up-local-inference-with-ollama-optional">
+<h2>Set Up Local Inference with Ollama (Optional)<a class="headerlink" href="#set-up-local-inference-with-ollama-optional" title="Link to this heading">#</a></h2>
+<p>If you plan to select Ollama as your inference provider during onboarding, install it inside WSL before running the NemoClaw installer:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://ollama.com/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+</pre></div>
 </div>
+<p>If Ollama is also running on the Windows side, quit it before running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> (system tray &gt; right-click &gt; Quit).
+The Windows and WSL instances bind to the same port and conflict.</p>
+<p>The onboarding process starts Ollama in WSL if it is not already running.
+You can also start it yourself beforehand with <code class="docutils literal notranslate"><span class="pre">ollama</span> <span class="pre">serve</span></code>.</p>
+</section>
+<section id="next-step">
+<h2>Next Step<a class="headerlink" href="#next-step" title="Link to this heading">#</a></h2>
+<p>Your Windows environment is ready.
+Open a WSL terminal (type <code class="docutils literal notranslate"><span class="pre">wsl</span></code> in PowerShell, or open Ubuntu from Windows Terminal) and continue with the <a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a> to install NemoClaw and launch your first sandbox.</p>
+<p>All NemoClaw commands run inside WSL, not in PowerShell.</p>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
+<p>For Windows-specific troubleshooting, see the <a class="reference internal" href="../reference/troubleshooting.html#windows-subsystem-for-linux"><span class="std std-ref">Windows Subsystem for Linux section</span></a> in the Troubleshooting guide.</p>
 </section>
 </section>
 
@@ -644,20 +588,20 @@ The following table shows how each AI coding assistant can use the NemoClaw skil
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../reference/troubleshooting.html"
+       href="quickstart.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Troubleshooting</p>
+        <p class="prev-next-title">Quickstart</p>
       </div>
     </a>
     <a class="right-next"
-       href="license.html"
+       href="../inference/inference-options.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">License</p>
+        <p class="prev-next-title">Inference Options</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -682,11 +626,13 @@ The following table shows how each AI coding assistant can use the NemoClaw skil
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#get-the-skills">Get the Skills</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#update-the-skills">Update the Skills</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#available-skills">Available Skills</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example-questions-and-triggered-skills">Example Questions and Triggered Skills</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ai-coding-assistants-that-you-can-use-with-nemoclaw-skills">AI Coding Assistants that You Can Use with NemoClaw Skills</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#enable-wsl-2">Enable WSL 2</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install-and-register-ubuntu">Install and Register Ubuntu</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install-docker-desktop">Install Docker Desktop</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#set-up-local-inference-with-ollama-optional">Set Up Local Inference with Ollama (Optional)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-step">Next Step</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a></li>
 </ul>
   </nav></div>
 
