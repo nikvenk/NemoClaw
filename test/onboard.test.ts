@@ -522,6 +522,7 @@ describe("onboard helpers", () => {
     const command = getDashboardForwardStartCommand("the-crucible", {
       chatUiUrl: "http://127.0.0.1:18789",
       openshellBinary: "/usr/bin/openshell",
+      isWsl: false,
     });
 
     expect(command).toContain("--background");
@@ -537,6 +538,7 @@ describe("onboard helpers", () => {
     const command = getDashboardForwardStartCommand("the-crucible", {
       chatUiUrl: "http://127.0.0.1:19000",
       openshellBinary: "/usr/bin/openshell",
+      isWsl: false,
     });
 
     expect(command).toContain("--background");
@@ -2640,9 +2642,7 @@ const { createSandbox } = require(${onboardPath});
       payload.commands.some(
         (entry) =>
           entry.command.includes("forward start --background 19000 my-assistant") ||
-          entry.command.includes(
-            "'forward' 'start' '--background' '0.0.0.0:19000' 'my-assistant'",
-          ),
+          entry.command.includes("forward start --background 0.0.0.0:19000 my-assistant"),
       ),
       "expected dashboard forward for port 19000",
     );
