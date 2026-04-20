@@ -6508,6 +6508,10 @@ async function onboard(opts = {}) {
       : gatewayReuseState === "healthy";
     const resumeGateway =
       resume && session?.steps?.gateway?.status === "complete" && canReuseHealthyGateway;
+    // Track whether we had to recreate the gateway during resume — if so,
+    // the inference provider must be re-registered because the new gateway
+    // has no provider/route state from the old one.
+    let gatewayRecreatedDuringResume = false;
     if (resumeGateway) {
       skippedStepMessage("gateway", "running");
     } else if (!resume && canReuseHealthyGateway) {
@@ -6530,6 +6534,7 @@ async function onboard(opts = {}) {
       onboardSession.markStepComplete("gateway", {
         gatewayBackend: gatewayBackendUsed || "docker",
       });
+      if (resume) gatewayRecreatedDuringResume = true;
     }
 
     let sandboxName = session?.sandboxName || null;
@@ -6574,6 +6579,7 @@ async function onboard(opts = {}) {
       process.env.NEMOCLAW_OPENSHELL_BIN = getOpenshellBinary();
       const resumeInference =
         !forceProviderSelection &&
+        !gatewayRecreatedDuringResume &&
         resume &&
         typeof provider === "string" &&
         typeof model === "string" &&
