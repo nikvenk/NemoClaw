@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 version: "0.1.0"
-min_openshell_version: "0.0.26"
-min_openclaw_version: "2026.3.0"
+min_openshell_version: "0.0.24"
+max_openshell_version: "0.0.26"
+min_openclaw_version: "2026.4.2"
 # Supported gateway backends. "docker" uses Docker + k3s (required for GPU
 # via CDI injection). "vm" uses openshell-vm (libkrun microVM, no Docker
 # required, CPU-only). The CLI reads this list to validate user selection.
