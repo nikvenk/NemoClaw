@@ -17,8 +17,11 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { validateName } = require("./runner");
-const { stripCredentials } = require("./credential-filter");
+const credentialFilter: typeof import("./credential-filter") = require("./credential-filter");
+const { stripCredentials } = credentialFilter;
 const { appendAuditEntry } = require("./shields-audit");
+
+type ConfigObject = import("./credential-filter").ConfigObject;
 const {
   runOpenshellCommand,
   captureOpenshellCommand,
@@ -90,6 +93,10 @@ function getOpenshellBinary(): string {
   return process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
 }
 
+function isConfigObject(value: unknown): value is ConfigObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function extractDotpath(obj: unknown, dotpath: string): unknown {
   const keys = dotpath.split(".");
   let current: unknown = obj;
@@ -116,12 +123,12 @@ function setDotpath(obj: Record<string, unknown>, dotpath: string, value: unknow
 /**
  * Parse a config file's raw text according to its format.
  */
-function parseConfig(raw: string, format: string): Record<string, unknown> {
-  if (format === "yaml") {
-    const YAML = require("yaml");
-    return YAML.parse(raw) as Record<string, unknown>;
+function parseConfig(raw: string, format: string): ConfigObject {
+  const parsed = format === "yaml" ? require("yaml").parse(raw) : JSON.parse(raw);
+  if (!isConfigObject(parsed)) {
+    throw new Error("Config is not an object.");
   }
-  return JSON.parse(raw) as Record<string, unknown>;
+  return parsed;
 }
 
 /**
@@ -139,7 +146,7 @@ function serializeConfig(config: Record<string, unknown>, format: string): strin
  * Read the agent's config from a running sandbox.
  * Resolves the correct config path based on the agent type.
  */
-function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Record<string, unknown> {
+function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): ConfigObject {
   const binary = getOpenshellBinary();
   let raw: string;
   try {
@@ -220,14 +227,11 @@ function configGet(sandboxName: string, opts: ConfigGetOpts = {}): void {
   validateName(sandboxName, "sandbox name");
 
   const target = resolveAgentConfig(sandboxName);
-  let config: unknown = readSandboxConfig(sandboxName, target);
-
-  // Strip credentials before display
-  config = stripCredentials(config);
+  let config: unknown = stripCredentials(readSandboxConfig(sandboxName, target));
 
   // Remove gateway section for openclaw (contains auth tokens)
-  if (config && typeof config === "object" && !Array.isArray(config)) {
-    delete (config as Record<string, unknown>).gateway;
+  if (isConfigObject(config)) {
+    delete config.gateway;
   }
 
   // Extract dotpath if specified

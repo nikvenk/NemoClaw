@@ -12,6 +12,17 @@
 
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
+export type ConfigValue =
+  | null
+  | undefined
+  | boolean
+  | number
+  | string
+  | ConfigValue[]
+  | ConfigObject;
+
+export type ConfigObject = { [key: string]: ConfigValue };
+
 const CREDENTIAL_PLACEHOLDER = "[STRIPPED_BY_MIGRATION]";
 
 /**
@@ -44,17 +55,22 @@ export function isCredentialField(key: string): boolean {
   return CREDENTIAL_FIELDS.has(key) || CREDENTIAL_FIELD_PATTERN.test(key);
 }
 
+function isConfigObject(value: unknown): value is ConfigObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Recursively strip credential fields from a JSON-like object.
  * Returns a new object with sensitive values replaced by a placeholder.
  */
-export function stripCredentials(obj: unknown): unknown {
+export function stripCredentials(obj: ConfigValue): ConfigValue {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map(stripCredentials);
+  if (!isConfigObject(obj)) return obj;
 
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+  const result: ConfigObject = {};
+  for (const [key, value] of Object.entries(obj)) {
     if (isCredentialField(key)) {
       result[key] = CREDENTIAL_PLACEHOLDER;
     } else {
@@ -76,10 +92,9 @@ export function sanitizeConfigFile(configPath: string): void {
   } catch {
     return; // Not valid JSON — skip (may be YAML for Hermes)
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-  const config = parsed as Record<string, unknown>;
-  delete config["gateway"];
-  const sanitized = stripCredentials(config) as Record<string, unknown>;
+  if (!isConfigObject(parsed)) return;
+  delete parsed.gateway;
+  const sanitized = stripCredentials(parsed);
   writeFileSync(configPath, JSON.stringify(sanitized, null, 2));
   chmodSync(configPath, 0o600);
 }
