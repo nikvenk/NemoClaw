@@ -1912,7 +1912,10 @@ function startOllamaAuthProxy(): void {
   const pid = spawnOllamaAuthProxy(ollamaProxyToken);
   sleep(1);
   if (!isOllamaProxyProcess(pid)) {
-    console.error(`  Warning: Ollama auth proxy did not start on :${OLLAMA_PROXY_PORT}`);
+    console.error(`  Error: Ollama auth proxy failed to start on :${OLLAMA_PROXY_PORT}`);
+    console.error(`  Containers will not be able to reach Ollama without the proxy.`);
+    console.error(`  Check if port ${OLLAMA_PROXY_PORT} is already in use: lsof -ti :${OLLAMA_PROXY_PORT}`);
+    process.exit(1);
   }
 }
 
