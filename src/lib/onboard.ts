@@ -74,7 +74,24 @@ const inferenceConfig: typeof import("./inference-config") = require("./inferenc
 const { DEFAULT_CLOUD_MODEL, getProviderSelectionConfig, parseGatewayInference } = inferenceConfig;
 
 const onboardProviders = require("./onboard-providers");
+
+type RemoteProviderConfigEntry = {
+  label: string;
+  providerName: string;
+  providerType: string;
+  credentialEnv: string;
+  endpointUrl: string;
+  helpUrl: string | null;
+  modelMode: "catalog" | "curated" | "input";
+  defaultModel: string;
+  skipVerify?: boolean;
+};
+
 const {
+  BUILD_ENDPOINT_URL,
+  OPENAI_ENDPOINT_URL,
+  ANTHROPIC_ENDPOINT_URL,
+  GEMINI_ENDPOINT_URL,
   REMOTE_PROVIDER_CONFIG,
   LOCAL_INFERENCE_PROVIDERS,
   DISCORD_SNOWFLAKE_RE,
@@ -83,7 +100,22 @@ const {
   getNonInteractiveProvider,
   getNonInteractiveModel,
   getSandboxInferenceConfig,
-} = onboardProviders;
+} = onboardProviders as {
+  BUILD_ENDPOINT_URL: string;
+  OPENAI_ENDPOINT_URL: string;
+  ANTHROPIC_ENDPOINT_URL: string;
+  GEMINI_ENDPOINT_URL: string;
+  REMOTE_PROVIDER_CONFIG: Record<string, RemoteProviderConfigEntry>;
+  LOCAL_INFERENCE_PROVIDERS: string[];
+  DISCORD_SNOWFLAKE_RE: RegExp;
+  getProviderLabel: (key: string) => string;
+  getEffectiveProviderName: (key: string | null | undefined) => string | null;
+  getNonInteractiveProvider: () => string | null;
+  getNonInteractiveModel: (providerKey: string) => string | null;
+  getSandboxInferenceConfig: (model: string, provider?: string | null, preferredInferenceApi?: string | null) => {
+    providerKey: string; primaryModelRef: string; inferenceBaseUrl: string; inferenceApi: string; inferenceCompat: LooseObject | null;
+  };
+};
 const { sleepSeconds } = require("./wait");
 const platformUtils: typeof import("./platform") = require("./platform");
 const { inferContainerRuntime, isWsl, shouldPatchCoredns } = platformUtils;
@@ -1392,395 +1424,20 @@ function patchStagedDockerfile(
   fs.writeFileSync(dockerfilePath, dockerfile);
 }
 
-type ResponseOutputValue = LooseScalar | ResponseOutputItem | ResponseOutputValue[];
-type ResponseOutputRoot = { output?: ResponseOutputValue[] };
-type ResponseOutputItem = {
-  type?: string;
-  content?: ResponseOutputValue[];
-};
-
-function parseJsonObject(body: string | null | undefined): ResponseOutputRoot | null {
-  if (!body) return null;
-  try {
-    return parseJson<ResponseOutputRoot>(body);
-  } catch {
-    return null;
-  }
-}
-
-function readResponseOutputItem(
-  value: ResponseOutputValue | object | undefined,
-): ResponseOutputItem | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  const type = Reflect.get(value, "type");
-  const content = Reflect.get(value, "content");
-  return {
-    type: typeof type === "string" ? type : undefined,
-    content: Array.isArray(content) ? content : undefined,
-  };
-}
-
-function hasResponsesToolCall(body: string | null | undefined): boolean {
-  const parsed = parseJsonObject(body);
-  if (!parsed || !Array.isArray(parsed.output)) return false;
-
-  const stack = [...parsed.output];
-  while (stack.length > 0) {
-    const item = readResponseOutputItem(stack.pop());
-    if (!item) continue;
-    if (item.type === "function_call" || item.type === "tool_call") return true;
-    if (Array.isArray(item.content)) {
-      stack.push(...item.content);
-    }
-  }
-
-  return false;
-}
-
-function shouldRequireResponsesToolCalling(provider: string): boolean {
-  return (
-    provider === "nvidia-prod" || provider === "gemini-api" || provider === "compatible-endpoint"
-  );
-}
-
-// The Gemini OpenAI-compat endpoint at /v1beta/openai/ requires
-// `Authorization: Bearer <KEY>` and rejects `?key=<KEY>` with HTTP 400
-// "Missing or invalid Authorization header." The dual-auth rejection
-// described in #1960 applies to the native /v1beta/models/...:generateContent
-// endpoint, which the onboarder probes do not use. Both callers of this
-// helper (probeOpenAiLikeEndpoint, probeResponsesToolCalling) target the
-// OpenAI-compat URL, so returning undefined for every provider is correct:
-// probes default to Bearer auth and Gemini onboarding succeeds.
-function getProbeAuthMode(_provider: string): "query-param" | undefined {
-  return undefined;
-}
+// Inference probes — moved to onboard-inference-probes.ts
+const {
+  hasResponsesToolCall,
+  shouldRequireResponsesToolCalling,
+  getProbeAuthMode,
+  getValidationProbeCurlArgs,
+  probeOpenAiLikeEndpoint,
+  probeAnthropicEndpoint,
+} = require("./onboard-inference-probes");
 
 // shouldSkipResponsesProbe and isNvcfFunctionNotFoundForAccount /
 // nvcfFunctionNotFoundMessage — see validation import above. They live in
 // src/lib/validation.ts so they can be unit-tested independently.
 
-// Per-validation-probe curl timing. Tighter than the default 60s in
-// getCurlTimingArgs() because validation must not hang the wizard for a
-// minute on a misbehaving model. See issue #1601 (Bug 3).
-function getValidationProbeCurlArgs(opts?: { isWsl?: boolean }): string[] {
-  if (isWsl(opts)) {
-    return ["--connect-timeout", "20", "--max-time", "30"];
-  }
-  return ["--connect-timeout", "10", "--max-time", "15"];
-}
-
-function probeResponsesToolCalling(
-  endpointUrl: string,
-  model: string,
-  apiKey: string | null,
-  options: { authMode?: "bearer" | "query-param" } = {},
-): CurlProbeResult {
-  const useQueryParam = options.authMode === "query-param";
-  const normalizedKey = apiKey ? normalizeCredentialValue(apiKey) : "";
-  const baseUrl = String(endpointUrl).replace(/\/+$/, "");
-  const authHeader: string[] =
-    !useQueryParam && normalizedKey ? ["-H", `Authorization: Bearer ${normalizedKey}`] : [];
-  const url =
-    useQueryParam && normalizedKey
-      ? `${baseUrl}/responses?key=${encodeURIComponent(normalizedKey)}`
-      : `${baseUrl}/responses`;
-  const result = runCurlProbe([
-    "-sS",
-    ...getValidationProbeCurlArgs(),
-    "-H",
-    "Content-Type: application/json",
-    ...authHeader,
-    "-d",
-    JSON.stringify({
-      model,
-      input: "Call the emit_ok function with value OK. Do not answer with plain text.",
-      tool_choice: "required",
-      tools: [
-        {
-          type: "function",
-          name: "emit_ok",
-          description: "Returns the probe value for validation.",
-          parameters: {
-            type: "object",
-            properties: {
-              value: { type: "string" },
-            },
-            required: ["value"],
-            additionalProperties: false,
-          },
-        },
-      ],
-    }),
-    url,
-  ]);
-
-  if (!result.ok) {
-    return result;
-  }
-  if (hasResponsesToolCall(result.body)) {
-    return result;
-  }
-  return {
-    ok: false,
-    httpStatus: result.httpStatus,
-    curlStatus: result.curlStatus,
-    body: result.body,
-    stderr: result.stderr,
-    message: `HTTP ${result.httpStatus}: Responses API did not return a tool call`,
-  };
-}
-
-type EndpointProbeFailure = {
-  name: string;
-  httpStatus: number;
-  curlStatus: number;
-  message: string;
-  body?: string;
-};
-
-type EndpointProbeResult =
-  | { ok: true; api: string; label: string }
-  | { ok: false; message: string; failures: EndpointProbeFailure[] };
-
-function probeOpenAiLikeEndpoint(
-  endpointUrl: string,
-  model: string,
-  apiKey: string | null,
-  options: {
-    authMode?: "bearer" | "query-param";
-    requireResponsesToolCalling?: boolean;
-    skipResponsesProbe?: boolean;
-    probeStreaming?: boolean;
-  } = {},
-): EndpointProbeResult {
-  const useQueryParam = options.authMode === "query-param";
-  const normalizedKey = apiKey ? normalizeCredentialValue(apiKey) : "";
-  const baseUrl = String(endpointUrl).replace(/\/+$/, "");
-  const authHeader: string[] =
-    !useQueryParam && normalizedKey ? ["-H", `Authorization: Bearer ${normalizedKey}`] : [];
-  const appendKey = (path: string): string =>
-    useQueryParam && normalizedKey
-      ? `${baseUrl}${path}?key=${encodeURIComponent(normalizedKey)}`
-      : `${baseUrl}${path}`;
-
-  const responsesProbe =
-    options.requireResponsesToolCalling === true
-      ? {
-          name: "Responses API with tool calling",
-          api: "openai-responses",
-          execute: () =>
-            probeResponsesToolCalling(endpointUrl, model, apiKey, { authMode: options.authMode }),
-        }
-      : {
-          name: "Responses API",
-          api: "openai-responses",
-          execute: () =>
-            runCurlProbe([
-              "-sS",
-              ...getValidationProbeCurlArgs(),
-              "-H",
-              "Content-Type: application/json",
-              ...authHeader,
-              "-d",
-              JSON.stringify({
-                model,
-                input: "Reply with exactly: OK",
-              }),
-              appendKey("/responses"),
-            ]),
-        };
-
-  const chatCompletionsProbe = {
-    name: "Chat Completions API",
-    api: "openai-completions",
-    execute: () =>
-      runCurlProbe([
-        "-sS",
-        ...getValidationProbeCurlArgs(),
-        "-H",
-        "Content-Type: application/json",
-        ...authHeader,
-        "-d",
-        JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "Reply with exactly: OK" }],
-        }),
-        appendKey("/chat/completions"),
-      ]),
-  };
-
-  // NVIDIA Build does not expose /v1/responses; probing it always returns
-  // "404 page not found" and only adds noise to error messages. Skip it
-  // entirely for that provider. See issue #1601.
-  const probes = options.skipResponsesProbe
-    ? [chatCompletionsProbe]
-    : [responsesProbe, chatCompletionsProbe];
-
-  const failures: EndpointProbeFailure[] = [];
-  for (const probe of probes) {
-    const result = probe.execute();
-    if (result.ok) {
-      // Streaming event validation — catch backends like SGLang that return
-      // valid non-streaming responses but emit incomplete SSE events in
-      // streaming mode. Only run for /responses probes on custom endpoints
-      // where probeStreaming was requested.
-      if (probe.api === "openai-responses" && options.probeStreaming === true) {
-        const streamResult = runStreamingEventProbe([
-          "-sS",
-          ...getValidationProbeCurlArgs(),
-          "-H",
-          "Content-Type: application/json",
-          ...authHeader,
-          "-d",
-          JSON.stringify({
-            model,
-            input: "Reply with exactly: OK",
-            stream: true,
-          }),
-          appendKey("/responses"),
-        ]);
-        if (!streamResult.ok && streamResult.missingEvents.length > 0) {
-          // Backend responds but lacks required streaming events — fall back
-          // to /chat/completions silently.
-          console.log(`  ℹ ${streamResult.message}`);
-          failures.push({
-            name: probe.name + " (streaming)",
-            httpStatus: 0,
-            curlStatus: 0,
-            message: streamResult.message,
-            body: "",
-          });
-          continue;
-        }
-        if (!streamResult.ok) {
-          // Transport or execution failure — surface as a hard error instead
-          // of silently switching APIs.
-          return {
-            ok: false,
-            message: `${probe.name} (streaming): ${streamResult.message}`,
-            failures: [
-              {
-                name: probe.name + " (streaming)",
-                httpStatus: 0,
-                curlStatus: 0,
-                message: streamResult.message,
-                body: "",
-              },
-            ],
-          };
-        }
-      }
-      return { ok: true, api: probe.api, label: probe.name };
-    }
-    // Preserve the raw response body alongside the summarized message so the
-    // NVCF "Function not found for account" detector below can fall back to
-    // the raw body if summarizeProbeError ever stops surfacing the marker
-    // through `message`.
-    failures.push({
-      name: probe.name,
-      httpStatus: result.httpStatus,
-      curlStatus: result.curlStatus,
-      message: result.message,
-      body: result.body,
-    });
-  }
-
-  // Single retry with doubled timeouts on timeout/connection failure.
-  // WSL2's virtualized network stack can cause the initial probe to time out
-  // before the TLS handshake completes. See issue #987.
-  const isTimeoutOrConnFailure = (cs: number | undefined) => cs === 28 || cs === 6 || cs === 7;
-  let retriedAfterTimeout = false;
-  if (failures.length > 0 && isTimeoutOrConnFailure(failures[0].curlStatus)) {
-    retriedAfterTimeout = true;
-    const baseArgs = getValidationProbeCurlArgs();
-    const doubledArgs = baseArgs.map((arg) => (/^\d+$/.test(arg) ? String(Number(arg) * 2) : arg));
-    const retryResult = runCurlProbe([
-      "-sS",
-      ...doubledArgs,
-      "-H",
-      "Content-Type: application/json",
-      ...(apiKey ? ["-H", `Authorization: Bearer ${normalizeCredentialValue(apiKey)}`] : []),
-      "-d",
-      JSON.stringify({
-        model,
-        messages: [{ role: "user", content: "Reply with exactly: OK" }],
-      }),
-      `${String(endpointUrl).replace(/\/+$/, "")}/chat/completions`,
-    ]);
-    if (retryResult.ok) {
-      return { ok: true, api: "openai-completions", label: "Chat Completions API" };
-    }
-  }
-
-  // Detect the NVCF "Function not found for account" error and reframe it
-  // with an actionable next step instead of dumping the raw NVCF body.
-  // See issue #1601 (Bug 2).
-  const accountFailure = failures.find(
-    (failure) =>
-      isNvcfFunctionNotFoundForAccount(failure.message) ||
-      isNvcfFunctionNotFoundForAccount(failure.body || ""),
-  );
-  if (accountFailure) {
-    return {
-      ok: false,
-      message: nvcfFunctionNotFoundMessage(model),
-      failures,
-    };
-  }
-
-  const baseMessage = failures.map((failure) => `${failure.name}: ${failure.message}`).join(" | ");
-  const wslHint =
-    isWsl() && retriedAfterTimeout
-      ? " · WSL2 detected \u2014 network verification may be slower than expected. " +
-        "Run `nemoclaw onboard` with the `--skip-verify` flag if this endpoint is known to be reachable."
-      : "";
-  return {
-    ok: false,
-    message: baseMessage + wslHint,
-    failures,
-  };
-}
-
-function probeAnthropicEndpoint(
-  endpointUrl: string,
-  model: string,
-  apiKey: string | null,
-): EndpointProbeResult {
-  const result = runCurlProbe([
-    "-sS",
-    ...getCurlTimingArgs(),
-    "-H",
-    `x-api-key: ${normalizeCredentialValue(apiKey)}`,
-    "-H",
-    "anthropic-version: 2023-06-01",
-    "-H",
-    "content-type: application/json",
-    "-d",
-    JSON.stringify({
-      model,
-      max_tokens: 16,
-      messages: [{ role: "user", content: "Reply with exactly: OK" }],
-    }),
-    `${String(endpointUrl).replace(/\/+$/, "")}/v1/messages`,
-  ]);
-  if (result.ok) {
-    return { ok: true, api: "anthropic-messages", label: "Anthropic Messages API" };
-  }
-  return {
-    ok: false,
-    message: result.message,
-    failures: [
-      {
-        name: "Anthropic Messages API",
-        httpStatus: result.httpStatus,
-        curlStatus: result.curlStatus,
-        message: result.message,
-      },
-    ],
-  };
-}
 
 async function validateOpenAiLikeSelection(
   label: string,
