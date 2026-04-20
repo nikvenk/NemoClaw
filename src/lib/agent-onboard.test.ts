@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 // Import from compiled dist/ so coverage is attributed correctly.
 import { printDashboardUi } from "../../dist/lib/agent-onboard";
 import type { AgentDefinition } from "./agent-defs";
@@ -41,6 +41,10 @@ describe("printDashboardUi — regression for #2078 (port 8642 is not a chat UI)
 
   afterEach(() => {
     logSpy.mockClear();
+  });
+
+  afterAll(() => {
+    logSpy.mockRestore();
   });
 
   it("labels an API-kind agent as the API — not a UI — and does not embed a token in the URL", () => {

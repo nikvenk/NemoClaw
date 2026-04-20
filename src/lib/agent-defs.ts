@@ -150,11 +150,12 @@ export function loadAgent(name: string): AgentDefinition {
       const d = (raw.dashboard as Partial<AgentDashboard>) || {};
       const kind: AgentDashboardKind = d.kind === "api" ? "api" : "ui";
       const defaultLabel = kind === "api" ? "API" : "UI";
+      const normalizedLabel = typeof d.label === "string" ? d.label.trim() : "";
       const rawPath = typeof d.path === "string" ? d.path.trim() : "";
       const path = rawPath ? (rawPath.startsWith("/") ? rawPath : `/${rawPath}`) : "/";
       return {
         kind,
-        label: typeof d.label === "string" && d.label.trim() ? d.label : defaultLabel,
+        label: normalizedLabel || defaultLabel,
         path,
       };
     },
