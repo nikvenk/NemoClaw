@@ -70,6 +70,12 @@ describe("CLI dispatch", () => {
     expect(r.out.includes("No sandboxes")).toBeTruthy();
   });
 
+  it("list --help exits 0 and shows usage", () => {
+    const r = run("list --help");
+    expect(r.code).toBe(0);
+    expect(r.out.includes("Usage: nemoclaw list [--json]")).toBeTruthy();
+  });
+
   it("list --json emits structured empty inventory", () => {
     const r = run("list --json");
     expect(r.code).toBe(0);

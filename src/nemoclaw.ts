@@ -58,11 +58,8 @@ const {
   stripAnsi,
   versionGte,
 } = require("./lib/openshell");
-const {
-  getSandboxInventory,
-  listSandboxesCommand,
-  showStatusCommand,
-} = require("./lib/inventory-commands");
+const { showStatusCommand } = require("./lib/inventory-commands");
+const { runListCommand } = require("./lib/list-command");
 const { executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
@@ -1176,29 +1173,7 @@ function showStatus() {
   });
 }
 
-function parseListArgs(args = []) {
-  const options = { json: false };
-
-  for (const arg of args) {
-    if (arg === "--json") {
-      options.json = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      console.log("  Usage: nemoclaw list [--json]");
-      console.log("");
-      process.exit(0);
-    }
-    console.error(`  Unknown argument(s) for list: ${args.join(", ")}`);
-    console.error("  Usage: nemoclaw list [--json]");
-    process.exit(1);
-  }
-
-  return options;
-}
-
-async function listSandboxes(args = []) {
-  const options = parseListArgs(args);
+function buildListCommandDeps() {
   const opsBinList = resolveOpenshell();
   const sessionDeps = opsBinList ? createSessionDeps(opsBinList) : null;
 
@@ -1212,7 +1187,8 @@ async function listSandboxes(args = []) {
     return cachedSshOutput ?? null;
   };
 
-  const deps = {
+  return {
+    rootDir: ROOT,
     recoverRegistryEntries: () => recoverRegistryEntries(),
     getLiveInference: () =>
       parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
@@ -1230,15 +1206,13 @@ async function listSandboxes(args = []) {
         }
       : undefined,
     log: console.log,
+    error: console.error,
+    exit: (code) => process.exit(code),
   };
+}
 
-  if (options.json) {
-    const inventory = await getSandboxInventory(deps);
-    console.log(JSON.stringify(inventory, null, 2));
-    return;
-  }
-
-  await listSandboxesCommand(deps);
+async function listSandboxes(args = []) {
+  await runListCommand(args, buildListCommandDeps());
 }
 
 // ── Sandbox-scoped actions ───────────────────────────────────────
