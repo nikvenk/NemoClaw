@@ -1984,6 +1984,8 @@ function removeSandboxImage(sandboxName) {
   const result = run(["docker", "rmi", sb.imageTag], { ignoreError: true });
   if (result.status === 0) {
     console.log(`  Removed Docker image ${sb.imageTag}`);
+  } else {
+    console.warn(`  ${YW}⚠${R} Failed to remove Docker image ${sb.imageTag}; run 'nemoclaw gc' to clean up.`);
   }
 }
 
@@ -2789,7 +2791,7 @@ function help() {
     nemoclaw upgrade-sandboxes       Detect and rebuild stale sandboxes ${D}(--check, --auto)${R}
 
   ${G}Cleanup:${R}
-    nemoclaw gc                      Remove orphaned sandbox Docker images ${D}(--yes, --dry-run)${R}
+    nemoclaw gc                      Remove orphaned sandbox Docker images ${D}(--yes|--force, --dry-run)${R}
     nemoclaw uninstall [flags]       Run uninstall.sh (local only; no remote fallback)
 
   ${G}Uninstall flags:${R}
