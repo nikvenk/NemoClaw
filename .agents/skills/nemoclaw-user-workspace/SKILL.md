@@ -114,7 +114,7 @@ memory/
 
 ## References
 
-- **[references/workspace-files.md](references/workspace-files.md)** — What workspace personality and configuration files are, where they live, and how they persist across sandbox restarts.
+- **Load [references/workspace-files.md](references/workspace-files.md)** when users ask about `SOUL.md`, `USER.md`, `IDENTITY.md`, `AGENTS.md`, or other workspace files, or when preparing to back up or restore workspace state. Explains what workspace personality and configuration files are, where they live, and how they persist across sandbox restarts.
 
 ## Related Skills
 

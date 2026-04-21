@@ -4,7 +4,7 @@ title:
   nav: "Credential Storage"
 description:
   main: "Learn where NemoClaw stores credentials, what filesystem protections it applies, and how to secure or rotate stored secrets."
-  agent: "Covers where NemoClaw stores provider credentials, the file permissions applied, and the trade-offs of plaintext local storage."
+  agent: "Covers where NemoClaw stores provider credentials, the file permissions applied, and the trade-offs of plaintext local storage. Use when reviewing how credentials are handled, locating a specific credential file, or assessing the risk of the unencrypted-at-rest default."
 keywords: ["nemoclaw credential storage", "credentials.json", "api key security"]
 topics: ["generative_ai", "ai_agents"]
 tags: ["security", "credentials", "filesystem", "secrets"]

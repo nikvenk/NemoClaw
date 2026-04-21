@@ -94,7 +94,7 @@ For troubleshooting installation or onboarding issues, see the Troubleshooting g
 
 ## References
 
-- **[references/windows-setup.md](references/windows-setup.md)** — Includes Windows-only prerequisites that must be completed before the Quickstart.
+- **Load [references/windows-setup.md](references/windows-setup.md)** when installing NemoClaw on Windows, enabling WSL 2, configuring Docker Desktop for Windows, or troubleshooting a Windows-specific install error. Includes Windows-only prerequisites that must be completed before the Quickstart.
 
 ## Related Skills
 
