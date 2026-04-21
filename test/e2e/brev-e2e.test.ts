@@ -667,14 +667,19 @@ describe.runIf(hasRequiredVars && hasAuthenticatedBrev)("Brev E2E", () => {
       const result = bootstrapLaunchable(elapsed);
       remoteDir = result.remoteDir;
 
-      if (result.needsOnboard) {
+      // The ollama suite creates its own sandbox (e2e-ollama-brev) with
+      // NEMOCLAW_PROVIDER=ollama — the default e2e-test onboard here would
+      // trigger a full 729 MiB sandbox image build + upload (~15 min) that
+      // the ollama script then throws away. Skip to save ~15 min per run.
+      if (result.needsOnboard && TEST_SUITE !== "ollama") {
         pollForSandboxReady(elapsed);
         writeManualRegistry(elapsed);
       }
     }
 
-    // Verify sandbox registry (only when beforeAll created a sandbox)
-    if (TEST_SUITE !== "full") {
+    // Verify sandbox registry (only when beforeAll created a sandbox).
+    // ollama suite owns its own sandbox, so registry won't have e2e-test.
+    if (TEST_SUITE !== "full" && TEST_SUITE !== "ollama") {
       console.log(`[${elapsed()}] Verifying sandbox registry...`);
       const registry = JSON.parse(ssh(`cat ~/.nemoclaw/sandboxes.json`, { timeout: 10_000 }));
       expect(registry.defaultSandbox).toBe("e2e-test");
