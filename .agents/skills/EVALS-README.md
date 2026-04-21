@@ -34,7 +34,7 @@ Three things to remember:
 
 1. Detects which `nemoclaw-user-*` skills changed.
 2. For each, runs the agent twice per scenario — with the skill's `SKILL.md` loaded, then without. The judge grades both.
-3. Computes per-skill **delta** (with − without). Compares against `ci/skills-eval-baseline.json`.
+3. Computes per-skill **delta** (with − without, range `[−1, +1]`; well-targeted skills typically land in `[+0.3, +0.7]`). Compares against `ci/skills-eval-baseline.json`.
 4. Posts a sticky PR comment with the result.
 
 The build fails if any touched skill drops more than **10pp** from baseline OR ends below zero. New skills (no baseline yet) pass as long as delta ≥ 0.

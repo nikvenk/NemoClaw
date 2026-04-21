@@ -19,6 +19,8 @@ For each user-facing skill, we write a small set of scenarios — user-voice pro
 - `delta ≈ 0` — the skill isn't load-bearing; the agent does just as well without it.
 - `delta < 0` — the skill is actively making the agent worse.
 
+Scores are in `[0, 1]` (fraction of assertions satisfied); delta is in `[−1, +1]`. In practice, a well-targeted skill lands in `[+0.3, +0.7]`.
+
 CI runs the evals for any skill touched by a PR and fails the build if the skill's delta drops more than 10pp from its nightly baseline or falls below zero. A nightly job on `main` re-establishes the baseline and updates the public scoreboard.
 
 ## Why bother
