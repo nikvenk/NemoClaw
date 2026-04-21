@@ -6,7 +6,7 @@ description: "Describes the agent skills shipped with NemoClaw and how to access
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Agent Skills
+# NemoClaw Agent Skills for Your AI Coding Assistant
 
 Describes the agent skills shipped with NemoClaw and how to access them by cloning the repository. Use when users ask about AI agent support, coding assistant integration, or the .agents/skills/ directory.
 
@@ -73,4 +73,4 @@ Examples of questions your assistant can answer with these skills:
 | "How do I install NemoClaw?" | `nemoclaw-user-get-started` |
 | "Switch my inference provider to Ollama." | `nemoclaw-user-configure-inference` |
 
-*Full details in `references/agent-skills.md`.*
+For full details, see [references/agent-skills.md](references/agent-skills.md).

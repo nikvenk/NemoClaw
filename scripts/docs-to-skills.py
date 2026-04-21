@@ -960,8 +960,13 @@ def generate_skill(
     lines.append(markdown_spdx_header().rstrip("\n"))
     lines.append("")
 
-    # Title
-    skill_title = _brand_case(name.replace("-", " ").title())
+    # Title — prefer the lead page's frontmatter `title.page` (or H1)
+    # verbatim so the SKILL.md heading matches the source doc instead of
+    # echoing the auto-generated, prefix-laden skill name.
+    if pages and pages[0].title:
+        skill_title = pages[0].title
+    else:
+        skill_title = _brand_case(name.replace("-", " ").title())
     lines.append(f"# {skill_title}")
     lines.append("")
 
@@ -985,7 +990,7 @@ def generate_skill(
                 cut = _safe_truncation_point(body_lines, 60)
                 trimmed = "\n".join(body_lines[:cut])
                 ref_name = cp.path.stem + ".md"
-                trimmed += f"\n\n*Full details in `references/{ref_name}`.*"
+                trimmed += f"\n\nFor full details, see [references/{ref_name}](references/{ref_name})."
                 lines.append(trimmed)
             else:
                 lines.append(body)
@@ -1048,16 +1053,6 @@ def generate_skill(
             lines.append("")
             lines.append(cleaned_content)
             lines.append("")
-
-    # Reference pages go to references/ but get a pointer in SKILL.md
-    if reference_pages:
-        lines.append("## Reference")
-        lines.append("")
-        for rp in reference_pages:
-            ref_name = rp.path.stem + ".md"
-            title = rp.title or _brand_case(rp.path.stem.replace("-", " ").title())
-            lines.append(f"- [{title}](references/{ref_name})")
-        lines.append("")
 
     # Build Related Skills from collected sections + any remaining in body
     raw_md = "\n".join(lines)

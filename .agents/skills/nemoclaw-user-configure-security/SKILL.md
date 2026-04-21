@@ -6,7 +6,7 @@ description: "Presents a risk framework for every configurable security control 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Configure Security
+# NemoClaw Security Best Practices: Controls, Risks, and Posture Profiles
 
 Presents a risk framework for every configurable security control in NemoClaw. Use when evaluating security posture, reviewing sandbox security defaults, or assessing control trade-offs.
 
@@ -81,7 +81,7 @@ flowchart TB
     style SB fill:#f5faed,stroke:#76b900,stroke-width:2px,color:#1a1a1a
     style GW fill:#2a2a2a,stroke:#76b900,stroke-width:2px,color:#fff
 
-*Full details in `references/best-practices.md`.*
+For full details, see [references/best-practices.md](references/best-practices.md).
 
 NemoClaw provides infrastructure-layer security through sandbox isolation, network policy, filesystem restrictions, SSRF validation, and credential handling.
 It delegates all application-layer security to OpenClaw.
@@ -144,8 +144,4 @@ Run `openclaw security audit` to see all findings for your deployment.
 
 These checks include:
 
-*Full details in `references/openclaw-controls.md`.*
-
-## Reference
-
-- [NemoClaw Credential Storage](references/credential-storage.md)
+For full details, see [references/openclaw-controls.md](references/openclaw-controls.md).

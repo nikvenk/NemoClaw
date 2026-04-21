@@ -6,7 +6,7 @@ description: "Explains how to run NemoClaw on a remote GPU instance, including t
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Deploy Remote
+# Deploy NemoClaw to a Remote GPU Instance with Brev
 
 Explains how to run NemoClaw on a remote GPU instance, including the deprecated Brev compatibility path and the preferred installer plus onboard flow.
 
@@ -202,10 +202,6 @@ It does not affect Telegram connectivity.
 ```console
 $ nemoclaw start
 ```
-
-## Reference
-
-- [Sandbox Image Hardening](references/sandbox-hardening.md)
 
 ## Related Skills
 

@@ -6,7 +6,7 @@ description: "Backs up and restores OpenClaw workspace files before destructive 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Workspace
+# Backup and Restore Workspace Files
 
 Backs up and restores OpenClaw workspace files before destructive operations such as sandbox rebuilds. Use when downloading workspace files from a sandbox, uploading restored files into a new sandbox, or preserving sandbox state across rebuilds.
 

@@ -6,7 +6,7 @@ description: "Explains how OpenClaw, OpenShell, and NemoClaw form the ecosystem,
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Overview
+# NemoClaw Ecosystem: Stack, Placement, and When to Use NemoClaw or OpenShell
 
 Explains how OpenClaw, OpenShell, and NemoClaw form the ecosystem, NemoClaw's position in the stack, what NemoClaw adds beyond the community sandbox, and when to prefer NemoClaw versus integrating OpenShell and OpenClaw directly. Use when users ask about the relationship between OpenClaw, OpenShell, and NemoClaw, or when to use NemoClaw versus OpenShell.
 
@@ -73,7 +73,7 @@ The following table compares the two paths.
 
 | Capability | `openshell sandbox create --from openclaw` | `nemoclaw onboard` |
 
-*Full details in `references/ecosystem.md`.*
+For full details, see [references/ecosystem.md](references/ecosystem.md).
 
 This page explains how NemoClaw operates, which parts run where, how the blueprint drives OpenShell, and how inference and policy attach to the sandbox.
 
@@ -136,7 +136,7 @@ flowchart TB
 
 NemoClaw architecture follows the following principles.
 
-*Full details in `references/how-it-works.md`.*
+For full details, see [references/how-it-works.md](references/how-it-works.md).
 
 NVIDIA NemoClaw is an open-source reference stack that simplifies running [OpenClaw](https://openclaw.ai) always-on assistants.
 NemoClaw provides onboarding, lifecycle management, and OpenClaw operations within OpenShell containers.
@@ -191,11 +191,7 @@ You can use NemoClaw for various use cases including the following.
 | Sandboxed testing         | Test agent behavior in a locked-down environment before granting broader permissions.         |
 | Remote GPU deployment     | Deploy a sandboxed agent to a remote GPU instance for persistent operation.                   |
 
-*Full details in `references/overview.md`.*
-
-## Reference
-
-- [NemoClaw Release Notes](references/release-notes.md)
+For full details, see [references/overview.md](references/overview.md).
 
 ## Related Skills
 

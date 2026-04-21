@@ -6,7 +6,7 @@ description: "Lists all inference providers offered during NemoClaw onboarding. 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Configure Inference
+# NemoClaw Inference Options
 
 Lists all inference providers offered during NemoClaw onboarding. Use when explaining which providers are available, what the onboard wizard presents, or how inference routing works.
 
@@ -73,7 +73,7 @@ For setup instructions, refer to Use a Local Inference Server (see the `nemoclaw
 NemoClaw validates the selected provider and model before creating the sandbox.
 If validation fails, the wizard returns to provider selection.
 
-*Full details in `references/inference-options.md`.*
+For full details, see [references/inference-options.md](references/inference-options.md).
 
 ## Prerequisites
 

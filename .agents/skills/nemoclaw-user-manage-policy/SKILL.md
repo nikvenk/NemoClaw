@@ -6,7 +6,7 @@ description: "Reviews and approves blocked agent network requests in the TUI. Us
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NemoClaw User Manage Policy
+# Approve or Deny NemoClaw Agent Network Requests
 
 Reviews and approves blocked agent network requests in the TUI. Use when approving or denying sandbox egress requests, managing blocked network calls, or using the approval TUI.
 
