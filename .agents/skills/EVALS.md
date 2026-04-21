@@ -17,7 +17,7 @@ If you're new to the MVP design, start with `.context/skills-eval-mvp-plan.md` f
 
 ## File layout
 
-```
+```text
 .agents/skills/<skill-name>/
   SKILL.md
   evals/

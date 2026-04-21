@@ -25,7 +25,7 @@ Defines how NemoClaw's skill evaluations gate pull requests: delta-regression th
 
 For each scenario we run the agent twice: once with the skill's `SKILL.md` loaded, once without. The judge grades both responses against the scenario's assertions. A scenario's **delta** is the with-skill score minus the without-skill score. A skill's delta is the mean across its scenarios.
 
-```
+```text
 scenario.with_score    = mean(assertion.satisfied for assertion in scenario.assertions  with skill)
 scenario.without_score = mean(assertion.satisfied for assertion in scenario.assertions  without skill)
 scenario.delta         = scenario.with_score - scenario.without_score
@@ -41,7 +41,7 @@ Scores are in `[0, 1]`; deltas are in `[-1, 1]`.
 
 A PR fails if any touched skill's delta drops by more than **10 percentage points** versus its baseline:
 
-```
+```text
 fail_rule_1 = (skill.baseline_delta - skill.current_delta) > 0.10
 ```
 
@@ -51,7 +51,7 @@ Rationale: skills are noisy at the assertion level (one agent run vs another can
 
 A PR fails if any touched skill's current delta is negative, regardless of baseline:
 
-```
+```text
 fail_rule_2 = skill.current_delta < 0.0
 ```
 
