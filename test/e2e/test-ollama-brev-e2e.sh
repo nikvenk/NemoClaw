@@ -210,7 +210,7 @@ fi
 
 # Sandbox-level probe: validates the same path through OpenShell-managed
 # networking, which is what onboard uses.
-sandbox_probe=$(openshell sandbox exec "$SANDBOX_NAME" --no-tty -- \
+sandbox_probe=$(openshell sandbox exec --name "$SANDBOX_NAME" -- \
   curl -sf --max-time 5 "http://host.openshell.internal:${OLLAMA_CONTAINER_PORT}/api/tags" 2>&1) || sandbox_probe=""
 
 if [[ -n "$sandbox_probe" ]]; then
@@ -225,24 +225,41 @@ if [[ "${SKIP_INFERENCE:-0}" == "1" ]]; then
   skip "SKIP_INFERENCE=1 — reachability-only mode"
 else
   section "Inference end-to-end (CPU — tolerant timeout)"
-  info "Small model on CPU: response may take up to 60s"
+  info "Small model on CPU: response may take up to 90s"
 
-  inference_output=""
+  # Mirrors test-gpu-e2e.sh: ssh into the sandbox via openshell sandbox
+  # ssh-config and hit inference.local from the inside. This exercises the
+  # full sandbox → gateway → auth proxy → Ollama chain that #1924 is about.
+  ssh_config=$(mktemp)
   inference_exit=0
-  timeout 120 openclaw agent --agent main --local \
-    -m "say hi in one word" --session-id "e2e-ollama-$$" 2>&1 \
-    | tee /tmp/ollama-inference.log \
-    || inference_exit=$?
-  inference_output=$(cat /tmp/ollama-inference.log 2>/dev/null || true)
+  inference_output=""
+
+  if openshell sandbox ssh-config "$SANDBOX_NAME" >"$ssh_config" 2>/dev/null; then
+    inference_output=$(timeout 120 ssh -F "$ssh_config" \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o ConnectTimeout=10 \
+      -o LogLevel=ERROR \
+      "openshell-${SANDBOX_NAME}" \
+      "curl -s --max-time 90 https://inference.local/v1/chat/completions \
+        -H 'Content-Type: application/json' \
+        -d '{\"model\":\"$OLLAMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":20}'" \
+      2>&1) || inference_exit=$?
+  else
+    inference_exit=127
+  fi
+  rm -f "$ssh_config"
 
   if [[ $inference_exit -eq 124 ]]; then
     fail "Inference" "timed out after 120s — model may be too slow on this CPU"
+  elif [[ $inference_exit -eq 127 ]]; then
+    fail "Inference" "openshell sandbox ssh-config failed"
   elif [[ $inference_exit -ne 0 ]]; then
-    fail "Inference" "openclaw agent exited with $inference_exit"
+    fail "Inference" "ssh to sandbox exited with $inference_exit: ${inference_output:0:200}"
   elif [[ -z "$inference_output" ]]; then
     fail "Inference" "empty response"
   else
-    pass "Inference returned a response through the Ollama path"
+    pass "Inference returned a response via sandbox → gateway → auth proxy → Ollama"
   fi
 fi
 
