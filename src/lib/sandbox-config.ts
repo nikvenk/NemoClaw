@@ -94,12 +94,19 @@ function getOpenshellBinary(): string {
   return process.env.NEMOCLAW_OPENSHELL_BIN || "openshell";
 }
 
-function extractDotpath(obj: unknown, dotpath: string): unknown {
+function extractDotpath(obj: ConfigValue, dotpath: string): ConfigValue | undefined {
   const keys = dotpath.split(".");
-  let current: unknown = obj;
+  let current: ConfigValue = obj;
   for (const key of keys) {
-    if (current == null || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[key];
+    if (current == null) return undefined;
+    if (Array.isArray(current)) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0) return undefined;
+      current = current[index];
+      continue;
+    }
+    if (!isConfigObject(current)) return undefined;
+    current = current[key];
   }
   return current;
 }
@@ -233,7 +240,7 @@ function configGet(sandboxName: string, opts: ConfigGetOpts = {}): void {
 
   // Extract dotpath if specified
   if (opts.key) {
-    const value = extractDotpath(config, opts.key) as ConfigValue | undefined;
+    const value = extractDotpath(config, opts.key);
     if (value === undefined) {
       console.error(`  Key "${opts.key}" not found in ${target.agentName} config.`);
       process.exit(1);
