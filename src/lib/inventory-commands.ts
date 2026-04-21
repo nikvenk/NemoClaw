@@ -34,6 +34,29 @@ export interface ListSandboxesCommandDeps {
   log?: (message?: string) => void;
 }
 
+export interface SandboxInventoryRow {
+  name: string;
+  model: string | null;
+  provider: string | null;
+  gpuEnabled: boolean;
+  policies: string[];
+  agent: string | null;
+  isDefault: boolean;
+  activeSessionCount: number | null;
+  connected: boolean;
+}
+
+export interface SandboxInventoryResult {
+  schemaVersion: 1;
+  defaultSandbox: string | null;
+  recovery: {
+    recoveredFromSession: boolean;
+    recoveredFromGateway: number;
+  };
+  lastOnboardedSandbox: string | null;
+  sandboxes: SandboxInventoryRow[];
+}
+
 export interface MessagingOverlap {
   channel: string;
   sandboxes: [string, string];
@@ -52,17 +75,60 @@ export interface ShowStatusCommandDeps {
   log?: (message?: string) => void;
 }
 
-export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Promise<void> {
-  const log = deps.log ?? console.log;
-  const recovery = await deps.recoverRegistryEntries();
-  const { sandboxes, defaultSandbox } = recovery;
+function buildSandboxInventoryRow(
+  sandbox: SandboxEntry,
+  defaultSandbox: string | null,
+  getActiveSessionCount?: (sandboxName: string) => number | null,
+): SandboxInventoryRow {
+  const activeSessionCount = getActiveSessionCount ? getActiveSessionCount(sandbox.name) : null;
 
-  if (sandboxes.length === 0) {
+  return {
+    name: sandbox.name,
+    model: sandbox.model || null,
+    provider: sandbox.provider || null,
+    gpuEnabled: sandbox.gpuEnabled === true,
+    policies: Array.isArray(sandbox.policies) ? sandbox.policies : [],
+    agent: sandbox.agent || null,
+    isDefault: sandbox.name === defaultSandbox,
+    activeSessionCount,
+    connected: activeSessionCount !== null && activeSessionCount > 0,
+  };
+}
+
+export async function getSandboxInventory(
+  deps: ListSandboxesCommandDeps,
+): Promise<SandboxInventoryResult> {
+  const recovery = await deps.recoverRegistryEntries();
+  const defaultSandbox = recovery.defaultSandbox || null;
+  const lastSession = deps.loadLastSession();
+
+  if (recovery.sandboxes.length > 0) {
+    deps.getLiveInference();
+  }
+
+  return {
+    schemaVersion: 1,
+    defaultSandbox,
+    recovery: {
+      recoveredFromSession: recovery.recoveredFromSession === true,
+      recoveredFromGateway: recovery.recoveredFromGateway || 0,
+    },
+    lastOnboardedSandbox: lastSession?.sandboxName || null,
+    sandboxes: recovery.sandboxes.map((sandbox) =>
+      buildSandboxInventoryRow(sandbox, defaultSandbox, deps.getActiveSessionCount),
+    ),
+  };
+}
+
+export function renderSandboxInventoryText(
+  inventory: SandboxInventoryResult,
+  log: (message?: string) => void = console.log,
+): void {
+  if (inventory.sandboxes.length === 0) {
     log("");
-    const session = deps.loadLastSession();
-    if (session?.sandboxName) {
+    if (inventory.lastOnboardedSandbox) {
       log(
-        `  No sandboxes registered locally, but the last onboarded sandbox was '${session.sandboxName}'.`,
+        `  No sandboxes registered locally, but the last onboarded sandbox was '${inventory.lastOnboardedSandbox}'.`,
       );
       log(
         "  Retry `nemoclaw <name> connect` or `nemoclaw <name> status` once the gateway/runtime is healthy.",
@@ -74,34 +140,38 @@ export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Prom
     return;
   }
 
-  deps.getLiveInference();
-
   log("");
-  if (recovery.recoveredFromSession) {
+  if (inventory.recovery.recoveredFromSession) {
     log("  Recovered sandbox inventory from the last onboard session.");
     log("");
   }
-  if ((recovery.recoveredFromGateway || 0) > 0) {
-    const count = recovery.recoveredFromGateway || 0;
-    log(`  Recovered ${count} sandbox entr${count === 1 ? "y" : "ies"} from the live OpenShell gateway.`);
+  if (inventory.recovery.recoveredFromGateway > 0) {
+    const count = inventory.recovery.recoveredFromGateway;
+    log(
+      `  Recovered ${count} sandbox entr${count === 1 ? "y" : "ies"} from the live OpenShell gateway.`,
+    );
     log("");
   }
   log("  Sandboxes:");
-  for (const sb of sandboxes) {
-    const isDefault = sb.name === defaultSandbox;
-    const def = isDefault ? " *" : "";
-    const model = sb.model || "unknown";
-    const provider = sb.provider || "unknown";
-    const gpu = sb.gpuEnabled ? "GPU" : "CPU";
-    const presets = sb.policies && sb.policies.length > 0 ? sb.policies.join(", ") : "none";
-    const sessionCount = deps.getActiveSessionCount ? deps.getActiveSessionCount(sb.name) : null;
-    const connected = sessionCount !== null && sessionCount > 0 ? " ●" : "";
-    log(`    ${sb.name}${def}${connected}`);
+  for (const sandbox of inventory.sandboxes) {
+    const def = sandbox.isDefault ? " *" : "";
+    const model = sandbox.model || "unknown";
+    const provider = sandbox.provider || "unknown";
+    const gpu = sandbox.gpuEnabled ? "GPU" : "CPU";
+    const presets = sandbox.policies.length > 0 ? sandbox.policies.join(", ") : "none";
+    const connected = sandbox.connected ? " ●" : "";
+    log(`    ${sandbox.name}${def}${connected}`);
     log(`      model: ${model}  provider: ${provider}  ${gpu}  policies: ${presets}`);
   }
   log("");
   log("  * = default sandbox");
   log("");
+}
+
+export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Promise<void> {
+  const log = deps.log ?? console.log;
+  const inventory = await getSandboxInventory(deps);
+  renderSandboxInventoryText(inventory, log);
 }
 
 export function showStatusCommand(deps: ShowStatusCommandDeps): void {

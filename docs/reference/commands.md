@@ -171,9 +171,11 @@ If a `--resume` is attempted with a different `--from` path than the original se
 ### `nemoclaw list`
 
 List all registered sandboxes with their model, provider, and policy presets.
+Pass `--json` for machine-readable output that includes a `schemaVersion`, the default sandbox, recovery metadata, and the sandbox inventory.
 
 ```console
 $ nemoclaw list
+$ nemoclaw list --json
 ```
 
 ### `nemoclaw deploy`

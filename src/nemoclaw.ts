@@ -58,7 +58,11 @@ const {
   stripAnsi,
   versionGte,
 } = require("./lib/openshell");
-const { listSandboxesCommand, showStatusCommand } = require("./lib/inventory-commands");
+const {
+  getSandboxInventory,
+  listSandboxesCommand,
+  showStatusCommand,
+} = require("./lib/inventory-commands");
 const { executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
@@ -1172,7 +1176,29 @@ function showStatus() {
   });
 }
 
-async function listSandboxes() {
+function parseListArgs(args = []) {
+  const options = { json: false };
+
+  for (const arg of args) {
+    if (arg === "--json") {
+      options.json = true;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      console.log("  Usage: nemoclaw list [--json]");
+      console.log("");
+      process.exit(0);
+    }
+    console.error(`  Unknown argument(s) for list: ${args.join(", ")}`);
+    console.error("  Usage: nemoclaw list [--json]");
+    process.exit(1);
+  }
+
+  return options;
+}
+
+async function listSandboxes(args = []) {
+  const options = parseListArgs(args);
   const opsBinList = resolveOpenshell();
   const sessionDeps = opsBinList ? createSessionDeps(opsBinList) : null;
 
@@ -1186,7 +1212,7 @@ async function listSandboxes() {
     return cachedSshOutput ?? null;
   };
 
-  await listSandboxesCommand({
+  const deps = {
     recoverRegistryEntries: () => recoverRegistryEntries(),
     getLiveInference: () =>
       parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
@@ -1204,7 +1230,15 @@ async function listSandboxes() {
         }
       : undefined,
     log: console.log,
-  });
+  };
+
+  if (options.json) {
+    const inventory = await getSandboxInventory(deps);
+    console.log(JSON.stringify(inventory, null, 2));
+    return;
+  }
+
+  await listSandboxesCommand(deps);
 }
 
 // ── Sandbox-scoped actions ───────────────────────────────────────
@@ -2631,7 +2665,7 @@ function help() {
                                     ${D}(non-interactive: ${NOTICE_ACCEPT_FLAG} or ${NOTICE_ACCEPT_ENV}=1)${R}
 
   ${G}Sandbox Management:${R}
-    ${B}nemoclaw list${R}                    List all sandboxes
+    ${B}nemoclaw list${R} ${D}[--json]${R}           List all sandboxes
     nemoclaw <name> connect          Shell into a running sandbox
     nemoclaw <name> status           Sandbox health + NIM status
     nemoclaw <name> logs ${D}[--follow]${R}  Stream sandbox logs
@@ -2739,7 +2773,7 @@ const [cmd, ...args] = process.argv.slice(2);
         await credentialsCommand(args);
         break;
       case "list":
-        await listSandboxes();
+        await listSandboxes(args);
         break;
       case "backup-all":
         backupAll();
