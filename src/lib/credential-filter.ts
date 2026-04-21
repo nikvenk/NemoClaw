@@ -12,13 +12,24 @@
 
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
-const CREDENTIAL_PLACEHOLDER = "[STRIPPED_BY_MIGRATION]";
+/**
+ * JSON-like configuration value supported by credential stripping.
+ */
+export type ConfigValue =
+  | null
+  | undefined
+  | boolean
+  | number
+  | string
+  | ConfigValue[]
+  | ConfigObject;
 
-type SanitizablePrimitive = string | number | boolean | null;
-type SanitizableValue = SanitizablePrimitive | SanitizableObject | SanitizableValue[] | undefined;
-interface SanitizableObject {
-  [key: string]: SanitizableValue;
-}
+/**
+ * JSON-like configuration object supported by credential stripping.
+ */
+export type ConfigObject = { [key: string]: ConfigValue };
+
+const CREDENTIAL_PLACEHOLDER = "[STRIPPED_BY_MIGRATION]";
 
 /**
  * File basenames that contain sensitive auth material and should be
@@ -46,11 +57,17 @@ const CREDENTIAL_FIELDS = new Set([
 const CREDENTIAL_FIELD_PATTERN =
   /(?:access|refresh|client|bearer|auth|api|private|public|signing|session)(?:Token|Key|Secret|Password)$/;
 
+/**
+ * Check whether a field name should be treated as credential-bearing.
+ */
 export function isCredentialField(key: string): boolean {
   return CREDENTIAL_FIELDS.has(key) || CREDENTIAL_FIELD_PATTERN.test(key);
 }
 
-function isSanitizableObject(value: unknown): value is SanitizableObject {
+/**
+ * Narrow an unknown value to a JSON-like configuration object.
+ */
+export function isConfigObject(value: unknown): value is ConfigObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -58,15 +75,15 @@ function isSanitizableObject(value: unknown): value is SanitizableObject {
  * Recursively strip credential fields from a JSON-like object.
  * Returns a new object with sensitive values replaced by a placeholder.
  */
-export function stripCredentials<T>(obj: T): T {
+export function stripCredentials<T extends ConfigValue>(obj: T): T {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) {
     return obj.map((value) => stripCredentials(value)) as T;
   }
-  if (!isSanitizableObject(obj)) return obj;
+  if (!isConfigObject(obj)) return obj;
 
-  const result: SanitizableObject = {};
+  const result: ConfigObject = {};
   for (const [key, value] of Object.entries(obj)) {
     result[key] = isCredentialField(key) ? CREDENTIAL_PLACEHOLDER : stripCredentials(value);
   }
@@ -85,7 +102,7 @@ export function sanitizeConfigFile(configPath: string): void {
   } catch {
     return; // Not valid JSON — skip (may be YAML for Hermes)
   }
-  if (!isSanitizableObject(parsed)) return;
+  if (!isConfigObject(parsed)) return;
 
   const { gateway: _gateway, ...config } = parsed;
   const sanitized = stripCredentials(config);
