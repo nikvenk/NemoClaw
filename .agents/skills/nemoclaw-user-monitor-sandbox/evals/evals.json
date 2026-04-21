@@ -1,38 +1,45 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-monitor-sandbox",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "My NemoClaw sandbox has been running for about an hour and the agent feels slower than it did this morning. How do I actually see what's going on inside it right now?",
+      "expected_output": "Walk through status, logs, and the TUI in order; explain what each surface reveals about sandbox health and agent behavior.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response points to `nemoclaw <name> status` as the first check for sandbox and gateway health",
+        "Response describes streaming logs via `nemoclaw <name> logs` and mentions `--follow` for live output",
+        "Response mentions the OpenShell TUI (`openshell term`) as a way to observe live network activity",
+        "Response explains that status output covers provider, gateway, and process health, not just up-or-down",
+        "Response does NOT instruct the user to destroy, recreate, or reinstall the sandbox as a first step",
+        "Response does NOT tell the user to edit network policies or approve blocked requests to diagnose slowness"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I'm running NemoClaw with a local Ollama setup. The agent was fine earlier but now every prompt just hangs and eventually errors out. Where do I even start looking?",
+      "expected_output": "Check status for the Inference health line (healthy or unreachable), confirm the local backend is actually running, then follow logs; only then retry inference from inside the sandbox.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response tells the user to run `nemoclaw <name> status` and inspect the Inference health line for the local Ollama route",
+        "Response notes that an `unreachable` local endpoint indicates the host-side Ollama backend is stopped or not responding, not a sandbox-internal failure",
+        "Response recommends restarting or verifying the local Ollama backend on the host before retrying from inside the sandbox",
+        "Response suggests following logs with `nemoclaw <name> logs --follow` to catch blueprint runner errors during a retry",
+        "Response does NOT jump straight to switching to a cloud inference provider as the fix",
+        "Response does NOT recommend deleting the sandbox or reinstalling NemoClaw"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "I can see in the sandbox that a bunch of the agent's network requests are getting blocked. I want to let some of them through. What do I do?",
+      "expected_output": "Recognize this is an operator approval / policy task, not a monitoring task; redirect to the approval TUI flow in the manage-policy skill.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response identifies that approving or denying blocked egress is an operator approval task, distinct from monitoring sandbox health",
+        "Response redirects the user toward the policy approval flow (for example the `nemoclaw-user-manage-policy` skill or the approval TUI) rather than treating this as a monitoring problem",
+        "Response does NOT treat `nemoclaw <name> status` or `nemoclaw <name> logs` as the mechanism that unblocks the requests",
+        "Response does NOT claim that monitoring alone will let the blocked requests through",
+        "Response may note that the TUI surfaces blocked requests, while framing approval as a separate policy workflow"
       ]
     }
   ]

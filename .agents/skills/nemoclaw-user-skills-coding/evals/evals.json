@@ -1,38 +1,45 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-skills-coding",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I installed NemoClaw with the one-line installer and I use Cursor as my coding assistant. A teammate mentioned there are docs-as-skills I can pull into my editor so I can ask NemoClaw questions inline. How do I get those?",
+      "expected_output": "Explain that NemoClaw ships agent skills generated from the docs, walk through a sparse clone of the repo that fetches only the skills directory, and describe opening the resulting directory in the assistant so skills load from .agents/skills/.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response explains that the skills are generated from the NemoClaw documentation and live under `.agents/skills/`",
+        "Response shows a `git clone` flow that uses `--filter=blob:none` and `git sparse-checkout` to fetch only the skills rather than the full repo",
+        "Response tells the user to open the cloned `NemoClaw` directory in their coding assistant so the skills are discovered automatically",
+        "Response mentions that `git pull` in the cloned directory fetches skill updates after new NemoClaw releases",
+        "Response does NOT instruct the user to run the NemoClaw installer or `nemoclaw onboard` as a prerequisite to getting the skills",
+        "Response does NOT tell the user to hand-author SKILL.md files or copy skills out of the docs manually"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I already have the NemoClaw skills cloned locally but I switch between Cursor and Claude Code depending on the project. Right now the skills only seem to activate when I'm inside the NemoClaw folder. Is there a way to have them available everywhere, and how does my assistant even know to pick the right one when I ask a question?",
+      "expected_output": "Acknowledge the workspace-vs-global trade-off, point to copying `.agents/skills/` to a global location such as `~/.cursor/skills/` or `~/.claude/skills/`, and explain that assistants match a natural-language question to the relevant skill by its description.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response describes the trade-off between keeping skills scoped to the cloned workspace and copying them to a global skills directory",
+        "Response names at least one concrete global location such as `~/.cursor/skills/` or `~/.claude/skills/` where skills can be placed for cross-project use",
+        "Response explains that the assistant matches the user's natural-language question to a skill (for example via the skill description or name) rather than requiring the user to invoke it explicitly",
+        "Response mentions that multiple user skills ship with NemoClaw (for example get-started, configure-inference, manage-policy, or reference) so the user understands what is being discovered",
+        "Response does NOT claim the user must manually register or symlink each skill file individually for discovery to work",
+        "Response does NOT tell the user to re-clone the repository in order to change where the skills live"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "I want to understand how NemoClaw is actually put together under the hood — the CLI plugin, the blueprint, the network policies, that kind of thing. Where should I be looking?",
+      "expected_output": "Recognize this is an architecture and reference question, not a skills-distribution question; redirect to the user reference material covering CLI, plugin, blueprint, and baseline policies rather than walking through how to clone the skills directory.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response identifies that the user is asking about NemoClaw architecture and reference material, not about obtaining the agent skills package",
+        "Response points to architecture and reference content covering the CLI plugin, blueprint, and network policies (for example the `nemoclaw-user-reference` material)",
+        "Response does NOT walk the user through a sparse-checkout `git clone` of the skills directory",
+        "Response does NOT describe copying `.agents/skills/` into `~/.cursor/skills/` or `~/.claude/skills/`",
+        "Response does NOT describe the docs-to-skills generation pipeline as the answer to the user's question"
       ]
     }
   ]

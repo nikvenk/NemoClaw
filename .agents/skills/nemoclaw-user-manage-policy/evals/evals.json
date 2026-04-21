@@ -1,38 +1,46 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-manage-policy",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I'm watching my sandbox and a prompt just popped up saying my agent tried to reach some host on port 443 that isn't on the allowlist. It looks like a legitimate call the agent needs to make one time, but I'm not sure if I should approve it, deny it, or do something more careful. How should I think about this right now?",
+      "expected_output": "Walk through the approval TUI decision: show what details to read off the prompt, explain approve vs deny semantics, note the approval lasts only for the current session, and recommend narrowing (e.g., making it permanent via the baseline policy) only if it becomes a recurring need.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response tells the user to inspect the blocked request's host, port, and initiating binary before deciding",
+        "Response explains that approving in the TUI adds the endpoint only to the running policy for the current session and does not persist to the baseline",
+        "Response frames approve, deny, and promoting-to-baseline as distinct options rather than collapsing them into a single choice",
+        "Response mentions that for a recurring need the user should update the baseline policy file or apply a preset, not just keep approving in the TUI",
+        "Response does NOT recommend disabling the policy engine or wildcarding egress to avoid future prompts",
+        "Response does NOT treat a one-off approval as equivalent to a permanent policy change"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "A running sandbox of mine already has an allowlist entry for a third-party API, but the agent now needs to hit a new path under that same host that the current rule doesn't cover. I don't want to restart the sandbox. What's the cleanest way to tighten or extend the existing rule while it's live?",
+      "expected_output": "Explain that dynamic policy updates can be applied to a live sandbox via openshell policy set with a YAML file, that the update should modify the existing endpoint group rather than duplicating it, and that dynamic changes only last for the current session unless also merged into the baseline.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response points to a dynamic policy update applied to the running sandbox (for example `openshell policy set --policy <file>`) rather than requiring a restart",
+        "Response recommends editing or extending the existing endpoint group's rules or paths rather than adding a second overlapping entry",
+        "Response notes that dynamic changes only apply for the current session and reset when the sandbox stops",
+        "Response tells the user to also update the baseline policy file (for example `nemoclaw-blueprint/policies/openclaw-sandbox.yaml`) if the change should persist",
+        "Response keeps the scope narrow, extending only the specific path or method needed, not opening the host broadly",
+        "Response does NOT instruct the user to approve every future blocked request in the TUI as a substitute for editing the rule"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "Before I start approving individual network prompts from my agent, I want to step back and understand the overall security model — what controls NemoClaw actually enforces, what the trade-offs of the default posture are, and where my responsibilities stop and OpenClaw's begin. Can you frame that for me?",
+      "expected_output": "Redirect to the static security-posture / framework discussion rather than the runtime approval and policy-editing flow; optionally acknowledge that runtime approval exists but is a separate concern from posture review.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response frames the answer as a security-posture or control-framework discussion rather than a runtime approval walkthrough",
+        "Response points the user toward the configure-security skill, the layered control model, or posture trade-offs rather than the approval TUI",
+        "Response does NOT walk the user step-by-step through approving or denying blocked requests in the TUI",
+        "Response does NOT instruct the user to edit `openclaw-sandbox.yaml` or run `openshell policy set` as the primary answer",
+        "Response may acknowledge that runtime approval and dynamic policy edits exist, but treats them as adjacent to, not the substance of, the posture question",
+        "Response distinguishes NemoClaw's infrastructure-layer controls from OpenClaw's application-layer responsibilities"
       ]
     }
   ]

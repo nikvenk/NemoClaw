@@ -1,38 +1,46 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-workspace",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I've spent weeks getting my assistant's personality and memory just right, and now I need to tear down the sandbox and rebuild it. I don't want to lose what the agent has learned about me. What's the safe way to do this?",
+      "expected_output": "Warn that destroy wipes the PVC; walk through taking a snapshot (or manual download) of the workspace files before destroy; restore afterward.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response warns that running destroy deletes the sandbox PVC and permanently loses workspace files",
+        "Response recommends creating a snapshot (for example `nemoclaw <name> snapshot create`) or a manual backup before the destructive step",
+        "Response names at least two of the workspace files at risk (for example SOUL.md, USER.md, IDENTITY.md, AGENTS.md, MEMORY.md, or the memory/ directory)",
+        "Response explains how to restore afterward, either via `snapshot restore` or by uploading the backed-up files back into the new sandbox",
+        "Response does NOT claim the workspace files survive a destroy operation automatically",
+        "Response does NOT suggest that a sandbox restart alone is equivalent to a destroy for data-loss purposes"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "My agent seems to have forgotten who I am and is acting generic again. I restarted the sandbox earlier today after it got wedged. Did the restart wipe its memory, or is something else going on? Where does that stuff even live?",
+      "expected_output": "Clarify that sandbox restart preserves workspace files via the PVC; point to /sandbox/.openclaw/workspace/; suggest inspecting MEMORY.md, USER.md, SOUL.md inside the sandbox.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response states that a sandbox restart preserves workspace files because the data lives on a Persistent Volume Claim that outlives container restarts",
+        "Response names the workspace file path `/sandbox/.openclaw/workspace/` (or clearly describes that location)",
+        "Response identifies which files hold persona and user context (for example SOUL.md for persona and USER.md for user info, or MEMORY.md for long-term memory)",
+        "Response suggests a concrete way to inspect the files, such as opening a shell into the sandbox with `openshell sandbox shell` or downloading them with `openshell sandbox download`",
+        "Response does NOT tell the user that restart always wipes agent memory",
+        "Response does NOT immediately recommend running `nemoclaw <name> destroy` as a fix"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "I'm sitting down with NemoClaw for the very first time on my Mac. I haven't installed anything or run any commands yet. Where do I start?",
+      "expected_output": "This is first-time setup, not backup/restore; redirect to the get-started flow (install, onboarding wizard, first sandbox). Do not lecture about workspace backups.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response recognizes this is a first-time install and onboarding question, not a workspace backup or restore task",
+        "Response points the user toward the NemoClaw installer and the onboarding wizard as the starting point",
+        "Response does NOT walk the user through backing up workspace files",
+        "Response does NOT describe the `/sandbox/.openclaw/workspace/` directory or its contents as if they already exist",
+        "Response does NOT warn about `nemoclaw <name> destroy` data loss, since the user has no sandbox yet",
+        "Response does NOT reference `snapshot create`, `snapshot restore`, or backup scripts as relevant next steps"
       ]
     }
   ]

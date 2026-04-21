@@ -1,38 +1,44 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-triage-instructions",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "A new bug report just came in on the NemoClaw repo. Before I label anything, can you remind me what the label rules are — how many labels per item, which labels I'm not allowed to assign, and what the label names even mean?",
+      "expected_output": "Summary of the triage rubric: 1–5 labels per item, skip-list of labels that require human judgment, and a walkthrough of the label guide groupings (bug, enhancement sub-types, platform, provider, integration).",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response states that between 1 and 5 labels should be assigned per issue or PR",
+        "Response lists at least three labels from the skip-list such as `duplicate`, `invalid`, `wontfix`, `priority: medium`, `priority: low`, `status: triage`, or `NV QA`",
+        "Response explains the difference between the bare `enhancement` label and the specific `enhancement: *` sub-labels",
+        "Response mentions that `question` is the fallback when the intent is genuinely unclear",
+        "Response does NOT walk the user through actually applying labels to an issue via the GitHub CLI or a triage command",
+        "Response does NOT invent label names that are not in the triage label guide"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I've got an issue where the author sounds pretty upset and keeps saying it's urgent and blocking their whole team. Does that mean I should be slapping `priority: high` on it? And while I'm at it — when does something count as `security` versus just a regular bug?",
+      "expected_output": "Clarify that `priority: high` requires evidence of severe reproducible impact (blocks critical functionality, data loss, outage), not author urgency; explain `security` label applies to auth issues, key exposure, CVEs, or vulnerabilities; note tone rules around never confirming a vulnerability.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response states that `priority: high` is NOT justified by the author's frustration or urgency language alone",
+        "Response names at least one of: blocks critical functionality, causes data loss, or describes a production outage, as the bar for `priority: high`",
+        "Response describes the `security` label as covering things like auth issues, API key exposure, CVEs, or unauthorized access",
+        "Response mentions that security-related items should use neutral language and not confirm a vulnerability is real",
+        "Response does NOT recommend assigning `priority: high` simply because the reporter is angry or says it is urgent"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "There are a bunch of new untriaged issues on the NemoClaw repo from overnight. Can you go through them and actually apply the right labels and post triage comments on each one?",
+      "expected_output": "Recognize this is an execution request, not a reference lookup; redirect to the maintainer triage workflow (nemoclaw-maintainer-triage) that reads the instructions at runtime and operates on GitHub items in batch or single-item mode.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response identifies that actually labeling issues and posting comments is an execution task, not a documentation lookup",
+        "Response redirects the user to the maintainer triage workflow or the `nemoclaw-maintainer-triage` skill as the thing that performs the labeling",
+        "Response mentions that the maintainer triage tool reads the triage instructions at runtime as its source of truth",
+        "Response does NOT attempt to walk through and label specific issues itself in this response",
+        "Response does NOT simply recite the full label guide as if the user were asking about the rules"
       ]
     }
   ]

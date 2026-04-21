@@ -1,38 +1,46 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-reference",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "My team is starting to use NemoClaw and I want to brief them on how the pieces fit together internally — what code actually runs where, and what the main moving parts are. Can you walk me through the architecture?",
+      "expected_output": "A structural walkthrough covering the two main components (TypeScript CLI plugin and versioned blueprint), the relevant top-level directories, and how the plugin drives the blueprint against OpenShell.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response identifies two main components: the CLI/plugin and the versioned blueprint",
+        "Response mentions that the plugin is TypeScript and names at least one of its directories (for example `nemoclaw/src/commands/` or `nemoclaw/src/blueprint/`)",
+        "Response mentions the blueprint artifact (`nemoclaw-blueprint/`) and notes it is versioned separately from the plugin",
+        "Response explains that the plugin resolves, verifies, and executes the blueprint, which then drives the OpenShell CLI",
+        "Response notes that the sandbox runs inside OpenShell, not as a standalone process on the host",
+        "Response does NOT describe NemoClaw as a single monolithic CLI with no blueprint component"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I keep getting confused about where the line is between the plugin and the blueprint. If I want to change how the sandbox network egress is restricted, which layer do I touch — and what actually lives in the blueprint versus the plugin code?",
+      "expected_output": "Clarifies that the network policy YAML lives in the blueprint (for example `nemoclaw-blueprint/policies/`), while the runner, SSRF, and snapshot TypeScript lives in the plugin source tree under `nemoclaw/src/blueprint/`; points the user to the blueprint for policy edits.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response states that the default network policy lives in the blueprint (for example `nemoclaw-blueprint/policies/openclaw-sandbox.yaml`)",
+        "Response distinguishes the blueprint YAML artifact from the TypeScript runner code under `nemoclaw/src/blueprint/`",
+        "Response mentions that the blueprint is versioned and resolved or verified by the plugin before execution",
+        "Response directs the user to modify the blueprint policy file rather than plugin source to change egress rules",
+        "Response does NOT claim network policy is defined inside the plugin's TypeScript command handlers",
+        "Response does NOT tell the user to edit the Dockerfile or OpenShell core to change sandbox egress"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "I'm trying to explain NemoClaw to my manager at a high level — how it relates to OpenClaw and OpenShell, and why we would pick it over just using the community sandbox directly. I don't need the internals, just the positioning.",
+      "expected_output": "Recognizes this is ecosystem positioning, not an architecture reference lookup; redirects to overview-style material rather than dumping directory layout and plugin/blueprint internals.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response frames the answer around ecosystem positioning: how OpenClaw, OpenShell, and NemoClaw relate",
+        "Response explains what NemoClaw adds on top of the community OpenShell sandbox at a conceptual level",
+        "Response does NOT enumerate internal directory layout such as `nemoclaw/src/commands/` or `nemoclaw-blueprint/policies/`",
+        "Response does NOT walk through the blueprint lifecycle stages (resolve, verify, plan, apply, status) as the main answer",
+        "Response does NOT deep-dive into plugin file structure or TypeScript module boundaries",
+        "Response stays at an audience-appropriate altitude for a manager briefing rather than shifting into a developer reference"
       ]
     }
   ]

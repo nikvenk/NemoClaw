@@ -1,38 +1,46 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-deploy-remote",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I've got a fresh GPU box spun up in the cloud and I want to run NemoClaw on it so my agent can actually use the GPU. What's the right way to get it running end-to-end on that remote host?",
+      "expected_output": "Recommend provisioning the VM, running the standard NemoClaw installer on the remote host, then running `nemoclaw onboard` on that host; describe how to connect into the sandbox afterward and note the dashboard origin setting when reaching it from a remote browser.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response recommends running the standard NemoClaw installer directly on the remote GPU host rather than only on a local machine",
+        "Response describes running `nemoclaw onboard` on the remote host to configure the gateway, providers, and sandbox",
+        "Response explains how to connect into the sandbox afterward (for example `nemoclaw <name> connect`, SSH plus `openclaw tui`, or `openshell term`)",
+        "Response mentions that `CHAT_UI_URL` must be set to the origin the browser will use before setup when the dashboard is accessed from a remote URL",
+        "Response does NOT present `nemoclaw deploy <instance-name>` as the preferred or current path",
+        "Response does NOT tell the user that installing NemoClaw only on their laptop is enough to run it on the remote GPU"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I'm using the older `nemoclaw deploy my-gpu-box` wrapper because it's what our team scripts still use. It provisions the VM but onboarding complains the GPU isn't detected, and I also can't figure out how to SSH in with the name it printed. What's going on and what should I check?",
+      "expected_output": "Explain the legacy Brev compatibility path, how the deploy wrapper installs Docker and the NVIDIA Container Toolkit only when a GPU is present, how to override GPU selection with `NEMOCLAW_GPU` (and provider with `NEMOCLAW_BREV_PROVIDER`), and how Brev sets up SSH config for the instance name; note the command is deprecated.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response acknowledges that `nemoclaw deploy` is a deprecated compatibility path, not the preferred flow",
+        "Response explains that the deploy wrapper only installs the NVIDIA Container Toolkit when a GPU is detected on the host",
+        "Response mentions the `NEMOCLAW_GPU` environment variable (or `NEMOCLAW_BREV_PROVIDER`) as a way to change GPU selection or Brev provider before running deploy",
+        "Response points to Brev-managed SSH configuration (for example `ssh <instance-name>`) as how to reach the host by name",
+        "Response suggests re-running `nemoclaw onboard` on the host once the GPU is visible, rather than starting over from scratch",
+        "Response does NOT claim that `nemoclaw deploy` has been fully removed or is completely unusable"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "I just got a new MacBook and I want to try NemoClaw for the first time. What do I need to do to get it installed and running so I can chat with an agent?",
+      "expected_output": "Recognize this is a first-time local install on a laptop, not a remote GPU deployment; redirect toward the standard getting-started flow (installer plus onboarding wizard plus first prompt on the local machine).",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response identifies this as a first-time local install on a laptop, not a remote GPU deployment",
+        "Response points to the standard NemoClaw installer and `nemoclaw onboard` flow on the local machine",
+        "Response does NOT walk the user through `nemoclaw deploy <instance-name>` or the legacy Brev compatibility path",
+        "Response does NOT tell the user they must provision a remote GPU instance to try NemoClaw",
+        "Response does NOT recommend setting `CHAT_UI_URL`, `NEMOCLAW_GPU`, or other remote-deployment environment variables for a local laptop install",
+        "Response redirects toward the first-time getting-started journey rather than the remote deploy journey"
       ]
     }
   ]

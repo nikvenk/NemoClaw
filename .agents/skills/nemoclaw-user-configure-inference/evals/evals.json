@@ -1,38 +1,45 @@
 {
-  "$instructions": "Stub scaffold — replace all placeholder values before shipping. See .agents/skills/EVALS.md for the authoring rubric. A pre-push hook rejects files whose placeholder markers remain.",
   "skill_name": "nemoclaw-user-configure-inference",
   "evals": [
     {
       "id": 1,
-      "prompt": "TODO: happy-path user scenario — implementation-vague, in the user's words",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "My NemoClaw sandbox has been humming along on the default NVIDIA-hosted model, but for this next project I'd rather have it talk to Anthropic's Claude instead. The sandbox is already up and I don't want to blow it away if I don't have to. How do I point it at a different provider?",
+      "expected_output": "Explain that cross-provider switches require updating the gateway route plus the override env vars and recreating the sandbox; mention NEMOCLAW_MODEL_OVERRIDE and NEMOCLAW_INFERENCE_API_OVERRIDE and the anthropic-messages API path; do not tell the user to reinstall NemoClaw from scratch.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (specific, quote-checkable)",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response distinguishes between same-provider model switches (gateway route alone) and cross-provider switches (which need both gateway and sandbox config changes)",
+        "Response mentions setting NEMOCLAW_MODEL_OVERRIDE and NEMOCLAW_INFERENCE_API_OVERRIDE (with a value like `anthropic-messages`) before recreating the sandbox",
+        "Response references using `openshell inference set` or re-running `nemoclaw onboard` (with `--resume --recreate-sandbox` or equivalent) rather than a fresh install",
+        "Response explains that the host keeps provider credentials and the agent inside the sandbox still talks to `inference.local`",
+        "Response does NOT instruct the user to reinstall NemoClaw or re-run the install script",
+        "Response does NOT claim a simple runtime model switch alone is sufficient for changing provider families"
       ]
     },
     {
       "id": 2,
-      "prompt": "TODO: edge or partial-state scenario — user mid-task, realistic wrinkle",
-      "expected_output": "TODO: one-sentence description of correct agent behavior",
+      "prompt": "I'm trying to wire NemoClaw up to a vLLM server I've got running locally on port 8000 so I don't have to burn cloud credits during development. I started the onboarding wizard but I'm not sure which option to pick, and I'm also not clear what to put for the API key since my local server doesn't actually require one. Any guidance?",
+      "expected_output": "Point the user at the Other OpenAI-compatible endpoint option (or the experimental vLLM auto-detect path with NEMOCLAW_EXPERIMENTAL=1), explain the base URL prompt, note that any non-empty string works for the API key when the server is unauthenticated, and mention chat/completions is the default path for compatible endpoints.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1",
-        "TODO: behavioral claim #2",
-        "TODO: behavioral claim #3"
+        "Response recommends selecting `Other OpenAI-compatible endpoint` or the experimental `Local vLLM` option (gated by `NEMOCLAW_EXPERIMENTAL=1`) in the wizard",
+        "Response tells the user to enter the local base URL (for example `http://localhost:8000/v1`) when prompted",
+        "Response explains that any non-empty string works as the API key when the local server does not require authentication",
+        "Response mentions that NemoClaw defaults to `/v1/chat/completions` for compatible endpoints, or notes the vLLM tool-calling caveat on `/v1/responses`",
+        "Response does NOT tell the user to hard-code a real cloud API key like a production `OPENAI_API_KEY` value for a local unauthenticated server",
+        "Response does NOT claim the agent inside the sandbox connects directly to `localhost:8000` instead of going through `inference.local`"
       ]
     },
     {
       "id": 3,
-      "prompt": "TODO: adjacent-wrong scenario — the agent should NOT use this skill",
-      "expected_output": "TODO: one-sentence description of correct redirect behavior",
+      "prompt": "A teammate just pointed me at NemoClaw and I'd like to try it out on my Mac. I've never installed it before. What do I actually need to do to get to the point where I can chat with an agent?",
+      "expected_output": "Recognize this is a first-time install and onboarding request, not a provider-change task; redirect to the get-started flow (install script, onboarding wizard, first prompt); do not dive into inference provider reconfiguration mechanics.",
       "files": [],
       "assertions": [
-        "TODO: behavioral claim #1 (what to redirect to)",
-        "TODO: behavioral claim #2 (what NOT to do)",
-        "TODO: behavioral claim #3"
+        "Response identifies this as a first-time install or onboarding task rather than an inference reconfiguration task",
+        "Response points the user toward the install script and the `nemoclaw onboard` wizard as the primary path",
+        "Response does NOT walk the user through cross-provider switching, `NEMOCLAW_MODEL_OVERRIDE`, or `openshell inference set`",
+        "Response does NOT assume the user already has a running sandbox whose inference provider needs changing",
+        "Response does NOT require the user to pre-configure a local vLLM, NIM, or Ollama server before onboarding"
       ]
     }
   ]
