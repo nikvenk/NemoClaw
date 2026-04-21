@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as onboardSession from "./onboard-session";
-import { type RecoveryResult } from "./inventory-commands";
+import type { ListSandboxesCommandDeps, RecoveryResult } from "./inventory-commands";
 import { parseGatewayInference } from "./inference-config";
-import { ROOT } from "./runner";
 import { parseSshProcesses, createSystemDeps } from "./sandbox-session-state";
-import type { RunListCommandDeps } from "./list-command";
 import { resolveOpenshell } from "./resolve-openshell";
 
 interface ListCommandRuntimeBridge {
@@ -23,7 +21,7 @@ function getRuntimeBridge(): ListCommandRuntimeBridge {
   return require("../nemoclaw") as ListCommandRuntimeBridge;
 }
 
-export function buildListCommandDeps(): RunListCommandDeps {
+export function buildListCommandDeps(): ListSandboxesCommandDeps {
   const opsBinList = resolveOpenshell();
   const sessionDeps = opsBinList ? createSystemDeps(opsBinList) : null;
   const runtime = getRuntimeBridge();
@@ -39,10 +37,11 @@ export function buildListCommandDeps(): RunListCommandDeps {
   };
 
   return {
-    rootDir: ROOT,
     recoverRegistryEntries: () => runtime.recoverRegistryEntries(),
     getLiveInference: () =>
-      parseGatewayInference(runtime.captureOpenshell(["inference", "get"], { ignoreError: true }).output),
+      parseGatewayInference(
+        runtime.captureOpenshell(["inference", "get"], { ignoreError: true }).output,
+      ),
     loadLastSession: () => onboardSession.loadSession(),
     getActiveSessionCount: sessionDeps
       ? (name) => {
@@ -55,8 +54,5 @@ export function buildListCommandDeps(): RunListCommandDeps {
           }
         }
       : undefined,
-    log: console.log,
-    error: console.error,
-    exit: (code) => process.exit(code),
   };
 }

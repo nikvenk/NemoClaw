@@ -59,7 +59,7 @@ const {
   versionGte,
 } = require("./lib/openshell");
 const { showStatusCommand } = require("./lib/inventory-commands");
-const { runRegisteredListCommand } = require("./lib/list-command");
+const { runRegisteredOclifCommand } = require("./lib/oclif-runner");
 const { executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
@@ -1177,7 +1177,7 @@ function showStatus() {
 }
 
 async function listSandboxes(args = []) {
-  await runRegisteredListCommand(args, {
+  await runRegisteredOclifCommand("list", args, {
     rootDir: ROOT,
     error: console.error,
     exit: (code) => process.exit(code),
