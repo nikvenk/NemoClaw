@@ -20,8 +20,10 @@ function writeFile(p: string, content: string, mtimeMs: number) {
   fs.utimesSync(p, t, t);
 }
 
+type Stream = { write(chunk: string): unknown };
+
 describe("stale-dist-check", () => {
-  let root: string;
+  let root = "";
 
   beforeEach(() => {
     root = mkRepo();
@@ -75,7 +77,7 @@ describe("stale-dist-check", () => {
     writeFile(path.join(root, "dist", "lib", "foo.js"), "x", 1_000_000);
     writeFile(path.join(root, "src", "lib", "foo.ts"), "x", 5_000_000);
     const chunks: string[] = [];
-    const stream = { write: (s: string) => chunks.push(s) };
+    const stream: Stream = { write: (chunk: string) => chunks.push(chunk) };
     expect(warnIfStale(root, stream)).toBe(true);
     const output = chunks.join("");
     expect(output).toContain("npm run build:cli");
@@ -85,15 +87,15 @@ describe("stale-dist-check", () => {
   it("warnIfStale returns false for a fresh build", () => {
     writeFile(path.join(root, "src", "lib", "foo.ts"), "x", 1_000_000);
     writeFile(path.join(root, "dist", "lib", "foo.js"), "x", 2_000_000);
-    const stream = { write: () => {} };
+    const stream: Stream = { write: (_chunk: string) => undefined };
     expect(warnIfStale(root, stream)).toBe(false);
   });
 
   it("warnIfStale swallows stream write errors (never throws)", () => {
     writeFile(path.join(root, "dist", "lib", "foo.js"), "x", 1_000_000);
     writeFile(path.join(root, "src", "lib", "foo.ts"), "x", 5_000_000);
-    const throwingStream = {
-      write: () => {
+    const throwingStream: Stream = {
+      write: (_chunk: string) => {
         throw new Error("EPIPE");
       },
     };
