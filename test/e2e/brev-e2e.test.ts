@@ -245,8 +245,14 @@ function runRemoteTest(scriptPath) {
     `bash ${scriptPath} 2>&1 | tee /tmp/test-output.log`,
   ].join(" && ");
 
-  // Stream test output to CI log AND capture it for assertions
-  sshEnv(cmd, { timeout: 900_000, stream: true });
+  // Stream test output to CI log AND capture it for assertions.
+  // 30 min cap: most suites (credential-sanitization, telegram-injection,
+  // messaging-providers) reuse the e2e-test sandbox created by beforeAll
+  // and finish well under 15 min. Suites that do their own `nemoclaw
+  // onboard` inside the test (ollama, future provider-specific suites)
+  // need the full ~14 min for a cold-CPU-Brev 729 MiB sandbox image
+  // build + upload plus ancillary setup.
+  sshEnv(cmd, { timeout: 1_800_000, stream: true });
   // Retrieve the captured output for assertion checking
   return ssh("cat /tmp/test-output.log", { timeout: 30_000 });
 }
