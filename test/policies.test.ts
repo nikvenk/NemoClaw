@@ -606,18 +606,26 @@ describe("policies", () => {
       }
     });
 
-    it("messaging WebSocket presets use tls: skip, not terminate", () => {
-      for (const name of ["discord", "slack"]) {
-        const content = policies.loadPreset(name);
+    it("messaging WebSocket presets keep tls: skip on gateway endpoints", () => {
+      const cases = [
+        { preset: "discord", pattern: /host:\s*gateway\.discord\.gg[\s\S]*?tls:\s*skip/ },
+        { preset: "slack", pattern: /host:\s*wss-primary\.slack\.com[\s\S]*?tls:\s*skip/ },
+        { preset: "slack", pattern: /host:\s*wss-backup\.slack\.com[\s\S]*?tls:\s*skip/ },
+      ];
+
+      for (const { preset, pattern } of cases) {
+        const content = policies.loadPreset(preset);
         expect(content).toBeTruthy();
-        expect(content.includes("tls: terminate")).toBe(false);
+        expect(content).toMatch(pattern);
       }
     });
 
     it("telegram REST preset uses tls: terminate for L7 proxy", () => {
       const content = policies.loadPreset("telegram");
       expect(content).toBeTruthy();
-      expect(content.includes("tls: terminate")).toBe(true);
+      expect(content).toMatch(
+        /host:\s*api\.telegram\.org[\s\S]*?protocol:\s*rest[\s\S]*?tls:\s*terminate/,
+      );
     });
 
     it("pypi preset allows HEAD for pip lazy-wheel metadata checks", () => {
