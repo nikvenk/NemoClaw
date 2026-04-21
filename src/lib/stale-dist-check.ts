@@ -9,17 +9,17 @@
  * In published npm installs there is no `src/`, so this no-ops.
  */
 
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
 const GRACE_MS = 2000;
 
 /** Return the newest mtime (ms) under `root` among files where `accept(name)` is true. Returns 0 if nothing matches or `root` is unreadable. */
-function maxMtime(root, accept) {
+export function maxMtime(root: string, accept: (name: string) => boolean): number {
   let newest = 0;
-  const stack = [root];
+  const stack: string[] = [root];
   while (stack.length) {
-    const dir = stack.pop();
+    const dir = stack.pop() as string;
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -32,13 +32,13 @@ function maxMtime(root, accept) {
         if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
         stack.push(full);
       } else if (entry.isFile() && accept(entry.name)) {
-        let stat;
+        let mtimeMs: number;
         try {
-          stat = fs.statSync(full);
+          mtimeMs = fs.statSync(full).mtimeMs;
         } catch {
           continue;
         }
-        if (stat.mtimeMs > newest) newest = stat.mtimeMs;
+        if (mtimeMs > newest) newest = mtimeMs;
       }
     }
   }
@@ -46,7 +46,9 @@ function maxMtime(root, accept) {
 }
 
 /** Return `{ srcMtime, distMtime }` when compiled dist/ is older than src/ by more than the grace window; return null otherwise or when either directory is missing. */
-function checkStaleDist(repoRoot) {
+export function checkStaleDist(
+  repoRoot: string,
+): { srcMtime: number; distMtime: number } | null {
   const srcDir = path.join(repoRoot, "src");
   const distDir = path.join(repoRoot, "dist");
   if (!fs.existsSync(srcDir) || !fs.existsSync(distDir)) return null;
@@ -60,8 +62,11 @@ function checkStaleDist(repoRoot) {
 }
 
 /** Print a stale-dist warning to `stream` if dist/ is out of date. Returns true when a warning was emitted, false otherwise. Never throws — fails open on I/O errors. */
-function warnIfStale(repoRoot, stream = process.stderr) {
-  let result;
+export function warnIfStale(
+  repoRoot: string,
+  stream: { write(chunk: string): unknown } = process.stderr,
+): boolean {
+  let result: { srcMtime: number; distMtime: number } | null;
   try {
     result = checkStaleDist(repoRoot);
   } catch {
@@ -76,5 +81,3 @@ function warnIfStale(repoRoot, stream = process.stderr) {
   );
   return true;
 }
-
-module.exports = { checkStaleDist, warnIfStale, maxMtime };

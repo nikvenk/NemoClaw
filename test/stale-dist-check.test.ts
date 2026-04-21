@@ -6,10 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const { checkStaleDist, warnIfStale } = require("../bin/lib/stale-dist-check");
+import { checkStaleDist, warnIfStale } from "../src/lib/stale-dist-check";
 
 function mkRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "stale-dist-"));
