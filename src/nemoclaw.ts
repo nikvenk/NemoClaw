@@ -60,7 +60,6 @@ const {
 } = require("./lib/openshell");
 const { showStatusCommand } = require("./lib/inventory-commands");
 const { runRegisteredListCommand } = require("./lib/list-command");
-const { setListCommandDepsProvider } = require("./lib/list-command-runtime");
 const { executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
@@ -502,6 +501,9 @@ async function recoverRegistryEntries({ requestedSandboxName = null } = {}) {
     recoveredFromGateway,
   };
 }
+
+exports.captureOpenshell = captureOpenshell;
+exports.recoverRegistryEntries = recoverRegistryEntries;
 
 function hasNamedGateway(output = "") {
   return stripAnsi(output).includes("Gateway: nemoclaw");
@@ -1173,46 +1175,6 @@ function showStatus() {
     log: console.log,
   });
 }
-
-function buildListCommandDeps() {
-  const opsBinList = resolveOpenshell();
-  const sessionDeps = opsBinList ? createSessionDeps(opsBinList) : null;
-
-  // Cache the SSH process probe once for all sandboxes — avoids spawning ps
-  // per sandbox row. The getSshProcesses() call is the expensive part (5s timeout).
-  let cachedSshOutput: string | null | undefined;
-  const getCachedSshOutput = () => {
-    if (cachedSshOutput === undefined && sessionDeps) {
-      cachedSshOutput = sessionDeps.getSshProcesses();
-    }
-    return cachedSshOutput ?? null;
-  };
-
-  return {
-    rootDir: ROOT,
-    recoverRegistryEntries: () => recoverRegistryEntries(),
-    getLiveInference: () =>
-      parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
-    loadLastSession: () => onboardSession.loadSession(),
-    getActiveSessionCount: sessionDeps
-      ? (name) => {
-          try {
-            const sshOutput = getCachedSshOutput();
-            if (sshOutput === null) return null;
-            const { parseSshProcesses } = require("./lib/sandbox-session-state");
-            return parseSshProcesses(sshOutput, name).length;
-          } catch {
-            return null;
-          }
-        }
-      : undefined,
-    log: console.log,
-    error: console.error,
-    exit: (code) => process.exit(code),
-  };
-}
-
-setListCommandDepsProvider(buildListCommandDeps);
 
 async function listSandboxes(args = []) {
   await runRegisteredListCommand(args, {

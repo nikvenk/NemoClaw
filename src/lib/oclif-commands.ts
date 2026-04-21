@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createListCommand, type ListCommandClass } from "./list-command";
-import { getListCommandDeps } from "./list-command-runtime";
+import { buildListCommandDeps } from "./list-command-deps";
 
 const commands: Record<string, ListCommandClass> = {
-  list: createListCommand(getListCommandDeps),
+  list: createListCommand(buildListCommandDeps),
 };
 
 export default commands;
