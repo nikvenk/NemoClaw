@@ -59,6 +59,19 @@ if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ]; then
   fi
 fi
 
+# Run with $TIMEOUT_CMD if set; run directly if empty (NEMOCLAW_E2E_NO_TIMEOUT bypass).
+# Avoids `$TIMEOUT_CMD 60 ssh …` becoming `60 ssh …` → "60: command not found".
+# Usage: run_with_timeout <seconds> <command> [args...]
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [ -n "$TIMEOUT_CMD" ]; then
+    "$TIMEOUT_CMD" "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 PASS=0
 FAIL=0
 SKIP=0
@@ -114,7 +127,7 @@ MIN_OPENSHELL="0.0.24"
 MODEL="nvidia/nemotron-3-super-120b-a12b"
 
 # SSH helper — sets up SSH config and common options for sandbox access
-# Sets: ssh_config, SSH_OPTS, SSH_TARGET, TIMEOUT_CMD
+# Sets: ssh_config, SSH_OPTS, SSH_TARGET
 setup_ssh() {
   ssh_config="$(mktemp)"
   if ! openshell sandbox ssh-config "$SANDBOX_NAME" >"$ssh_config" 2>/dev/null; then
@@ -124,9 +137,6 @@ setup_ssh() {
   fi
   SSH_OPTS=(-F "$ssh_config" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR)
   SSH_TARGET="openshell-${SANDBOX_NAME}"
-  TIMEOUT_CMD=""
-  command -v timeout >/dev/null 2>&1 && TIMEOUT_CMD="timeout 90"
-  command -v gtimeout >/dev/null 2>&1 && TIMEOUT_CMD="gtimeout 90"
   return 0
 }
 
@@ -323,7 +333,7 @@ fi
 # 4b: Live inference through sandbox
 info "[LIVE] Baseline inference: user → sandbox → gateway → NVIDIA Endpoints..."
 # shellcheck disable=SC2029  # client-side expansion is intentional
-baseline_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+baseline_response=$(run_with_timeout 90 ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
   "curl -s --max-time 60 https://inference.local/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":100}'" \
@@ -346,7 +356,7 @@ for pong_attempt in 1 2 3; do
   [ "$pong_attempt" -lt 3 ] || break
   sleep 5
   # shellcheck disable=SC2029
-  baseline_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+  baseline_response=$(run_with_timeout 90 ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
     "curl -s --max-time 60 https://inference.local/v1/chat/completions \
       -H 'Content-Type: application/json' \
       -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":100}'" \
@@ -654,7 +664,7 @@ section "Phase 10: Live inference after restart (THE definitive test)"
 
 info "[LIVE] Post-restart inference: user → sandbox → gateway → NVIDIA Endpoints..."
 # shellcheck disable=SC2029
-post_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+post_response=$(run_with_timeout 90 ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
   "curl -s --max-time 60 https://inference.local/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":100}'" \
@@ -676,7 +686,7 @@ for pong_attempt in 1 2 3; do
   [ "$pong_attempt" -lt 3 ] || break
   sleep 5
   # shellcheck disable=SC2029
-  post_response=$($TIMEOUT_CMD ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+  post_response=$(run_with_timeout 90 ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
     "curl -s --max-time 60 https://inference.local/v1/chat/completions \
       -H 'Content-Type: application/json' \
       -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: PONG\"}],\"max_tokens\":100}'" \

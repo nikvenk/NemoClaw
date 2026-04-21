@@ -44,6 +44,19 @@ if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ]; then
   fi
 fi
 
+# Run with $TIMEOUT_CMD if set; run directly if empty (NEMOCLAW_E2E_NO_TIMEOUT bypass).
+# Avoids `$TIMEOUT_CMD 60 ssh …` becoming `60 ssh …` → "60: command not found".
+# Usage: run_with_timeout <seconds> <command> [args...]
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [ -n "$TIMEOUT_CMD" ]; then
+    "$TIMEOUT_CMD" "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 # ── Config ───────────────────────────────────────────────────────────────────
 SANDBOX_NAME="e2e-net-policy"
 LOG_FILE="test-network-policy-$(date +%Y%m%d-%H%M%S).log"
@@ -197,7 +210,7 @@ sandbox_exec() {
     return 1
   fi
   local result ssh_exit=0
-  result=$(${TIMEOUT_CMD:+$TIMEOUT_CMD 120} ssh -F "$ssh_cfg" \
+  result=$(run_with_timeout 120 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${SANDBOX_NAME}" "$cmd" 2>&1) || ssh_exit=$?
@@ -225,7 +238,7 @@ setup_sandbox() {
     NEMOCLAW_NON_INTERACTIVE=1 \
     NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
     NEMOCLAW_POLICY_TIER="restricted" \
-    ${TIMEOUT_CMD:+$TIMEOUT_CMD 600} nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 600 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | tee -a "$LOG_FILE" || {
     log "FATAL: Onboard failed"
     exit 1

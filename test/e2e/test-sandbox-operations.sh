@@ -39,6 +39,19 @@ if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ]; then
   fi
 fi
 
+# Run with $TIMEOUT_CMD if set; run directly if empty (NEMOCLAW_E2E_NO_TIMEOUT bypass).
+# Avoids `$TIMEOUT_CMD 60 ssh …` becoming `60 ssh …` → "60: command not found".
+# Usage: run_with_timeout <seconds> <command> [args...]
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [ -n "$TIMEOUT_CMD" ]; then
+    "$TIMEOUT_CMD" "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 # ── Config ───────────────────────────────────────────────────────────────────
 SANDBOX_A="test-sbx-a"
 SANDBOX_B="test-sbx-b"
@@ -103,7 +116,7 @@ sandbox_exec_for() {
     return 1
   fi
   local result exit_code=0
-  result=$($TIMEOUT_CMD 60 ssh -F "$ssh_cfg" \
+  result=$(run_with_timeout 60 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${name}" "$cmd" 2>&1) || exit_code=$?
@@ -331,7 +344,7 @@ test_sbx_04_log_streaming() {
   require_sandbox "$SANDBOX_A" "TC-SBX-04" || return
 
   local output logs_exit=0
-  output=$($TIMEOUT_CMD 10 nemoclaw "$SANDBOX_A" logs 2>&1) || logs_exit=$?
+  output=$(run_with_timeout 10 nemoclaw "$SANDBOX_A" logs 2>&1) || logs_exit=$?
 
   if [[ $logs_exit -ne 0 ]]; then
     fail "TC-SBX-04: Log Streaming" "nemoclaw logs exited with code $logs_exit"
@@ -341,7 +354,7 @@ test_sbx_04_log_streaming() {
     fail "TC-SBX-04: Log Streaming" "nemoclaw logs succeeded but produced no output"
   fi
 
-  $TIMEOUT_CMD 5 nemoclaw "$SANDBOX_A" logs --follow &>/dev/null &
+  run_with_timeout 5 nemoclaw "$SANDBOX_A" logs --follow &>/dev/null &
   local pid=$!
   sleep 3
 
@@ -378,7 +391,7 @@ test_sbx_07_registry_rebuild() {
   rm -f "$registry"
 
   local output
-  output=$($TIMEOUT_CMD 60 nemoclaw list 2>&1) || true
+  output=$(run_with_timeout 60 nemoclaw list 2>&1) || true
 
   if echo "$output" | grep -q "$SANDBOX_A"; then
     pass "TC-SBX-07: Registry rebuilt — '$SANDBOX_A' found after deletion"
@@ -407,7 +420,7 @@ test_sbx_08_process_recovery() {
 
   log "  Running nemoclaw status (expect process recovery)..."
   local status_output status_exit=0
-  status_output=$($TIMEOUT_CMD 120 nemoclaw "$SANDBOX_A" status 2>&1) || status_exit=$?
+  status_output=$(run_with_timeout 120 nemoclaw "$SANDBOX_A" status 2>&1) || status_exit=$?
 
   if [[ $status_exit -ne 0 ]]; then
     fail "TC-SBX-08: Process Recovery (status)" "nemoclaw status exited with code $status_exit"

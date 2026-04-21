@@ -49,6 +49,19 @@ if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ]; then
   fi
 fi
 
+# Run with $TIMEOUT_CMD if set; run directly if empty (NEMOCLAW_E2E_NO_TIMEOUT bypass).
+# Avoids `$TIMEOUT_CMD 60 ssh …` becoming `60 ssh …` → "60: command not found".
+# Usage: run_with_timeout <seconds> <command> [args...]
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [ -n "$TIMEOUT_CMD" ]; then
+    "$TIMEOUT_CMD" "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -182,7 +195,7 @@ sandbox_exec() {
     return 1
   fi
   local result ssh_exit=0
-  result=$($TIMEOUT_CMD 60 ssh -F "$ssh_cfg" \
+  result=$(run_with_timeout 60 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${SANDBOX_NAME}" "$cmd" 2>&1) || ssh_exit=$?
@@ -317,7 +330,7 @@ test_inf_06_invalid_api_key() {
     NEMOCLAW_NON_INTERACTIVE=1 \
     NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
     NEMOCLAW_SANDBOX_NAME="e2e-invalid-key" \
-    $TIMEOUT_CMD 120 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 120 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1) || exit_code=$?
 
   # 1. Exit code should be non-zero (onboard should fail)
@@ -381,7 +394,7 @@ test_inf_07_unreachable_endpoint() {
     NEMOCLAW_ENDPOINT_URL="https://nemoclaw-e2e.invalid/v1" \
     NEMOCLAW_MODEL="test-model" \
     COMPATIBLE_API_KEY="fake-key-for-unreachable-test" \
-    $TIMEOUT_CMD 120 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 120 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1) || exit_code=$?
 
   # 1. Exit code should be non-zero
@@ -450,7 +463,7 @@ test_inf_02_openai() {
     NEMOCLAW_PROVIDER="openai" \
     NEMOCLAW_MODEL="$model" \
     OPENAI_API_KEY="$api_key" \
-    $TIMEOUT_CMD 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | redact_stream "$api_key" | tee -a "$LOG_FILE" || onboard_exit=$?
 
   if [[ $onboard_exit -ne 0 ]]; then
@@ -469,7 +482,7 @@ test_inf_02_openai() {
 
   log "  Sending test prompt through sandbox inference proxy..."
   local response
-  response=$($TIMEOUT_CMD 90 ssh -F "$ssh_cfg" \
+  response=$(run_with_timeout 90 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${sbx_name}" \
@@ -526,7 +539,7 @@ test_inf_03_anthropic() {
     NEMOCLAW_PROVIDER="anthropic" \
     NEMOCLAW_MODEL="$model" \
     ANTHROPIC_API_KEY="$api_key" \
-    $TIMEOUT_CMD 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | redact_stream "$api_key" | tee -a "$LOG_FILE" || onboard_exit=$?
 
   if [[ $onboard_exit -ne 0 ]]; then
@@ -545,7 +558,7 @@ test_inf_03_anthropic() {
 
   log "  Sending test prompt through sandbox inference proxy (Anthropic Messages API)..."
   local response
-  response=$($TIMEOUT_CMD 90 ssh -F "$ssh_cfg" \
+  response=$(run_with_timeout 90 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${sbx_name}" \
@@ -615,7 +628,7 @@ test_inf_09_compatible_endpoint() {
     NEMOCLAW_ENDPOINT_URL="$endpoint_url" \
     NEMOCLAW_MODEL="$endpoint_model" \
     COMPATIBLE_API_KEY="$endpoint_key" \
-    $TIMEOUT_CMD 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 300 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | redact_stream "$endpoint_key" | tee -a "$LOG_FILE" || onboard_exit=$?
 
   if [[ $onboard_exit -ne 0 ]]; then
@@ -636,7 +649,7 @@ test_inf_09_compatible_endpoint() {
   # Send a prompt through the inference proxy inside the sandbox
   log "  Sending test prompt through sandbox inference proxy..."
   local response
-  response=$($TIMEOUT_CMD 90 ssh -F "$ssh_cfg" \
+  response=$(run_with_timeout 90 ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${sbx_name}" \
