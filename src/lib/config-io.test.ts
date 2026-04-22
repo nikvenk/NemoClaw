@@ -35,6 +35,35 @@ describe("config-io", () => {
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 
+  it("rejects a symlink in place of the config directory", () => {
+    const tmp = makeTempDir();
+    const attackerDir = path.join(tmp, "attacker");
+    fs.mkdirSync(attackerDir);
+    const symlinkPath = path.join(tmp, ".nemoclaw");
+    fs.symlinkSync(attackerDir, symlinkPath);
+
+    expect(() => ensureConfigDir(symlinkPath)).toThrow(/symbolic link/);
+    expect(() => ensureConfigDir(symlinkPath)).toThrow(/symlink attack/);
+  });
+
+  it("rejects a symlink in an ancestor of the config directory", () => {
+    const tmp = makeTempDir();
+    const attackerDir = path.join(tmp, "attacker");
+    fs.mkdirSync(attackerDir);
+    const symlinkPath = path.join(tmp, ".nemoclaw");
+    fs.symlinkSync(attackerDir, symlinkPath);
+    const nestedDir = path.join(symlinkPath, "state");
+
+    expect(() => ensureConfigDir(nestedDir)).toThrow(/symbolic link/);
+  });
+
+  it("allows a normal directory (no symlinks)", () => {
+    const dir = path.join(makeTempDir(), ".nemoclaw");
+    ensureConfigDir(dir);
+    expect(fs.existsSync(dir)).toBe(true);
+    expect(fs.lstatSync(dir).isSymbolicLink()).toBe(false);
+  });
+
   it("tightens pre-existing weak directory permissions to 0o700", () => {
     const dir = path.join(makeTempDir(), "config");
     fs.mkdirSync(dir, { mode: 0o755 });
