@@ -506,10 +506,12 @@ function pollForSandboxReady(elapsed) {
   // sandbox image at build time (see src/lib/onboard.ts Dockerfile ARG
   // substitution), so the env has to be set for this onboard call —
   // switching providers later would require a second ~15 min rebuild.
-  const onboardEnvPrefix =
+  // Use `env` to apply the assignments: nohup treats `VAR=val cmd` as a
+  // single command name literal and fails with "No such file or directory".
+  const onboardCmd =
     TEST_SUITE === "ollama"
-      ? `NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=qwen2.5:0.5b NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 NEMOCLAW_NON_INTERACTIVE=1 `
-      : "";
+      ? `env NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=qwen2.5:0.5b NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 NEMOCLAW_NON_INTERACTIVE=1 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software`
+      : `nemoclaw onboard --non-interactive --yes-i-accept-third-party-software`;
   // Launch onboard in background. The SSH command may exit with code 255
   // (SSH error) because background processes keep file descriptors open.
   // That's fine — we just need the process to start; we'll poll for
@@ -519,7 +521,7 @@ function pollForSandboxReady(elapsed) {
       [
         `source ~/.nvm/nvm.sh 2>/dev/null || true`,
         `cd ${remoteDir}`,
-        `nohup ${onboardEnvPrefix}nemoclaw onboard --non-interactive --yes-i-accept-third-party-software </dev/null >/tmp/nemoclaw-onboard.log 2>&1 & disown`,
+        `nohup ${onboardCmd} </dev/null >/tmp/nemoclaw-onboard.log 2>&1 & disown`,
         `sleep 2`,
         `echo "onboard launched"`,
       ].join(" && "),
