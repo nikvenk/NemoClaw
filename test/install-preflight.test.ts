@@ -1542,10 +1542,11 @@ fi`,
     const installNodejs = script.match(/install_nodejs\(\)\s*\{[\s\S]*?\n\}/);
     expect(installNodejs).not.toBeNull();
     const body = installNodejs![0];
-    // Hint phrase + the exact reload command must live inside install_nodejs.
-    expect(body).toMatch(/current shell may still resolve/);
+    // Anchor to the actual warn/printf calls (not the comment) so the test
+    // fails if the executable statements are removed.
+    expect(body).toMatch(/\n\s*warn\s+"Your current shell may still resolve/);
     // The printf arg is double-quoted so the SHELL reference is backslash-escaped.
-    expect(body).toMatch(/exec \\"\\\$SHELL\\" -l/);
+    expect(body).toMatch(/\n\s*printf\s+"[^"]*exec \\"\\\$SHELL\\" -l/);
   });
 
   // Issue #2178 — option 2: let the user auto-activate by spawning a fresh
@@ -1560,7 +1561,8 @@ fi`,
     // not set, AND stdin is a real TTY. And the accept path must exec $SHELL.
     expect(body).toMatch(/NODE_UPGRADED_VERSION/);
     expect(body).toMatch(/NON_INTERACTIVE/);
-    expect(body).toMatch(/\[\[ -t 0 \]\]/);
+    // Both stdin and stdout must be a TTY — guards redirected-stdout case.
+    expect(body).toMatch(/\[\[ -t 0 && -t 1 \]\]/);
     expect(body).toMatch(/exec "\$\{SHELL:-\/bin\/bash\}" -l/);
   });
 });

@@ -321,7 +321,10 @@ print_done() {
 maybe_offer_shell_reload() {
   [[ -z "$NODE_UPGRADED_VERSION" ]] && return 0
   [[ "${NON_INTERACTIVE:-}" == "1" ]] && return 0
-  [[ -t 0 ]] || return 0
+  # Both stdin AND stdout must be a TTY — otherwise (e.g. `install.sh > log.txt`)
+  # the prompt writes to the redirected file while `read` blocks on invisible
+  # input, confusing the user.
+  [[ -t 0 && -t 1 ]] || return 0
   local answer
   printf "  ${C_BOLD}Reload your shell now to activate Node %s?${C_RESET} [Y/n] " "$NODE_UPGRADED_VERSION"
   read -r answer || return 0
