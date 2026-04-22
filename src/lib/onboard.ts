@@ -3381,6 +3381,16 @@ async function createSandbox(
         )
       : null;
 
+  // Drop channels the operator disabled via `nemoclaw <sandbox> channels stop`.
+  // Credentials stay in the keychain; the bridge simply isn't registered with
+  // the gateway on the next rebuild. `channels start` removes the entry and
+  // the bridge comes back.
+  const disabledChannels = registry.getDisabledChannels(sandboxName);
+  const disabledEnvKeys = new Set(
+    MESSAGING_CHANNELS.filter((c) => disabledChannels.includes(c.name))
+      .flatMap((c) => (c.appTokenEnvKey ? [c.envKey, c.appTokenEnvKey] : [c.envKey])),
+  );
+
   const messagingTokenDefs = [
     {
       name: `${sandboxName}-discord-bridge`,
@@ -3402,7 +3412,9 @@ async function createSandbox(
       envKey: "TELEGRAM_BOT_TOKEN",
       token: getMessagingToken("TELEGRAM_BOT_TOKEN"),
     },
-  ].filter(({ envKey }) => !enabledEnvKeys || enabledEnvKeys.has(envKey));
+  ]
+    .filter(({ envKey }) => !enabledEnvKeys || enabledEnvKeys.has(envKey))
+    .filter(({ envKey }) => !disabledEnvKeys.has(envKey));
 
   if (webSearchConfig) {
     messagingTokenDefs.push({
@@ -3939,6 +3951,7 @@ async function createSandbox(
     providerCredentialHashes:
       Object.keys(providerCredentialHashes).length > 0 ? providerCredentialHashes : undefined,
     messagingChannels: activeMessagingChannels,
+    disabledChannels: disabledChannels.length > 0 ? [...disabledChannels] : undefined,
   });
 
   // Restore workspace state if we backed it up during credential rotation.
@@ -6168,6 +6181,7 @@ function getDashboardGuidanceLines(dashboardAccess = [], options = {}) {
   return guidance;
 }
 
+/** Print the post-onboard dashboard with sandbox status and reconfiguration hints. */
 function printDashboard(sandboxName, model, provider, nimContainer = null, agent = null) {
   const nimStat = nimContainer ? nim.nimStatusByName(nimContainer) : nim.nimStatus(sandboxName);
   const nimLabel = nimStat.running ? "running" : "not running";
@@ -6241,6 +6255,11 @@ function printDashboard(sandboxName, model, provider, nimContainer = null, agent
     );
   }
   console.log(`  ${"─".repeat(50)}`);
+  console.log("");
+  console.log("  To change settings later:");
+  console.log(`    Model:       openshell inference set -g nemoclaw -m <model> -p <provider>`);
+  console.log(`    Policies:    nemoclaw ${sandboxName} policy-add`);
+  console.log("    Credentials: nemoclaw credentials reset <KEY>  then  nemoclaw onboard");
   console.log("");
 }
 

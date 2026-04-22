@@ -94,6 +94,7 @@ const GLOBAL_COMMANDS = new Set([
   "setup-spark",
   "start",
   "stop",
+  "tunnel",
   "status",
   "debug",
   "uninstall",
@@ -939,6 +940,21 @@ function stop() {
     listSandboxes: () => registry.listSandboxes(),
     stopAll,
   });
+}
+
+async function tunnel(args) {
+  const sub = args[0];
+  switch (sub) {
+    case "start":
+      await start();
+      return;
+    case "stop":
+      stop();
+      return;
+    default:
+      console.error(`  Usage: nemoclaw tunnel <start|stop>`);
+      process.exit(1);
+  }
 }
 
 function debug(args) {
@@ -1808,6 +1824,56 @@ async function sandboxChannelsRemove(sandboxName, args = []) {
   clearChannelTokens(channel);
   console.log(`  ${G}✓${R} Cleared stored ${channelArg} credentials.`);
   await promptAndRebuild(sandboxName, `remove '${channelArg}'`);
+}
+
+async function sandboxChannelsSetEnabled(sandboxName, args, disabled) {
+  const verb = disabled ? "stop" : "start";
+  const dryRun = args.includes("--dry-run");
+  const channelArg = args.find((arg) => !arg.startsWith("-"));
+  if (!channelArg) {
+    console.error(`  Usage: nemoclaw <sandbox> channels ${verb} <channel> [--dry-run]`);
+    console.error(`  Valid channels: ${knownChannelNames().join(", ")}`);
+    process.exit(1);
+  }
+
+  const channel = getChannelDef(channelArg);
+  if (!channel) {
+    console.error(`  Unknown channel '${channelArg}'.`);
+    console.error(`  Valid channels: ${knownChannelNames().join(", ")}`);
+    process.exit(1);
+  }
+
+  const normalized = channelArg.trim().toLowerCase();
+  const alreadyDisabled = registry.getDisabledChannels(sandboxName).includes(normalized);
+  if (alreadyDisabled === disabled) {
+    console.log(
+      `  Channel '${normalized}' is already ${disabled ? "disabled" : "enabled"} for '${sandboxName}'. Nothing to do.`,
+    );
+    return;
+  }
+
+  if (dryRun) {
+    console.log(
+      `  --dry-run: would ${verb} channel '${normalized}' for '${sandboxName}'.`,
+    );
+    return;
+  }
+
+  if (!registry.setChannelDisabled(sandboxName, normalized, disabled)) {
+    console.error(`  Sandbox '${sandboxName}' not found in the registry.`);
+    process.exit(1);
+  }
+  const state = disabled ? "disabled" : "enabled";
+  console.log(`  ${G}✓${R} Marked ${normalized} ${state} for '${sandboxName}'.`);
+  await promptAndRebuild(sandboxName, `${verb} '${normalized}'`);
+}
+
+async function sandboxChannelsStop(sandboxName, args = []) {
+  await sandboxChannelsSetEnabled(sandboxName, args, true);
+}
+
+async function sandboxChannelsStart(sandboxName, args = []) {
+  await sandboxChannelsSetEnabled(sandboxName, args, false);
 }
 
 /**
@@ -2846,6 +2912,7 @@ async function garbageCollectImages(args = []) {
 
 // ── Help ─────────────────────────────────────────────────────────
 
+/** Print CLI usage with all commands, flags, and reconfiguration guidance. */
 function help() {
   console.log(`
   ${B}${G}NemoClaw${R}  ${D}v${getVersion()}${R}
@@ -2876,9 +2943,11 @@ function help() {
     nemoclaw <name> policy-list      List presets ${D}(● = applied)${R}
 
   ${G}Messaging Channels:${R}
-    nemoclaw <name> channels list            List supported messaging channels
-    nemoclaw <name> channels add <channel>   Save credentials and rebuild ${D}(telegram|discord|slack)${R}
+    nemoclaw <name> channels list             List supported messaging channels
+    nemoclaw <name> channels add <channel>    Save credentials and rebuild ${D}(telegram|discord|slack)${R}
     nemoclaw <name> channels remove <channel> Clear credentials and rebuild
+    nemoclaw <name> channels stop <channel>   Disable channel (keeps credentials)
+    nemoclaw <name> channels start <channel>  Re-enable a previously stopped channel
 
   ${G}Compatibility Commands:${R}
     nemoclaw setup                   Deprecated alias for ${B}nemoclaw onboard${R}
@@ -2886,8 +2955,10 @@ function help() {
     nemoclaw deploy <instance>       Deprecated Brev-specific bootstrap path
 
   ${G}Services:${R}
-    nemoclaw start                   Start auxiliary services ${D}(Telegram, tunnel)${R}
-    nemoclaw stop                    Stop all services
+    nemoclaw tunnel start            Start the cloudflared public-URL tunnel
+    nemoclaw tunnel stop             Stop the cloudflared public-URL tunnel
+    nemoclaw start                   ${D}Deprecated alias for 'tunnel start'${R}
+    nemoclaw stop                    ${D}Deprecated alias for 'tunnel stop'${R}
     nemoclaw status                  Show sandbox list and service status
 
   Troubleshooting:
@@ -2913,6 +2984,19 @@ function help() {
     --yes                            Skip the confirmation prompt
     --keep-openshell                 Leave the openshell binary installed
     --delete-models                  Remove NemoClaw-pulled Ollama models
+
+  ${G}Reconfiguration (after onboard):${R}
+    ${D}Change inference model at runtime (no re-onboard needed):${R}
+      openshell inference set -g nemoclaw -m <model> -p <provider>
+
+    ${D}Add network presets (e.g. Telegram, GitHub) to a running sandbox:${R}
+      nemoclaw <name> policy-add
+
+    ${D}Change credentials, messaging channels, or sandbox image settings:${R}
+      nemoclaw credentials reset <KEY>   ${D}then${R}   nemoclaw onboard
+
+    ${D}openclaw.json is read-only inside the sandbox (Landlock enforced).${R}
+    ${D}To change OpenClaw settings, re-run nemoclaw onboard to rebuild the sandbox.${R}
 
   ${D}Powered by NVIDIA OpenShell · Nemotron · Agent Toolkit
   Credentials saved in ~/.nemoclaw/credentials.json (mode 600)${R}
@@ -2948,10 +3032,19 @@ const [cmd, ...args] = process.argv.slice(2);
         await deploy(args[0]);
         break;
       case "start":
+        console.error(
+          `  ${YW}Deprecated:${R} 'nemoclaw start' is now 'nemoclaw tunnel start'. See 'nemoclaw help'.`,
+        );
         await start();
         break;
       case "stop":
+        console.error(
+          `  ${YW}Deprecated:${R} 'nemoclaw stop' is now 'nemoclaw tunnel stop'. See 'nemoclaw help'.`,
+        );
         stop();
+        break;
+      case "tunnel":
+        await tunnel(args);
         break;
       case "status":
         showStatus();
@@ -3124,12 +3217,20 @@ const [cmd, ...args] = process.argv.slice(2);
           case "remove":
             await sandboxChannelsRemove(cmd, channelsArgs);
             break;
+          case "stop":
+            await sandboxChannelsStop(cmd, channelsArgs);
+            break;
+          case "start":
+            await sandboxChannelsStart(cmd, channelsArgs);
+            break;
           default:
             console.error(`  Unknown channels subcommand: ${channelsSub}`);
-            console.error("  Usage: nemoclaw <name> channels <list|add|remove> [args]");
+            console.error("  Usage: nemoclaw <name> channels <list|add|remove|stop|start> [args]");
             console.error("    list                  List supported messaging channels");
             console.error("    add <channel>         Store credentials and rebuild the sandbox");
             console.error("    remove <channel>      Clear credentials and rebuild the sandbox");
+            console.error("    stop <channel>        Disable channel without wiping credentials");
+            console.error("    start <channel>       Re-enable a previously stopped channel");
             process.exit(1);
         }
         break;
