@@ -13,6 +13,8 @@ import {
   lstatSync,
   chmodSync,
   existsSync,
+  renameSync,
+  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,6 +68,45 @@ function runWithLib(
       execFileSync("rm", ["-f", tmpFile]);
     } catch {
       /* ignore */
+    }
+  }
+}
+
+function pathExists(filePath: string): boolean {
+  try {
+    lstatSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function backupTmpArtifacts(paths: string[], backupDir: string): Record<string, string> {
+  const backups: Record<string, string> = {};
+
+  for (const originalPath of paths) {
+    if (!pathExists(originalPath)) {
+      continue;
+    }
+    const backupPath = join(
+      backupDir,
+      `${originalPath.replaceAll("/", "_").replace(/^_+/, "")}.backup`,
+    );
+    renameSync(originalPath, backupPath);
+    backups[originalPath] = backupPath;
+  }
+
+  return backups;
+}
+
+function restoreTmpArtifacts(paths: string[], backups: Record<string, string>): void {
+  for (const originalPath of paths) {
+    if (pathExists(originalPath)) {
+      rmSync(originalPath, { force: true, recursive: true });
+    }
+    const backupPath = backups[originalPath];
+    if (backupPath && pathExists(backupPath)) {
+      renameSync(backupPath, originalPath);
     }
   }
 }
@@ -137,37 +178,28 @@ EOF
 
   describe("validate_tmp_permissions", () => {
     let workDir: string;
-    let origProxyEnv: string | null;
+    let tmpBackups: Record<string, string>;
+    const TMP_ARTIFACTS = [
+      "/tmp/nemoclaw-proxy-env.sh",
+      "/tmp/gateway.log",
+      "/tmp/auto-pair.log",
+    ];
 
     beforeEach(() => {
       workDir = mkdtempSync(join(tmpdir(), "sandbox-init-validate-"));
-      // Save and remove any existing proxy-env.sh to avoid false positives
-      origProxyEnv = existsSync("/tmp/nemoclaw-proxy-env.sh")
-        ? readFileSync("/tmp/nemoclaw-proxy-env.sh", "utf-8")
-        : null;
+      tmpBackups = backupTmpArtifacts(TMP_ARTIFACTS, workDir);
     });
 
     afterEach(() => {
+      restoreTmpArtifacts(TMP_ARTIFACTS, tmpBackups);
       execFileSync("rm", ["-rf", workDir]);
-      // Restore if we had one
-      if (origProxyEnv !== null) {
-        writeFileSync("/tmp/nemoclaw-proxy-env.sh", origProxyEnv);
-      }
     });
 
     it("passes when no monitored files exist", () => {
       // validate_tmp_permissions should succeed when files don't exist
       // (they're skipped via [ -f "$f" ] || continue)
       runWithLib(`
-        # Temporarily move proxy-env.sh out of the way if it exists
-        [ -f /tmp/nemoclaw-proxy-env.sh ] && mv /tmp/nemoclaw-proxy-env.sh /tmp/nemoclaw-proxy-env.sh.bak.$$ 2>/dev/null || true
-        [ -f /tmp/gateway.log ] && mv /tmp/gateway.log /tmp/gateway.log.bak.$$ 2>/dev/null || true
-        [ -f /tmp/auto-pair.log ] && mv /tmp/auto-pair.log /tmp/auto-pair.log.bak.$$ 2>/dev/null || true
         validate_tmp_permissions
-        # Restore
-        [ -f /tmp/nemoclaw-proxy-env.sh.bak.$$ ] && mv /tmp/nemoclaw-proxy-env.sh.bak.$$ /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true
-        [ -f /tmp/gateway.log.bak.$$ ] && mv /tmp/gateway.log.bak.$$ /tmp/gateway.log 2>/dev/null || true
-        [ -f /tmp/auto-pair.log.bak.$$ ] && mv /tmp/auto-pair.log.bak.$$ /tmp/auto-pair.log 2>/dev/null || true
         echo "PASSED"
       `);
     });
@@ -189,15 +221,8 @@ EOF
       writeFileSync(testFile, "# good permissions");
       chmodSync(testFile, 0o444);
 
-      // Need to temporarily hide the default monitored files
       runWithLib(`
-        [ -f /tmp/nemoclaw-proxy-env.sh ] && mv /tmp/nemoclaw-proxy-env.sh /tmp/nemoclaw-proxy-env.sh.bak.$$ 2>/dev/null || true
-        [ -f /tmp/gateway.log ] && mv /tmp/gateway.log /tmp/gateway.log.bak.$$ 2>/dev/null || true
-        [ -f /tmp/auto-pair.log ] && mv /tmp/auto-pair.log /tmp/auto-pair.log.bak.$$ 2>/dev/null || true
         validate_tmp_permissions ${JSON.stringify(testFile)}
-        [ -f /tmp/nemoclaw-proxy-env.sh.bak.$$ ] && mv /tmp/nemoclaw-proxy-env.sh.bak.$$ /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true
-        [ -f /tmp/gateway.log.bak.$$ ] && mv /tmp/gateway.log.bak.$$ /tmp/gateway.log 2>/dev/null || true
-        [ -f /tmp/auto-pair.log.bak.$$ ] && mv /tmp/auto-pair.log.bak.$$ /tmp/auto-pair.log 2>/dev/null || true
         echo "PASSED"
       `);
     });

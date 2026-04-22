@@ -217,7 +217,7 @@ apply_model_override() {
     return 1
   fi
 
-  local model_override="$NEMOCLAW_MODEL_OVERRIDE"
+  local model_override="${NEMOCLAW_MODEL_OVERRIDE:-}"
   local api_override="${NEMOCLAW_INFERENCE_API_OVERRIDE:-}"
 
   # SECURITY: Validate inputs — reject control characters and enforce length limit.

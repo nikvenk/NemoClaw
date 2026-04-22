@@ -22,8 +22,10 @@ describe("nemoclaw-start non-root fallback", () => {
   it("exits on config integrity failure in non-root mode", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
+    const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
+    expect(nonRootBlock).toBeTruthy();
     // Non-root block must call verify_config_integrity (with config dir) and exit 1 on failure
-    expect(src).toMatch(/if ! verify_config_integrity\b.*; then\s+.*exit 1/s);
+    expect(nonRootBlock[1]).toMatch(/if ! verify_config_integrity\b.*; then\s+.*exit 1/s);
     // Must not contain the old "proceeding anyway" fallback
     expect(src).not.toMatch(/proceeding anyway/i);
   });
@@ -53,8 +55,8 @@ describe("nemoclaw-start non-root fallback", () => {
     // Only check top-level echo lines that are NOT inside { } > file redirects
     // or { } | emit_sandbox_sourced_file pipe patterns (proxy-env.sh, etc.)
     const braceStripped = block
-      .replace(/\{[\s\S]*?\}\s*>\s*"[^"]*"/g, "")
-      .replace(/\{[\s\S]*?\}\s*\|\s*emit_sandbox_sourced_file\b[^\n]*/g, "");
+      .replace(/^\s*\{[\s\S]*?^\s*\}\s*>\s*"[^"]*"\s*$/gm, "")
+      .replace(/^\s*\{[\s\S]*?^\s*\}\s*\|\s*emit_sandbox_sourced_file\b[^\n]*$/gm, "");
     const echoLines = braceStripped.match(/^\s*echo\s+.+$/gm) || [];
     expect(echoLines.length).toBeGreaterThan(0);
     for (const line of echoLines) {
@@ -552,8 +554,11 @@ describe("nemoclaw-start signal handling", () => {
     expect(nonRootBlock).toContain("SANDBOX_CHILD_PIDS=");
     expect(nonRootBlock).toContain("SANDBOX_WAIT_PID=");
     const pidsIdx = nonRootBlock.indexOf("SANDBOX_CHILD_PIDS=");
+    const waitIdx = nonRootBlock.indexOf("SANDBOX_WAIT_PID=");
     const trapIdx = nonRootBlock.indexOf("trap cleanup_on_signal");
+    expect(waitIdx).toBeGreaterThan(-1);
     expect(pidsIdx).toBeLessThan(trapIdx);
+    expect(waitIdx).toBeLessThan(trapIdx);
   });
 
   it("sets SANDBOX_CHILD_PIDS and SANDBOX_WAIT_PID before trap in root path", () => {
@@ -561,8 +566,11 @@ describe("nemoclaw-start signal handling", () => {
     expect(rootBlock).toContain("SANDBOX_CHILD_PIDS=");
     expect(rootBlock).toContain("SANDBOX_WAIT_PID=");
     const pidsIdx = rootBlock.indexOf("SANDBOX_CHILD_PIDS=");
+    const waitIdx = rootBlock.indexOf("SANDBOX_WAIT_PID=");
     const trapIdx = rootBlock.indexOf("trap cleanup_on_signal");
+    expect(waitIdx).toBeGreaterThan(-1);
     expect(pidsIdx).toBeLessThan(trapIdx);
+    expect(waitIdx).toBeLessThan(trapIdx);
   });
 
   it("captures AUTO_PAIR_PID from background process", () => {

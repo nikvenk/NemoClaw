@@ -57,17 +57,33 @@ _SANDBOX_INIT_LOADED=1
 # Root mode:  root:root 444 — sandbox cannot chmod (not owner).
 # Non-root:   sandbox:sandbox 444 — best-effort (owner can chmod back;
 #             accepted limitation since privilege separation is disabled).
+#
+# SECURITY: write to a temp file in the same directory, then atomically rename
+# it into place. This closes the rm+recreate race where another user could
+# recreate the destination as a symlink between unlink and open.
 emit_sandbox_sourced_file() {
   local path="$1"
-  # Remove any pre-existing file/symlink to prevent symlink-following attacks.
-  # rm -f works because: root can remove anything; in non-root mode the owner
-  # can remove their own file in sticky-bit /tmp.
-  rm -f "$path" 2>/dev/null || true
-  cat >"$path"
-  if [ "$(id -u)" -eq 0 ]; then
-    chown root:root "$path"
+  local dir base tmp
+  dir="$(dirname "$path")"
+  base="$(basename "$path")"
+  tmp="$(mktemp "${dir}/.${base}.tmp.XXXXXX")" || return 1
+
+  if ! cat >"$tmp"; then
+    rm -f "$tmp"
+    return 1
   fi
-  chmod 444 "$path"
+  if [ "$(id -u)" -eq 0 ] && ! chown root:root "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! chmod 444 "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv -f "$tmp" "$path"; then
+    rm -f "$tmp"
+    return 1
+  fi
 }
 
 # Verify that trust-boundary files in /tmp have the expected permissions

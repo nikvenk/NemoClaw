@@ -499,7 +499,7 @@ describe("service environment", () => {
       }
     });
 
-    it("rm -f prevents symlink-following attack on proxy-env.sh", () => {
+    it("emit_sandbox_sourced_file prevents symlink-following attack on proxy-env.sh", () => {
       const fakeDataDir = join(tmpdir(), `nemoclaw-symlink-test-${process.pid}`);
       execFileSync("mkdir", ["-p", fakeDataDir]);
       const tmpFile = join(tmpdir(), `nemoclaw-symlink-write-test-${process.pid}.sh`);
