@@ -86,6 +86,9 @@ policies.getAppliedPresets = () => appliedState.slice();
 policies.applyPreset = (_name, preset) => {
   appliedCalls.push(preset);
   if (!appliedState.includes(preset)) appliedState.push(preset);
+  // Mirror production contract: real applyPreset returns true on success
+  // and false on recoverable errors (unknown preset, malformed YAML, etc).
+  return true;
 };
 policies.removePreset = (_name, preset) => {
   removedCalls.push(preset);

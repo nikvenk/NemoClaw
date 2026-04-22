@@ -6021,7 +6021,13 @@ function syncPresetSelection(sandboxName, applied, target, accessByName = null) 
     const options = accessByName ? { access: accessByName[name] } : undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        policies.applyPreset(sandboxName, name, options);
+        // applyPreset returns false (without throwing) on some error paths —
+        // e.g. unknown preset, malformed YAML. Treat that as a failure so
+        // setupPoliciesWithSelection doesn't silently report success on a
+        // preset that never got applied.
+        if (!policies.applyPreset(sandboxName, name, options)) {
+          throw new Error(`Failed to apply preset '${name}'.`);
+        }
         break;
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
