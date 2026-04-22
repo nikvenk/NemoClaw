@@ -1547,8 +1547,10 @@ fi`,
     // mutate the parent's PATH, so the honest fix is printing the exact
     // command the user can run in their existing shell (no exec tricks —
     // those create a nested shell that masks the problem; see PR #2298).
-    expect(body).toMatch(/\n\s*warn\s+"Your current shell still resolves/);
-    expect(body).toMatch(/\n\s*printf\s+"[^"]*source ~\/\.nvm\/nvm\.sh && nvm use 22/);
+    expect(body).toMatch(/\n\s*warn\s+"Your current shell may still resolve/);
+    // Single-quoted printf avoids bash expansion of $NVM_DIR / $HOME in the
+    // printed text — the user gets a literal, env-aware command to paste.
+    expect(body).toMatch(/\n\s*printf\s+'[^']*NVM_DIR:-\$HOME\/\.nvm[^']*nvm use 22/);
   });
 });
 
