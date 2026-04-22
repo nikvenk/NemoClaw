@@ -104,7 +104,7 @@ describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
 
   it("uses _SANDBOX_HOME for rc file paths in install_configure_guard", () => {
     const guardFn = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardFn).toBeTruthy();
     expect(guardFn[1]).toContain("${_SANDBOX_HOME}/.bashrc");
@@ -170,7 +170,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
     // The guard installs a heredoc containing a shell function — extract the
     // full block between the function definition and the next top-level function.
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];
@@ -181,7 +181,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
 
   it("passes non-configure subcommands through to the real binary", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     expect(guardBlock[1]).toContain('command openclaw "$@"');
@@ -189,7 +189,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
 
   it("uses idempotent marker blocks", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];
@@ -211,7 +211,7 @@ describe("nemoclaw-start configure guard blocks --local (#2016)", () => {
 
   it("blocks openclaw agent --local with a hard error and return 1", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];
@@ -227,7 +227,7 @@ describe("nemoclaw-start configure guard blocks --local (#2016)", () => {
 
   it("suggests the correct alternative command without --local", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     expect(guardBlock[1]).toContain("openclaw agent --agent main");
@@ -235,7 +235,7 @@ describe("nemoclaw-start configure guard blocks --local (#2016)", () => {
 
   it("allows openclaw agent without --local to pass through", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+      /install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];

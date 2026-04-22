@@ -494,9 +494,9 @@ ${marker_end}"
 
 install_configure_guard() {
   # Installs a shell function that intercepts `openclaw configure` inside the
-  # sandbox. The config is Landlock read-only — atomic writes to
-  # /sandbox/.openclaw/ fail with EACCES. Instead of a cryptic error, guide
-  # the user to the correct host-side workflow.
+  # sandbox. Config changes made inside the sandbox do not persist across
+  # rebuilds. Instead of letting the user make ephemeral changes, guide
+  # them to the correct host-side workflow.
   local marker_begin="# nemoclaw-configure-guard begin"
   local marker_end="# nemoclaw-configure-guard end"
   local snippet
@@ -506,7 +506,7 @@ openclaw() {
   case "$1" in
     configure)
       echo "Error: 'openclaw configure' cannot modify config inside the sandbox." >&2
-      echo "The sandbox config is read-only (Landlock enforced) for security." >&2
+      echo "Changes inside the sandbox do not persist across rebuilds." >&2
       echo "" >&2
       echo "To change your configuration, exit the sandbox and run:" >&2
       echo "  nemoclaw onboard --resume" >&2
@@ -518,7 +518,7 @@ openclaw() {
       case "$2" in
         set | unset)
           echo "Error: 'openclaw config $2' cannot modify config inside the sandbox." >&2
-          echo "The sandbox config is read-only (Landlock enforced) for security." >&2
+          echo "Changes inside the sandbox do not persist across rebuilds." >&2
           echo "" >&2
           echo "To change your configuration, exit the sandbox and run:" >&2
           echo "  nemoclaw onboard --resume" >&2
@@ -533,7 +533,7 @@ openclaw() {
         list | "" | -h | --help) ;;
         *)
           echo "Error: 'openclaw channels $2' cannot modify channels inside the sandbox." >&2
-          echo "The sandbox config is read-only (Landlock enforced) for security." >&2
+          echo "Changes inside the sandbox do not persist across rebuilds." >&2
           echo "" >&2
           echo "To add or remove messaging channels, exit the sandbox and run:" >&2
           echo "  nemoclaw <sandbox> channels add <telegram|discord|slack>" >&2
@@ -782,9 +782,8 @@ fi
 # `/bin/bash -i` (interactive, non-login), which sources ~/.bashrc — NOT
 # ~/.profile or /etc/profile.d/*.
 #
-# The /sandbox home directory is Landlock read-only (#804), so we write the proxy
-# config to /tmp/nemoclaw-proxy-env.sh. The pre-built .bashrc and .profile
-# source this file automatically.
+# We write the proxy config to /tmp/nemoclaw-proxy-env.sh. The pre-built
+# .bashrc and .profile source this file automatically.
 #
 # SECURITY: /tmp has the sticky bit, so when running as root the sandbox user
 # cannot delete or replace this root-owned file. In non-root mode privilege
@@ -835,7 +834,7 @@ cleanup() {
 # ── Main ─────────────────────────────────────────────────────────
 
 echo 'Setting up NemoClaw...' >&2
-# Best-effort: .env may not exist, and /sandbox is Landlock read-only (#804).
+# Best-effort: .env may not exist.
 if [ -f .env ]; then
   if ! chmod 600 .env 2>/dev/null; then
     echo "[SECURITY WARNING] Could not restrict .env permissions — file may be world-readable (read-only filesystem)" >&2
