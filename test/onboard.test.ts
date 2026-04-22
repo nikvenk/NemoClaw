@@ -5364,4 +5364,32 @@ const { createSandbox } = require(${onboardPath});
       "pullAndResolveBaseImageDigest must be called BEFORE patchStagedDockerfile — regression #1904",
     );
   });
+
+  it("findDashboardForwardOwner parses openshell forward list column format (#2169)", () => {
+    const repoRoot = path.join(import.meta.dirname, "..");
+    const onboardPath = path.join(repoRoot, "dist", "lib", "onboard.js");
+    delete require.cache[onboardPath];
+    const { findDashboardForwardOwner } = require(onboardPath);
+
+    // Canonical openshell forward list output: SANDBOX  BIND  PORT  PID  STATUS
+    const forwardList = [
+      "SANDBOX     BIND             PORT   PID     STATUS",
+      "test21      127.0.0.1        18789  42101   active",
+      "other       127.0.0.1        18790  42102   active",
+    ].join("\n");
+
+    // Port in use by another sandbox → return that sandbox's name
+    assert.equal(findDashboardForwardOwner(forwardList, "18789"), "test21");
+    assert.equal(findDashboardForwardOwner(forwardList, "18790"), "other");
+    // Port not in the list → null
+    assert.equal(findDashboardForwardOwner(forwardList, "18791"), null);
+    // Empty / missing input → null (no false positives)
+    assert.equal(findDashboardForwardOwner("", "18789"), null);
+    assert.equal(findDashboardForwardOwner(null, "18789"), null);
+    assert.equal(findDashboardForwardOwner(undefined, "18789"), null);
+    // Port string appearing as a substring somewhere other than column 2 must NOT
+    // match — guard against false-positive substring matches.
+    const falsePositive = "sandbox18789 127.0.0.1 42001 9999 active";
+    assert.equal(findDashboardForwardOwner(falsePositive, "18789"), null);
+  });
 });
