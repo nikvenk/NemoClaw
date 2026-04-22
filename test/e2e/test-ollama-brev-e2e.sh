@@ -109,20 +109,17 @@ else
   fail "#1924 reachability — container could not reach host.openshell.internal:${OLLAMA_CONTAINER_PORT}"
 fi
 
-# Sandbox-level probe through OpenShell-managed networking. Cap at 20s and
-# skip on hang: across two consecutive runs on fresh Brev instances this probe
-# hung past the inner `curl --max-time 5` but the auth-proxy path was fine
-# (docker host-gateway probe above passed, inference end-to-end below passed).
-# The docker probe already validates container → auth-proxy reachability, so
-# a hang here doesn't change the #1924 outcome. Keep the probe so if the hang
-# stops happening we reclaim the signal, but don't gate on it.
+# Sandbox-level probe through OpenShell-managed networking. Cap at 20s: if the
+# exec wrapper itself hangs (exit 124), that's a distinct signal from the
+# docker host-gateway probe above — surface it loudly rather than silently
+# skipping, so the hang remains investigable.
 sandbox_probe_exit=0
 timeout 20 openshell sandbox exec --name "$SANDBOX_NAME" -- \
   curl -sf --max-time 5 "http://host.openshell.internal:${OLLAMA_CONTAINER_PORT}/api/tags" >/dev/null 2>&1 || sandbox_probe_exit=$?
 if [[ $sandbox_probe_exit -eq 0 ]]; then
   pass "Sandbox reached auth proxy via host.openshell.internal"
 elif [[ $sandbox_probe_exit -eq 124 ]]; then
-  skip "openshell sandbox exec hung for >20s — known flake, docker probe above covers the same reachability path"
+  fail "openshell sandbox exec hung for >20s — investigate (separate from docker-probe reachability)"
 else
   fail "Sandbox could not reach auth proxy (exit $sandbox_probe_exit)"
 fi
