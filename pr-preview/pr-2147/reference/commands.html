@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=c0cdf041"></script>
+    <script src="../_static/documentation_options.js?v=095250c9"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.20';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -671,7 +671,10 @@ This command remains as a compatibility wrapper for the older Brev-specific boot
 <section id="nemoclaw-name-connect">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code><a class="headerlink" href="#nemoclaw-name-connect" title="Link to this heading">#</a></h3>
 <p>Connect to a sandbox by name.
-On a TTY, a one-shot hint prints before dropping into the sandbox shell, reminding you to run <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">tui</span></code> inside.
+If the sandbox is not yet in the <code class="docutils literal notranslate"><span class="pre">Ready</span></code> phase, <code class="docutils literal notranslate"><span class="pre">connect</span></code> polls <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">list</span></code> every few seconds and prints the current phase. This gives you progress output right after onboarding, when the 2.4 GB image is still pulling, instead of a silent hang.
+Control the wait budget with <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_CONNECT_TIMEOUT</span></code> (integer seconds, default <code class="docutils literal notranslate"><span class="pre">120</span></code>). When the deadline expires, <code class="docutils literal notranslate"><span class="pre">connect</span></code> exits non-zero with the last-seen phase.</p>
+<p>On a TTY, a one-shot hint prints before dropping into the sandbox shell.
+The hint is agent-aware. It names the correct TUI command for the sandbox’s agent and reminds you to use <code class="docutils literal notranslate"><span class="pre">/exit</span></code> to leave the chat before <code class="docutils literal notranslate"><span class="pre">exit</span></code> returns you to the host shell.
 Set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NO_CONNECT_HINT=1</span></code> to suppress the hint in scripted workflows.
 If the sandbox is running an outdated agent version, a non-blocking warning prints before connecting with a <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code> hint.
 If another terminal is already connected to the sandbox, <code class="docutils literal notranslate"><span class="pre">connect</span></code> prints a note with the number of existing sessions before proceeding. Multiple concurrent sessions are allowed.</p>
