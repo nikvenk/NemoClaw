@@ -190,7 +190,7 @@ if [ "$INSTALL_OK" = "1" ]; then
     exit 1
   fi
   pass "openshell installed ($(openshell --version 2>&1 || echo unknown))"
-  
+
   if ! command -v nemoclaw >/dev/null 2>&1; then
     fail "nemoclaw not found on PATH after install"
     exit 1
