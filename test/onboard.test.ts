@@ -50,6 +50,7 @@ import {
   summarizeProbeFailure,
   shouldIncludeBuildContextPath,
   writeSandboxConfigSyncFile,
+  findDashboardForwardOwner,
 } from "../dist/lib/onboard";
 import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context";
 import { buildWebSearchDockerConfig } from "../dist/lib/web-search";
@@ -5366,11 +5367,6 @@ const { createSandbox } = require(${onboardPath});
   });
 
   it("findDashboardForwardOwner parses openshell forward list column format (#2169)", () => {
-    const repoRoot = path.join(import.meta.dirname, "..");
-    const onboardPath = path.join(repoRoot, "dist", "lib", "onboard.js");
-    delete require.cache[onboardPath];
-    const { findDashboardForwardOwner } = require(onboardPath);
-
     // Canonical openshell forward list output: SANDBOX  BIND  PORT  PID  STATUS
     const forwardList = [
       "SANDBOX     BIND             PORT   PID     STATUS",
