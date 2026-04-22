@@ -212,6 +212,15 @@ exit 98
       installerPath,
     );
 
+    // Debug: surface signal/stderr on WSL failures so CI logs show the root cause.
+    if (result.status === null) {
+      console.error("[DEBUG] spawnOptions:", JSON.stringify(spawnOptions));
+      console.error("[DEBUG] cwd:", cwd ?? "(repo root)");
+      console.error("[DEBUG] installerPath:", installerPath ?? "(default)");
+      console.error("[DEBUG] signal:", result.signal);
+      console.error("[DEBUG] stderr:", result.stderr?.slice(0, 500));
+      console.error("[DEBUG] stdout:", result.stdout?.slice(0, 500));
+    }
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("BLOCKED");
   });
