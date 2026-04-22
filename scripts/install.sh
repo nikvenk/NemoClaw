@@ -1033,14 +1033,6 @@ install_nemoclaw() {
     spin "Installing OpenShell CLI" bash "${NEMOCLAW_SOURCE_ROOT}/scripts/install-openshell.sh"
   fi
 
-  # Install/upgrade the OpenShell CLI now rather than deferring to `nemoclaw
-  # onboard`. The onboard path is skipped when host preflight blocks, so a
-  # curl|bash upgrade could leave openshell stale below blueprint's
-  # min_openshell_version while nemoclaw itself moves to the new version. The
-  # script is idempotent — it exits 0 if the installed version is already in
-  # range — so calling it every install is free on the happy path. See #2272.
-  spin "Installing OpenShell CLI" bash "${NEMOCLAW_SOURCE_ROOT}/scripts/install-openshell.sh"
-
   refresh_path
   ensure_nemoclaw_shim || true
 }
