@@ -39,6 +39,7 @@ FAIL=0
 SKIP=0
 TOTAL=0
 INSTALL_OK=1
+PREREQS_OK=1
 
 pass() {
   ((PASS++))
@@ -60,6 +61,21 @@ section() {
   printf '\033[1;36m=== %s ===\033[0m\n' "$1"
 }
 info() { printf '\033[1;34m  [info]\033[0m %s\n' "$1"; }
+print_summary() {
+  section "Summary"
+  echo "  Total: $TOTAL  Pass: $PASS  Fail: $FAIL  Skip: $SKIP"
+  if [ "$FAIL" -gt 0 ]; then
+    echo ""
+    echo "FAILED"
+    exit 1
+  fi
+  echo ""
+  if [ "$SKIP" -gt 0 ]; then
+    echo "PASSED (with $SKIP skipped)"
+  else
+    echo "ALL PASSED"
+  fi
+}
 
 # Determine repo root
 if [ -d /workspace ] && [ -f /workspace/install.sh ]; then
@@ -78,22 +94,28 @@ INSTALL_LOG="/tmp/nemoclaw-e2e-install.log"
 # ── Prerequisite checks ──────────────────────────────────────────
 
 if [ -z "${TELEGRAM_BOT_TOKEN_A:-}" ] || [ -z "${TELEGRAM_BOT_TOKEN_B:-}" ]; then
-  echo "SKIP: TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B must both be set"
-  exit 0
+  skip "TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B must both be set"
+  PREREQS_OK=0
 fi
 
 if [ -z "${DISCORD_BOT_TOKEN_A:-}" ] || [ -z "${DISCORD_BOT_TOKEN_B:-}" ]; then
-  echo "SKIP: DISCORD_BOT_TOKEN_A and DISCORD_BOT_TOKEN_B must both be set"
-  exit 0
+  skip "DISCORD_BOT_TOKEN_A and DISCORD_BOT_TOKEN_B must both be set"
+  PREREQS_OK=0
 fi
 
-if [ "$TELEGRAM_BOT_TOKEN_A" = "$TELEGRAM_BOT_TOKEN_B" ]; then
-  echo "SKIP: TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B must be different"
-  exit 0
+if [ -n "${TELEGRAM_BOT_TOKEN_A:-}" ] && [ "${TELEGRAM_BOT_TOKEN_A}" = "${TELEGRAM_BOT_TOKEN_B:-}" ]; then
+  skip "TELEGRAM_BOT_TOKEN_A and TELEGRAM_BOT_TOKEN_B must be different"
+  PREREQS_OK=0
 fi
 
-if [ "$DISCORD_BOT_TOKEN_A" = "$DISCORD_BOT_TOKEN_B" ]; then
-  echo "SKIP: DISCORD_BOT_TOKEN_A and DISCORD_BOT_TOKEN_B must be different"
+if [ -n "${DISCORD_BOT_TOKEN_A:-}" ] && [ "${DISCORD_BOT_TOKEN_A}" = "${DISCORD_BOT_TOKEN_B:-}" ]; then
+  skip "DISCORD_BOT_TOKEN_A and DISCORD_BOT_TOKEN_B must be different"
+  PREREQS_OK=0
+fi
+
+# Bail to summary if any prereq failed (no phases run, but Summary still prints)
+if [ "$PREREQS_OK" != "1" ]; then
+  print_summary
   exit 0
 fi
 
@@ -383,16 +405,4 @@ fi
 
 # ── Summary ───────────────────────────────────────────────────────
 
-section "Summary"
-echo "  Total: $TOTAL  Pass: $PASS  Fail: $FAIL  Skip: $SKIP"
-if [ "$FAIL" -gt 0 ]; then
-  echo ""
-  echo "FAILED"
-  exit 1
-fi
-echo ""
-if [ "$SKIP" -gt 0 ]; then
-  echo "PASSED (with $SKIP skipped)"
-else
-  echo "ALL PASSED"
-fi
+print_summary
