@@ -489,31 +489,8 @@ function getInstalledOpenshellVersion(versionOutput = null) {
     versionOutput ?? runCapture([openshellBin, "-V"], { ignoreError: true }),
   ).trim();
   const match = output.match(/openshell\s+([0-9]+\.[0-9]+\.[0-9]+)/i);
-  if (match) return match[1];
-  // Fallback: read the sidecar version file written by install-openshell.sh for
-  // binaries that self-report an unparseable string (e.g. openshell 0.0.29 → "m-dev").
-  // Also applies when versionOutput is provided but unparseable (e.g. passed from
-  // runCaptureOpenshell at the blueprint version gate).
-  if (openshellBin) {
-    try {
-      const sidecar = path.join(path.dirname(openshellBin), ".openshell-installed-version");
-      // Invalidate the sidecar if the binary has been replaced since the sidecar
-      // was written (manual `cp openshell /usr/local/bin/openshell` without
-      // re-running install-openshell.sh). Stale sidecar + unsupported binary would
-      // otherwise bypass the min/max version gate silently.
-      const binaryMtime = fs.statSync(openshellBin).mtimeMs;
-      const sidecarMtime = fs.statSync(sidecar).mtimeMs;
-      if (binaryMtime > sidecarMtime) return null;
-      const sidecarMatch = fs
-        .readFileSync(sidecar, "utf-8")
-        .trim()
-        .match(/^([0-9]+\.[0-9]+\.[0-9]+)$/);
-      if (sidecarMatch) return sidecarMatch[1];
-    } catch {
-      // sidecar absent or unreadable — fall through
-    }
-  }
-  return null;
+  if (!match) return null;
+  return match[1];
 }
 
 /**
@@ -2686,11 +2663,12 @@ async function preflight() {
         process.exit(1);
       }
     } else {
-      // Source of truth: min_openshell_version in nemoclaw-blueprint/blueprint.yaml.
-      // Fall back to the Landlock-enforcement floor (also MIN_VERSION in
-      // scripts/install-openshell.sh) if the blueprint cannot be read.
-      const minOpenshellVersion = getBlueprintMinOpenshellVersion() ?? "0.0.29";
-      const needsUpgrade = !versionGte(currentVersion, minOpenshellVersion);
+      const parts = currentVersion.split(".").map(Number);
+      const minParts = [0, 0, 24]; // must match MIN_VERSION in scripts/install-openshell.sh
+      const needsUpgrade =
+        parts[0] < minParts[0] ||
+        (parts[0] === minParts[0] && parts[1] < minParts[1]) ||
+        (parts[0] === minParts[0] && parts[1] === minParts[1] && parts[2] < minParts[2]);
       if (needsUpgrade) {
         console.log(
           `  openshell ${currentVersion} is below minimum required version. Upgrading...`,
