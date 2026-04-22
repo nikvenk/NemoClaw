@@ -30,10 +30,10 @@ filesystem_policy:
     - /etc
     - /var/log
     - /sandbox
-    - /sandbox/.openclaw
   read_write:
     - /tmp
     - /dev/null
+    - /sandbox/.openclaw
     - /sandbox/.openclaw-data
     - /sandbox/.nemoclaw
 
