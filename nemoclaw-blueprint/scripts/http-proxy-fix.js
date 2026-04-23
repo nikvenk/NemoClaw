@@ -49,7 +49,7 @@
   var proxyHost = '';
   try {
     proxyHost = new URL(proxyUrl).hostname;
-  } catch (e) {
+  } catch (_e) {
     /* no usable proxy configured */
   }
   if (!proxyHost) return;
@@ -66,7 +66,7 @@
       var target;
       try {
         target = new URL(options.path);
-      } catch (e) {
+      } catch (_e) {
         return origRequest.apply(http, arguments);
       }
       var https = require('https');
