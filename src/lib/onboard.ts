@@ -5995,7 +5995,12 @@ async function setupPoliciesWithSelection(sandboxName, options = {}) {
  *   can distinguish read vs read-write installs.
  * @returns {void}
  */
-function syncPresetSelection(sandboxName, applied, target, accessByName = null) {
+function syncPresetSelection(
+  sandboxName: string,
+  applied: string[],
+  target: string[],
+  accessByName: Record<string, string> | null = null,
+): void {
   const targetSet = new Set(target);
   const appliedSet = new Set(applied);
   const deselected = applied.filter((name) => !targetSet.has(name));
