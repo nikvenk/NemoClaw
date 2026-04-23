@@ -37,10 +37,10 @@ elif command -v gtimeout >/dev/null 2>&1; then
   TIMEOUT_CMD="gtimeout"
 fi
 
-if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ]; then
+if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ] && [ "${NEMOCLAW_E2E_TIMEOUT_WRAPPED:-0}" != "1" ]; then
   TIMEOUT_SECONDS="${NEMOCLAW_E2E_TIMEOUT_SECONDS:-900}"
   if [ -n "$TIMEOUT_CMD" ]; then
-    export NEMOCLAW_E2E_NO_TIMEOUT=1
+    export NEMOCLAW_E2E_TIMEOUT_WRAPPED=1
     exec "$TIMEOUT_CMD" -s TERM "$TIMEOUT_SECONDS" "$0" "$@"
   else
     echo "ERROR: 'timeout' not found. Install coreutils (macOS: 'brew install coreutils')" >&2
@@ -55,7 +55,7 @@ fi
 run_with_timeout() {
   local seconds="$1"
   shift
-  if [ -n "$TIMEOUT_CMD" ]; then
+  if [ "${NEMOCLAW_E2E_NO_TIMEOUT:-0}" != "1" ] && [ -n "$TIMEOUT_CMD" ]; then
     "$TIMEOUT_CMD" "$seconds" "$@"
   else
     "$@"
