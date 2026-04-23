@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=095250c9"></script>
+    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -546,7 +546,7 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <p>Run the interactive setup wizard (recommended for new installs).
 The wizard creates an OpenShell gateway, registers inference providers, builds the sandbox image, and creates the sandbox.
 Use this command for new installs and for recreating a sandbox after changes to policy or configuration.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span><span class="o">[</span>--non-interactive<span class="o">]</span><span class="w"> </span><span class="o">[</span>--resume<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recreate-sandbox<span class="o">]</span><span class="w"> </span><span class="o">[</span>--from<span class="w"> </span>&lt;Dockerfile&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--agent<span class="w"> </span>&lt;name&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--yes-i-accept-third-party-software<span class="o">]</span>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span><span class="o">[</span>--non-interactive<span class="o">]</span><span class="w"> </span><span class="o">[</span>--resume<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recreate-sandbox<span class="o">]</span><span class="w"> </span><span class="o">[</span>--from<span class="w"> </span>&lt;Dockerfile&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--agent<span class="w"> </span>&lt;name&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--dangerously-skip-permissions<span class="o">]</span><span class="w"> </span><span class="o">[</span>--yes-i-accept-third-party-software<span class="o">]</span>
 </pre></div>
 </div>
 <div class="admonition warning">
@@ -643,6 +643,27 @@ All NemoClaw build arguments (<code class="docutils literal notranslate"><span c
 </pre></div>
 </div>
 <p>If a <code class="docutils literal notranslate"><span class="pre">--resume</span></code> is attempted with a different <code class="docutils literal notranslate"><span class="pre">--from</span></code> path than the original session, onboarding exits with a conflict error rather than silently building from the wrong image.</p>
+</section>
+<section id="dangerously-skip-permissions">
+<h4><code class="docutils literal notranslate"><span class="pre">--dangerously-skip-permissions</span></code><a class="headerlink" href="#dangerously-skip-permissions" title="Link to this heading">#</a></h4>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>For development and testing only. This flag disables the sandbox’s network policy and filesystem permission restrictions, so the OpenClaw agent inside the sandbox can reach any host and write anywhere in its home directory. Do not use this flag with production credentials or on hosts where other agents run.</p>
+</div>
+<p>Replace the default balanced sandbox policy with the permissive policy bundled at <code class="docutils literal notranslate"><span class="pre">nemoclaw-blueprint/policies/openclaw-sandbox-permissive.yaml</span></code>. Concretely, this means:</p>
+<ul class="simple">
+<li><p><strong>Network:</strong> all known endpoints open with no HTTP method or path filtering.</p></li>
+<li><p><strong>Filesystem:</strong> the sandbox home directory is writable (normally Landlock-restricted).</p></li>
+<li><p><strong>Messaging / inference:</strong> unchanged — still gated by the provider credentials you supply.</p></li>
+</ul>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--dangerously-skip-permissions
+</pre></div>
+</div>
+<p>Onboarding prints an explicit warning at start so the reduced security posture is visible in logs. The flag is also honored via <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS=1</span></code> for non-interactive runs:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--non-interactive<span class="w"> </span>--yes-i-accept-third-party-software
+</pre></div>
+</div>
+<p>The flag is persisted on the sandbox registry entry, so <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">status</span></code> surfaces <code class="docutils literal notranslate"><span class="pre">Permissions:</span> <span class="pre">dangerously-skip-permissions</span> <span class="pre">(shields</span> <span class="pre">permanently</span> <span class="pre">down)</span></code> for sandboxes created this way. To tighten a sandbox after the fact, re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> without the flag.</p>
 </section>
 </section>
 <section id="nemoclaw-list">
@@ -876,6 +897,47 @@ Running <code class="docutils literal notranslate"><span class="pre">remove</spa
 <p>As with <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code> skips the rebuild prompt and queues the change for a manual <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code>.</p>
 <p>Host-side removal is the supported path because <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/openclaw.json</span></code> is read-only at runtime; <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">channels</span> <span class="pre">remove</span></code> cannot modify the baked config from inside the sandbox.</p>
 </section>
+<section id="nemoclaw-name-channels-stop-channel">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">&lt;channel&gt;</span></code><a class="headerlink" href="#nemoclaw-name-channels-stop-channel" title="Link to this heading">#</a></h3>
+<p>Pause a single messaging bridge (<code class="docutils literal notranslate"><span class="pre">telegram</span></code>, <code class="docutils literal notranslate"><span class="pre">discord</span></code>, or <code class="docutils literal notranslate"><span class="pre">slack</span></code>) without clearing its credentials. The channel is marked disabled in the per-sandbox registry, and the sandbox is rebuilt so the onboard step skips registering the bridge with the gateway. Credentials stay in <code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/credentials.json</span></code>, so a later <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">start</span></code> brings the bridge back without re-entering tokens.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>channels<span class="w"> </span>stop<span class="w"> </span>telegram
+</pre></div>
+</div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--dry-run</span></code></p></td>
+<td><p>Report the channel that would be disabled without updating the registry or rebuilding</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">stop</span></code> instead of <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">remove</span></code> when you want to pause a bridge temporarily. <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">remove</span></code> is destructive to credentials; <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">stop</span></code> is not.</p>
+</section>
+<section id="nemoclaw-name-channels-start-channel">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">start</span> <span class="pre">&lt;channel&gt;</span></code><a class="headerlink" href="#nemoclaw-name-channels-start-channel" title="Link to this heading">#</a></h3>
+<p>Re-enable a channel previously paused with <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">stop</span></code>. The channel is removed from the disabled list, the sandbox is rebuilt, and the bridge registers with the gateway again using the stored credentials.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>channels<span class="w"> </span>start<span class="w"> </span>telegram
+</pre></div>
+</div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--dry-run</span></code></p></td>
+<td><p>Report the channel that would be re-enabled without updating the registry or rebuilding</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 <section id="nemoclaw-name-skill-install-path">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">skill</span> <span class="pre">install</span> <span class="pre">&lt;path&gt;</span></code><a class="headerlink" href="#nemoclaw-name-skill-install-path" title="Link to this heading">#</a></h3>
 <p>Deploy a skill directory to a running sandbox.
@@ -966,22 +1028,47 @@ Snapshots are stored in <code class="docutils literal notranslate"><span class="
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>create
 </pre></div>
 </div>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Flag</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--name</span> <span class="pre">&lt;label&gt;</span></code></p></td>
+<td><p>Attach a human-readable label to the snapshot so you can restore by name later</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Names must be 1 to 63 characters from <code class="docutils literal notranslate"><span class="pre">[A-Za-z0-9._-]</span></code>, start with an alphanumeric character, and cannot look like a version selector (<code class="docutils literal notranslate"><span class="pre">v1</span></code>, <code class="docutils literal notranslate"><span class="pre">v2</span></code>, …). Duplicate names per sandbox are rejected; pick a different name or delete the existing snapshot first.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>before-upgrade
+</pre></div>
+</div>
 </section>
 <section id="nemoclaw-name-snapshot-list">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">list</span></code><a class="headerlink" href="#nemoclaw-name-snapshot-list" title="Link to this heading">#</a></h3>
-<p>List available snapshots for a sandbox with timestamps and item counts.</p>
+<p>List available snapshots for a sandbox as a table of version, name, timestamp, and path.
+Versions (<code class="docutils literal notranslate"><span class="pre">v1</span></code>, <code class="docutils literal notranslate"><span class="pre">v2</span></code>, …) are computed on read from timestamp-ascending order, so <code class="docutils literal notranslate"><span class="pre">v1</span></code> is the oldest snapshot and <code class="docutils literal notranslate"><span class="pre">vN</span></code> is the newest. Snapshots created before this feature landed are numbered retroactively.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>list
 </pre></div>
 </div>
 </section>
-<section id="nemoclaw-name-snapshot-restore-timestamp">
-<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[timestamp]</span></code><a class="headerlink" href="#nemoclaw-name-snapshot-restore-timestamp" title="Link to this heading">#</a></h3>
+<section id="nemoclaw-name-snapshot-restore-selector">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[selector]</span></code><a class="headerlink" href="#nemoclaw-name-snapshot-restore-selector" title="Link to this heading">#</a></h3>
 <p>Restore sandbox state from a snapshot.
 The sandbox must be running before you restore.
-If no timestamp is provided, the latest snapshot is used.
-Partial timestamp prefixes are accepted if they match exactly one snapshot.
+If no selector is provided, the latest snapshot is used.
 Restore performs a clean replacement of each state directory, removing files that were added after the snapshot was taken.</p>
+<p>The selector accepts any of:</p>
+<ul class="simple">
+<li><p>A version (<code class="docutils literal notranslate"><span class="pre">v1</span></code>, <code class="docutils literal notranslate"><span class="pre">v2</span></code>, …, <code class="docutils literal notranslate"><span class="pre">vN</span></code>) from <code class="docutils literal notranslate"><span class="pre">snapshot</span> <span class="pre">list</span></code>.</p></li>
+<li><p>An exact name passed to <code class="docutils literal notranslate"><span class="pre">snapshot</span> <span class="pre">create</span> <span class="pre">--name</span></code>.</p></li>
+<li><p>An exact or prefix timestamp (partial prefixes are accepted when they match exactly one snapshot).</p></li>
+</ul>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span>v3
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span>before-upgrade
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span><span class="m">2026</span>-04-14T
 </pre></div>
 </div>
@@ -995,19 +1082,21 @@ Run this on the host where the sandbox is running.</p>
 </div>
 <p>For a remote Brev instance, SSH to the instance and run <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code> there, or use a port-forward to the gateway.</p>
 </section>
-<section id="nemoclaw-start">
-<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code><a class="headerlink" href="#nemoclaw-start" title="Link to this heading">#</a></h3>
+<section id="nemoclaw-tunnel-start">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code><a class="headerlink" href="#nemoclaw-tunnel-start" title="Link to this heading">#</a></h3>
 <p>Start optional host auxiliary services. This is the cloudflared tunnel when <code class="docutils literal notranslate"><span class="pre">cloudflared</span></code> is installed (for a public URL to the dashboard). Channel messaging (Telegram, Discord, Slack) is not started here; it is configured during <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> and runs through OpenShell-managed constructs.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>start
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>tunnel<span class="w"> </span>start
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> remains as a deprecated alias that prints a warning and delegates to <code class="docutils literal notranslate"><span class="pre">tunnel</span> <span class="pre">start</span></code>.</p>
 </section>
-<section id="nemoclaw-stop">
-<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code><a class="headerlink" href="#nemoclaw-stop" title="Link to this heading">#</a></h3>
-<p>Stop host auxiliary services started by <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> (for example cloudflared).</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>stop
+<section id="nemoclaw-tunnel-stop">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">stop</span></code><a class="headerlink" href="#nemoclaw-tunnel-stop" title="Link to this heading">#</a></h3>
+<p>Stop host auxiliary services started by <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> (for example cloudflared). This does not affect messaging channels running inside the sandbox; use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">&lt;channel&gt;</span></code> to pause a specific bridge without destroying the sandbox.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>tunnel<span class="w"> </span>stop
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code> remains as a deprecated alias that prints a warning and delegates to <code class="docutils literal notranslate"><span class="pre">tunnel</span> <span class="pre">stop</span></code>.</p>
 </section>
 <section id="nemoclaw-status">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code><a class="headerlink" href="#nemoclaw-status" title="Link to this heading">#</a></h3>
@@ -1247,6 +1336,7 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-version-nemoclaw-v"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">--version</span></code>, <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">-v</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-onboard"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#from-dockerfile"><code class="docutils literal notranslate"><span class="pre">--from</span> <span class="pre">&lt;Dockerfile&gt;</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#dangerously-skip-permissions"><code class="docutils literal notranslate"><span class="pre">--dangerously-skip-permissions</span></code></a></li>
 </ul>
 </li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">list</span></code></a></li>
@@ -1261,16 +1351,18 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-channels-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">list</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-channels-add-channel"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">add</span> <span class="pre">&lt;channel&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-channels-remove-channel"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">remove</span> <span class="pre">&lt;channel&gt;</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-channels-stop-channel"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">&lt;channel&gt;</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-channels-start-channel"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">start</span> <span class="pre">&lt;channel&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-skill-install-path"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">skill</span> <span class="pre">install</span> <span class="pre">&lt;path&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-rebuild"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-upgrade-sandboxes"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">upgrade-sandboxes</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-backup-all"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">backup-all</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-create"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">create</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">list</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-restore-timestamp"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[timestamp]</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-restore-selector"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[selector]</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openshell-term"><code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-start"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-stop"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-tunnel-start"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-tunnel-stop"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">stop</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-status"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-setup-spark"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup-spark</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-debug"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">debug</span></code></a></li>
