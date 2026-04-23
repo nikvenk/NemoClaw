@@ -75,8 +75,9 @@ jobs:
           if-no-files-found: ignore
 
   cloud-experimental-e2e:
-    # DISABLED: Landlock /sandbox writability regression + CLI/docs command
-    # reference drift. Re-enable once both are fixed.
+    # DISABLED: CLI/docs command reference drift causes check-docs failures.
+    # Landlock fix landed in OpenShell#810 (v0.0.32+). Re-enable once
+    # docs-drift is resolved.
     if: github.repository == 'NVIDIA/NemoClaw' && vars.CLOUD_EXPERIMENTAL_E2E_ENABLED == 'true'
     runs-on: ubuntu-latest
     # Main suite + check-docs + network-policy skip script can exceed 45m on cold runners.
@@ -433,7 +434,6 @@ jobs:
           NEMOCLAW_NON_INTERACTIVE: "1"
           NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE: "1"
           NEMOCLAW_SANDBOX_NAME: "e2e-deploy-svc"
-          NEMOCLAW_RECREATE_SANDBOX: "1"
         run: bash test/e2e/test-deployment-services.sh
 
       - name: Upload test log on failure
@@ -687,7 +687,7 @@ jobs:
         rebuild-hermes-e2e,
         gpu-e2e,
       ]
-    if: ${{ always() && (needs.cloud-e2e.result == 'failure' || needs.messaging-providers-e2e.result == 'failure' || needs.token-rotation-e2e.result == 'failure' || needs.sandbox-survival-e2e.result == 'failure' || needs.hermes-e2e.result == 'failure' || needs.skip-permissions-e2e.result == 'failure' || needs.sandbox-operations-e2e.result == 'failure' || needs.inference-routing-e2e.result == 'failure' || needs.network-policy-e2e.result == 'failure' || needs.deployment-services-e2e.result == 'failure' || needs.diagnostics-e2e.result == 'failure' || needs.snapshot-commands-e2e.result == 'failure' || needs.shields-config-e2e.result == 'failure' || needs.rebuild-openclaw-e2e.result == 'failure' || needs.upgrade-stale-sandbox-e2e.result == 'failure' || needs.rebuild-hermes-e2e.result == 'failure' || needs.gpu-e2e.result == 'failure') }}
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
     permissions:
       issues: write
     steps:

@@ -121,17 +121,17 @@ preflight() {
     local arch
     arch=$(uname -m)
     case "$arch" in
-      x86_64) arch="amd64" ;;
-      aarch64 | arm64) arch="arm64" ;;
-      *)
-        log "WARNING: Unsupported arch $arch for cloudflared — skipping install"
-        return 0
-        ;;
+    x86_64) arch="amd64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    *)
+      log "WARNING: Unsupported arch $arch for cloudflared — skipping install"
+      return 0
+      ;;
     esac
     local cf_url="${CLOUDFLARED_DOWNLOAD_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}}"
-    if curl -fsSL "$cf_url" -o /tmp/cloudflared \
-      && chmod +x /tmp/cloudflared \
-      && sudo mv /tmp/cloudflared /usr/local/bin/cloudflared 2>/dev/null; then
+    if curl -fsSL "$cf_url" -o /tmp/cloudflared &&
+      chmod +x /tmp/cloudflared &&
+      sudo mv /tmp/cloudflared /usr/local/bin/cloudflared 2>/dev/null; then
       log "cloudflared installed"
     else
       log "WARNING: Could not install cloudflared"
@@ -172,7 +172,6 @@ onboard_sandbox() {
     NEMOCLAW_NON_INTERACTIVE=1 \
     NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
     NEMOCLAW_POLICY_TIER="open" \
-    NEMOCLAW_RECREATE_SANDBOX=1 \
     run_with_timeout 600 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | tee -a "$LOG_FILE" || {
     log "FATAL: Onboard failed for '$name'"
