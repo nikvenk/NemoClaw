@@ -77,7 +77,7 @@ jobs:
   cloud-experimental-e2e:
     # DISABLED: Landlock /sandbox writability regression + CLI/docs command
     # reference drift. Re-enable once both are fixed.
-    if: false # was: github.repository == 'NVIDIA/NemoClaw'
+    if: github.repository == 'NVIDIA/NemoClaw' && vars.CLOUD_EXPERIMENTAL_E2E_ENABLED == 'true'
     runs-on: ubuntu-latest
     # Main suite + check-docs + network-policy skip script can exceed 45m on cold runners.
     timeout-minutes: 90
