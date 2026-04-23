@@ -63,7 +63,12 @@
       options.path &&
       options.path.startsWith('https://')
     ) {
-      var target = new URL(options.path);
+      var target;
+      try {
+        target = new URL(options.path);
+      } catch (e) {
+        return origRequest.apply(http, arguments);
+      }
       var https = require('https');
       return https.request(
         {
