@@ -315,6 +315,17 @@ os.chmod(path, 0o600)"
 RUN openclaw doctor --fix > /dev/null 2>&1 || true \
     && openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
 
+# SECURITY: Clear any gateway auth token that openclaw doctor/plugins may have
+# auto-generated. The real token is created at container startup by the
+# entrypoint (generate_gateway_token) and never stored in openclaw.json.
+RUN python3 -c "\
+import json, os; \
+path = os.path.expanduser('~/.openclaw/openclaw.json'); \
+cfg = json.load(open(path)); \
+cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = ''; \
+json.dump(cfg, open(path, 'w'), indent=2); \
+os.chmod(path, 0o600)"
+
 # Lock openclaw.json via DAC: chown to root so the sandbox user cannot modify
 # it at runtime.  This works regardless of Landlock enforcement status.
 # The Landlock policy (/sandbox/.openclaw in read_only) provides defense-in-depth

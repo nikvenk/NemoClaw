@@ -157,6 +157,37 @@ describe("nemoclaw-start externalized gateway token", () => {
   });
 });
 
+describe("Dockerfile gateway token externalization", () => {
+  const dockerfile = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "Dockerfile"),
+    "utf-8",
+  );
+
+  it("writes empty token in initial openclaw.json config", () => {
+    expect(dockerfile).toContain("'auth': {'token': ''}");
+  });
+
+  it("clears any auto-generated token after openclaw doctor/plugins", () => {
+    // openclaw doctor --fix may auto-generate a gateway token when it finds
+    // an empty one. A post-doctor step must re-clear it so the token is never
+    // baked into the image. Verify the clearing step comes AFTER doctor.
+    const doctorIdx = dockerfile.indexOf("openclaw doctor --fix");
+    const clearIdx = dockerfile.indexOf("cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = ''");
+    expect(doctorIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeGreaterThan(doctorIdx);
+  });
+
+  it("pins config hash after token is cleared", () => {
+    const clearIdx = dockerfile.indexOf("['token'] = ''");
+    const hashIdx = dockerfile.indexOf("sha256sum /sandbox/.openclaw/openclaw.json");
+    // Both must exist and hash must come after the clear step
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(hashIdx).toBeGreaterThan(-1);
+    expect(hashIdx).toBeGreaterThan(clearIdx);
+  });
+});
+
 describe("nemoclaw-start configure guard (#1114)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
