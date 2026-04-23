@@ -59,10 +59,10 @@ exit 1`,
 }
 
 describe("install-openshell.sh version check", () => {
-  it("exits cleanly when openshell 0.0.32 is already installed", () => {
-    const result = runWithInstalledVersion("0.0.32");
+  it("exits cleanly when openshell 0.0.36 is already installed", () => {
+    const result = runWithInstalledVersion("0.0.36");
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/already installed.*0\.0\.32/);
+    expect(result.stdout).toMatch(/already installed.*0\.0\.36/);
   });
 
   it("triggers upgrade when openshell 0.0.28 is installed (below MIN_VERSION)", () => {
@@ -85,7 +85,7 @@ describe("install-openshell.sh version check", () => {
   });
 
   it("fails with a clear error when openshell is above MAX_VERSION", () => {
-    const result = runWithInstalledVersion("0.0.33");
+    const result = runWithInstalledVersion("0.0.37");
     expect(result.status).toBe(1);
     expect(result.stdout).toMatch(/above the maximum/);
   });
