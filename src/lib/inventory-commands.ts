@@ -52,6 +52,17 @@ export interface ShowStatusCommandDeps {
   log?: (message?: string) => void;
 }
 
+/**
+ * Render the `nemoclaw list` output. For the default sandbox (the one the
+ * cluster-wide gateway is currently serving) the live gateway `model`/
+ * `provider` take precedence over the onboarded snapshot so the CLI agrees
+ * with `openshell inference get` (#2369); when they drift from stored values
+ * a `(onboarded: …)` line is appended. Non-default sandboxes keep their
+ * stored config — the gateway only applies to one sandbox at a time, and
+ * each non-default sandbox swaps the gateway back to its stored config on
+ * its next `connect`. Falls back to stored values when `getLiveInference()`
+ * returns `null` (gateway unreachable).
+ */
 export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Promise<void> {
   const log = deps.log ?? console.log;
   const recovery = await deps.recoverRegistryEntries();
@@ -118,6 +129,14 @@ export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Prom
   log("");
 }
 
+/**
+ * Render the `nemoclaw status` output (no sandbox name): a compact per-row
+ * listing followed by gateway/service status and messaging-bridge warnings.
+ * For the default sandbox the per-row `(model)` prefers the live gateway
+ * model so it agrees with `openshell inference get` (#2369); when it drifts
+ * from the stored onboarded model a `(onboarded: …)` line is appended.
+ * Non-default rows and the unreachable-gateway case fall back to stored.
+ */
 export function showStatusCommand(deps: ShowStatusCommandDeps): void {
   const log = deps.log ?? console.log;
   const { sandboxes, defaultSandbox } = deps.listSandboxes();

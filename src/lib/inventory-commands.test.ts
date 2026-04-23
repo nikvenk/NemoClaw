@@ -81,6 +81,10 @@ describe("inventory commands", () => {
     expect(lines).toContain(
       "      model: live-model  provider: live-provider  GPU  policies: none",
     );
+    // Stale stored row for the default sandbox must not leak through.
+    expect(lines).not.toContain(
+      "      model: configured-alpha  provider: configured-provider  GPU  policies: none",
+    );
     expect(lines).toContain(
       "      (onboarded: model=configured-alpha, provider=configured-provider)",
     );
