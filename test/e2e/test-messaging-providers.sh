@@ -565,6 +565,54 @@ print(account.get('groupPolicy', ''))
   else
     skip "M11d: Telegram groupPolicy not set (channel may not be configured)"
   fi
+
+  # M11e: Slack channel disabled by validate_slack_auth (#2340)
+  # With fake tokens (xoxb-fake-...), the entrypoint's validate_slack_auth
+  # should detect unresolved placeholders or invalid auth and disable the channel.
+  # Check NOW while the container is alive — by Phase 7 the gateway may have crashed.
+  slack_acct_enabled=$(echo "$channel_json" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+accounts = d.get('slack', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or next((v for v in accounts.values() if isinstance(v, dict)), {})
+print(account.get('enabled', 'MISSING'))
+" 2>/dev/null || true)
+
+  slack_bot_token_val=$(echo "$channel_json" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+accounts = d.get('slack', {}).get('accounts', {})
+account = accounts.get('default') or accounts.get('main') or next((v for v in accounts.values() if isinstance(v, dict)), {})
+print(account.get('botToken', 'MISSING')[:40])
+" 2>/dev/null || true)
+
+  info "Slack account enabled=$slack_acct_enabled botToken=${slack_bot_token_val}..."
+
+  # Capture entrypoint logs NOW while the container is alive
+  entrypoint_log=$(sandbox_exec "cat /proc/1/fd/2 2>/dev/null || journalctl -u sandbox 2>/dev/null || echo NOLOGS" 2>/dev/null || true)
+  # Also try nemoclaw logs
+  nemoclaw_log=$(nemoclaw "$SANDBOX_NAME" logs 2>&1 | tail -100 || true)
+  early_all_logs="${entrypoint_log}${nemoclaw_log}"
+  info "Entrypoint Slack lines (captured early while container alive):"
+  echo "$early_all_logs" | grep -iE "slack|channel|placeholder|validate" | head -10 | while IFS= read -r line; do
+    info "  $line"
+  done
+
+  if [ "$slack_acct_enabled" = "False" ]; then
+    pass "M11e: Slack channel disabled in config (validate_slack_auth worked)"
+  elif [ "$slack_acct_enabled" = "True" ]; then
+    # If still enabled, check if the botToken is still a placeholder
+    if [[ "$slack_bot_token_val" == openshell:resolve:env:* ]]; then
+      fail "M11e: Slack channel enabled with unresolved placeholder botToken — validate_slack_auth should have disabled it"
+    else
+      info "M11e: Slack channel enabled with resolved token — validate_slack_auth may have validated successfully"
+      pass "M11e: Slack channel enabled (token was resolved)"
+    fi
+  elif [ "$slack_acct_enabled" = "MISSING" ]; then
+    skip "M11e: No Slack channel in openclaw.json"
+  else
+    fail "M11e: Unexpected Slack enabled state: ${slack_acct_enabled}"
+  fi
 fi
 
 # ══════════════════════════════════════════════════════════════════
