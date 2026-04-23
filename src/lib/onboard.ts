@@ -6079,6 +6079,21 @@ function ensureDashboardForward(sandboxName, chatUiUrl = `http://127.0.0.1:${CON
   }
 }
 
+function findFileRecursive(dir, filename) {
+  if (!fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      const found = findFileRecursive(p, filename);
+      if (found) return found;
+    } else if (e.name === filename) {
+      return p;
+    }
+  }
+  return null;
+}
+
 function findOpenclawJsonPath(dir) {
   if (!fs.existsSync(dir)) return null;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -6112,8 +6127,10 @@ function fetchGatewayAuthTokenFromSandbox(sandboxName) {
       { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
     );
     if (tokenFileResult.status === 0) {
-      const tokenPath = path.join(tmpDir, "gateway-token");
-      if (fs.existsSync(tokenPath)) {
+      // sandbox download may flatten the file or preserve the directory
+      // structure (run/nemoclaw/gateway-token), so search recursively.
+      const tokenPath = findFileRecursive(tmpDir, "gateway-token");
+      if (tokenPath) {
         const token = fs.readFileSync(tokenPath, "utf-8").trim();
         if (token.length > 0) return token;
       }

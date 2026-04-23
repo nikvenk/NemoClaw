@@ -182,8 +182,9 @@ ARG NEMOCLAW_DISCORD_GUILDS_B64=e30=
 # Set to "1" to disable device-pairing auth (development/headless only).
 # Default: "0" (device auth enabled — secure by default).
 ARG NEMOCLAW_DISABLE_DEVICE_AUTH=0
-# Unique per build to ensure each image gets a fresh auth token.
+# Unique per build to bust Docker cache for config materialization layers.
 # Pass --build-arg NEMOCLAW_BUILD_ID=$(date +%s) to bust the cache.
+# Gateway auth token is generated at container startup by the entrypoint.
 ARG NEMOCLAW_BUILD_ID=default
 # Sandbox egress proxy host/port. Defaults match the OpenShell-injected
 # gateway (10.200.0.1:3128). Operators on non-default networks can override
