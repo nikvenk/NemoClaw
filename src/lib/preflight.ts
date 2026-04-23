@@ -185,6 +185,57 @@ function parseDockerInfoSummary(info = ""): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
+/**
+ * Decide whether `docker info --format '{{json .}}'` output reflects an
+ * actually-responding daemon, not just the Docker CLI emitting a zero-value
+ * client-side struct.
+ *
+ * NemoClaw #2348: when the daemon is unreachable (e.g. `colima stop`),
+ * docker CLI with `--format '{{json .}}'` still exits 0 and prints an empty
+ * struct with `ServerVersion: ""` and a populated `ServerErrors` array. A
+ * naive "output is non-empty" check misreads that as "daemon reachable".
+ */
+function isDockerDaemonReachable(rawOutput = ""): boolean {
+  const text = String(rawOutput).trim();
+  if (!text) return false;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // Output fell outside the `--format '{{json .}}'` contract (older CLI,
+    // stubbed test input, etc.). The CLI at least produced something, so
+    // defer to the prior non-empty heuristic for backward compatibility.
+    return true;
+  }
+
+  if (!parsed || typeof parsed !== "object") return false;
+  const obj = parsed as Record<string, unknown>;
+
+  // Explicit negative signal: docker CLI fills ServerErrors when it could
+  // not reach the daemon, even when exit code is 0 under `--format`.
+  if (Array.isArray(obj.ServerErrors) && obj.ServerErrors.length > 0) {
+    return false;
+  }
+
+  // Canonical positive signal: docker CLI and podman's docker-compat
+  // layer both populate ServerVersion from the running daemon.
+  if (typeof obj.ServerVersion === "string" && obj.ServerVersion.length > 0) {
+    return true;
+  }
+
+  // podman-docker alias path: `docker info --format '{{json .}}'` actually
+  // runs `podman info`, whose native schema has no top-level ServerVersion
+  // but nests a `version.Version` instead.
+  const version = obj.version;
+  if (version && typeof version === "object") {
+    const v = (version as Record<string, unknown>).Version;
+    if (typeof v === "string" && v.length > 0) return true;
+  }
+
+  return false;
+}
+
 function readDockerDefaultCgroupnsMode(
   readFileImpl: (filePath: string, encoding: BufferEncoding) => string,
 ): "host" | "private" | "unknown" {
@@ -271,7 +322,7 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
       ignoreError: true,
     });
   }
-  if (dockerInstalled && String(dockerInfoOutput || "").trim()) {
+  if (dockerInstalled && isDockerDaemonReachable(dockerInfoOutput)) {
     dockerReachable = true;
     dockerRunning = true;
   }
