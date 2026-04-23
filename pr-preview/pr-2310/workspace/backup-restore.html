@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=095250c9"></script>
+    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -515,8 +515,15 @@ Snapshots capture all workspace state directories defined in the agent manifest 
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore
 </pre></div>
 </div>
-<p>To restore a specific snapshot instead of the latest, pass a timestamp or prefix:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span><span class="m">2026</span>-04-14T
+<p><code class="docutils literal notranslate"><span class="pre">snapshot</span> <span class="pre">list</span></code> prints a table of version, name, timestamp, and path. Versions (<code class="docutils literal notranslate"><span class="pre">v1</span></code>, <code class="docutils literal notranslate"><span class="pre">v2</span></code>, …, <code class="docutils literal notranslate"><span class="pre">vN</span></code>) are computed from the timestamp order, so <code class="docutils literal notranslate"><span class="pre">vN</span></code> is always the newest snapshot.</p>
+<p>To tag a snapshot with a human-readable label, pass <code class="docutils literal notranslate"><span class="pre">--name</span></code>:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>before-upgrade
+</pre></div>
+</div>
+<p>To restore a specific snapshot instead of the latest, pass a version, name, or timestamp prefix:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span>v3
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span>before-upgrade
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>snapshot<span class="w"> </span>restore<span class="w"> </span><span class="m">2026</span>-04-14T
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code> command uses the same snapshot mechanism automatically.

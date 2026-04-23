@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=095250c9"></script>
+    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -758,11 +758,11 @@ Follow these steps to reconnect.</p>
 You do not need to edit <code class="docutils literal notranslate"><span class="pre">known_hosts</span></code> by hand or re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> in this case.</p>
 </li>
 <li><p>Start host auxiliary services (if needed).</p>
-<p>If you use the cloudflared tunnel started by <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code>, start it again:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>start
+<p>If you use the cloudflared tunnel started by <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code>, start it again:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>tunnel<span class="w"> </span>start
 </pre></div>
 </div>
-<p>Telegram, Discord, and Slack are handled by OpenShell-managed channel messaging configured at onboarding, not by a separate bridge process from <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code>.</p>
+<p>Telegram, Discord, and Slack are handled by OpenShell-managed channel messaging configured at onboarding, not by a separate bridge process from <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code>. To pause a single bridge without destroying the sandbox, use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">&lt;channel&gt;</span></code>.</p>
 </li>
 </ol>
 <div class="warning admonition">

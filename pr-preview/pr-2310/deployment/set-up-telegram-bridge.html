@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=095250c9"></script>
+    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -497,7 +497,7 @@
 <h1>Set Up Telegram<a class="headerlink" href="#set-up-telegram" title="Link to this heading">#</a></h1>
 <p>Telegram, Discord, and Slack reach your agent through OpenShell-managed processes and gateway constructs.
 NemoClaw configures those channels during <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>. Tokens are registered with OpenShell providers, channel configuration is baked into the sandbox image, and runtime delivery stays under OpenShell control.</p>
-<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> does not start Telegram (or other chat bridges). It only starts optional host services such as the cloudflared tunnel when that binary is present.
+<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> does not start Telegram (or other chat bridges). It only starts optional host services such as the cloudflared tunnel when that binary is present. (<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> is kept as a deprecated alias.)
 For details, refer to <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">Commands</span></a>.</p>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
@@ -552,20 +552,21 @@ If you enable a messaging channel and another sandbox already uses the same toke
 <p>After the sandbox is running, send a message to your bot in Telegram.
 If something fails, use <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code> on the host, check gateway logs, and verify network policy allows the Telegram API (see <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize the Network Policy</span></a> and the <code class="docutils literal notranslate"><span class="pre">telegram</span></code> preset).</p>
 </section>
-<section id="nemoclaw-start-cloudflared-only">
-<h2><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> (cloudflared Only)<a class="headerlink" href="#nemoclaw-start-cloudflared-only" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> starts cloudflared when it is installed, which can expose the dashboard with a public URL.
-It does not affect Telegram connectivity.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>start
+<section id="nemoclaw-tunnel-start-cloudflared-only">
+<h2><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> (cloudflared Only)<a class="headerlink" href="#nemoclaw-tunnel-start-cloudflared-only" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> starts cloudflared when it is installed, which can expose the dashboard with a public URL.
+It does not affect Telegram connectivity. The older <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> still works as a deprecated alias.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>tunnel<span class="w"> </span>start
 </pre></div>
 </div>
+<p>To pause the Telegram bridge without removing its credentials or destroying the sandbox, use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">telegram</span></code>. Re-enable it later with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">start</span> <span class="pre">telegram</span></code>.</p>
 </section>
 <section id="related-topics">
 <h2>Related Topics<a class="headerlink" href="#related-topics" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="deploy-to-remote-gpu.html"><span class="std std-doc">Deploy NemoClaw to a Remote GPU Instance</span></a> for remote deployment with messaging.</p></li>
 <li><p><a class="reference internal" href="../reference/architecture.html"><span class="std std-doc">Architecture</span></a> for how providers, the gateway, and the sandbox fit together.</p></li>
-<li><p><a class="reference internal" href="../reference/commands.html"><span class="std std-doc">Commands</span></a> for <code class="docutils literal notranslate"><span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">stop</span></code>, and <code class="docutils literal notranslate"><span class="pre">status</span></code>.</p></li>
+<li><p><a class="reference internal" href="../reference/commands.html"><span class="std std-doc">Commands</span></a> for <code class="docutils literal notranslate"><span class="pre">tunnel</span> <span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">tunnel</span> <span class="pre">stop</span></code>, <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">stop</span></code>, and <code class="docutils literal notranslate"><span class="pre">status</span></code>.</p></li>
 </ul>
 </section>
 </section>
@@ -628,7 +629,7 @@ It does not affect Telegram connectivity.</p>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#run-nemoclaw-onboard">Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#confirm-delivery">Confirm Delivery</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-start-cloudflared-only"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code> (cloudflared Only)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-tunnel-start-cloudflared-only"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> (cloudflared Only)</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-topics">Related Topics</a></li>
 </ul>
   </nav></div>
