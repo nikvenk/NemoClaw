@@ -2678,9 +2678,15 @@ async function preflight() {
     console.error("  1. Make systemd-resolved reachable from containers (recommended):");
     if (bridgeNote) console.error(bridgeNote);
     console.error("     (warning: overwrites /etc/docker/daemon.json — back up or merge if you already have one)");
+    console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
     console.error(
-      `       sudo mkdir -p /etc/systemd/resolved.conf.d/ && printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf >/dev/null && sudo systemctl restart systemd-resolved && echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json >/dev/null && sudo systemctl restart docker`,
+      `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
     );
+    console.error("       sudo systemctl restart systemd-resolved");
+    console.error(
+      `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
+    );
+    console.error("       sudo systemctl restart docker");
     console.error("");
     console.error(
       "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
