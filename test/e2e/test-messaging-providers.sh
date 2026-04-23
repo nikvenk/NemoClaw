@@ -1067,6 +1067,24 @@ fi
 # ══════════════════════════════════════════════════════════════════
 section "Phase 7: Slack auth pre-validation (#2340)"
 
+# Collect ALL available logs up-front for diagnostics.
+# validate_slack_auth logs to entrypoint stderr (captured by docker logs),
+# NOT to /tmp/gateway.log (which only has the openclaw gateway child).
+gw_log=$(sandbox_exec "cat /tmp/gateway.log 2>/dev/null" 2>/dev/null || true)
+
+# Get entrypoint logs via nemoclaw logs (preferred) or docker logs (fallback).
+container_log=$(nemoclaw "$SANDBOX_NAME" logs 2>&1 | tail -200 || true)
+if [ -z "$container_log" ]; then
+  container_log=$(docker logs "$(docker ps -aqf "name=$SANDBOX_NAME" | head -1)" 2>&1 || true)
+fi
+all_logs="${gw_log}${container_log}"
+
+# Dump Slack-relevant log lines for CI debugging
+info "Slack-related entrypoint log lines:"
+echo "$all_logs" | grep -iE "slack|channel|placeholder|validate" | while IFS= read -r line; do
+  info "  $line"
+done
+
 # S1: Gateway is serving on port 18789 (not crashed by Slack auth failure)
 # Probing the port is more accurate than checking PID 1 — the entrypoint can
 # survive even if the gateway child process dies (#2340).
@@ -1083,21 +1101,13 @@ else
   fail "S1: Gateway is not serving on port 18789 (${gw_port:0:200})"
 fi
 
-# S2: Gateway log contains the pre-validation attempt
-gw_log=$(sandbox_exec "cat /tmp/gateway.log 2>/dev/null" 2>/dev/null || true)
-if echo "$gw_log" | grep -q "Validating Slack bot token"; then
-  pass "S2: Gateway log shows Slack token pre-validation was attempted"
-elif [ -z "$gw_log" ]; then
-  skip "S2: Could not read gateway log"
+# S2: Entrypoint log contains evidence of Slack auth pre-validation
+if echo "$all_logs" | grep -qE "Validating Slack bot token|unresolved placeholder|placeholder:"; then
+  pass "S2: Entrypoint log shows Slack auth pre-validation ran"
+elif [ -z "$all_logs" ]; then
+  skip "S2: Could not read entrypoint or gateway logs"
 else
-  # Validation may have run but logged to stderr (entrypoint, not gateway log).
-  # Check entrypoint output via docker logs as fallback.
-  container_log=$(docker logs "$(docker ps -qf "name=$SANDBOX_NAME" | head -1)" 2>&1 || true)
-  if echo "$container_log" | grep -q "Validating Slack bot token"; then
-    pass "S2: Container log shows Slack token pre-validation was attempted"
-  else
-    fail "S2: No evidence of Slack token pre-validation in gateway or container logs"
-  fi
+  fail "S2: No evidence of Slack auth pre-validation in logs"
 fi
 
 # S3: Slack channel is disabled in openclaw.json after auth failure
@@ -1115,11 +1125,9 @@ except Exception as e:
 if [ "$slack_enabled" = "False" ]; then
   pass "S3: Slack channel is disabled in openclaw.json (auth failure handled correctly)"
 elif [ "$slack_enabled" = "True" ]; then
-  # Channel still enabled — validation may not have reached Slack API (network).
-  # Check if the log says it was a network error (acceptable) vs auth error (bug).
-  all_logs="${gw_log}${container_log:-}"
+  # Channel still enabled — check logs for why
   if echo "$all_logs" | grep -q "channel left enabled"; then
-    skip "S3: Slack channel left enabled (network error reaching Slack API during validation)"
+    skip "S3: Slack channel left enabled (network/transient error during validation)"
   else
     fail "S3: Slack channel is still enabled — validate_slack_auth did not disable it on auth failure"
   fi
@@ -1129,10 +1137,9 @@ else
   fail "S3: Unexpected Slack enabled state: ${slack_enabled:0:200}"
 fi
 
-# S4: Log contains the expected auth error message
-all_logs="${gw_log}${container_log:-}"
-if echo "$all_logs" | grep -q "provider failed to start:.*channel disabled"; then
-  pass "S4: Log confirms Slack channel was disabled due to auth failure"
+# S4: Log confirms the channel was disabled (matches both API auth failure and placeholder detection)
+if echo "$all_logs" | grep -qE "provider failed to start:.*channel disabled|unresolved placeholder.*channel disabled"; then
+  pass "S4: Log confirms Slack channel was disabled"
 elif echo "$all_logs" | grep -q "channel left enabled"; then
   skip "S4: Slack validation hit a transient/network error (channel left enabled)"
 elif echo "$all_logs" | grep -q "Slack bot token validated successfully"; then
