@@ -1251,10 +1251,10 @@ if [ "$(id -u)" -ne 0 ]; then
   apply_model_override
   apply_cors_override
   apply_slack_token_override
-  install_slack_channel_guard
   export_gateway_token
   install_configure_guard
   configure_messaging_channels
+  install_slack_channel_guard
   validate_openclaw_symlinks
 
   # Ensure writable state directories exist and are owned by the current user.
@@ -1367,7 +1367,6 @@ verify_config_integrity /sandbox/.openclaw
 apply_model_override
 apply_cors_override
 apply_slack_token_override
-install_slack_channel_guard
 export_gateway_token
 install_configure_guard
 
@@ -1375,6 +1374,7 @@ install_configure_guard
 # Must run AFTER integrity check (to detect build-time tampering) and
 # BEFORE chattr +i (which locks the config permanently).
 configure_messaging_channels
+install_slack_channel_guard
 
 # Write auth profile as sandbox user (needs writable .openclaw-data)
 # and recursively re-tighten any auth-profiles.json files under ~/.openclaw.

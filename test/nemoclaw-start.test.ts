@@ -426,11 +426,11 @@ describe("runtime CORS origin override (#719)", () => {
     const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
     expect(nonRootBlock).toBeTruthy();
     expect(nonRootBlock[1]).toMatch(
-      /apply_model_override[\s\S]*?apply_cors_override[\s\S]*?apply_slack_token_override[\s\S]*?install_slack_channel_guard[\s\S]*?export_gateway_token/,
+      /apply_model_override[\s\S]*?apply_cors_override[\s\S]*?apply_slack_token_override[\s\S]*?export_gateway_token/,
     );
 
     const rootBlock = src.match(
-      /# ── Root path[\s\S]*?apply_model_override\n\s*apply_cors_override\n\s*apply_slack_token_override\n\s*install_slack_channel_guard\n\s*export_gateway_token/,
+      /# ── Root path[\s\S]*?apply_model_override[\s\S]*?apply_cors_override[\s\S]*?apply_slack_token_override[\s\S]*?export_gateway_token/,
     );
     expect(rootBlock).toBeTruthy();
   });
@@ -482,17 +482,17 @@ describe("Slack channel guard — unhandled-rejection safety net (#2340)", () =>
     expect(src).toMatch(/install_slack_channel_guard\(\) \{/);
   });
 
-  it("calls install_slack_channel_guard after apply_slack_token_override in both paths", () => {
+  it("calls install_slack_channel_guard after configure_messaging_channels in both paths", () => {
     const nonRootBlock = src.match(
       /if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/,
     );
     expect(nonRootBlock).toBeTruthy();
     expect(nonRootBlock[1]).toMatch(
-      /apply_slack_token_override[\s\S]*?install_slack_channel_guard[\s\S]*?export_gateway_token/,
+      /configure_messaging_channels[\s\S]*?install_slack_channel_guard/,
     );
 
     const rootBlock = src.match(
-      /# ── Root path[\s\S]*?apply_slack_token_override[\s\S]*?install_slack_channel_guard[\s\S]*?export_gateway_token/,
+      /# ── Root path[\s\S]*?configure_messaging_channels[\s\S]*?install_slack_channel_guard/,
     );
     expect(rootBlock).toBeTruthy();
   });
