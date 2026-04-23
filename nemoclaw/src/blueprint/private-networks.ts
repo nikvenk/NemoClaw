@@ -51,7 +51,9 @@ function resolveBlueprintPath(): string {
   if (fromEnv) return fromEnv;
   const here = dirname(fileURLToPath(import.meta.url));
   const devGuess = join(here, "..", "..", "..", "nemoclaw-blueprint");
-  if (existsSync(devGuess)) return devGuess;
+  // Check for the YAML file specifically so a stale directory without
+  // the expected file falls through to cwd instead of a read failure.
+  if (existsSync(join(devGuess, "private-networks.yaml"))) return devGuess;
   return ".";
 }
 

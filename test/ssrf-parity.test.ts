@@ -33,13 +33,22 @@ interface NetworkEntry {
   purpose: string;
 }
 
+interface NameEntry {
+  name: string;
+  purpose: string;
+}
+
 interface NetworkHelper {
-  getNetworkEntries(): { ipv4: NetworkEntry[]; ipv6: NetworkEntry[] };
+  getNetworkEntries(): { ipv4: NetworkEntry[]; ipv6: NetworkEntry[]; names: NameEntry[] };
   isPrivateHostname(hostname: string): boolean;
 }
 
 const cliHelper = require("../dist/lib/private-networks") as NetworkHelper;
 const pluginHelper = require("../nemoclaw/dist/blueprint/private-networks.js") as NetworkHelper;
+
+function entryLabel(entry: NetworkEntry | NameEntry): string {
+  return "address" in entry ? `${entry.address}/${String(entry.prefix)}` : entry.name;
+}
 
 // ── Schema checks ───────────────────────────────────────────────────
 
@@ -49,30 +58,36 @@ describe("private-networks.yaml schema", () => {
     const plugin = pluginHelper.getNetworkEntries();
     expect(cli.ipv4.length).toBe(plugin.ipv4.length);
     expect(cli.ipv6.length).toBe(plugin.ipv6.length);
+    expect(cli.names.length).toBe(plugin.names.length);
   });
 
-  it("produces identical CIDRs on the CLI and plugin sides", () => {
-    const toCidrs = (doc: ReturnType<NetworkHelper["getNetworkEntries"]>): string[] =>
-      [...doc.ipv4, ...doc.ipv6].map((e) => `${e.address}/${String(e.prefix)}`);
-    expect(toCidrs(cliHelper.getNetworkEntries())).toEqual(toCidrs(pluginHelper.getNetworkEntries()));
+  it("produces identical CIDRs and names on the CLI and plugin sides", () => {
+    const fingerprint = (doc: ReturnType<NetworkHelper["getNetworkEntries"]>): string[] => [
+      ...doc.ipv4.map((e) => `cidr:${e.address}/${String(e.prefix)}`),
+      ...doc.ipv6.map((e) => `cidr:${e.address}/${String(e.prefix)}`),
+      ...doc.names.map((e) => `name:${e.name}`),
+    ];
+    expect(fingerprint(cliHelper.getNetworkEntries())).toEqual(fingerprint(pluginHelper.getNetworkEntries()));
   });
 
   it("requires a non-empty purpose on every entry", () => {
-    for (const family of ["ipv4", "ipv6"] as const) {
-      const entries = cliHelper.getNetworkEntries()[family];
-      for (const entry of entries) {
-        expect(entry.purpose, `${family} ${entry.address}/${String(entry.prefix)}`).toBeTypeOf("string");
-        expect(entry.purpose.trim().length, `${family} ${entry.address}/${String(entry.prefix)}`).toBeGreaterThan(0);
+    const doc = cliHelper.getNetworkEntries();
+    for (const family of ["ipv4", "ipv6", "names"] as const) {
+      for (const entry of doc[family]) {
+        expect(entry.purpose, `${family} ${entryLabel(entry)}`).toBeTypeOf("string");
+        expect(entry.purpose.trim().length, `${family} ${entryLabel(entry)}`).toBeGreaterThan(0);
       }
     }
   });
 
-  it("rejects duplicate CIDR entries", () => {
-    const cidrs = [
-      ...cliHelper.getNetworkEntries().ipv4,
-      ...cliHelper.getNetworkEntries().ipv6,
-    ].map((e) => `${e.address}/${String(e.prefix)}`);
-    expect(new Set(cidrs).size).toBe(cidrs.length);
+  it("rejects duplicate entries", () => {
+    const doc = cliHelper.getNetworkEntries();
+    const keys = [
+      ...doc.ipv4.map((e) => `cidr:${e.address}/${String(e.prefix)}`),
+      ...doc.ipv6.map((e) => `cidr:${e.address}/${String(e.prefix)}`),
+      ...doc.names.map((e) => `name:${e.name.toLowerCase()}`),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

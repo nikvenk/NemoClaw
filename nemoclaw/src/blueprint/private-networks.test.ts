@@ -76,29 +76,42 @@ describe("private-networks loader", () => {
       expect(entries.ipv6).toHaveLength(2);
     });
 
-    it("prefers the dev-checkout guess over cwd when both exist", () => {
-      // existsSync returns true iff the path is in the store, so we
-      // (1) trigger a load that discovers the dev-guess path the loader
-      // probes, (2) seed that path plus a differing cwd path, and
-      // (3) confirm the dev-guess content wins.
-      seedYaml("private-networks.yaml", VALID_YAML);
-      getNetworkEntries(); // populates existsCalls
-      const guess = existsCalls[0];
-      expect(guess).toBeDefined();
+    it("prefers the dev-checkout guess over cwd when the yaml is present", () => {
+      // existsSync returns true iff the path is in the store. The
+      // loader probes <devGuess>/private-networks.yaml — seed only
+      // cwd first to learn that probe path, then re-seed with the
+      // probe path populated so the loader prefers it over cwd.
+      seedYaml(
+        "private-networks.yaml",
+        "ipv4:\n  - address: 8.8.8.0\n    prefix: 24\n    purpose: cwd sentinel\nipv6: []\nnames: []\n",
+      );
+      getNetworkEntries();
+      const probedFile = existsCalls[0];
+      expect(probedFile).toBeDefined();
+      expect(probedFile.endsWith("/private-networks.yaml")).toBe(true);
 
       store.clear();
       resetCache();
       existsCalls = [];
       seedYaml(
         "private-networks.yaml",
-        "ipv4:\n  - address: 8.8.8.0\n    prefix: 24\n    purpose: cwd sentinel\nipv6: []\n",
+        "ipv4:\n  - address: 8.8.8.0\n    prefix: 24\n    purpose: cwd sentinel\nipv6: []\nnames: []\n",
       );
-      // existsSync is called on the directory, so seed it as well as the
-      // file underneath for the resolver to prefer this path.
-      seedYaml(guess, "<dir>");
-      seedYaml(`${guess}/private-networks.yaml`, VALID_YAML);
+      seedYaml(probedFile, VALID_YAML);
       const entries = getNetworkEntries();
       expect(entries.ipv4[0].address).toBe("10.0.0.0");
+    });
+
+    it("falls back to cwd when the dev-guess yaml is missing", () => {
+      // A stale dev checkout (directory present, yaml absent) must not
+      // be selected — otherwise load() fails on readFileSync instead
+      // of falling through to cwd.
+      seedYaml(
+        "private-networks.yaml",
+        "ipv4:\n  - address: 8.8.8.0\n    prefix: 24\n    purpose: cwd fallback\nipv6: []\nnames: []\n",
+      );
+      const entries = getNetworkEntries();
+      expect(entries.ipv4[0].address).toBe("8.8.8.0");
     });
   });
 

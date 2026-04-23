@@ -321,13 +321,12 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 2. Parse and validate value
   const parsedValue = parseCliConfigValue(opts.value);
 
-  // 3. Validate URLs for SSRF
-  if (
-    typeof parsedValue === "string" &&
-    (parsedValue.startsWith("http://") || parsedValue.startsWith("https://"))
-  ) {
+  // 3. Validate URLs for SSRF. validateUrlValue no-ops on non-URL input,
+  // so run it for every string to avoid bypasses via mixed-case schemes
+  // ("HTTP://127.0.0.1") or leading whitespace.
+  if (typeof parsedValue === "string") {
     try {
-      validateUrlValue(parsedValue);
+      validateUrlValue(parsedValue.trim());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`  URL validation failed: ${message}`);
