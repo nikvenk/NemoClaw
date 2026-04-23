@@ -2634,69 +2634,65 @@ async function preflight() {
   }
   console.log("  ✓ Docker is running");
 
-  // DNS resolution from inside containers (#2101). Skipped when the user has
-  // already opted into a non-default build network, since that signals they
-  // know about the issue and are working around it.
-  if (!process.env.NEMOCLAW_DOCKER_BUILD_NETWORK) {
-    const dns = probeContainerDns();
-    if (dns.ok) {
-      console.log("  ✓ Container DNS resolution works");
-    } else {
-      console.error("  ✗ DNS resolution from inside a docker container failed.");
-      if (dns.details) {
-        for (const line of String(dns.details).split("\n").slice(-4)) {
-          if (line.trim()) console.error(`    ${line.trim()}`);
-        }
+  // DNS resolution from inside containers (#2101). A corp firewall that
+  // blocks outbound UDP:53 to public resolvers leaves the sandbox build
+  // unable to resolve registry.npmjs.org; npm then retries for ~15 min and
+  // prints the cryptic `Exit handler never called`.
+  const dns = probeContainerDns();
+  if (dns.ok) {
+    console.log("  ✓ Container DNS resolution works");
+  } else {
+    console.error("  ✗ DNS resolution from inside a docker container failed.");
+    if (dns.details) {
+      for (const line of String(dns.details).split("\n").slice(-4)) {
+        if (line.trim()) console.error(`    ${line.trim()}`);
       }
-      console.error("");
-      console.error(
-        "  The sandbox build runs `npm ci` inside a container and needs to resolve",
-      );
-      console.error(
-        "  registry.npmjs.org. On networks that block outbound UDP:53 to public DNS",
-      );
-      console.error(
-        "  (common in corporate environments that force DNS-over-TLS on the host),",
-      );
-      console.error(
-        "  the build appears to hang for ~15 minutes and then prints the cryptic",
-      );
-      console.error("  `npm error Exit handler never called`. See issue #2101.");
-      console.error("");
-      console.error("  Fix options:");
-      console.error("");
-      console.error("  1. Use host networking for this build only (quickest):");
-      console.error("       NEMOCLAW_DOCKER_BUILD_NETWORK=host nemoclaw onboard");
-      console.error("");
-      const detectedBridgeIp = getDockerBridgeGatewayIp();
-      const bridgeIp = detectedBridgeIp || "172.17.0.1";
-      let bridgeNote: string | null = null;
-      if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
-        bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
-      } else if (!detectedBridgeIp) {
-        bridgeNote =
-          "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
-          "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
-      }
-      console.error("  2. Make systemd-resolved reachable from containers (persistent):");
-      if (bridgeNote) console.error(bridgeNote);
-      console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
-      console.error("       sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf <<EOF");
-      console.error("       [Resolve]");
-      console.error(`       DNSStubListenerExtra=${bridgeIp}`);
-      console.error("       EOF");
-      console.error("       sudo systemctl restart systemd-resolved");
-      console.error(
-        `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
-      );
-      console.error("       sudo systemctl restart docker");
-      console.error("");
-      console.error(
-        "  3. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
-      );
-      console.error("     (ask your IT team for an internal DNS server IP).");
-      process.exit(1);
     }
+    console.error("");
+    console.error(
+      "  The sandbox build runs `npm ci` inside a container and needs to resolve",
+    );
+    console.error(
+      "  registry.npmjs.org. On networks that block outbound UDP:53 to public DNS",
+    );
+    console.error(
+      "  (common in corporate environments that force DNS-over-TLS on the host),",
+    );
+    console.error(
+      "  the build appears to hang for ~15 minutes and then prints the cryptic",
+    );
+    console.error("  `npm error Exit handler never called`. See issue #2101.");
+    console.error("");
+    console.error("  Fix options:");
+    console.error("");
+    const detectedBridgeIp = getDockerBridgeGatewayIp();
+    const bridgeIp = detectedBridgeIp || "172.17.0.1";
+    let bridgeNote: string | null = null;
+    if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
+      bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
+    } else if (!detectedBridgeIp) {
+      bridgeNote =
+        "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
+        "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+    }
+    console.error("  1. Make systemd-resolved reachable from containers (recommended):");
+    if (bridgeNote) console.error(bridgeNote);
+    console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
+    console.error("       sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf <<EOF");
+    console.error("       [Resolve]");
+    console.error(`       DNSStubListenerExtra=${bridgeIp}`);
+    console.error("       EOF");
+    console.error("       sudo systemctl restart systemd-resolved");
+    console.error(
+      `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
+    );
+    console.error("       sudo systemctl restart docker");
+    console.error("");
+    console.error(
+      "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
+    );
+    console.error("     (ask your IT team for an internal DNS server IP).");
+    process.exit(1);
   }
 
   if (host.runtime !== "unknown") {
@@ -3858,33 +3854,6 @@ async function createSandbox(
     discordGuilds,
     resolved ? resolved.ref : null,
   );
-  // NEMOCLAW_DOCKER_BUILD_NETWORK (#2101): openshell's `sandbox create --from
-  // Dockerfile` has no flag to pass `--network` through to the underlying
-  // `docker build`. When the user sets this env var, we pre-build the image
-  // ourselves with the requested network mode and then hand the image tag to
-  // openshell via `--from <tag>` instead of `--from <Dockerfile>`.
-  const buildNetwork = process.env.NEMOCLAW_DOCKER_BUILD_NETWORK;
-  if (buildNetwork) {
-    const preBuiltTag = `openshell/sandbox-from:${buildId}`;
-    console.log(
-      `  Pre-building sandbox image with --network=${buildNetwork} (NEMOCLAW_DOCKER_BUILD_NETWORK)...`,
-    );
-    run([
-      "docker",
-      "build",
-      "--network",
-      buildNetwork,
-      "-t",
-      preBuiltTag,
-      "-f",
-      stagedDockerfile,
-      buildCtx,
-    ]);
-    const fromIdx = createArgs.indexOf("--from");
-    if (fromIdx >= 0) {
-      createArgs[fromIdx + 1] = preBuiltTag;
-    }
-  }
   // Only pass non-sensitive env vars to the sandbox. Credentials flow through
   // OpenShell providers — the gateway injects them as placeholders and the L7
   // proxy rewrites Authorization headers with real secrets at egress.
