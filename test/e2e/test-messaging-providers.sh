@@ -275,6 +275,51 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════
+# Phase 1b: Restart sandbox so policy presets are active
+#
+# Onboard applies policy presets (Step 8) AFTER the sandbox container
+# is created (Step 6). The base policy includes Telegram and Discord
+# network rules but NOT Slack — Slack access requires the slack preset.
+# When the Slack SDK tries to reach api.slack.com before the preset is
+# applied, the connection hangs (packets silently dropped), blocking
+# the gateway's HTTP listener on port 18789.
+#
+# Restarting after install.sh ensures the gateway boots with ALL
+# presets already in place. The Slack SDK gets a fast "invalid_auth"
+# rejection, the channel guard catches it, and the gateway continues.
+# Ref: #2340
+# ══════════════════════════════════════════════════════════════════
+section "Phase 1b: Restart sandbox for messaging policy presets"
+
+# Verify the Slack policy preset was applied by onboard Step 8
+current_policy=$(openshell policy get --full "$SANDBOX_NAME" 2>/dev/null || true)
+if echo "$current_policy" | grep -q "slack"; then
+  pass "P1b: Slack network policy preset is applied"
+else
+  info "Slack network policy not detected — gateway may hang on Slack init"
+fi
+
+info "Restarting sandbox so gateway starts with all policy presets active..."
+openshell sandbox restart "$SANDBOX_NAME" 2>&1 || true
+
+# Wait for sandbox to return to Ready after restart
+ready=0
+for i in $(seq 1 30); do
+  if openshell sandbox list 2>&1 | grep -q "$SANDBOX_NAME.*Ready"; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "$ready" -eq 1 ]; then
+  pass "P1b: Sandbox ready after restart"
+else
+  fail "P1b: Sandbox not ready after restart (timeout 60s)"
+  exit 1
+fi
+
+# ══════════════════════════════════════════════════════════════════
 # Phase 2: Credential Isolation — env vars inside sandbox
 # ══════════════════════════════════════════════════════════════════
 section "Phase 2: Credential Isolation"
