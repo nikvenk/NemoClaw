@@ -364,7 +364,7 @@ describe("redact", () => {
     const output = redact(
       "https://alice:secret@example.com/v1/models?auth=abc123456789&sig=def987654321&keep=yes",
     );
-    expect(output).toBe("https://alice:****@example.com/v1/models?auth=****&sig=****&keep=yes");
+    expect(output).toBe("https://****:****@example.com/v1/models?auth=****&sig=****&keep=yes");
   });
 
   it("masks auth-style query parameters case-insensitively", () => {
@@ -522,9 +522,8 @@ describe("regression guards", () => {
       delete require.cache[require.resolve(runnerPath)];
       const { runInteractive } = require(runnerPath);
       runInteractive("echo interactive");
-      const firstCall = requireCall(calls, 0);
-      expect(firstCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
-      expect(stdoutSpy).toHaveBeenCalledWith("visit https://alice:****@example.com/?token=****\n");
+      expect(calls[0][2].stdio).toEqual(["inherit", "pipe", "pipe"]);
+      expect(stdoutSpy).toHaveBeenCalledWith("visit https://****:****@example.com/?token=****\n");
       expect(stderrSpy).not.toHaveBeenCalled();
     } finally {
       childProcess.spawnSync = originalSpawnSync;

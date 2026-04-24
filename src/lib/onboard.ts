@@ -94,8 +94,15 @@ const shields = require("./shields");
 const tiers: typeof import("./tiers") = require("./tiers");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
 const preflightUtils: typeof import("./preflight") = require("./preflight");
-const { assessHost, checkPortAvailable, ensureSwap, getMemoryInfo, planHostRemediation } =
-  preflightUtils;
+const {
+  assessHost,
+  checkPortAvailable,
+  ensureSwap,
+  getDockerBridgeGatewayIp,
+  getMemoryInfo,
+  planHostRemediation,
+  probeContainerDns,
+} = preflightUtils;
 const agentOnboard = require("./agent-onboard");
 const agentDefs = require("./agent-defs");
 
@@ -104,7 +111,7 @@ const sandboxState: typeof import("./sandbox-state") = require("./sandbox-state"
 const validation: typeof import("./validation") = require("./validation");
 const urlUtils: typeof import("./url-utils") = require("./url-utils");
 const buildContext = require("./build-context");
-const dashboard: typeof import("./dashboard") = require("./dashboard");
+const dashboardContract: typeof import("./dashboard-contract") = require("./dashboard-contract");
 const httpProbe: typeof import("./http-probe") = require("./http-probe");
 const modelPrompts: typeof import("./model-prompts") = require("./model-prompts");
 const providerModels: typeof import("./provider-models") = require("./provider-models");
@@ -2875,6 +2882,198 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
     process.exit(1);
   }
   console.log("  ✓ Docker is running");
+
+  // DNS resolution from inside containers (#2101). A corp firewall that
+  // blocks outbound UDP:53 to public resolvers leaves the sandbox build
+  // unable to resolve registry.npmjs.org; npm then retries for ~15 min and
+  // prints the cryptic `Exit handler never called`.
+  const dns = probeContainerDns();
+  // Only reasons where the probe actually *ran* nslookup and observed a DNS
+  // failure warrant blocking — other reasons are inconclusive (probe itself
+  // couldn't run, got killed, etc.) and shouldn't fail a valid environment.
+  const dnsIsFatal = dns.reason === "servers_unreachable" || dns.reason === "resolution_failed";
+
+  if (dns.ok) {
+    console.log("  ✓ Container DNS resolution works");
+  } else if (!dnsIsFatal) {
+    // Inconclusive probe — warn but proceed. If the sandbox build really
+    // does hit a DNS issue, the user will see #2101 pointers in that layer.
+    if (dns.reason === "image_pull_failed") {
+      console.warn(
+        "  ⚠ Container DNS probe inconclusive: docker couldn't pull the busybox test image.",
+      );
+      console.warn(
+        "    This usually means the docker daemon itself can't reach Docker Hub,",
+      );
+      console.warn(
+        "    but doesn't prove container DNS is broken — the sandbox build may still succeed.",
+      );
+    } else {
+      console.warn(
+        `  ⚠ Container DNS probe inconclusive (reason: ${dns.reason ?? "unknown"}).`,
+      );
+    }
+    if (dns.details) {
+      for (const line of String(dns.details).split("\n").slice(-3)) {
+        if (line.trim()) console.warn(`    ${line.trim()}`);
+      }
+    }
+    console.warn(
+      "    Proceeding. If the sandbox build later hangs at `npm ci`, see issue #2101.",
+    );
+  } else {
+    console.error("  ✗ DNS resolution from inside a docker container failed.");
+    if (dns.details) {
+      for (const line of String(dns.details).split("\n").slice(-4)) {
+        if (line.trim()) console.error(`    ${line.trim()}`);
+      }
+    }
+    console.error("");
+    {
+      console.error(
+        "  The sandbox build runs `npm ci` inside a container and needs to resolve",
+      );
+      console.error(
+        "  registry.npmjs.org. On networks that block outbound UDP:53 to public DNS",
+      );
+      console.error(
+        "  (common in corporate environments that force DNS-over-TLS on the host),",
+      );
+      console.error(
+        "  the build appears to hang for ~15 minutes and then prints the cryptic",
+      );
+      console.error("  `npm error Exit handler never called`. See issue #2101.");
+      console.error("");
+      console.error("  Fix options:");
+      console.error("");
+
+      // Platform-aware remediation hints. The systemd-resolved fix is
+      // Linux-specific; macOS / Windows / WSL-backed-by-Docker-Desktop
+      // hosts configure DNS through Docker Desktop's GUI or a
+      // platform-specific daemon.json path, so we avoid printing shell
+      // commands that would mislead those users.
+      const isLinuxWithSystemd =
+        host.platform === "linux" && !host.isWsl && host.systemctlAvailable;
+
+      const printLinuxFix = (bridgeIp: string, note: string | null) => {
+        if (note) console.error(note);
+        console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
+        console.error(
+          `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
+        );
+        console.error("       sudo systemctl restart systemd-resolved");
+        console.error("");
+        console.error(
+          "     Then add the dns key to /etc/docker/daemon.json (safely merges with existing config if jq is installed):",
+        );
+        console.error(
+          "       sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak-$(date +%s) 2>/dev/null",
+        );
+        console.error(
+          `       { sudo jq '. + {"dns":["${bridgeIp}"]}' /etc/docker/daemon.json 2>/dev/null || echo '{"dns":["${bridgeIp}"]}'; } | sudo tee /etc/docker/daemon.json.new >/dev/null`,
+        );
+        console.error("       sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json");
+        console.error("       sudo systemctl restart docker");
+      };
+
+      if (isLinuxWithSystemd) {
+        const detectedBridgeIp = getDockerBridgeGatewayIp();
+        const bridgeIp = detectedBridgeIp || "172.17.0.1";
+        let bridgeNote: string | null = null;
+        if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
+          bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
+        } else if (!detectedBridgeIp) {
+          bridgeNote =
+            "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
+            "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+        }
+        console.error("  1. Make systemd-resolved reachable from containers (recommended):");
+        printLinuxFix(bridgeIp, bridgeNote);
+        console.error("");
+        console.error(
+          "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
+        );
+        console.error("     (ask your IT team for an internal DNS server IP).");
+      } else if (host.platform === "darwin") {
+        // On macOS, branch by the detected runtime (host.runtime) so users get
+        // shell commands they can actually paste, not a "click this GUI" hint.
+        if (host.runtime === "colima") {
+          console.error("  Configure Colima's DNS (macOS):");
+          console.error("       colima stop");
+          console.error("       colima start --dns <corp-dns-ip>");
+          console.error(
+            "     (or edit ~/.colima/default/colima.yaml and `colima restart`)",
+          );
+        } else if (host.runtime === "docker-desktop" || host.runtime === "docker") {
+          console.error("  Configure Docker Desktop's DNS (macOS):");
+          console.error(
+            "       cp ~/.docker/daemon.json ~/.docker/daemon.json.bak-$(date +%s) 2>/dev/null",
+          );
+          console.error(
+            `       { jq '. + {"dns":["<corp-dns-ip>"]}' ~/.docker/daemon.json 2>/dev/null || echo '{"dns":["<corp-dns-ip>"]}'; } > ~/.docker/daemon.json.new && mv ~/.docker/daemon.json.new ~/.docker/daemon.json`,
+          );
+          console.error("       osascript -e 'quit app \"Docker\"' && sleep 3 && open -a Docker");
+          console.error(
+            "     (or do the same via the Docker Desktop UI: Settings → Docker Engine)",
+          );
+        } else {
+          // Unknown / podman / other
+          console.error("  Configure your container runtime's DNS (macOS):");
+          console.error("     - Docker Desktop:");
+          console.error(
+            "         { jq '. + {\"dns\":[\"<corp-dns-ip>\"]}' ~/.docker/daemon.json 2>/dev/null || echo '{\"dns\":[\"<corp-dns-ip>\"]}'; } > ~/.docker/daemon.json.new && mv ~/.docker/daemon.json.new ~/.docker/daemon.json",
+          );
+          console.error("         osascript -e 'quit app \"Docker\"' && sleep 3 && open -a Docker");
+          console.error("     - Colima:");
+          console.error("         colima stop && colima start --dns <corp-dns-ip>");
+          console.error("     - Rancher Desktop / Podman: edit the runtime's DNS config");
+          console.error("       and restart it.");
+        }
+        console.error(
+          "     Ask your IT team for an internal DNS server IP that accepts UDP:53.",
+        );
+      } else if (host.platform === "win32" || host.isWsl) {
+        console.error(
+          "  1. Configure Docker Desktop's DNS (Windows / WSL via Docker Desktop):",
+        );
+        console.error(
+          "       Docker Desktop for Windows → Settings → Docker Engine — edit the JSON to add:",
+        );
+        console.error('         { "dns": ["<corp-dns-ip>"] }');
+        console.error("       Then click Apply & Restart.");
+        console.error("");
+        console.error(
+          "  2. If you run docker natively inside WSL (not Docker Desktop), apply the Linux fix:",
+        );
+        // Reuse the same bridge-IP detection the Linux branch uses — a
+        // native-docker-in-WSL install can have a custom bridge subnet
+        // just like any other Linux host, so a hardcoded 172.17.0.1
+        // would break those users' copy-paste.
+        const wslBridgeIp = getDockerBridgeGatewayIp();
+        let wslBridgeNote: string | null = null;
+        if (wslBridgeIp && wslBridgeIp !== "172.17.0.1") {
+          wslBridgeNote = `     (detected your docker bridge gateway at ${wslBridgeIp})`;
+        } else if (!wslBridgeIp) {
+          wslBridgeNote =
+            "     (could not auto-detect bridge IP — the snippet below uses docker's default; verify with:\n" +
+            "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+        }
+        printLinuxFix(wslBridgeIp || "172.17.0.1", wslBridgeNote);
+      } else {
+        console.error(
+          "  Configure your docker daemon to use a DNS server that accepts UDP:53.",
+        );
+        console.error(
+          '  Add { "dns": ["<corp-dns-ip>"] } to your docker daemon.json and restart the daemon.',
+        );
+        console.error("  Ask your IT team for an internal DNS server IP.");
+      }
+      console.error("");
+      console.error("  Verify the fix worked:");
+      console.error("    docker run --rm busybox nslookup registry.npmjs.org");
+    }
+    process.exit(1);
+  }
 
   if (host.runtime !== "unknown") {
     console.log(`  ✓ Container runtime: ${host.runtime}`);
@@ -6385,9 +6584,17 @@ async function setupPoliciesWithSelection(
       const envPresets = parsePolicyPresetEnv(process.env.NEMOCLAW_POLICY_PRESETS || "");
       if (envPresets.length > 0) chosen = envPresets;
     } else {
-      console.error(`  Unsupported NEMOCLAW_POLICY_MODE: ${policyMode}`);
-      console.error("  Valid values: suggested, custom, skip");
-      process.exit(1);
+      // #2429: step 8/8 runs after the sandbox is created. Exiting here left
+      // the sandbox with no presets. Warn, optionally suggest the intended
+      // variable, and fall through to the tier-derived suggestions list.
+      console.warn(`  Unsupported NEMOCLAW_POLICY_MODE: ${policyMode}`);
+      console.warn("  Valid values: suggested, custom, skip (aliases: default/auto, list, none/no).");
+      if (tiers.getTier(policyMode)) {
+        console.warn(
+          `  '${policyMode}' is a policy tier — did you mean NEMOCLAW_POLICY_TIER=${policyMode}?`,
+        );
+      }
+      console.warn(`  Falling back to suggested presets for tier '${tierName}'.`);
     }
 
     const knownPresets = new Set(allPresets.map((p) => p.name));
@@ -6506,9 +6713,8 @@ function syncPresetSelection(
 
 const CONTROL_UI_PORT = DASHBOARD_PORT;
 
-// Dashboard helpers — delegated to src/lib/dashboard.ts
-// isLoopbackHostname — see urlUtils import above
-const { resolveDashboardForwardTarget, buildControlUiUrls } = dashboard;
+// Dashboard helpers — delegated to src/lib/dashboard-contract.ts
+const { buildChain, buildControlUiUrls } = dashboardContract;
 
 // Parses `openshell forward list` output and returns the sandbox currently
 // owning `portToStop`, or null. Exported for unit testing — see #2169.
@@ -6532,8 +6738,9 @@ function ensureDashboardForward(
   sandboxName: string,
   chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
 ) {
-  const portToStop = getDashboardForwardPort(chatUiUrl);
-  const forwardTarget = getDashboardForwardTarget(chatUiUrl);
+  const chain = buildChain({ chatUiUrl, isWsl: isWsl() });
+  const portToStop = String(chain.port);
+  const forwardTarget = chain.forwardTarget;
   // Detect port already claimed by a different sandbox and fail fast with an
   // actionable message rather than silently stealing that sandbox's forward.
   // (Same sandbox is always allowed — covers reconnect and resume paths.)
@@ -6681,15 +6888,38 @@ function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
   }
 }
 
-// buildControlUiUrls — see dashboard import above
+// buildControlUiUrls — see dashboard-contract import above
+
+function buildDashboardChain(
+  chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`,
+  options: {
+    wslHostAddress?: string | null;
+    runCapture?: typeof runCapture;
+    env?: NodeJS.ProcessEnv;
+    platform?: NodeJS.Platform;
+    release?: string;
+    isWsl?: boolean;
+  } = {},
+) {
+  return buildChain({
+    chatUiUrl,
+    isWsl: isWsl(options),
+    wslHostAddress: getWslHostAddress(options),
+  });
+}
 
 function getDashboardForwardPort(
   chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`,
+  options: {
+    wslHostAddress?: string | null;
+    runCapture?: typeof runCapture;
+    env?: NodeJS.ProcessEnv;
+    platform?: NodeJS.Platform;
+    release?: string;
+    isWsl?: boolean;
+  } = {},
 ): string {
-  const forwardTarget = resolveDashboardForwardTarget(chatUiUrl);
-  return forwardTarget.includes(":")
-    ? (forwardTarget.split(":").pop() ?? String(CONTROL_UI_PORT))
-    : forwardTarget;
+  return String(buildDashboardChain(chatUiUrl, options).port);
 }
 
 function getDashboardForwardTarget(
@@ -6705,8 +6935,7 @@ function getDashboardForwardTarget(
     token?: string | null;
   } = {},
 ): string {
-  const port = getDashboardForwardPort(chatUiUrl);
-  return isWsl(options) ? `0.0.0.0:${port}` : resolveDashboardForwardTarget(chatUiUrl);
+  return buildDashboardChain(chatUiUrl, options).forwardTarget;
 }
 
 function getDashboardForwardStartCommand(
@@ -6780,18 +7009,17 @@ function getDashboardAccessInfo(
     : fetchGatewayAuthTokenFromSandbox(sandboxName);
   const chatUiUrl =
     options.chatUiUrl || process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
-  const dashboardPort = Number(getDashboardForwardPort(chatUiUrl));
-  const dashboardAccess = buildControlUiUrls(token, dashboardPort).map((url, index) => ({
-    label: index === 0 ? "Dashboard" : `Alt ${index}`,
-    url: buildAuthenticatedDashboardUrl(url, null),
-  }));
+  const chain = buildDashboardChain(chatUiUrl, options);
+  const dashboardAccess = buildControlUiUrls(token, chain.port, chain.accessUrl).map(
+    (url, index) => ({
+      label: index === 0 ? "Dashboard" : `Alt ${index}`,
+      url: buildAuthenticatedDashboardUrl(url, null),
+    }),
+  );
 
   const wslHostAddress = getWslHostAddress(options);
   if (wslHostAddress) {
-    const wslUrl = buildAuthenticatedDashboardUrl(
-      `http://${wslHostAddress}:${dashboardPort}/`,
-      token,
-    );
+    const wslUrl = buildAuthenticatedDashboardUrl(`http://${wslHostAddress}:${chain.port}/`, token);
     if (!dashboardAccess.some((access) => access.url === wslUrl)) {
       dashboardAccess.push({ label: "VS Code/WSL", url: wslUrl });
     }
@@ -6812,10 +7040,10 @@ function getDashboardGuidanceLines(
     isWsl?: boolean;
   } = {},
 ): string[] {
-  const dashboardPort = getDashboardForwardPort(
-    options.chatUiUrl || process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`,
-  );
-  const guidance = [`Port ${dashboardPort} must be forwarded before opening these URLs.`];
+  const chatUiUrl =
+    options.chatUiUrl || process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
+  const chain = buildDashboardChain(chatUiUrl, options);
+  const guidance = [`Port ${String(chain.port)} must be forwarded before opening these URLs.`];
   if (isWsl(options)) {
     guidance.push(
       "WSL detected: if localhost fails in Windows, use the WSL host IP shown by `hostname -I`.",
@@ -6826,7 +7054,6 @@ function getDashboardGuidanceLines(
   }
   return guidance;
 }
-
 /** Print the post-onboard dashboard with sandbox status and reconfiguration hints. */
 function printDashboard(
   sandboxName: string,
@@ -6850,8 +7077,23 @@ function printDashboard(
   else if (provider === "ollama-local") providerLabel = "Local Ollama";
 
   const token = fetchGatewayAuthTokenFromSandbox(sandboxName);
-  const dashboardAccess = getDashboardAccessInfo(sandboxName, { token });
-  const guidanceLines = getDashboardGuidanceLines(dashboardAccess);
+  const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
+  const wslAddr = isWsl() ? (String(runCapture("hostname -I 2>/dev/null", { ignoreError: true }) || "").trim().split(/\s+/)[0] || null) : null;
+  const chain = buildChain({ chatUiUrl, isWsl: isWsl(), wslHostAddress: wslAddr });
+
+  // Build access info inline — uses chain instead of re-deriving from env
+  const dashboardAccess = buildControlUiUrls(token, chain.port, chain.accessUrl).map(
+    (url, i) => ({ label: i === 0 ? "Dashboard" : `Alt ${i}`, url }),
+  );
+  if (wslAddr) {
+    const wslUrl = `http://${wslAddr}:${chain.port}/${token ? `#token=${encodeURIComponent(token)}` : ""}`;
+    const existing = dashboardAccess.find((a) => a.url === wslUrl);
+    if (existing) existing.label = "VS Code/WSL";
+    else dashboardAccess.push({ label: "VS Code/WSL", url: wslUrl });
+  }
+  const guidanceLines = [`Port ${chain.port} must be forwarded before opening these URLs.`];
+  if (isWsl()) guidanceLines.push("WSL detected: if localhost fails in Windows, use the WSL host IP shown by `hostname -I`.");
+  if (dashboardAccess.length === 0) guidanceLines.push("No dashboard URLs were generated.");
 
   console.log("");
   console.log(`  ${"─".repeat(50)}`);
@@ -6868,18 +7110,7 @@ function printDashboard(
     agentOnboard.printDashboardUi(sandboxName, token, agent, {
       note,
       buildControlUiUrls: (tokenValue: string | null, port: number) => {
-        const urls = buildControlUiUrls(tokenValue, port);
-        const wslHostAddress = getWslHostAddress();
-        if (wslHostAddress) {
-          const wslUrl = buildAuthenticatedDashboardUrl(
-            `http://${wslHostAddress}:${port}/`,
-            tokenValue,
-          );
-          if (!urls.includes(wslUrl)) {
-            urls.push(wslUrl);
-          }
-        }
-        return urls;
+        return buildControlUiUrls(tokenValue, port, chain.accessUrl);
       },
     });
   } else if (token) {
@@ -7585,13 +7816,10 @@ module.exports = {
   pruneStaleSandboxEntry,
   repairRecordedSandbox,
   recoverGatewayRuntime,
-  resolveDashboardForwardTarget,
+  buildChain,
+  buildControlUiUrls,
+
   startGateway,
-  buildAuthenticatedDashboardUrl,
-  getDashboardAccessInfo,
-  getDashboardForwardPort,
-  getDashboardForwardStartCommand,
-  getDashboardGuidanceLines,
   findDashboardForwardOwner,
   startGatewayForRecovery,
   runCaptureOpenshell,

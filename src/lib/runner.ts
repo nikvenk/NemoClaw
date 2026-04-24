@@ -15,6 +15,8 @@ const { detectDockerHost } = require("./platform");
 const ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS = path.join(ROOT, "scripts");
 
+type RunnerScalar = string | number | boolean | null | undefined;
+
 type RunnerOptions = SpawnSyncOptions & {
   ignoreError?: boolean;
   suppressOutput?: boolean;
@@ -250,135 +252,8 @@ function runArrayCapture(cmd: readonly string[], opts: ArrayCaptureOptions = {})
   }
 }
 
-/**
- * Redact known secret patterns from a string to prevent accidental leaks
- * in CLI log and error output. Covers NVIDIA API keys, bearer tokens,
- * generic API key assignments, and base64-style long tokens.
- */
-// Single source of truth for secret patterns — see secret-patterns.ts
-const { SECRET_PATTERNS } = require("./secret-patterns");
-
-type RunnerScalar = string | number | boolean | null | undefined;
-type RunnerValue = RunnerScalar | object;
-type RunnerOutputEntry = string | Buffer | null | undefined;
-
-function readStringProperty(value: object, key: string): string | undefined {
-  const property = Reflect.get(value, key);
-  return typeof property === "string" ? property : undefined;
-}
-
-function readOutputProperty(value: object): RunnerOutputEntry[] | undefined {
-  const property = Reflect.get(value, "output");
-  return Array.isArray(property) ? property : undefined;
-}
-
-/**
- * Partially redact a matched secret string: keep the first 4 chars and replace
- * the rest with asterisks (capped at 20 asterisks).
- */
-function redactMatch(match: string): string {
-  return match.slice(0, 4) + "*".repeat(Math.min(match.length - 4, 20));
-}
-
-/**
- * Redact credentials from a URL string: clears url.password and blanks
- * known auth-style query params (auth, sig, signature, token, access_token).
- * Returns the original value unchanged if it cannot be parsed as a URL.
- */
-function redactUrl(value: string): string {
-  if (typeof value !== "string" || value.length === 0) return value;
-  try {
-    const url = new URL(value);
-    if (url.password) {
-      url.password = "****";
-    }
-    for (const key of [...url.searchParams.keys()]) {
-      if (/(^|[-_])(?:signature|sig|token|auth|access_token)$/i.test(key)) {
-        url.searchParams.set(key, "****");
-      }
-    }
-    return url.toString();
-  } catch {
-    return value;
-  }
-}
-
-/**
- * Redact known secret patterns and authenticated URLs from a string.
- * Non-string values are returned unchanged.
- */
-function redact(str: string): string;
-function redact<T extends Exclude<RunnerValue, string>>(str: T): T;
-function redact(str: RunnerValue) {
-  if (typeof str !== "string") return str;
-  let out = str.replace(/https?:\/\/[^\s'"]+/g, redactUrl);
-  for (const pat of SECRET_PATTERNS) {
-    out = out.replace(pat, redactMatch);
-  }
-  return out;
-}
-
-/**
- * Redact sensitive fields on an error object before surfacing it to callers.
- * NOTE: this mutates the original error instance in place.
- */
-function redactError<T>(err: T): T {
-  if (!err || typeof err !== "object") return err;
-
-  const originalMessage = readStringProperty(err, "message") ?? null;
-  if (originalMessage) {
-    Reflect.set(err, "message", redact(originalMessage));
-  }
-
-  const cmdValue = readStringProperty(err, "cmd");
-  if (cmdValue) {
-    Reflect.set(err, "cmd", redact(cmdValue));
-  }
-
-  const stdoutValue = readStringProperty(err, "stdout");
-  if (stdoutValue) {
-    Reflect.set(err, "stdout", redact(stdoutValue));
-  }
-
-  const stderrValue = readStringProperty(err, "stderr");
-  if (stderrValue) {
-    Reflect.set(err, "stderr", redact(stderrValue));
-  }
-
-  const outputValue = readOutputProperty(err);
-  if (outputValue) {
-    Reflect.set(
-      err,
-      "output",
-      outputValue.map((value) => (typeof value === "string" ? redact(value) : value)),
-    );
-  }
-
-  const stackValue = readStringProperty(err, "stack");
-  const redactedMessageValue = readStringProperty(err, "message");
-  if (originalMessage && stackValue) {
-    Reflect.set(err, "stack", stackValue.replaceAll(originalMessage, String(redactedMessageValue)));
-  }
-
-  return err;
-}
-
-/**
- * Write redacted stdout/stderr from a spawnSync result to the parent process streams.
- * No-op when stdio is 'inherit' or not an array.
- */
-function writeRedactedResult(
-  result: SpawnResult | null | undefined,
-  stdio: RunnerOptions["stdio"],
-): void {
-  if (!result || stdio === "inherit" || !Array.isArray(stdio)) return;
-  if (stdio[1] === "pipe" && result.stdout) {
-    process.stdout.write(redact(result.stdout.toString()));
-  }
-  if (stdio[2] === "pipe" && result.stderr) {
-    process.stderr.write(redact(result.stderr.toString()));
-  }
-}
+// Unified redaction — see redact.ts (#2381).
+const { redact, redactError, writeRedactedResult } = require("./redact");
 
 /**
  * Shell-quote a value for safe interpolation into bash -c strings.
