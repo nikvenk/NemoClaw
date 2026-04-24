@@ -6,7 +6,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 
 const INSTALLER = path.join(import.meta.dirname, "..", "install.sh");
 const CURL_PIPE_INSTALLER = path.join(import.meta.dirname, "..", "install.sh");
@@ -1344,7 +1343,7 @@ describe("installer release-tag resolution", () => {
    * Requires the source guard so that main() doesn't run on source.
    * `fakeBin` must contain a `curl` stub (and optionally `node`).
    */
-  function callResolveReleaseTag(fakeBin: string, env: ProcessEnv = {}) {
+  function callResolveReleaseTag(fakeBin: string, env: Record<string, string | undefined> = {}) {
     return spawnSync("bash", ["-c", `source "${INSTALLER}" 2>/dev/null; resolve_release_tag`], {
       cwd: path.join(import.meta.dirname, ".."),
       encoding: "utf-8",
@@ -1574,7 +1573,7 @@ describe("installer pure helpers", () => {
   /**
    * Helper: source install.sh and call a function, returning stdout.
    */
-  function callInstallerFn(fnCall: string, env: ProcessEnv = {}) {
+  function callInstallerFn(fnCall: string, env: Record<string, string | undefined> = {}) {
     return spawnSync("bash", ["-c", `source "${INSTALLER}" 2>/dev/null; ${fnCall}`], {
       cwd: path.join(import.meta.dirname, ".."),
       encoding: "utf-8",
@@ -1849,7 +1848,7 @@ describe("installer runtime checks (sourced)", () => {
    * Call ensure_supported_runtime() in isolation by sourcing install.sh.
    * This avoids triggering install_nodejs() which would download real nvm.
    */
-  function callEnsureSupportedRuntime(fakeBin: string, env: ProcessEnv = {}) {
+  function callEnsureSupportedRuntime(fakeBin: string, env: Record<string, string | undefined> = {}) {
     return spawnSync(
       "bash",
       ["-c", `source "${INSTALLER}" 2>/dev/null; ensure_supported_runtime`],

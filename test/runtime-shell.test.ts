@@ -6,11 +6,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 
 const RUNTIME_SH = path.join(import.meta.dirname, "..", "scripts", "lib", "runtime.sh");
 
-function runShell(script: string, env: ProcessEnv = {}): SpawnSyncReturns<string> {
+function runShell(script: string, env: Record<string, string | undefined> = {}): SpawnSyncReturns<string> {
   return spawnSync("bash", ["-lc", script], {
     cwd: path.join(import.meta.dirname, ".."),
     encoding: "utf-8",

@@ -6,7 +6,6 @@ import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ProcessEnv } from "node:process";
 
 const CLI = path.join(import.meta.dirname, "..", "bin", "nemoclaw.js");
 
@@ -46,7 +45,7 @@ function run(args: string): CliRunResult {
 
 function runWithEnv(
   args: string,
-  env: ProcessEnv = {},
+  env: Record<string, string | undefined> = {},
   timeout: number = Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
 ): CliRunResult {
   try {

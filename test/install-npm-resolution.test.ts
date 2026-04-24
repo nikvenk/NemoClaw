@@ -5,7 +5,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 
 import { describe, expect, it } from "vitest";
 
@@ -42,7 +41,7 @@ function writeExecutable(target: string, contents: string): void {
 function runInstallerFunction(
   bashSnippet: string,
   fakeBin: string,
-  extraEnv: ProcessEnv = {},
+  extraEnv: Record<string, string | undefined> = {},
   cwd?: string,
   /** When true, bashSnippet is run verbatim (caller handles sourcing). */
   rawSnippet = false,

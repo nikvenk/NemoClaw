@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 import policies from "../dist/lib/policies";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..");
@@ -50,7 +49,7 @@ function parseCalls(output: string): PolicyCall[] {
 function runPolicyAdd(
   confirmAnswer: string,
   extraArgs: string[] = [],
-  envOverrides: ProcessEnv = {},
+  envOverrides: Record<string, string | undefined> = {},
 ) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-policy-add-"));
   const scriptPath = path.join(tmpDir, "policy-add-check.js");
@@ -990,7 +989,7 @@ selectForRemoval(items, options)
     function runPolicyRemove(
   confirmAnswer: string,
   extraArgs: string[] = [],
-  envOverrides: ProcessEnv = {},
+  envOverrides: Record<string, string | undefined> = {},
 ) {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-policy-remove-"));
       const scriptPath = path.join(tmpDir, "policy-remove-check.js");

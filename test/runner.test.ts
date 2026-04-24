@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { StdioOptions } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 
 import { spawnSync } from "node:child_process";
 import childProcess from "node:child_process";
@@ -18,7 +17,7 @@ const runnerPath = path.join(import.meta.dirname, "..", "dist", "lib", "runner.j
 type SpawnCallOptions = {
   stdio?: StdioOptions;
   shell?: boolean;
-  env?: ProcessEnv;
+  env?: Record<string, string | undefined>;
 };
 
 type SpawnCall = [command: string, args?: readonly string[], options?: SpawnCallOptions];

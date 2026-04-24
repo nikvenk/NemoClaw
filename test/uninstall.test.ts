@@ -6,11 +6,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ProcessEnv } from "node:process";
 
 const UNINSTALL_SCRIPT = path.join(import.meta.dirname, "..", "uninstall.sh");
 
-function createFakeNpmEnv(tmp: string): ProcessEnv {
+function createFakeNpmEnv(tmp: string): Record<string, string | undefined> {
   const fakeBin = path.join(tmp, "bin");
   const npmPath = path.join(fakeBin, "npm");
   fs.mkdirSync(fakeBin, { recursive: true });
