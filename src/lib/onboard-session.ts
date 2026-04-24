@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { redactSensitiveText, redactUrl } from "./redact";
 import type { WebSearchConfig } from "./web-search";
 
 export const SESSION_VERSION = 1;
@@ -205,19 +206,8 @@ function parseLockInfo(value: unknown): LockInfo | null {
   };
 }
 
-export function redactSensitiveText(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  return value
-    .replace(
-      /(NVIDIA_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|COMPATIBLE_API_KEY|COMPATIBLE_ANTHROPIC_API_KEY|BRAVE_API_KEY)=\S+/gi,
-      "$1=<REDACTED>",
-    )
-    .replace(/Bearer\s+\S+/gi, "Bearer <REDACTED>")
-    .replace(/nvapi-[A-Za-z0-9_-]{10,}/g, "<REDACTED>")
-    .replace(/ghp_[A-Za-z0-9]{20,}/g, "<REDACTED>")
-    .replace(/sk-[A-Za-z0-9_-]{10,}/g, "<REDACTED>")
-    .slice(0, 240);
-}
+// redactSensitiveText and redactUrl imported from ./redact (#2381).
+export { redactSensitiveText, redactUrl };
 
 export function sanitizeFailure(
   input: { step?: unknown; message?: unknown; recordedAt?: unknown } | null | undefined,
@@ -231,26 +221,6 @@ export function sanitizeFailure(
 
 export function validateStep(step: unknown): boolean {
   return parseStepState(step) !== null;
-}
-
-export function redactUrl(value: unknown): string | null {
-  if (typeof value !== "string" || value.length === 0) return null;
-  try {
-    const url = new URL(value);
-    if (url.username || url.password) {
-      url.username = "";
-      url.password = "";
-    }
-    for (const key of [...url.searchParams.keys()]) {
-      if (/(^|[-_])(?:signature|sig|token|auth|access_token)$/i.test(key)) {
-        url.searchParams.set(key, "<REDACTED>");
-      }
-    }
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return redactSensitiveText(value);
-  }
 }
 
 // ── Session CRUD ─────────────────────────────────────────────────
