@@ -12,12 +12,9 @@ description: "Lists the hardware, software, and container runtime requirements f
 
 - Ollama binds to `0.0.0.0` so the sandbox can reach it through Docker.
 
-> **Alpha software:** NemoClaw is in alpha, available as an early preview since March 16, 2026.
-> APIs, configuration schemas, and runtime behavior are subject to breaking changes between releases.
-> Do not use this software in production environments.
-> File issues and feedback through the GitHub repository as the project continues to stabilize.
-
 Follow these steps to get started with NemoClaw and your first sandboxed OpenClaw agent.
+
+> **Note:** Make sure you have completed reviewing the Prerequisites (use the `nemoclaw-user-get-started` skill) before following this guide.
 
 ## Step 1: Install NemoClaw and Onboard OpenClaw Agent
 
