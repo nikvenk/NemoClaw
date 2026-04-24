@@ -536,7 +536,7 @@ describe("Slack channel guard — unhandled-rejection safety net (#2340)", () =>
     expect(fn[1]).toContain("token_revoked");
     expect(fn[1]).toContain("@slack/");
     // Proxy/network errors targeting Slack domains (CONNECT tunnel failures)
-    expect(fn[1]).toContain("slack.com");
+    expect(fn[1]).toMatch(/msg\.indexOf\('slack\.com'\)\s*!==\s*-1/);
   });
 
   it("logs caught Slack errors as warnings instead of crashing", () => {

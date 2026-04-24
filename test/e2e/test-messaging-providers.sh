@@ -212,8 +212,11 @@ pass "Pre-cleanup complete"
 BASE_POLICY="$REPO/nemoclaw-blueprint/policies/openclaw-sandbox.yaml"
 SLACK_PRESET="$REPO/nemoclaw-blueprint/policies/presets/slack.yaml"
 if [ -f "$BASE_POLICY" ] && [ -f "$SLACK_PRESET" ] && ! grep -q "api.slack.com" "$BASE_POLICY"; then
+  BASE_POLICY_BAK="$(mktemp)"
+  cp "$BASE_POLICY" "$BASE_POLICY_BAK"
+  trap 'cp "$BASE_POLICY_BAK" "$BASE_POLICY" 2>/dev/null || true; rm -f "$BASE_POLICY_BAK"' EXIT
   info "Pre-merging Slack network policy into base sandbox policy..."
-  cat >> "$BASE_POLICY" <<'SLACK_POLICY_EOF'
+  cat >>"$BASE_POLICY" <<'SLACK_POLICY_EOF'
 
   # ── Slack — pre-merged for messaging E2E (#2340) ──────────────
   # Normally applied as a preset in onboard Step 8, but the sandbox
@@ -255,6 +258,10 @@ if [ -f "$BASE_POLICY" ] && [ -f "$SLACK_PRESET" ] && ! grep -q "api.slack.com" 
       - { path: /usr/local/bin/node }
       - { path: /usr/bin/node }
 SLACK_POLICY_EOF
+  if ! grep -q "api.slack.com" "$BASE_POLICY"; then
+    fail "Failed to append Slack policy to base sandbox policy"
+    exit 1
+  fi
   pass "Slack network policy pre-merged into base policy"
 else
   if grep -q "api.slack.com" "$BASE_POLICY" 2>/dev/null; then
