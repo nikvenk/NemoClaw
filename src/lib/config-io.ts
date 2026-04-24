@@ -9,6 +9,25 @@ import path from "node:path";
 
 import { shellQuote } from "./shell-quote";
 
+type ErrorLikeInput = Error | object | string | number | boolean | null | undefined;
+
+function toError(error: ErrorLikeInput): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function isErrnoException(error: object | null): error is NodeJS.ErrnoException {
+  return error !== null && "code" in error;
+}
+
+type JsonScalar = string | number | boolean | null;
+type JsonValue = JsonScalar | JsonObject | JsonValue[];
+type JsonObject = { [key: string]: JsonValue };
+type SerializableConfig = JsonScalar | JsonValue[] | object;
+
+function parseJson<T>(text: string): T {
+  return JSON.parse(text);
+}
+
 function buildRemediation(): string {
   const home = process.env.HOME || os.homedir();
   const nemoclawDir = path.join(home, ".nemoclaw");
@@ -36,13 +55,8 @@ function buildRemediation(): string {
   ].join("\n");
 }
 
-function isPermissionError(error: unknown): error is NodeJS.ErrnoException {
-  return Boolean(
-    error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error.code === "EACCES" || error.code === "EPERM"),
-  );
+function isPermissionError(error: object | null): error is NodeJS.ErrnoException {
+  return isErrnoException(error) && (error.code === "EACCES" || error.code === "EPERM");
 }
 
 export class ConfigPermissionError extends Error {
@@ -89,8 +103,9 @@ export function ensureConfigDir(dirPath: string): void {
       fs.chmodSync(dirPath, 0o700);
     }
   } catch (error) {
-    if (isPermissionError(error)) {
-      throw new ConfigPermissionError(`Cannot create config directory: ${dirPath}`, dirPath, error as Error);
+    const errorObject = typeof error === "object" && error !== null ? error : null;
+    if (isPermissionError(errorObject)) {
+      throw new ConfigPermissionError(`Cannot create config directory: ${dirPath}`, dirPath, toError(errorObject));
     }
     throw error;
   }
@@ -98,11 +113,12 @@ export function ensureConfigDir(dirPath: string): void {
   try {
     fs.accessSync(dirPath, fs.constants.W_OK);
   } catch (error) {
-    if (isPermissionError(error)) {
+    const errorObject = typeof error === "object" && error !== null ? error : null;
+    if (isPermissionError(errorObject)) {
       throw new ConfigPermissionError(
         `Config directory exists but is not writable: ${dirPath}`,
         dirPath,
-        error as Error,
+        toError(errorObject),
       );
     }
     throw error;
@@ -111,19 +127,20 @@ export function ensureConfigDir(dirPath: string): void {
 
 export function readConfigFile<T>(filePath: string, fallback: T): T {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
+    return parseJson<T>(fs.readFileSync(filePath, "utf-8"));
   } catch (error) {
-    if (isPermissionError(error)) {
-      throw new ConfigPermissionError(`Cannot read config file: ${filePath}`, filePath, error as Error);
+    const errorObject = typeof error === "object" && error !== null ? error : null;
+    if (isPermissionError(errorObject)) {
+      throw new ConfigPermissionError(`Cannot read config file: ${filePath}`, filePath, toError(errorObject));
     }
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (isErrnoException(errorObject) && errorObject.code === "ENOENT") {
       return fallback;
     }
     return fallback;
   }
 }
 
-export function writeConfigFile(filePath: string, data: unknown): void {
+export function writeConfigFile(filePath: string, data: SerializableConfig): void {
   const dirPath = path.dirname(filePath);
   ensureConfigDir(dirPath);
 
@@ -137,8 +154,9 @@ export function writeConfigFile(filePath: string, data: unknown): void {
     } catch {
       /* best effort */
     }
-    if (isPermissionError(error)) {
-      throw new ConfigPermissionError(`Cannot write config file: ${filePath}`, filePath, error as Error);
+    const errorObject = typeof error === "object" && error !== null ? error : null;
+    if (isPermissionError(errorObject)) {
+      throw new ConfigPermissionError(`Cannot write config file: ${filePath}`, filePath, toError(errorObject));
     }
     throw error;
   }

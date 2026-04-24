@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -22,7 +21,7 @@ type GuardedPath = {
   kind: "migrated-runtime" | "removed-shim" | "migrated-test";
 };
 
-const RUNTIME_MOVES = moveMap.runtimeMoves as Record<string, string>;
+const RUNTIME_MOVES: Record<string, string> = moveMap.runtimeMoves;
 const REMOVED_SHIM_MOVES: Record<string, string> = {
   "bin/lib/chat-filter.js": "src/lib/chat-filter.ts",
   "bin/lib/config-io.js": "src/lib/config-io.ts",

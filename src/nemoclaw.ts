@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -31,7 +30,12 @@ const {
   validateName,
 } = require("./lib/runner");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
-const { startGatewayForRecovery, pruneKnownHostsEntries } = require("./lib/onboard");
+const {
+  startGatewayForRecovery,
+  pruneKnownHostsEntries,
+  ensureOllamaAuthProxy,
+  isNonInteractive,
+} = require("./lib/onboard");
 const {
   getCredential,
   deleteCredential,
@@ -39,6 +43,7 @@ const {
   prompt: askPrompt,
 } = require("./lib/credentials");
 const registry = require("./lib/registry");
+import type { SandboxEntry } from "./lib/registry";
 const nim = require("./lib/nim");
 const policies = require("./lib/policies");
 const shields = require("./lib/shields");
@@ -47,6 +52,7 @@ const { parseGatewayInference } = require("./lib/inference-config");
 const { probeProviderHealth } = require("./lib/inference-health");
 const { getVersion } = require("./lib/version");
 const onboardSession = require("./lib/onboard-session");
+import type { Session } from "./lib/onboard-session";
 const { parseLiveSandboxNames } = require("./lib/runtime-recovery");
 const { NOTICE_ACCEPT_ENV, NOTICE_ACCEPT_FLAG } = require("./lib/usage-notice");
 const { runDebugCommand } = require("./lib/debug-command");
@@ -65,7 +71,6 @@ const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/unins
 const agentRuntime = require("../bin/lib/agent-runtime");
 const sandboxVersion = require("./lib/sandbox-version");
 const sandboxState = require("./lib/sandbox-state");
-const { ensureOllamaAuthProxy } = require("./lib/onboard");
 const skillInstall = require("./lib/skill-install");
 const { sleepSeconds } = require("./lib/wait");
 const { parseSandboxPhase } = require("./lib/gateway-state");
@@ -82,7 +87,6 @@ import {
   knownChannelNames,
   persistChannelTokens,
 } from "./lib/sandbox-channels";
-import { isNonInteractive } from "./lib/onboard";
 
 // ── Global commands ──────────────────────────────────────────────
 
@@ -109,12 +113,39 @@ const GLOBAL_COMMANDS = new Set([
   "-v",
 ]);
 
+type CommandArgs = string[];
+type RunnerOptions = {
+  env?: NodeJS.ProcessEnv;
+  stdio?: import("node:child_process").StdioOptions;
+  ignoreError?: boolean;
+  timeout?: number;
+};
+
+type SpawnLikeResult = {
+  status: number | null;
+  stdout?: string;
+  stderr?: string;
+  output?: string;
+};
+
+type SandboxCommandResult = {
+  status: number;
+  stdout: string;
+  stderr: string;
+};
+
+type RecoveredSandboxMetadata = Partial<
+  Pick<SandboxEntry, "model" | "provider" | "gpuEnabled" | "policies" | "nimContainer" | "agent">
+> & {
+  policyPresets?: string[] | null;
+};
+
 const REMOTE_UNINSTALL_URL = buildVersionedUninstallUrl(getVersion());
-let OPENSHELL_BIN = null;
+let OPENSHELL_BIN: string | null = null;
 const NEMOCLAW_GATEWAY_NAME = "nemoclaw";
 const DASHBOARD_FORWARD_PORT = String(DASHBOARD_PORT);
 
-function getOpenshellBinary() {
+function getOpenshellBinary(): string {
   if (!OPENSHELL_BIN) {
     OPENSHELL_BIN = resolveOpenshell();
   }
@@ -125,24 +156,24 @@ function getOpenshellBinary() {
   return OPENSHELL_BIN;
 }
 
-function runOpenshell(args, opts = {}) {
+function runOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
   return runOpenshellCommand(getOpenshellBinary(), args, {
     cwd: ROOT,
     env: opts.env,
     stdio: opts.stdio,
     ignoreError: opts.ignoreError,
     errorLine: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code: number) => process.exit(code),
   });
 }
 
-function captureOpenshell(args, opts = {}) {
+function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
   return captureOpenshellCommand(getOpenshellBinary(), args, {
     cwd: ROOT,
     env: opts.env,
     ignoreError: opts.ignoreError,
     errorLine: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code: number) => process.exit(code),
   });
 }
 
@@ -163,13 +194,13 @@ function hasNoLiveSandboxes() {
   return parseLiveSandboxNames(liveList.output).size === 0;
 }
 
-function isMissingSandboxDeleteResult(output = "") {
+function isMissingSandboxDeleteResult(output = ""): boolean {
   return /\bNotFound\b|\bNot Found\b|sandbox not found|sandbox .* not found|sandbox .* not present|sandbox does not exist|no such sandbox/i.test(
     stripAnsi(output),
   );
 }
 
-function getSandboxDeleteOutcome(deleteResult) {
+function getSandboxDeleteOutcome(deleteResult: SpawnLikeResult) {
   const output = `${deleteResult.stdout || ""}${deleteResult.stderr || ""}`.trim();
   return {
     output,
@@ -189,7 +220,10 @@ function getInstalledOpenshellVersionOrNull() {
  * Run a command inside the sandbox via SSH and return { status, stdout, stderr }.
  * Returns null if SSH config cannot be obtained.
  */
-function executeSandboxCommand(sandboxName, command) {
+function executeSandboxCommand(
+  sandboxName: string,
+  command: string,
+): SandboxCommandResult | null {
   const sshConfigResult = captureOpenshell(["sandbox", "ssh-config", sandboxName], {
     ignoreError: true,
   });
@@ -238,7 +272,7 @@ function executeSandboxCommand(sandboxName, command) {
  * since the gateway runs as a separate user and pgrep may not see it.
  * Returns true (running), false (stopped), or null (cannot determine).
  */
-function isSandboxGatewayRunning(sandboxName) {
+function isSandboxGatewayRunning(sandboxName: string): boolean | null {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const probeUrl = agentRuntime.getHealthProbeUrl(agent);
   const result = executeSandboxCommand(
@@ -256,7 +290,7 @@ function isSandboxGatewayRunning(sandboxName) {
  * Cleans stale lock/temp files, sources proxy config, and launches the gateway
  * in the background. Returns true on success.
  */
-function recoverSandboxProcesses(sandboxName) {
+function recoverSandboxProcesses(sandboxName: string) {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const agentScript = agentRuntime.buildRecoveryScript(agent, agent?.forwardPort ?? DASHBOARD_PORT);
   // The recovery script runs as the sandbox user (non-root). This matches
@@ -297,7 +331,7 @@ function recoverSandboxProcesses(sandboxName) {
  * Re-establish the dashboard port forward to the sandbox.
  * Uses the agent's forward port when a non-OpenClaw agent is active.
  */
-function ensureSandboxPortForward(sandboxName) {
+function ensureSandboxPortForward(sandboxName: string) {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const port = agent ? String(agent.forwardPort) : DASHBOARD_FORWARD_PORT;
   runOpenshell(["forward", "stop", port], { ignoreError: true });
@@ -311,7 +345,10 @@ function ensureSandboxPortForward(sandboxName) {
  * whose OpenClaw processes are not running. Returns an object describing
  * the outcome: { checked, wasRunning, recovered }.
  */
-function checkAndRecoverSandboxProcesses(sandboxName, { quiet = false } = {}) {
+function checkAndRecoverSandboxProcesses(
+  sandboxName: string,
+  { quiet = false }: { quiet?: boolean } = {},
+) {
   const running = isSandboxGatewayRunning(sandboxName);
   if (running === null) {
     return { checked: false, wasRunning: null, recovered: false };
@@ -360,7 +397,10 @@ function checkAndRecoverSandboxProcesses(sandboxName, { quiet = false } = {}) {
   return { checked: true, wasRunning: false, recovered };
 }
 
-function buildRecoveredSandboxEntry(name, metadata = {}) {
+function buildRecoveredSandboxEntry(
+  name: string,
+  metadata: RecoveredSandboxMetadata = {},
+): SandboxEntry {
   return {
     name,
     model: metadata.model || null,
@@ -376,7 +416,7 @@ function buildRecoveredSandboxEntry(name, metadata = {}) {
   };
 }
 
-function upsertRecoveredSandbox(name, metadata = {}) {
+function upsertRecoveredSandbox(name: string, metadata: RecoveredSandboxMetadata = {}) {
   let validName;
   try {
     validName = validateName(name, "sandbox name");
@@ -393,10 +433,15 @@ function upsertRecoveredSandbox(name, metadata = {}) {
   return true;
 }
 
-function shouldRecoverRegistryEntries(current, session, requestedSandboxName) {
-  const hasSessionSandbox = Boolean(session?.sandboxName);
+function shouldRecoverRegistryEntries(
+  current: { sandboxes: Array<{ name: string }>; defaultSandbox?: string | null },
+  session: Session | null,
+  requestedSandboxName: string | null,
+) {
+  const sessionSandboxName = session?.sandboxName ?? null;
+  const hasSessionSandbox = Boolean(sessionSandboxName);
   const missingSessionSandbox =
-    hasSessionSandbox && !current.sandboxes.some((sandbox) => sandbox.name === session.sandboxName);
+    hasSessionSandbox && !current.sandboxes.some((sandbox) => sandbox.name === sessionSandboxName);
   const missingRequestedSandbox =
     Boolean(requestedSandboxName) &&
     !current.sandboxes.some((sandbox) => sandbox.name === requestedSandboxName);
@@ -410,8 +455,14 @@ function shouldRecoverRegistryEntries(current, session, requestedSandboxName) {
   };
 }
 
-function seedRecoveryMetadata(current, session, requestedSandboxName) {
-  const metadataByName = new Map(current.sandboxes.map((sandbox) => [sandbox.name, sandbox]));
+function seedRecoveryMetadata(
+  current: { sandboxes: SandboxEntry[] },
+  session: Session | null,
+  requestedSandboxName: string | null,
+) {
+  const metadataByName = new Map<string, RecoveredSandboxMetadata>(
+    current.sandboxes.map((sandbox: SandboxEntry) => [sandbox.name, sandbox]),
+  );
   let recoveredFromSession = false;
 
   if (!session?.sandboxName) {
@@ -428,7 +479,7 @@ function seedRecoveryMetadata(current, session, requestedSandboxName) {
     }),
   );
   const sessionSandboxMissing = !current.sandboxes.some(
-    (sandbox) => sandbox.name === session.sandboxName,
+    (sandbox: { name: string }) => sandbox.name === session.sandboxName,
   );
   const shouldRecoverSessionSandbox =
     current.sandboxes.length === 0 ||
@@ -443,7 +494,9 @@ function seedRecoveryMetadata(current, session, requestedSandboxName) {
   return { metadataByName, recoveredFromSession };
 }
 
-async function recoverRegistryFromLiveGateway(metadataByName) {
+async function recoverRegistryFromLiveGateway(
+  metadataByName: Map<string, RecoveredSandboxMetadata>,
+) {
   if (!resolveOpenshell()) {
     return 0;
   }
@@ -458,9 +511,9 @@ async function recoverRegistryFromLiveGateway(metadataByName) {
 
   let recoveredFromGateway = 0;
   const liveList = captureOpenshell(["sandbox", "list"], { ignoreError: true });
-  const liveNames = Array.from(parseLiveSandboxNames(liveList.output));
+  const liveNames = Array.from<string>(parseLiveSandboxNames(liveList.output));
   for (const name of liveNames) {
-    const metadata = metadataByName.get(name) || {};
+    const metadata = metadataByName.get(name) || undefined;
     if (upsertRecoveredSandbox(name, metadata)) {
       recoveredFromGateway += 1;
     }
@@ -468,20 +521,26 @@ async function recoverRegistryFromLiveGateway(metadataByName) {
   return recoveredFromGateway;
 }
 
-function applyRecoveredDefault(currentDefaultSandbox, requestedSandboxName, session) {
+function applyRecoveredDefault(
+  currentDefaultSandbox: string | null,
+  requestedSandboxName: string | null,
+  session: Session | null,
+) {
   const recovered = registry.listSandboxes();
   const preferredDefault =
     requestedSandboxName || (!currentDefaultSandbox ? session?.sandboxName || null : null);
   if (
     preferredDefault &&
-    recovered.sandboxes.some((sandbox) => sandbox.name === preferredDefault)
+    recovered.sandboxes.some((sandbox: { name: string }) => sandbox.name === preferredDefault)
   ) {
     registry.setDefault(preferredDefault);
   }
   return registry.listSandboxes();
 }
 
-async function recoverRegistryEntries({ requestedSandboxName = null } = {}) {
+async function recoverRegistryEntries(
+  { requestedSandboxName = null }: { requestedSandboxName?: string | null } = {},
+) {
   const current = registry.listSandboxes();
   const session = onboardSession.loadSession();
   const recoveryCheck = shouldRecoverRegistryEntries(current, session, requestedSandboxName);
@@ -503,11 +562,11 @@ async function recoverRegistryEntries({ requestedSandboxName = null } = {}) {
   };
 }
 
-function hasNamedGateway(output = "") {
+function hasNamedGateway(output = ""): boolean {
   return stripAnsi(output).includes("Gateway: nemoclaw");
 }
 
-function getActiveGatewayName(output = "") {
+function getActiveGatewayName(output = ""): string | null {
   const match = stripAnsi(output).match(/^\s*Gateway:\s+(.+?)\s*$/m);
   return match ? match[1].trim() : "";
 }
@@ -574,7 +633,7 @@ async function recoverNamedGatewayRuntime() {
 }
 
 /** Query sandbox presence and return its output with the live enforced policy. */
-function getSandboxGatewayState(sandboxName) {
+function getSandboxGatewayState(sandboxName: string) {
   const result = captureOpenshell(["sandbox", "get", sandboxName]);
   let output = result.output;
   if (result.status === 0) {
@@ -589,7 +648,7 @@ function getSandboxGatewayState(sandboxName) {
     if (livePolicy.status === 0 && livePolicy.output.trim()) {
       const rawLines = String(output).split("\n");
       const cleanLines = stripAnsi(String(output)).split("\n");
-      const policyLineIdx = cleanLines.findIndex((l) => l.trim() === "Policy:");
+      const policyLineIdx = cleanLines.findIndex((l: string) => l.trim() === "Policy:");
       if (policyLineIdx !== -1) {
         // Keep everything before Policy (Sandbox info with colors),
         // plus the original colored "Policy:" header line.
@@ -610,7 +669,7 @@ function getSandboxGatewayState(sandboxName) {
           // Add 2-space indent to match the original sandbox get output format.
           const indented = trimmedYaml
             .split("\n")
-            .map((l) => (l ? "  " + l : l))
+            .map((l: string) => (l ? "  " + l : l))
             .join("\n");
           output = before + "\n\n" + indented + "\n";
         }
@@ -685,7 +744,7 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
 }
 
 // eslint-disable-next-line complexity
-async function getReconciledSandboxGatewayState(sandboxName) {
+async function getReconciledSandboxGatewayState(sandboxName: string) {
   let lookup = getSandboxGatewayState(sandboxName);
   if (lookup.state === "present") {
     return lookup;
@@ -743,7 +802,10 @@ async function getReconciledSandboxGatewayState(sandboxName) {
   return lookup;
 }
 
-async function ensureLiveSandboxOrExit(sandboxName, { allowNonReadyPhase = false } = {}) {
+async function ensureLiveSandboxOrExit(
+  sandboxName: string,
+  { allowNonReadyPhase = false }: { allowNonReadyPhase?: boolean } = {},
+) {
   const lookup = await getReconciledSandboxGatewayState(sandboxName);
   if (lookup.state === "present") {
     const phase = parseSandboxPhase(lookup.output || "");
@@ -764,7 +826,7 @@ async function ensureLiveSandboxOrExit(sandboxName, { allowNonReadyPhase = false
     registry.removeSandbox(sandboxName);
     const session = onboardSession.loadSession();
     if (session && session.sandboxName === sandboxName) {
-      onboardSession.updateSession((s) => {
+      onboardSession.updateSession((s: Session) => {
         s.sandboxName = null;
         return s;
       });
@@ -845,7 +907,7 @@ async function ensureLiveSandboxOrExit(sandboxName, { allowNonReadyPhase = false
   process.exit(1);
 }
 
-function exitWithSpawnResult(result) {
+function exitWithSpawnResult(result: SpawnLikeResult & { signal?: NodeJS.Signals | null }) {
   if (result.status !== null) {
     process.exit(result.status);
   }
@@ -871,7 +933,7 @@ function printDangerouslySkipPermissionsWarning() {
 
 // ── Commands ─────────────────────────────────────────────────────
 
-function buildOnboardCommandDeps(args) {
+function buildOnboardCommandDeps(args: string[]) {
   const { onboard: runOnboard } = require("./lib/onboard");
   const { listAgents } = require("./lib/agent-defs");
   return {
@@ -883,29 +945,29 @@ function buildOnboardCommandDeps(args) {
     listAgents,
     log: console.log,
     error: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code: number) => process.exit(code),
   };
 }
 
-async function onboard(args) {
+async function onboard(args: string[]): Promise<void> {
   await runOnboardCommand(buildOnboardCommandDeps(args));
 }
 
-async function setup(args = []) {
+async function setup(args: string[] = []): Promise<void> {
   await runDeprecatedOnboardAliasCommand({
     ...buildOnboardCommandDeps(args),
     kind: "setup",
   });
 }
 
-async function setupSpark(args = []) {
+async function setupSpark(args: string[] = []): Promise<void> {
   await runDeprecatedOnboardAliasCommand({
     ...buildOnboardCommandDeps(args),
     kind: "setup-spark",
   });
 }
 
-async function deploy(instanceName) {
+async function deploy(instanceName: string): Promise<void> {
   await executeDeploy({
     instanceName,
     env: process.env,
@@ -915,13 +977,16 @@ async function deploy(instanceName) {
     shellQuote,
     run,
     runInteractive,
-    execFileSync: (file, args, opts = {}) =>
-      String(execFileSync(file, args, { encoding: "utf-8", ...opts })),
+    execFileSync: (
+      file: string,
+      args: string[],
+      opts: Omit<import("node:child_process").ExecFileSyncOptionsWithStringEncoding, "encoding"> = {},
+    ) => String(execFileSync(file, args, { encoding: "utf-8", ...opts })),
     spawnSync,
     log: console.log,
     error: console.error,
-    stdoutWrite: (message) => process.stdout.write(message),
-    exit: (code) => process.exit(code),
+    stdoutWrite: (message: string) => process.stdout.write(message),
+    exit: (code: number) => process.exit(code),
   });
 }
 
@@ -941,7 +1006,7 @@ function stop() {
   });
 }
 
-async function tunnel(args) {
+async function tunnel(args: string[]): Promise<void> {
   const sub = args[0];
   switch (sub) {
     case "start":
@@ -956,12 +1021,12 @@ async function tunnel(args) {
   }
 }
 
-function debug(args) {
+function debug(args: string[]) {
   const { runDebug } = require("./lib/debug");
   const getDefaultSandbox = (): string | undefined => {
     const { defaultSandbox, sandboxes } = registry.listSandboxes();
     if (!defaultSandbox) return undefined;
-    if (!sandboxes.find((s) => s.name === defaultSandbox)) {
+    if (!sandboxes.find((s: { name: string }) => s.name === defaultSandbox)) {
       console.error(
         `${_RD}Warning:${R} default sandbox '${defaultSandbox}' is no longer in the registry.`,
       );
@@ -987,11 +1052,11 @@ function debug(args) {
     runDebug,
     log: console.log,
     error: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code: number) => process.exit(code),
   });
 }
 
-function uninstall(args) {
+function uninstall(args: string[]) {
   runUninstallCommand({
     args,
     rootDir: ROOT,
@@ -1001,11 +1066,11 @@ function uninstall(args) {
     spawnSyncImpl: spawnSync,
     log: console.log,
     error: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code: number) => process.exit(code),
   });
 }
 
-async function credentialsCommand(args) {
+async function credentialsCommand(args: string[]): Promise<void> {
   const sub = args[0];
   if (!sub || sub === "help" || sub === "--help" || sub === "-h") {
     console.log("");
@@ -1087,7 +1152,7 @@ async function credentialsCommand(args) {
  * Inspect gateway logs for known Telegram conflict signatures without blocking
  * the broader status command when the probe cannot run.
  */
-function checkMessagingBridgeHealth(sandboxName, channels) {
+function checkMessagingBridgeHealth(sandboxName: string, channels: string[]) {
   // Only Telegram currently emits a recognizable conflict signature in the
   // gateway log. Discord/Slack have similar single-consumer constraints but
   // log differently; we can extend the regex when those patterns are known.
@@ -1115,7 +1180,7 @@ function makeConflictProbe() {
   // get` collapses into "absent", and a transient gateway failure would
   // persist messagingChannels: [] and permanently suppress future retries.
   let gatewayAlive: boolean | null = null;
-  const isGatewayAlive = () => {
+  const isGatewayAlive = (): boolean => {
     if (gatewayAlive === null) {
       const result = captureOpenshell(["sandbox", "list"], { ignoreError: true });
       gatewayAlive = result.status === 0;
@@ -1123,7 +1188,7 @@ function makeConflictProbe() {
     return gatewayAlive;
   };
   return {
-    providerExists: (name) => {
+    providerExists: (name: string) => {
       if (!isGatewayAlive()) return "error";
       const result = captureOpenshell(["provider", "get", name], { ignoreError: true });
       return result.status === 0 ? "present" : "absent";
@@ -1149,7 +1214,7 @@ function backfillAndFindOverlaps() {
 /**
  * Read a short tail of the gateway log for degraded messaging diagnostics.
  */
-function readGatewayLog(sandboxName) {
+function readGatewayLog(sandboxName: string) {
   const { spawnSync } = require("child_process");
   try {
     const result = spawnSync(
@@ -1178,7 +1243,7 @@ function showStatus() {
   });
 }
 
-async function listSandboxes() {
+async function listSandboxes(): Promise<void> {
   const opsBinList = resolveOpenshell();
   const sessionDeps = opsBinList ? createSessionDeps(opsBinList) : null;
 
@@ -1198,7 +1263,7 @@ async function listSandboxes() {
       parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
     loadLastSession: () => onboardSession.loadSession(),
     getActiveSessionCount: sessionDeps
-      ? (name) => {
+      ? (name: string) => {
           try {
             const sshOutput = getCachedSshOutput();
             if (sshOutput === null) return null;
@@ -1215,7 +1280,10 @@ async function listSandboxes() {
 
 // ── Sandbox-scoped actions ───────────────────────────────────────
 
-async function sandboxConnect(sandboxName, { dangerouslySkipPermissions = false } = {}) {
+async function sandboxConnect(
+  sandboxName: string,
+  { dangerouslySkipPermissions = false }: { dangerouslySkipPermissions?: boolean } = {},
+) {
   const { isSandboxReady, parseSandboxStatus } = require("./lib/onboard");
   await ensureLiveSandboxOrExit(sandboxName, { allowNonReadyPhase: true });
 
@@ -1399,7 +1467,7 @@ async function sandboxConnect(sandboxName, { dangerouslySkipPermissions = false 
 }
 
 // eslint-disable-next-line complexity
-async function sandboxStatus(sandboxName) {
+async function sandboxStatus(sandboxName: string) {
   const sb = registry.getSandbox(sandboxName);
   const live = parseGatewayInference(
     captureOpenshell(["inference", "get"], { ignoreError: true }).output,
@@ -1470,9 +1538,9 @@ async function sandboxStatus(sandboxName) {
   const lookup = await getReconciledSandboxGatewayState(sandboxName);
   if (lookup.state === "present") {
     console.log("");
-    if (lookup.recoveredGateway) {
+    if ("recoveredGateway" in lookup && lookup.recoveredGateway) {
       console.log(
-        `  Recovered NemoClaw gateway runtime via ${lookup.recoveryVia || "gateway reattach"}.`,
+        `  Recovered NemoClaw gateway runtime via ${(("recoveryVia" in lookup ? lookup.recoveryVia : null) || "gateway reattach")}.`,
       );
       console.log("");
     }
@@ -1493,7 +1561,7 @@ async function sandboxStatus(sandboxName) {
     registry.removeSandbox(sandboxName);
     const session = onboardSession.loadSession();
     if (session && session.sandboxName === sandboxName) {
-      onboardSession.updateSession((s) => {
+      onboardSession.updateSession((s: Session) => {
         s.sandboxName = null;
         return s;
       });
@@ -1588,7 +1656,7 @@ async function sandboxStatus(sandboxName) {
   console.log("");
 }
 
-function sandboxLogs(sandboxName, follow) {
+function sandboxLogs(sandboxName: string, follow: boolean) {
   const args = buildSandboxLogsArgs(sandboxName, follow);
 
   const result = runOpenshell(args, {
@@ -1601,7 +1669,7 @@ function sandboxLogs(sandboxName, follow) {
   exitWithSpawnResult(result);
 }
 
-function buildSandboxLogsArgs(sandboxName, follow) {
+function buildSandboxLogsArgs(sandboxName: string, follow: boolean): string[] {
   const args = ["sandbox", "exec", "-n", sandboxName, "--", "tail", "-n", "200"];
   if (follow) {
     args.push("-f");
@@ -1610,7 +1678,7 @@ function buildSandboxLogsArgs(sandboxName, follow) {
   return args;
 }
 
-async function sandboxPolicyAdd(sandboxName, args = []) {
+async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
     args.includes("--yes") || args.includes("--force") || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
@@ -1621,10 +1689,10 @@ async function sandboxPolicyAdd(sandboxName, args = []) {
   let answer = null;
   if (presetArg) {
     const normalized = presetArg.trim().toLowerCase();
-    const preset = allPresets.find((item) => item.name === normalized);
+    const preset = allPresets.find((item: { name: string }) => item.name === normalized);
     if (!preset) {
       console.error(`  Unknown preset '${presetArg}'.`);
-      console.error(`  Valid presets: ${allPresets.map((item) => item.name).join(", ")}`);
+      console.error(`  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`);
       process.exit(1);
     }
     if (applied.includes(preset.name)) {
@@ -1663,7 +1731,7 @@ async function sandboxPolicyAdd(sandboxName, args = []) {
   policies.applyPreset(sandboxName, answer);
 }
 
-function sandboxPolicyList(sandboxName) {
+function sandboxPolicyList(sandboxName: string) {
   const allPresets = policies.listPresets();
   const registryPresets = policies.getAppliedPresets(sandboxName);
 
@@ -1673,7 +1741,7 @@ function sandboxPolicyList(sandboxName) {
 
   console.log("");
   console.log(`  Policy presets for sandbox '${sandboxName}':`);
-  allPresets.forEach((p) => {
+  allPresets.forEach((p: { name: string; description: string }) => {
     const inRegistry = registryPresets.includes(p.name);
     const inGateway = gatewayPresets ? gatewayPresets.includes(p.name) : null;
 
@@ -1706,7 +1774,7 @@ function sandboxPolicyList(sandboxName) {
 
 // ── Messaging channels ───────────────────────────────────────────
 
-function sandboxChannelsList(sandboxName) {
+function sandboxChannelsList(sandboxName: string) {
   console.log("");
   console.log(`  Known messaging channels for sandbox '${sandboxName}':`);
   for (const [name, channel] of Object.entries(KNOWN_CHANNELS)) {
@@ -1715,7 +1783,7 @@ function sandboxChannelsList(sandboxName) {
   console.log("");
 }
 
-async function promptAndRebuild(sandboxName, actionDesc) {
+async function promptAndRebuild(sandboxName: string, actionDesc: string): Promise<void> {
   if (isNonInteractive()) {
     console.log("");
     console.log(
@@ -1735,7 +1803,7 @@ async function promptAndRebuild(sandboxName, actionDesc) {
   await sandboxRebuild(sandboxName, ["--yes"]);
 }
 
-async function sandboxChannelsAdd(sandboxName, args = []) {
+async function sandboxChannelsAdd(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
   if (!channelArg) {
@@ -1757,7 +1825,7 @@ async function sandboxChannelsAdd(sandboxName, args = []) {
   }
 
   const tokenKeys = getChannelTokenKeys(channel);
-  const acquired = {};
+  const acquired: Record<string, string> = {};
   for (const envKey of tokenKeys) {
     const isPrimary = envKey === channel.envKey;
     const help = isPrimary ? channel.help : channel.appTokenHelp;
@@ -1789,7 +1857,7 @@ async function sandboxChannelsAdd(sandboxName, args = []) {
   await promptAndRebuild(sandboxName, `add '${channelArg}'`);
 }
 
-async function sandboxChannelsRemove(sandboxName, args = []) {
+async function sandboxChannelsRemove(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
   if (!channelArg) {
@@ -1815,7 +1883,11 @@ async function sandboxChannelsRemove(sandboxName, args = []) {
   await promptAndRebuild(sandboxName, `remove '${channelArg}'`);
 }
 
-async function sandboxChannelsSetEnabled(sandboxName, args, disabled) {
+async function sandboxChannelsSetEnabled(
+  sandboxName: string,
+  args: string[],
+  disabled: boolean,
+): Promise<void> {
   const verb = disabled ? "stop" : "start";
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
@@ -1857,11 +1929,11 @@ async function sandboxChannelsSetEnabled(sandboxName, args, disabled) {
   await promptAndRebuild(sandboxName, `${verb} '${normalized}'`);
 }
 
-async function sandboxChannelsStop(sandboxName, args = []) {
+async function sandboxChannelsStop(sandboxName: string, args: string[] = []): Promise<void> {
   await sandboxChannelsSetEnabled(sandboxName, args, true);
 }
 
-async function sandboxChannelsStart(sandboxName, args = []) {
+async function sandboxChannelsStart(sandboxName: string, args: string[] = []): Promise<void> {
   await sandboxChannelsSetEnabled(sandboxName, args, false);
 }
 
@@ -1869,7 +1941,7 @@ async function sandboxChannelsStart(sandboxName, args = []) {
  * Install or update a local skill directory into a live sandbox and perform
  * any agent-specific post-install refresh needed for the new content to load.
  */
-async function sandboxSkillInstall(sandboxName, args = []) {
+async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Promise<void> {
   const sub = args[0];
   if (!sub || sub === "help" || sub === "--help" || sub === "-h") {
     console.log("");
@@ -1934,7 +2006,8 @@ async function sandboxSkillInstall(sandboxName, args = []) {
     const content = fs.readFileSync(skillMdPath, "utf-8");
     frontmatter = skillInstall.parseFrontmatter(content);
   } catch (err) {
-    console.error(`  ${err.message}`);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error(`  ${errorMessage}`);
     process.exit(1);
   }
 
@@ -2019,7 +2092,7 @@ async function sandboxSkillInstall(sandboxName, args = []) {
   }
 }
 
-async function sandboxPolicyRemove(sandboxName, args = []) {
+async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
     args.includes("--yes") || args.includes("--force") || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
@@ -2030,10 +2103,10 @@ async function sandboxPolicyRemove(sandboxName, args = []) {
   let answer = null;
   if (presetArg) {
     const normalized = presetArg.trim().toLowerCase();
-    const preset = allPresets.find((item) => item.name === normalized);
+    const preset = allPresets.find((item: { name: string }) => item.name === normalized);
     if (!preset) {
       console.error(`  Unknown preset '${presetArg}'.`);
-      console.error(`  Valid presets: ${allPresets.map((item) => item.name).join(", ")}`);
+      console.error(`  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`);
       process.exit(1);
     }
     if (!applied.includes(preset.name)) {
@@ -2074,7 +2147,10 @@ async function sandboxPolicyRemove(sandboxName, args = []) {
   }
 }
 
-function cleanupSandboxServices(sandboxName, { stopHostServices = false } = {}) {
+function cleanupSandboxServices(
+  sandboxName: string,
+  { stopHostServices = false }: { stopHostServices?: boolean } = {},
+) {
   if (stopHostServices) {
     const { stopAll } = require("./lib/services");
     stopAll({ sandboxName });
@@ -2095,7 +2171,7 @@ function cleanupSandboxServices(sandboxName, { stopHostServices = false } = {}) 
  * Remove the host-side Docker image that was built for a sandbox during onboard.
  * Must be called before registry.removeSandbox() since the imageTag is stored there.
  */
-function removeSandboxImage(sandboxName) {
+function removeSandboxImage(sandboxName: string) {
   const sb = registry.getSandbox(sandboxName);
   if (!sb?.imageTag) return;
   const result = run(["docker", "rmi", sb.imageTag], { ignoreError: true });
@@ -2106,7 +2182,7 @@ function removeSandboxImage(sandboxName) {
   }
 }
 
-async function sandboxDestroy(sandboxName, args = []) {
+async function sandboxDestroy(sandboxName: string, args: string[] = []): Promise<void> {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
 
   // Active session detection — enrich the confirmation prompt if sessions are active
@@ -2176,7 +2252,7 @@ async function sandboxDestroy(sandboxName, args = []) {
   const removed = registry.removeSandbox(sandboxName);
   const session = onboardSession.loadSession();
   if (session && session.sandboxName === sandboxName) {
-    onboardSession.updateSession((s) => {
+    onboardSession.updateSession((s: Session) => {
       s.sandboxName = null;
       return s;
     });
@@ -2197,24 +2273,28 @@ async function sandboxDestroy(sandboxName, args = []) {
 
 // ── Rebuild ──────────────────────────────────────────────────────
 
-function _rebuildLog(msg) {
+function _rebuildLog(msg: string) {
   console.error(`  ${D}[rebuild ${new Date().toISOString()}] ${msg}${R}`);
 }
 
-async function sandboxRebuild(sandboxName, args = [], opts = {}) {
+async function sandboxRebuild(
+  sandboxName: string,
+  args: string[] = [],
+  opts: { throwOnError?: boolean } = {},
+): Promise<void> {
   const verbose =
     args.includes("--verbose") ||
     args.includes("-v") ||
     process.env.NEMOCLAW_REBUILD_VERBOSE === "1";
-  const log = verbose ? _rebuildLog : () => {};
+  const log: (msg: string) => void = verbose ? _rebuildLog : () => {};
   const skipConfirm = args.includes("--yes") || args.includes("--force");
   // When called from upgradeSandboxes in a loop, throwOnError prevents
   // process.exit from aborting the entire batch on the first failure.
   const bail = opts.throwOnError
-    ? (msg, code = 1) => {
+    ? (msg: string, code = 1) => {
         throw new Error(msg);
       }
-    : (_msg, code = 1) => process.exit(code);
+    : (_msg: string, code = 1) => process.exit(code);
 
   // Active session detection — enrich the confirmation prompt if sessions are active
   let rebuildActiveSessionCount = 0;
@@ -2348,7 +2428,7 @@ async function sandboxRebuild(sandboxName, args = [], opts = {}) {
   removeSandboxImage(sandboxName);
   registry.removeSandbox(sandboxName);
   log(
-    `Registry after remove: ${JSON.stringify(registry.listSandboxes().sandboxes.map((s) => s.name))}`,
+    `Registry after remove: ${JSON.stringify(registry.listSandboxes().sandboxes.map((s: { name: string }) => s.name))}`,
   );
   console.log(`  ${G}\u2713${R} Old sandbox deleted`);
 
@@ -2368,7 +2448,7 @@ async function sandboxRebuild(sandboxName, args = [], opts = {}) {
   // from a previous onboard of a *different* agent type would be picked up
   // by resolveAgentName() and the wrong Dockerfile would be used.  (#2201)
   const rebuildAgent = sb.agent || null;
-  onboardSession.updateSession((s) => {
+  onboardSession.updateSession((s: Session) => {
     s.sandboxName = sandboxName;
     s.resumable = true;
     s.status = "in_progress";
@@ -2439,7 +2519,8 @@ async function sandboxRebuild(sandboxName, args = [], opts = {}) {
           failedPresets.push(presetName);
         }
       } catch (err) {
-        log(`Failed to apply preset '${presetName}': ${err.message || err}`);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log(`Failed to apply preset '${presetName}': ${errorMessage}`);
         failedPresets.push(presetName);
       }
     }
@@ -2502,7 +2583,7 @@ async function sandboxRebuild(sandboxName, args = [], opts = {}) {
 // ── Upgrade sandboxes (#1904) ────────────────────────────────────
 // Detect sandboxes running stale agent versions and offer to rebuild them.
 
-async function upgradeSandboxes(args = []) {
+async function upgradeSandboxes(args: string[] = []): Promise<void> {
   const checkOnly = args.includes("--check");
   const auto = args.includes("--auto");
   const skipConfirm = auto || args.includes("--yes");
@@ -2575,8 +2656,8 @@ async function upgradeSandboxes(args = []) {
     return;
   }
 
-  const rebuildable = stale.filter((s) => s.running);
-  const stopped = stale.filter((s) => !s.running);
+  const rebuildable = stale.filter((s: { running: boolean }) => s.running);
+  const stopped = stale.filter((s: { running: boolean }) => !s.running);
   if (stopped.length > 0) {
     console.log(`  ${D}Skipping ${stopped.length} stopped sandbox(es) — start them first.${R}`);
   }
@@ -2599,7 +2680,8 @@ async function upgradeSandboxes(args = []) {
       await sandboxRebuild(s.name, ["--yes"], { throwOnError: true });
       rebuilt++;
     } catch (err) {
-      console.error(`  ${YW}\u26a0${R} Failed to rebuild '${s.name}': ${err.message}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error(`  ${YW}\u26a0${R} Failed to rebuild '${s.name}': ${errorMessage}`);
       failed++;
     }
   }
@@ -2614,8 +2696,8 @@ async function upgradeSandboxes(args = []) {
 
 // ── Snapshot ─────────────────────────────────────────────────────
 
-function parseSnapshotCreateFlags(flags) {
-  const opts = { name: null };
+function parseSnapshotCreateFlags(flags: string[]) {
+  const opts: { name: string | null } = { name: null };
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i];
     if (flag === "--name") {
@@ -2632,11 +2714,18 @@ function parseSnapshotCreateFlags(flags) {
   return opts;
 }
 
-function formatSnapshotVersion(b) {
+function formatSnapshotVersion(b: { snapshotVersion: number }) {
   return `v${b.snapshotVersion}`;
 }
 
-function renderSnapshotTable(backups) {
+function renderSnapshotTable(
+  backups: Array<{
+    snapshotVersion: number;
+    name?: string | null;
+    timestamp: string;
+    backupPath: string;
+  }>,
+) {
   const rows = backups.map((b) => ({
     version: formatSnapshotVersion(b),
     name: b.name || "",
@@ -2649,7 +2738,7 @@ function renderSnapshotTable(backups) {
     timestamp: Math.max(9, ...rows.map((r) => r.timestamp.length)),
     backupPath: Math.max(4, ...rows.map((r) => r.backupPath.length)),
   };
-  const pad = (s, n) => s + " ".repeat(Math.max(0, n - s.length));
+  const pad = (s: string, n: number) => s + " ".repeat(Math.max(0, n - s.length));
   console.log(
     `    ${B}${pad("Version", widths.version)}  ${pad("Name", widths.name)}  ${pad("Timestamp", widths.timestamp)}  ${pad("Path", widths.backupPath)}${R}`,
   );
@@ -2660,7 +2749,7 @@ function renderSnapshotTable(backups) {
   }
 }
 
-function sandboxSnapshot(sandboxName, subArgs) {
+function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
   const subcommand = subArgs[0] || "help";
   switch (subcommand) {
     case "create": {
@@ -2832,7 +2921,7 @@ function backupAll() {
 
 // ── Garbage collection ──────────────────────────────────────────
 
-async function garbageCollectImages(args = []) {
+async function garbageCollectImages(args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm = args.includes("--yes") || args.includes("--force");
 
@@ -2849,9 +2938,9 @@ async function garbageCollectImages(args = []) {
 
   const allImages = (imagesResult.stdout || "")
     .split("\n")
-    .map((line) => line.trim())
+    .map((line: string) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .map((line: string) => {
       const [tag, size] = line.split("\t");
       return { tag, size: size || "unknown" };
     });
@@ -2869,7 +2958,7 @@ async function garbageCollectImages(args = []) {
   }
 
   // 3. Cross-reference to find orphans
-  const orphans = allImages.filter((img) => !registeredTags.has(img.tag));
+  const orphans = allImages.filter((img: { tag: string; id: string }) => !registeredTags.has(img.tag));
 
   if (orphans.length === 0) {
     console.log(`  All ${allImages.length} sandbox image(s) are in use. Nothing to clean up.`);
@@ -3119,7 +3208,7 @@ const [cmd, ...args] = process.argv.slice(2);
     await recoverRegistryEntries({ requestedSandboxName: cmd });
     if (!registry.getSandbox(cmd)) {
       console.error(`  Sandbox '${cmd}' does not exist.`);
-      const allNames = registry.listSandboxes().sandboxes.map((s) => s.name);
+      const allNames = registry.listSandboxes().sandboxes.map((s: { name: string }) => s.name);
       if (allNames.length > 0) {
         console.error("");
         console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
@@ -3174,7 +3263,7 @@ const [cmd, ...args] = process.argv.slice(2);
         const shieldsFlags = actionArgs.slice(1);
         switch (shieldsSub) {
           case "down": {
-            const opts = { timeout: null, reason: null, policy: "permissive" };
+            const opts: { timeout: string | null; reason: string | null; policy: string } = { timeout: null, reason: null, policy: "permissive" };
             for (let i = 0; i < shieldsFlags.length; i++) {
               if (shieldsFlags[i] === "--timeout") {
                 if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
@@ -3254,7 +3343,7 @@ const [cmd, ...args] = process.argv.slice(2);
         const configSub = actionArgs[0];
         switch (configSub) {
           case "get": {
-            const configOpts = { key: null, format: "json" };
+            const configOpts: { key: string | null; format: string } = { key: null, format: "json" };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") configOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--format") configOpts.format = actionArgs[++i];
@@ -3263,7 +3352,7 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "set": {
-            const setOpts = { key: null, value: null, restart: false };
+            const setOpts: { key: string | null; value: string | null; restart: boolean } = { key: null, value: null, restart: false };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") setOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--value") setOpts.value = actionArgs[++i];
@@ -3273,7 +3362,7 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "rotate-token": {
-            const tokenOpts = { fromEnv: null, fromStdin: false };
+            const tokenOpts: { fromEnv: string | null; fromStdin: boolean } = { fromEnv: null, fromStdin: false };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--from-env") tokenOpts.fromEnv = actionArgs[++i];
               else if (actionArgs[i] === "--from-stdin") tokenOpts.fromStdin = true;
@@ -3305,7 +3394,7 @@ const [cmd, ...args] = process.argv.slice(2);
   console.error("");
 
   // Check if it looks like a sandbox name with missing action
-  const allNames = registry.listSandboxes().sandboxes.map((s) => s.name);
+  const allNames = registry.listSandboxes().sandboxes.map((s: { name: string }) => s.name);
   if (allNames.length > 0) {
     console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
     console.error(`  Try: nemoclaw <sandbox-name> connect`);

@@ -22,6 +22,10 @@ interface ConfigTarget {
   files: string[];
 }
 
+type ConfigScalar = string | number | boolean | null;
+type ConfigValue = ConfigScalar | ConfigObject | ConfigValue[];
+type ConfigObject = { [key: string]: ConfigValue };
+
 /** All config files validated by default (paths relative to repo root). */
 function discoverTargets(): ConfigTarget[] {
   const targets: ConfigTarget[] = [
@@ -54,7 +58,8 @@ function discoverTargets(): ConfigTarget[] {
       console.warn("WARN: presets directory exists but contains no .yaml/.yml files — no preset validation performed");
     }
   } catch (err) {
-    const code = (err as { code?: string }).code;
+    const code =
+      typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
     if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
     // presets directory may not exist — not an error
   }
@@ -62,7 +67,7 @@ function discoverTargets(): ConfigTarget[] {
   return targets;
 }
 
-function loadFile(repoRelative: string): unknown {
+function loadFile(repoRelative: string): ConfigValue {
   const abs = join(REPO_ROOT, repoRelative);
   const raw = readFileSync(abs, "utf-8");
   if (repoRelative.endsWith(".yaml") || repoRelative.endsWith(".yml")) {
@@ -73,10 +78,18 @@ function loadFile(repoRelative: string): unknown {
 
 function loadSchema(repoRelative: string): object {
   const abs = join(REPO_ROOT, repoRelative);
-  return JSON.parse(readFileSync(abs, "utf-8")) as object;
+  const schema: object = JSON.parse(readFileSync(abs, "utf-8"));
+  return schema;
 }
 
-function formatError(err: { instancePath: string; keyword?: string; message?: string; params?: Record<string, unknown> }): string {
+type ValidationParams = { additionalProperty?: string; unevaluatedProperty?: string };
+
+function formatError(err: {
+  instancePath: string;
+  keyword?: string;
+  message?: string;
+  params?: ValidationParams;
+}): string {
   const path = err.instancePath || "/";
   const detail = err.params?.additionalProperty
     ? `${err.message} '${err.params.additionalProperty}'`
@@ -133,7 +146,7 @@ function main(): void {
 
     for (const file of target.files) {
       totalFiles++;
-      let data: unknown;
+      let data: ConfigValue;
       try {
         data = loadFile(file);
       } catch (err) {

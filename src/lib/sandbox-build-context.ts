@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -6,11 +5,24 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-function createBuildContextDir(tmpDir = os.tmpdir()) {
+type BuildContextStageResult = {
+  buildCtx: string;
+  stagedDockerfile: string;
+};
+
+type BuildContextStats = {
+  fileCount: number;
+  totalBytes: number;
+};
+
+function createBuildContextDir(tmpDir: string = os.tmpdir()): string {
   return fs.mkdtempSync(path.join(tmpDir, "nemoclaw-build-"));
 }
 
-function stageLegacySandboxBuildContext(rootDir, tmpDir = os.tmpdir()) {
+function stageLegacySandboxBuildContext(
+  rootDir: string,
+  tmpDir: string = os.tmpdir(),
+): BuildContextStageResult {
   const buildCtx = createBuildContextDir(tmpDir);
   fs.copyFileSync(path.join(rootDir, "Dockerfile"), path.join(buildCtx, "Dockerfile"));
   fs.cpSync(path.join(rootDir, "nemoclaw"), path.join(buildCtx, "nemoclaw"), { recursive: true });
@@ -25,7 +37,10 @@ function stageLegacySandboxBuildContext(rootDir, tmpDir = os.tmpdir()) {
   };
 }
 
-function stageOptimizedSandboxBuildContext(rootDir, tmpDir = os.tmpdir()) {
+function stageOptimizedSandboxBuildContext(
+  rootDir: string,
+  tmpDir: string = os.tmpdir(),
+): BuildContextStageResult {
   const buildCtx = createBuildContextDir(tmpDir);
   const stagedDockerfile = path.join(buildCtx, "Dockerfile");
   const sourceNemoclawDir = path.join(rootDir, "nemoclaw");
@@ -73,11 +88,11 @@ function stageOptimizedSandboxBuildContext(rootDir, tmpDir = os.tmpdir()) {
   return { buildCtx, stagedDockerfile };
 }
 
-function collectBuildContextStats(dir) {
+function collectBuildContextStats(dir: string): BuildContextStats {
   let fileCount = 0;
   let totalBytes = 0;
 
-  function walk(currentDir) {
+  function walk(currentDir: string): void {
     for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
       const entryPath = path.join(currentDir, entry.name);
       if (entry.isDirectory()) {

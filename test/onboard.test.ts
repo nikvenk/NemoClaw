@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -9,7 +8,101 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import {
+import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context";
+
+type ShimScalar = string | number | boolean | null | undefined;
+type ShimCallable = (...args: readonly string[]) => ShimValue;
+type ShimValue = ShimScalar | { [key: string]: ShimValue } | ShimValue[] | ShimCallable;
+type ShimFn<TReturn = void> = (...args: ShimValue[]) => TReturn;
+type CommandEntry = {
+  command: string;
+  env?: Record<string, string | undefined>;
+};
+type DashboardAccess = { label: string; url: string };
+type ResumeConflict = { field: string; requested: string | null; recorded: string | null };
+type SandboxInferenceConfig = {
+  providerKey: string;
+  primaryModelRef: string;
+  inferenceBaseUrl: string;
+  inferenceApi: string;
+  inferenceCompat: ShimValue;
+};
+type ValidationClassification = { kind: string; retry: string };
+
+type OnboardTestInternals = {
+  buildProviderArgs: (
+    action: "create" | "update",
+    name: string,
+    type: string,
+    credentialEnv: string,
+    baseUrl: string | null,
+  ) => string[];
+  buildSandboxConfigSyncScript: ShimFn<string>;
+  classifySandboxCreateFailure: (output?: string) => { kind: string; uploadedToGateway: boolean };
+  compactText: (value?: string) => string;
+  computeSetupPresetSuggestions: ShimFn<string[]>;
+  formatEnvAssignment: (name: string, value: string) => string;
+  getDashboardAccessInfo: ShimFn<DashboardAccess[]>;
+  getDashboardForwardStartCommand: ShimFn<string>;
+  getNavigationChoice: (value?: string | null) => string | null;
+  getGatewayReuseState: ShimFn<string>;
+  getPortConflictServiceHints: (platform?: string) => string[];
+  getFutureShellPathHint: (binDir: string, pathValue?: string) => string | null;
+  getSandboxInferenceConfig: ShimFn<SandboxInferenceConfig>;
+  getInstalledOpenshellVersion: (versionOutput?: string | null) => string | null;
+  getBlueprintMinOpenshellVersion: (rootDir?: string) => string | null;
+  getBlueprintMaxOpenshellVersion: (rootDir?: string) => string | null;
+  versionGte: (left?: string | null, right?: string | null) => boolean;
+  getRequestedModelHint: ShimFn<string | null>;
+  getRequestedProviderHint: ShimFn<string | null>;
+  getRequestedSandboxNameHint: ShimFn<string | null>;
+  getResumeConfigConflicts: ShimFn<ResumeConflict[]>;
+  getResumeSandboxConflict: ShimFn<{ requestedSandboxName: string; recordedSandboxName: string } | null>;
+  getSandboxStateFromOutputs: ShimFn<string>;
+  getStableGatewayImageRef: (versionOutput?: string | null) => string | null;
+  getSuggestedPolicyPresets: ShimFn<string[]>;
+  isGatewayHealthy: ShimFn<boolean>;
+  classifyValidationFailure: ShimFn<ValidationClassification>;
+  hasResponsesToolCall: (body?: string | null) => boolean;
+  isLoopbackHostname: (hostname?: string) => boolean;
+  normalizeProviderBaseUrl: (value: string | null | undefined, flavor: "openai" | "anthropic") => string;
+  parsePolicyPresetEnv: (value: string | null) => string[];
+  patchStagedDockerfile: ShimFn<void>;
+  pullAndResolveBaseImageDigest: () => { digest: string; ref: string } | null;
+  SANDBOX_BASE_IMAGE: string;
+  printSandboxCreateRecoveryHints: ShimFn<void>;
+  resolveDashboardForwardTarget: (chatUiUrl?: string) => string;
+  summarizeCurlFailure: ShimFn<string>;
+  summarizeProbeFailure: ShimFn<string>;
+  shouldIncludeBuildContextPath: ShimFn<boolean>;
+  writeSandboxConfigSyncFile: (script: string) => string;
+};
+
+function parseStdoutJson<T>(stdout: string): T {
+  const line = stdout.trim().split("\n").pop();
+  assert.ok(line, `expected JSON payload in stdout:\n${stdout}`);
+  return JSON.parse(line);
+}
+
+function isOnboardTestInternals(value: object | null): value is OnboardTestInternals {
+  return (
+    value !== null &&
+    typeof Reflect.get(value, "buildProviderArgs") === "function" &&
+    typeof Reflect.get(value, "classifySandboxCreateFailure") === "function" &&
+    typeof Reflect.get(value, "writeSandboxConfigSyncFile") === "function"
+  );
+}
+
+const loadedOnboardInternals = require("../dist/lib/onboard");
+const onboardTestInternals =
+  typeof loadedOnboardInternals === "object" && loadedOnboardInternals !== null
+    ? loadedOnboardInternals
+    : null;
+if (!isOnboardTestInternals(onboardTestInternals)) {
+  throw new Error("Expected onboard test internals to expose helper functions");
+}
+
+const {
   buildProviderArgs,
   buildSandboxConfigSyncScript,
   classifySandboxCreateFailure,
@@ -50,9 +143,7 @@ import {
   summarizeProbeFailure,
   shouldIncludeBuildContextPath,
   writeSandboxConfigSyncFile,
-} from "../dist/lib/onboard";
-import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context";
-import { buildWebSearchDockerConfig } from "../dist/lib/web-search";
+} = onboardTestInternals;
 
 describe("onboard helpers", () => {
   it("classifies sandbox create timeout failures and tracks upload progress", () => {
@@ -206,8 +297,8 @@ describe("onboard helpers", () => {
         enabledChannels: ["telegram", "slack"],
         knownPresetNames: known,
       });
-      expect(suggestions.filter((n) => n === "telegram")).toHaveLength(1);
-      expect(suggestions.filter((n) => n === "slack")).toHaveLength(1);
+      expect(suggestions.filter((n: string) => n === "telegram")).toHaveLength(1);
+      expect(suggestions.filter((n: string) => n === "slack")).toHaveLength(1);
     });
 
     it("drops channel names that are not known presets", () => {
@@ -497,7 +588,7 @@ describe("onboard helpers", () => {
       env: { WSL_DISTRO_NAME: "Ubuntu" },
       platform: "linux",
       release: "6.6.87.2-microsoft-standard-WSL2",
-      runCapture: (command) => (command.includes("hostname -I") ? "172.24.240.1\n" : ""),
+      runCapture: (command: string) => (command.includes("hostname -I") ? "172.24.240.1\n" : ""),
     });
 
     expect(access).toEqual([
@@ -918,6 +1009,9 @@ describe("onboard helpers", () => {
     const repoRoot = path.resolve(import.meta.dirname, "..");
     const v = getBlueprintMinOpenshellVersion(repoRoot);
     expect(v).not.toBe(null);
+    if (!v) {
+      throw new Error("expected min_openshell_version in shipped blueprint");
+    }
     expect(/^[0-9]+\.[0-9]+\.[0-9]+/.test(v)).toBe(true);
   });
 
@@ -965,6 +1059,9 @@ describe("onboard helpers", () => {
     const repoRoot = path.resolve(import.meta.dirname, "..");
     const v = getBlueprintMaxOpenshellVersion(repoRoot);
     expect(v).not.toBe(null);
+    if (!v) {
+      throw new Error("expected max_openshell_version in shipped blueprint");
+    }
     expect(/^[0-9]+\.[0-9]+\.[0-9]+/.test(v)).toBe(true);
   });
 
@@ -1630,7 +1727,7 @@ const { setupInference } = require(${onboardPath});
     });
 
     expect(result.status).toBe(0);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<CommandEntry[]>(result.stdout);
     assert.equal(commands.length, 4);
     assert.match(commands[0].command, /gateway select nemoclaw/);
     assert.match(commands[1].command, /provider get/);
@@ -1875,7 +1972,7 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<CommandEntry[]>(result.stdout);
     assert.equal(commands.length, 4);
     assert.match(commands[0].command, /gateway select nemoclaw/);
     assert.match(commands[1].command, /provider get/);
@@ -1949,7 +2046,7 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<CommandEntry[]>(result.stdout);
     assert.equal(commands.length, 4);
     assert.match(commands[0].command, /gateway select nemoclaw/);
     assert.match(commands[1].command, /provider get/);
@@ -2034,12 +2131,16 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      key: string;
+      inferenceSetCalls: number;
+      commands: CommandEntry[];
+    }>(result.stdout);
     assert.equal(payload.key, "sk-good");
     assert.equal(payload.inferenceSetCalls, 2);
     const providerEnvs = payload.commands
-      .filter((entry) => entry.command.includes("provider"))
-      .map((entry) => entry.env && entry.env.OPENAI_API_KEY)
+      .filter((entry: CommandEntry) => entry.command.includes("provider"))
+      .map((entry: CommandEntry) => entry.env && entry.env.OPENAI_API_KEY)
       .filter(Boolean);
     assert.deepEqual(providerEnvs, ["sk-bad", "sk-good"]);
   });
@@ -2102,10 +2203,13 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      result: { retry: "selection" };
+      commands: CommandEntry[];
+    }>(result.stdout);
     assert.deepEqual(payload.result, { retry: "selection" });
     assert.equal(
-      payload.commands.filter((entry) => entry.command.includes("inference set")).length,
+      payload.commands.filter((entry: CommandEntry) => entry.command.includes("inference set")).length,
       1,
     );
   });
@@ -2163,7 +2267,7 @@ const { setupInference } = require(${onboardPath});
 
     assert.match(
       source,
-      /startRecordedStep\("sandbox", \{ sandboxName, provider, model \}\);\s*selectedMessagingChannels = await setupMessagingChannels\(\);\s*onboardSession\.updateSession\(\(current\) => \{\s*current\.messagingChannels = selectedMessagingChannels;\s*return current;\s*\}\);\s*sandboxName = await createSandbox\(\s*gpu,\s*model,\s*provider,\s*preferredInferenceApi,\s*sandboxName,\s*nextWebSearchConfig,\s*selectedMessagingChannels,\s*fromDockerfile,\s*agent,\s*dangerouslySkipPermissions,\s*\);/,
+      /startRecordedStep\("sandbox", \{ sandboxName, provider, model \}\);\s*selectedMessagingChannels = await setupMessagingChannels\(\);\s*onboardSession\.updateSession\(\(current[^)]*\) => \{\s*current\.messagingChannels = selectedMessagingChannels;\s*return current;\s*\}\);[\s\S]*?sandboxName = await createSandbox\(\s*gpu,\s*model,\s*provider,\s*preferredInferenceApi,\s*sandboxName,\s*nextWebSearchConfig,\s*selectedMessagingChannels,\s*fromDockerfile,\s*agent,\s*dangerouslySkipPermissions,\s*\);/,
     );
   });
 
@@ -2173,8 +2277,8 @@ const { setupInference } = require(${onboardPath});
       "utf-8",
     );
 
-    assert.match(source, /const ONBOARD_STEP_INDEX = \{/);
-    assert.match(source, /function skippedStepMessage\(stepName, detail, reason = "resume"\)/);
+    assert.match(source, /const ONBOARD_STEP_INDEX(?::[^=]+)? = \{/);
+    assert.match(source, /function skippedStepMessage\([\s\S]*?reason[^=]*= "resume"[\s\S]*?\)/);
     assert.match(source, /step\(stepInfo\.number, 8, stepInfo\.title\);/);
     assert.match(source, /skippedStepMessage\("openclaw", sandboxName\)/);
     assert.match(
@@ -2286,11 +2390,16 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      openai: string;
+      commands: CommandEntry[];
+    }>(result.stdout);
     assert.equal(payload.openai, "sk-stored-secret");
     // commands[0]=gateway select, [1]=provider get, [2]=provider update
-    assert.equal(payload.commands[2].env.OPENAI_API_KEY, "sk-stored-secret");
-    assert.doesNotMatch(payload.commands[2].command, /sk-stored-secret/);
+    const providerUpdate = payload.commands[2];
+    assert.ok(providerUpdate, "expected provider update command");
+    assert.equal(providerUpdate.env?.OPENAI_API_KEY, "sk-stored-secret");
+    assert.doesNotMatch(providerUpdate.command, /sk-stored-secret/);
   });
 
   it("drops stale local sandbox registry entries when the live sandbox is gone", () => {
@@ -2433,7 +2542,7 @@ const { createSandbox } = require(${onboardPath});
     assert.ok(payloadLine, `expected JSON payload in stdout:\n${result.stdout}`);
     const payload = JSON.parse(payloadLine);
     assert.equal(payload.sandboxName, "my-assistant");
-    const createCommand = payload.commands.find((entry) =>
+    const createCommand = payload.commands.find((entry: CommandEntry) =>
       entry.command.includes("sandbox create"),
     );
     assert.ok(createCommand, "expected sandbox create command");
@@ -2445,7 +2554,7 @@ const { createSandbox } = require(${onboardPath});
     assert.doesNotMatch(createCommand.command, /SLACK_BOT_TOKEN=/);
     assert.ok(
       payload.commands.some(
-        (entry) =>
+        (entry: CommandEntry) =>
           entry.command.includes("forward start --background 18789 my-assistant") ||
           entry.command.includes("forward start --background 0.0.0.0:18789 my-assistant"),
       ),
@@ -2533,9 +2642,9 @@ const { createSandbox } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<CommandEntry[]>(result.stdout);
     assert.ok(
-      commands.some((entry) =>
+      commands.some((entry: CommandEntry) =>
         entry.command.includes("forward start --background 0.0.0.0:18789 my-assistant"),
       ),
       "expected remote dashboard forward target",
@@ -2641,7 +2750,7 @@ const { createSandbox } = require(${onboardPath});
       .find((line) => line.startsWith("{") && line.endsWith("}"));
     assert.ok(payloadLine, `expected JSON payload in stdout:\n${result.stdout}`);
     const payload = JSON.parse(payloadLine);
-    const createCommand = payload.commands.find((entry) =>
+    const createCommand = payload.commands.find((entry: CommandEntry) =>
       entry.command.includes("sandbox create"),
     );
     assert.ok(createCommand, "expected sandbox create command");
@@ -2652,18 +2761,18 @@ const { createSandbox } = require(${onboardPath});
     // Forward must use same-port mapping (openshell does not support asymmetric)
     assert.ok(
       payload.commands.some(
-        (entry) =>
+        (entry: CommandEntry) =>
           entry.command.includes("forward start --background 19000 my-assistant") ||
           entry.command.includes("forward start --background 0.0.0.0:19000 my-assistant"),
       ),
       "expected dashboard forward for port 19000",
     );
     assert.ok(
-      !payload.commands.some((entry) => entry.command.includes("19000:18789")),
+      !payload.commands.some((entry: CommandEntry) => entry.command.includes("19000:18789")),
       "forward must not use asymmetric 19000:18789 mapping",
     );
     assert.ok(
-      !payload.commands.some((entry) => entry.command.includes("19000:19000")),
+      !payload.commands.some((entry: CommandEntry) => entry.command.includes("19000:19000")),
       "forward must not use port:port form (openshell does not support it)",
     );
   });
@@ -2769,29 +2878,29 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       // Verify providers were created with the right credential keys
-      const providerCommands = payload.commands.filter((e) =>
+      const providerCommands = payload.commands.filter((e: CommandEntry) =>
         e.command.includes("provider create"),
       );
-      const discordProvider = providerCommands.find((e) =>
+      const discordProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-discord-bridge"),
       );
       assert.ok(discordProvider, "expected my-assistant-discord-bridge provider create command");
       assert.match(discordProvider.command, /--credential DISCORD_BOT_TOKEN/);
 
-      const slackProvider = providerCommands.find((e) =>
+      const slackProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-slack-bridge"),
       );
       assert.ok(slackProvider, "expected my-assistant-slack-bridge provider create command");
       assert.match(slackProvider.command, /--credential SLACK_BOT_TOKEN/);
 
-      const telegramProvider = providerCommands.find((e) =>
+      const telegramProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-telegram-bridge"),
       );
       assert.ok(telegramProvider, "expected my-assistant-telegram-bridge provider create command");
       assert.match(telegramProvider.command, /--credential TELEGRAM_BOT_TOKEN/);
 
       // Verify sandbox create includes --provider flags for all three
-      const createCommand = payload.commands.find((e) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
       assert.ok(createCommand, "expected sandbox create command");
       assert.match(createCommand.command, /--provider my-assistant-discord-bridge/);
       assert.match(createCommand.command, /--provider my-assistant-slack-bridge/);
@@ -3006,26 +3115,26 @@ const { createSandbox } = require(${onboardPath});
 
       assert.equal(payload.sandboxName, "my-assistant", "should reuse existing sandbox");
       assert.ok(
-        payload.commands.every((entry) => !entry.command.includes("sandbox create")),
+        payload.commands.every((entry: CommandEntry) => !entry.command.includes("sandbox create")),
         "should NOT recreate sandbox when providers already exist in gateway",
       );
       assert.ok(
-        payload.commands.every((entry) => !entry.command.includes("sandbox delete")),
+        payload.commands.every((entry: CommandEntry) => !entry.command.includes("sandbox delete")),
         "should NOT delete sandbox when providers already exist in gateway",
       );
 
       // Providers should still be upserted on reuse (credential refresh).
       // Since the mock reports providers as existing (run returns status 0),
       // upsertProvider issues 'update' rather than 'create'.
-      const providerUpserts = payload.commands.filter((entry) =>
+      const providerUpserts = payload.commands.filter((entry: CommandEntry) =>
         entry.command.includes("provider update"),
       );
       assert.ok(
-        providerUpserts.some((e) => e.command.includes("my-assistant-discord-bridge")),
+        providerUpserts.some((e: CommandEntry) => e.command.includes("my-assistant-discord-bridge")),
         "should upsert discord provider on reuse to refresh credentials",
       );
       assert.ok(
-        providerUpserts.some((e) => e.command.includes("my-assistant-slack-bridge")),
+        providerUpserts.some((e: CommandEntry) => e.command.includes("my-assistant-slack-bridge")),
         "should upsert slack provider on reuse to refresh credentials",
       );
     },
@@ -3086,7 +3195,7 @@ const { createSandbox } = require(${onboardPath});
 `;
       fs.writeFileSync(scriptPath, script);
 
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: tmpDir,
         PATH: `${fakeBin}:${process.env.PATH || ""}`,
@@ -3203,11 +3312,11 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       assert.ok(
-        payload.commands.some((entry) => entry.command.includes("sandbox delete")),
+        payload.commands.some((entry: CommandEntry) => entry.command.includes("sandbox delete")),
         "should delete existing sandbox when --recreate-sandbox is set",
       );
       assert.ok(
-        payload.commands.some((entry) => entry.command.includes("sandbox create")),
+        payload.commands.some((entry: CommandEntry) => entry.command.includes("sandbox create")),
         "should create a new sandbox when --recreate-sandbox is set",
       );
     },
@@ -3415,7 +3524,7 @@ const { createSandbox } = require(${onboardPath});
       fs.writeFileSync(scriptPath, script);
 
       // Run WITHOUT NEMOCLAW_NON_INTERACTIVE to exercise interactive path
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: tmpDir,
         PATH: `${fakeBin}:${process.env.PATH || ""}`,
@@ -3440,11 +3549,11 @@ const { createSandbox } = require(${onboardPath});
 
       assert.equal(payload.sandboxName, "my-assistant", "should reuse when user answers y");
       assert.ok(
-        payload.commands.every((entry) => !entry.command.includes("sandbox create")),
+        payload.commands.every((entry: CommandEntry) => !entry.command.includes("sandbox create")),
         "should NOT recreate sandbox when user chooses to reuse",
       );
       assert.ok(
-        payload.commands.every((entry) => !entry.command.includes("sandbox delete")),
+        payload.commands.every((entry: CommandEntry) => !entry.command.includes("sandbox delete")),
         "should NOT delete sandbox when user chooses to reuse",
       );
       assert.ok(
@@ -3552,7 +3661,7 @@ const { createSandbox } = require(${onboardPath});
       fs.writeFileSync(scriptPath, script);
 
       // Run WITHOUT NEMOCLAW_NON_INTERACTIVE to exercise interactive path
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: tmpDir,
         PATH: `${fakeBin}:${process.env.PATH || ""}`,
@@ -3576,11 +3685,11 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       assert.ok(
-        payload.commands.some((entry) => /sandbox.*delete/.test(String(entry.command))),
+        payload.commands.some((entry: CommandEntry) => /sandbox.*delete/.test(String(entry.command))),
         "should delete existing sandbox when user confirms recreate",
       );
       assert.ok(
-        payload.commands.some((entry) => /sandbox.*create/.test(String(entry.command))),
+        payload.commands.some((entry: CommandEntry) => /sandbox.*create/.test(String(entry.command))),
         "should create a new sandbox when user confirms recreate",
       );
       assert.ok(
@@ -3683,7 +3792,7 @@ const { createSandbox } = require(${onboardPath});
       fs.writeFileSync(scriptPath, script);
 
       // Run WITHOUT NEMOCLAW_NON_INTERACTIVE to exercise interactive path
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: tmpDir,
         PATH: `${fakeBin}:${process.env.PATH || ""}`,
@@ -3707,11 +3816,11 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       assert.ok(
-        payload.commands.some((entry) => entry.command.includes("sandbox delete")),
+        payload.commands.some((entry: CommandEntry) => entry.command.includes("sandbox delete")),
         "should delete not-ready sandbox after user confirms",
       );
       assert.ok(
-        payload.commands.some((entry) => entry.command.includes("sandbox create")),
+        payload.commands.some((entry: CommandEntry) => entry.command.includes("sandbox create")),
         "should recreate sandbox when existing one is not ready",
       );
       assert.ok(result.stdout.includes("not ready"), "should mention sandbox is not ready");
@@ -3782,7 +3891,10 @@ console.log(JSON.stringify({ result, commands }));
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      result: { ok: true };
+      commands: string[];
+    }>(result.stdout);
     assert.deepEqual(payload.result, { ok: true });
     assert.equal(payload.commands.length, 2);
     assert.match(payload.commands[0], /provider get/);
@@ -3866,7 +3978,10 @@ console.log(JSON.stringify({ result, commands }));
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      result: { ok: true };
+      commands: string[];
+    }>(result.stdout);
     assert.deepEqual(payload.result, { ok: true });
     assert.equal(payload.commands.length, 2);
     assert.match(payload.commands[0], /provider get/);
@@ -3911,7 +4026,11 @@ console.log(JSON.stringify(result));
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      ok: false;
+      status: number;
+      message: string;
+    }>(result.stdout);
     assert.equal(payload.ok, false);
     assert.equal(payload.status, 1);
     assert.match(payload.message, /gateway unreachable/);
@@ -3948,7 +4067,7 @@ console.log(JSON.stringify({ exists: providerExistsInGateway("discord-bridge") }
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{ exists: boolean }>(result.stdout);
     assert.equal(payload.exists, true);
   });
 
@@ -3997,7 +4116,12 @@ console.log(JSON.stringify({
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      nullResult: null;
+      hydrated: string;
+      envSet: string;
+      missing: null;
+    }>(result.stdout);
     assert.equal(payload.nullResult, null, "should return null for null input");
     assert.equal(
       payload.hydrated,
@@ -4043,7 +4167,7 @@ console.log(JSON.stringify({ exists: providerExistsInGateway("nonexistent") }));
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{ exists: boolean }>(result.stdout);
     assert.equal(payload.exists, false);
   });
 
@@ -4228,22 +4352,25 @@ const { createSandbox } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop());
+    const payload = parseStdoutJson<{
+      sandboxName: string;
+      commands: CommandEntry[];
+    }>(result.stdout);
     assert.equal(payload.sandboxName, "my-assistant");
     assert.ok(
-      payload.commands.some((entry) =>
+      payload.commands.some((entry: CommandEntry) =>
         entry.command.includes("forward start --background 0.0.0.0:18789 my-assistant"),
       ),
       "expected dashboard forward restore on sandbox reuse",
     );
     assert.ok(
-      payload.commands.every((entry) => !entry.command.includes("sandbox create")),
+      payload.commands.every((entry: CommandEntry) => !entry.command.includes("sandbox create")),
       "did not expect sandbox create when reusing existing sandbox",
     );
   });
 
   it("prints resume guidance when sandbox image upload times out", () => {
-    const errors = [];
+    const errors: string[] = [];
     const originalError = console.error;
     console.error = (...args) => errors.push(args.join(" "));
     try {
@@ -4269,7 +4396,7 @@ const { createSandbox } = require(${onboardPath});
   });
 
   it("prints resume guidance when sandbox image upload resets after transfer progress", () => {
-    const errors = [];
+    const errors: string[] = [];
     const originalError = console.error;
     console.error = (...args) => errors.push(args.join(" "));
     try {
@@ -4360,7 +4487,7 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<string[]>(result.stdout);
     // gateway select + provider get + provider update + inference set
     assert.equal(commands.length, 4);
   });
@@ -4431,7 +4558,7 @@ const { setupInference } = require(${onboardPath});
     });
 
     assert.equal(result.status, 0, result.stderr);
-    const commands = JSON.parse(result.stdout.trim().split("\n").pop());
+    const commands = parseStdoutJson<string[]>(result.stdout);
     // gateway select + provider get + provider update + inference set
     assert.equal(commands.length, 4);
   });
@@ -4538,27 +4665,27 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       // Only telegram provider should be created
-      const providerCommands = payload.commands.filter((e) =>
+      const providerCommands = payload.commands.filter((e: CommandEntry) =>
         e.command.includes("provider create"),
       );
-      const telegramProvider = providerCommands.find((e) =>
+      const telegramProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-telegram-bridge"),
       );
       assert.ok(telegramProvider, "expected telegram provider to be created");
 
       // Discord and slack providers should NOT be created
-      const discordProvider = providerCommands.find((e) =>
+      const discordProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-discord-bridge"),
       );
       assert.ok(!discordProvider, "discord provider should be filtered out");
 
-      const slackProvider = providerCommands.find((e) =>
+      const slackProvider = providerCommands.find((e: CommandEntry) =>
         e.command.includes("my-assistant-slack-bridge"),
       );
       assert.ok(!slackProvider, "slack provider should be filtered out");
 
       // Sandbox create should only have the telegram --provider flag
-      const createCommand = payload.commands.find((e) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
       assert.ok(createCommand, "expected sandbox create command");
       assert.match(createCommand.command, /--provider my-assistant-telegram-bridge/);
       assert.doesNotMatch(createCommand.command, /my-assistant-discord-bridge/);
@@ -4666,7 +4793,7 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       // No messaging providers should be created at all
-      const providerCommands = payload.commands.filter((e) =>
+      const providerCommands = payload.commands.filter((e: CommandEntry) =>
         e.command.includes("provider create"),
       );
       assert.equal(
@@ -4676,7 +4803,7 @@ const { createSandbox } = require(${onboardPath});
       );
 
       // Sandbox create should have no --provider flags for messaging bridges
-      const createCommand = payload.commands.find((e) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
       assert.ok(createCommand, "expected sandbox create command");
       assert.doesNotMatch(createCommand.command, /discord-bridge/);
       assert.doesNotMatch(createCommand.command, /slack-bridge/);
@@ -4749,8 +4876,7 @@ const { setupMessagingChannels } = require(${onboardPath});
       });
 
       assert.equal(result.status, 0, result.stderr);
-      const outputLine = result.stdout.trim().split("\n").pop();
-      const channels = JSON.parse(outputLine);
+      const channels = parseStdoutJson<string[]>(result.stdout);
 
       // Should return only the channels that have tokens set
       assert.ok(Array.isArray(channels), "expected an array return value");
@@ -4815,8 +4941,7 @@ const { setupMessagingChannels } = require(${onboardPath});
       });
 
       assert.equal(result.status, 0, result.stderr);
-      const outputLine = result.stdout.trim().split("\n").pop();
-      const channels = JSON.parse(outputLine);
+      const channels = parseStdoutJson<string[]>(result.stdout);
 
       assert.ok(Array.isArray(channels), "expected an array return value");
       assert.equal(channels.length, 0, "expected empty array when no tokens are set");

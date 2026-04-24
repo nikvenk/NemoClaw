@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -15,7 +14,7 @@ type Options = {
 };
 
 const REPO_ROOT = process.cwd();
-const RUNTIME_MOVES = moveMap.runtimeMoves as Record<string, string>;
+const RUNTIME_MOVES: Record<string, string> = moveMap.runtimeMoves;
 
 function parseArgs(argv: string[]): Options {
   const prs: number[] = [];
@@ -75,7 +74,7 @@ function printHelp() {
 
 function run(
   command: string,
-  args: string[],
+  args: readonly string[],
   options: { allowFailure?: boolean; quiet?: boolean } = {},
 ) {
   const result = spawnSync(command, args, {
@@ -93,7 +92,7 @@ function run(
   return result;
 }
 
-function runCapture(command: string, args: string[]): string {
+function runCapture(command: string, args: readonly string[]): string {
   return String(execFileSync(command, args, { cwd: REPO_ROOT, encoding: "utf8" })).trim();
 }
 
@@ -105,7 +104,19 @@ function getCurrentBranch(): string {
   return runCapture("git", ["branch", "--show-current"]);
 }
 
-function listTargetPrs(options: Options): Array<Record<string, unknown>> {
+type PrFile = { path: string };
+
+type PrListItem = {
+  number: number;
+  title?: string;
+  headRefName?: string;
+  baseRefName?: string;
+  url?: string;
+  maintainerCanModify?: boolean;
+  files?: PrFile[];
+};
+
+function listTargetPrs(options: Options): PrListItem[] {
   if (!options.all) {
     return options.prs.map((number) => ({ number }));
   }
@@ -123,7 +134,7 @@ function listTargetPrs(options: Options): Array<Record<string, unknown>> {
   );
 }
 
-function getPrMetadata(number: number): Record<string, unknown> {
+function getPrMetadata(number: number): PrListItem {
   return JSON.parse(
     runCapture("gh", [
       "pr",
@@ -149,12 +160,12 @@ function comment(pr: number, body: string) {
 }
 
 function validateBranch(): boolean {
-  const commands = [
+  const commands: ReadonlyArray<readonly [string, readonly string[]]> = [
     ["npm", ["run", "build:cli"]],
     ["npm", ["run", "typecheck:cli"]],
     ["npm", ["run", "lint"]],
     ["npm", ["test"]],
-  ] as const;
+  ];
   for (const [command, args] of commands) {
     const result = run(command, args, { allowFailure: true });
     if (result.status !== 0) {
@@ -164,6 +175,13 @@ function validateBranch(): boolean {
   return true;
 }
 
+function readPrFiles(value: PrFile[] | null | undefined): PrFile[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((file): file is PrFile => typeof file.path === "string");
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.dryRun && !isCleanWorktree()) {
@@ -171,10 +189,10 @@ function main() {
   }
 
   const startingBranch = getCurrentBranch();
-  const summary = {
-    fixed: [] as number[],
-    skipped: [] as string[],
-    manual: [] as string[],
+  const summary: { fixed: number[]; skipped: string[]; manual: string[] } = {
+    fixed: [],
+    skipped: [],
+    manual: [],
   };
 
   try {
@@ -185,7 +203,7 @@ function main() {
     for (const prNumber of targets) {
       const metadata = getPrMetadata(prNumber);
       const baseRef = String(metadata.baseRefName || "");
-      const files = (metadata.files as Array<{ path: string }>) || [];
+      const files = readPrFiles(metadata.files);
       if (baseRef !== "main") {
         summary.skipped.push(`#${prNumber}: base is ${baseRef}, not main`);
         continue;

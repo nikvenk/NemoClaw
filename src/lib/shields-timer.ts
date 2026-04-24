@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,18 @@ const { lockAgentConfig } = require("./shields");
 const STATE_DIR = path.join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
 const AUDIT_FILE = path.join(STATE_DIR, "shields-audit.jsonl");
 
+type JsonScalar = string | number | boolean | null | undefined;
+type JsonValue = JsonScalar | JsonMap | JsonValue[];
+type JsonMap = { [key: string]: JsonValue };
+
+function parseJson<T>(text: string): T {
+  return JSON.parse(text);
+}
+
+function isJsonMap(value: JsonValue): value is JsonMap {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 const [sandboxName, snapshotPath, restoreAtIso, configPath, configDir] = process.argv.slice(2);
 const STATE_FILE = path.join(STATE_DIR, `shields-${sandboxName}.json`);
 const restoreAtMs = new Date(restoreAtIso).getTime();
@@ -27,7 +38,11 @@ if (!sandboxName || !snapshotPath || !restoreAtIso || isNaN(restoreAtMs)) {
   process.exit(1);
 }
 
-function appendAudit(entry) {
+function getErrorMessage(error: Error | string | number | boolean | null | undefined | object): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function appendAudit(entry: JsonMap): void {
   try {
     fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n", { mode: 0o600 });
   } catch {
@@ -35,11 +50,12 @@ function appendAudit(entry) {
   }
 }
 
-function updateState(patch) {
+function updateState(patch: JsonMap): void {
   try {
-    let current = {};
+    let current: JsonMap = {};
     if (fs.existsSync(STATE_FILE)) {
-      current = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+      const parsed = parseJson<JsonValue>(fs.readFileSync(STATE_FILE, "utf-8"));
+      current = isJsonMap(parsed) ? parsed : {};
     }
     const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
     fs.writeFileSync(STATE_FILE, JSON.stringify(updated, null, 2), { mode: 0o600 });
@@ -48,7 +64,7 @@ function updateState(patch) {
   }
 }
 
-function cleanupMarker() {
+function cleanupMarker(): void {
   try {
     const markerPath = path.join(STATE_DIR, `shields-timer-${sandboxName}.json`);
     if (fs.existsSync(markerPath)) {
@@ -105,7 +121,7 @@ setTimeout(() => {
           sandbox: sandboxName,
           timestamp: now,
           restored_by: "auto_timer",
-          warning: lockErr?.message ?? String(lockErr),
+          warning: getErrorMessage(lockErr instanceof Error ? lockErr : String(lockErr)),
           lock_verified: false,
         });
       }
@@ -149,7 +165,7 @@ setTimeout(() => {
       sandbox: sandboxName,
       timestamp: now,
       restored_by: "auto_timer",
-      error: err?.message ?? String(err),
+      error: getErrorMessage(err instanceof Error ? err : String(err)),
     });
     cleanupMarker();
     process.exit(1);

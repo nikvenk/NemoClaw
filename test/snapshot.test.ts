@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -21,11 +20,39 @@ const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-snap-naming-"))
 process.env.HOME = TMP_HOME;
 
 const REPO_ROOT = path.join(import.meta.dirname, "..");
-const sandboxState = await import(path.join(REPO_ROOT, "dist", "lib", "sandbox-state.js"));
+
+type BackupScalar = string | number | boolean | null | undefined;
+type BackupValue = BackupScalar | BackupManifestOverrides | BackupValue[];
+
+function isSandboxStateModule(
+  value: object | null,
+): value is typeof import("../dist/lib/sandbox-state.js") {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "listBackups") === "function" &&
+    typeof Reflect.get(value, "findBackup") === "function" &&
+    typeof Reflect.get(value, "validateSnapshotName") === "function"
+  );
+}
+
+const loadedSandboxState = await import(
+  path.join(REPO_ROOT, "dist", "lib", "sandbox-state.js"),
+);
+if (!isSandboxStateModule(loadedSandboxState)) {
+  throw new Error("Expected sandbox-state module exports to be available");
+}
+const sandboxState = loadedSandboxState;
 
 const BACKUPS_ROOT = path.join(TMP_HOME, ".nemoclaw", "rebuild-backups");
 
-function writeBackup(sandboxName, dirName, overrides = {}) {
+type BackupManifestOverrides = { [key: string]: BackupValue };
+
+function writeBackup(
+  sandboxName: string,
+  dirName: string,
+  overrides: BackupManifestOverrides = {},
+): BackupManifestOverrides {
   const dir = path.join(BACKUPS_ROOT, sandboxName, dirName);
   fs.mkdirSync(dir, { recursive: true });
   const manifest = {

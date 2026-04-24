@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -20,7 +19,38 @@ const SELECT_FROM_LIST_ITEMS = [
   { name: "pypi", description: "Python Package Index (PyPI) access" },
 ];
 
-function runPolicyAdd(confirmAnswer, extraArgs = [], envOverrides = {}) {
+type PolicyCall = {
+  type: string;
+  message?: string;
+  sandboxName?: string;
+  presetName?: string;
+};
+
+type AppliedOptions = {
+  applied?: string[];
+};
+
+function requirePresetContent(content: string | null): string {
+  expect(content).toBeTruthy();
+  if (!content) {
+    throw new Error("Expected preset content to be present");
+  }
+  return content;
+}
+
+function parseJson<T>(raw: string): T {
+  return JSON.parse(raw);
+}
+
+function parseCalls(output: string): PolicyCall[] {
+  return parseJson<PolicyCall[]>(output.split("__CALLS__")[1].trim());
+}
+
+function runPolicyAdd(
+  confirmAnswer: string,
+  extraArgs: string[] = [],
+  envOverrides: NodeJS.ProcessEnv = {},
+) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-policy-add-"));
   const scriptPath = path.join(tmpDir, "policy-add-check.js");
   const script = String.raw`
@@ -65,7 +95,7 @@ setImmediate(() => {
   });
 }
 
-function runSelectFromList(input, { applied = [] } = {}) {
+function runSelectFromList(input: string, { applied = [] }: AppliedOptions = {}) {
   const script = String.raw`
 const { selectFromList } = require(${POLICIES_PATH});
 const items = JSON.parse(process.env.NEMOCLAW_TEST_ITEMS);
@@ -134,8 +164,7 @@ describe("policies", () => {
 
   describe("loadPreset", () => {
     it("loads existing preset", () => {
-      const content = policies.loadPreset("outlook");
-      expect(content).toBeTruthy();
+      const content = requirePresetContent(policies.loadPreset("outlook"));
       expect(content.includes("network_policies:")).toBeTruthy();
     });
 
@@ -150,14 +179,14 @@ describe("policies", () => {
 
     it("includes /usr/bin/node in communication presets", () => {
       for (const preset of ["discord", "slack", "telegram"]) {
-        const content = policies.loadPreset(preset);
+        const content = requirePresetContent(policies.loadPreset(preset));
         expect(content).toContain("/usr/local/bin/node");
         expect(content).toContain("/usr/bin/node");
       }
     });
 
     it("local-inference preset targets host.openshell.internal on Ollama, proxy, and vLLM ports", () => {
-      const content = policies.loadPreset("local-inference");
+      const content = requirePresetContent(policies.loadPreset("local-inference"));
       expect(content).toContain("host.openshell.internal");
       expect(content).toContain("port: 11434");
       expect(content).toContain("port: 11435");
@@ -165,7 +194,7 @@ describe("policies", () => {
     });
 
     it("local-inference preset restricts binaries to openclaw and claude", () => {
-      const content = policies.loadPreset("local-inference");
+      const content = requirePresetContent(policies.loadPreset("local-inference"));
       expect(content).toContain("/usr/local/bin/openclaw");
       expect(content).toContain("/usr/local/bin/claude");
       // Should NOT include node — only agent binaries need inference access
@@ -175,7 +204,7 @@ describe("policies", () => {
 
   describe("getPresetEndpoints", () => {
     it("extracts hosts from outlook preset", () => {
-      const content = policies.loadPreset("outlook");
+      const content = requirePresetContent(policies.loadPreset("outlook"));
       const hosts = policies.getPresetEndpoints(content);
       expect(hosts.includes("graph.microsoft.com")).toBeTruthy();
       expect(hosts.includes("login.microsoftonline.com")).toBeTruthy();
@@ -184,14 +213,14 @@ describe("policies", () => {
     });
 
     it("extracts hosts from telegram preset", () => {
-      const content = policies.loadPreset("telegram");
+      const content = requirePresetContent(policies.loadPreset("telegram"));
       const hosts = policies.getPresetEndpoints(content);
       expect(hosts).toEqual(["api.telegram.org"]);
     });
 
     it("every preset has at least one endpoint", () => {
       for (const p of policies.listPresets()) {
-        const content = policies.loadPreset(p.name);
+        const content = requirePresetContent(policies.loadPreset(p.name));
         const hosts = policies.getPresetEndpoints(content);
         expect(hosts.length > 0).toBeTruthy();
       }
@@ -218,7 +247,9 @@ describe("policies", () => {
         } catch {
           /* applyPreset may throw if sandbox not running — we only care about the log */
         }
-        const messages = logSpy.mock.calls.map((c) => c[0]);
+        const messages = logSpy.mock.calls.map((call) =>
+          typeof call[0] === "string" ? call[0] : undefined,
+        );
         expect(
           messages.some((m) => typeof m === "string" && m.includes("Widening sandbox egress")),
         ).toBe(true);
@@ -235,7 +266,9 @@ describe("policies", () => {
 
       try {
         policies.applyPreset("test-sandbox", "nonexistent");
-        const messages = logSpy.mock.calls.map((c) => c[0]);
+        const messages = logSpy.mock.calls.map((call) =>
+          typeof call[0] === "string" ? call[0] : undefined,
+        );
         expect(
           messages.some((m) => typeof m === "string" && m.includes("Widening sandbox egress")),
         ).toBe(false);
@@ -261,7 +294,9 @@ describe("policies", () => {
         } catch {
           /* applyPreset may throw if sandbox not running */
         }
-        const messages = logSpy.mock.calls.map((c) => c[0]);
+        const messages = logSpy.mock.calls.map((call) =>
+          typeof call[0] === "string" ? call[0] : undefined,
+        );
         expect(
           messages.some((m) => typeof m === "string" && m.includes("Widening sandbox egress")),
         ).toBe(false);
@@ -355,7 +390,7 @@ describe("policies", () => {
 
     it("works on every real preset file", () => {
       for (const p of policies.listPresets()) {
-        const content = policies.loadPreset(p.name);
+        const content = requirePresetContent(policies.loadPreset(p.name));
         const entries = policies.extractPresetEntries(content);
         expect(entries).toBeTruthy();
         expect(entries).toContain("endpoints:");
@@ -567,7 +602,7 @@ describe("policies", () => {
     it("no preset has rules at NetworkPolicyRuleDef level", () => {
       // rules must be inside endpoints, not as sibling of endpoints/binaries
       for (const p of policies.listPresets()) {
-        const content = policies.loadPreset(p.name);
+        const content = requirePresetContent(policies.loadPreset(p.name));
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -584,7 +619,7 @@ describe("policies", () => {
 
     it("every preset has network_policies section", () => {
       for (const p of policies.listPresets()) {
-        const content = policies.loadPreset(p.name);
+        const content = requirePresetContent(policies.loadPreset(p.name));
         expect(content.includes("network_policies:")).toBeTruthy();
       }
     });
@@ -595,7 +630,7 @@ describe("policies", () => {
       // PUT/POST (publish, exfiltrate). Restrict via rest rules.
       const packagePresets = ["pypi", "npm"];
       for (const name of packagePresets) {
-        const content = policies.loadPreset(name);
+        const content = requirePresetContent(policies.loadPreset(name));
         expect(content).toBeTruthy();
         expect(content.includes("access: full")).toBe(false);
         expect(content.includes("protocol: rest")).toBe(true);
@@ -610,7 +645,7 @@ describe("policies", () => {
     it("outlook preset allows PATCH on graph.microsoft.com", () => {
       // Microsoft Graph API uses PATCH for common email and calendar operations:
       // marking messages as read, updating drafts, modifying calendar events.
-      const content = policies.loadPreset("outlook");
+      const content = requirePresetContent(policies.loadPreset("outlook"));
       const graphSection = content.split("host: graph.microsoft.com")[1]?.split("- host:")[0] ?? "";
       expect(graphSection).toContain("method: PATCH");
     });
@@ -623,14 +658,14 @@ describe("policies", () => {
       ];
 
       for (const { preset, pattern } of cases) {
-        const content = policies.loadPreset(preset);
+        const content = requirePresetContent(policies.loadPreset(preset));
         expect(content).toBeTruthy();
         expect(content).toMatch(pattern);
       }
     });
 
     it("telegram REST preset uses tls: terminate for L7 proxy", () => {
-      const content = policies.loadPreset("telegram");
+      const content = requirePresetContent(policies.loadPreset("telegram"));
       expect(content).toBeTruthy();
       expect(content).toMatch(
         /host:\s*api\.telegram\.org[\s\S]*?protocol:\s*rest[\s\S]*?tls:\s*terminate/,
@@ -640,7 +675,7 @@ describe("policies", () => {
     it("pypi preset allows HEAD for pip lazy-wheel metadata checks", () => {
       // pip and uv use HEAD requests for lazy wheel downloads and
       // range-request support. GET-only would break pip install.
-      const content = policies.loadPreset("pypi");
+      const content = requirePresetContent(policies.loadPreset("pypi"));
       expect(content.includes("method: HEAD")).toBe(true);
     });
 
@@ -652,7 +687,7 @@ describe("policies", () => {
         { name: "npm", expectedBinary: "npm" },
       ];
       for (const { name, expectedBinary } of packagePresets) {
-        const content = policies.loadPreset(name);
+        const content = requirePresetContent(policies.loadPreset(name));
         expect(content).toBeTruthy();
         expect(content.includes("binaries:")).toBe(true);
         expect(content.includes(expectedBinary)).toBe(true);
@@ -799,7 +834,7 @@ describe("policies", () => {
   });
 
   describe("selectForRemoval", () => {
-    function runSelectForRemoval(input, { applied = [] } = {}) {
+    function runSelectForRemoval(input: string, { applied = [] }: AppliedOptions = {}) {
       const script = String.raw`
 const { selectForRemoval } = require(${POLICIES_PATH});
 const items = JSON.parse(process.env.NEMOCLAW_TEST_ITEMS);
@@ -900,7 +935,7 @@ selectForRemoval(items, options)
         type: "prompt",
         message: "  Apply 'pypi' to sandbox 'test-sandbox'? [Y/n]: ",
       });
-      expect(calls.some((call) => call.type === "apply")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "apply")).toBeFalsy();
     });
 
     it("does not prompt or apply when --dry-run is passed", () => {
@@ -908,8 +943,8 @@ selectForRemoval(items, options)
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
-      expect(calls.some((call) => call.type === "apply")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "apply")).toBeFalsy();
       expect(result.stdout).toMatch(/Endpoints that would be opened: pypi\.org/);
       expect(result.stdout).toMatch(/--dry-run: no changes applied\./);
     });
@@ -919,7 +954,7 @@ selectForRemoval(items, options)
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
       expect(calls).toContainEqual({
         type: "apply",
         sandboxName: "test-sandbox",
@@ -932,7 +967,7 @@ selectForRemoval(items, options)
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
       expect(calls).toContainEqual({
         type: "apply",
         sandboxName: "test-sandbox",
@@ -949,7 +984,11 @@ selectForRemoval(items, options)
   });
 
   describe("policy-remove confirmation", () => {
-    function runPolicyRemove(confirmAnswer, extraArgs = [], envOverrides = {}) {
+    function runPolicyRemove(
+  confirmAnswer: string,
+  extraArgs: string[] = [],
+  envOverrides: NodeJS.ProcessEnv = {},
+) {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-policy-remove-"));
       const scriptPath = path.join(tmpDir, "policy-remove-check.js");
       const script = String.raw`
@@ -1020,7 +1059,7 @@ setImmediate(() => {
         type: "prompt",
         message: "  Remove 'pypi' from sandbox 'test-sandbox'? [Y/n]: ",
       });
-      expect(calls.some((call) => call.type === "remove")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "remove")).toBeFalsy();
     });
 
     it("does not prompt or remove when --dry-run is passed", () => {
@@ -1028,8 +1067,8 @@ setImmediate(() => {
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
-      expect(calls.some((call) => call.type === "remove")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "remove")).toBeFalsy();
       expect(result.stdout).toMatch(/Endpoints that would be removed: pypi\.org/);
       expect(result.stdout).toMatch(/--dry-run: no changes applied\./);
     });
@@ -1039,7 +1078,7 @@ setImmediate(() => {
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
       expect(calls).toContainEqual({
         type: "remove",
         sandboxName: "test-sandbox",
@@ -1052,7 +1091,7 @@ setImmediate(() => {
 
       expect(result.status).toBe(0);
       const calls = JSON.parse(result.stdout.split("__CALLS__")[1].trim());
-      expect(calls.some((call) => call.type === "prompt")).toBeFalsy();
+      expect(calls.some((call: PolicyCall) => call.type === "prompt")).toBeFalsy();
       expect(calls).toContainEqual({
         type: "remove",
         sandboxName: "test-sandbox",
