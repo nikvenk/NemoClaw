@@ -16,26 +16,35 @@ error() {
   exit 1
 }
 
-# Returns 0 when `br_netfilter` is loaded AND the bridge-nf-call-iptables
-# sysctl is already set to 1. Used so we can skip host-state changes on
-# Jetson images that ship with this configured out of the box.
+# Returns 0 when `br_netfilter` is loaded AND both bridge-nf-call-iptables
+# and bridge-nf-call-ip6tables sysctls are already set to 1. Used so we
+# can skip host-state changes on Jetson images that ship with this
+# configured out of the box.
 bridge_netfilter_ready() {
   [[ -f /proc/sys/net/bridge/bridge-nf-call-iptables ]] \
-    && [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null)" == "1" ]]
+    && [[ -f /proc/sys/net/bridge/bridge-nf-call-ip6tables ]] \
+    && [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null)" == "1" ]] \
+    && [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null)" == "1" ]]
 }
 
-# Load br_netfilter and flip the bridge-nf-call-iptables sysctl, then
-# persist both across reboots. Required for k3s (running inside the
-# OpenShell gateway container) to NAT pod → ClusterIP traffic; without
-# this the kube-proxy iptables rules are written but never matched for
-# bridged pod traffic, so sandbox pods cannot reach CoreDNS.
+# Load br_netfilter and flip the bridge-nf-call-{ip,ip6}tables sysctls,
+# then persist all three across reboots. Required for k3s (running inside
+# the OpenShell gateway container) to NAT pod → ClusterIP traffic;
+# without this the kube-proxy iptables rules are written but never
+# matched for bridged pod traffic, so sandbox pods cannot reach CoreDNS.
+# ip6tables is flipped alongside iptables to keep IPv4 and IPv6 cluster
+# services consistent and match the manual workaround validated on #2418.
 apply_br_netfilter_setup() {
   "${SUDO[@]}" modprobe br_netfilter
   "${SUDO[@]}" sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null
+  "${SUDO[@]}" sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null
 
   # Persist across reboots
   echo "br_netfilter" | "${SUDO[@]}" tee /etc/modules-load.d/nemoclaw.conf >/dev/null
-  echo "net.bridge.bridge-nf-call-iptables=1" | "${SUDO[@]}" tee /etc/sysctl.d/99-nemoclaw.conf >/dev/null
+  {
+    echo "net.bridge.bridge-nf-call-iptables=1"
+    echo "net.bridge.bridge-nf-call-ip6tables=1"
+  } | "${SUDO[@]}" tee /etc/sysctl.d/99-nemoclaw.conf >/dev/null
 }
 
 get_jetpack_version() {
@@ -56,9 +65,9 @@ get_jetpack_version() {
   if ((release >= 39)); then
     # JP7 R39 does not need iptables / daemon.json changes, but k3s inside
     # the OpenShell gateway container still needs br_netfilter +
-    # bridge-nf-call-iptables=1 for ClusterIP service routing. Some R39
-    # kernel images ship with it already in place, so check first and only
-    # apply when missing — avoids planting NemoClaw-owned drop-ins in
+    # bridge-nf-call-{ip,ip6}tables=1 for ClusterIP service routing. Some
+    # R39 kernel images ship with it already in place, so check first and
+    # only apply when missing — avoids planting NemoClaw-owned drop-ins in
     # /etc/modules-load.d and /etc/sysctl.d on systems that don't need
     # them. See #2418.
     if bridge_netfilter_ready; then
