@@ -1,19 +1,19 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-type BuildContextStageResult = {
+export interface StagedBuildContext {
   buildCtx: string;
   stagedDockerfile: string;
-};
+}
 
-type BuildContextStats = {
+export interface BuildContextStats {
   fileCount: number;
   totalBytes: number;
-};
+}
 
 function createBuildContextDir(tmpDir: string = os.tmpdir()): string {
   return fs.mkdtempSync(path.join(tmpDir, "nemoclaw-build-"));
@@ -22,7 +22,7 @@ function createBuildContextDir(tmpDir: string = os.tmpdir()): string {
 function stageLegacySandboxBuildContext(
   rootDir: string,
   tmpDir: string = os.tmpdir(),
-): BuildContextStageResult {
+): StagedBuildContext {
   const buildCtx = createBuildContextDir(tmpDir);
   fs.copyFileSync(path.join(rootDir, "Dockerfile"), path.join(buildCtx, "Dockerfile"));
   fs.cpSync(path.join(rootDir, "nemoclaw"), path.join(buildCtx, "nemoclaw"), { recursive: true });
@@ -31,6 +31,7 @@ function stageLegacySandboxBuildContext(
   });
   fs.cpSync(path.join(rootDir, "scripts"), path.join(buildCtx, "scripts"), { recursive: true });
   fs.rmSync(path.join(buildCtx, "nemoclaw", "node_modules"), { recursive: true, force: true });
+
   return {
     buildCtx,
     stagedDockerfile: path.join(buildCtx, "Dockerfile"),
@@ -40,7 +41,7 @@ function stageLegacySandboxBuildContext(
 function stageOptimizedSandboxBuildContext(
   rootDir: string,
   tmpDir: string = os.tmpdir(),
-): BuildContextStageResult {
+): StagedBuildContext {
   const buildCtx = createBuildContextDir(tmpDir);
   const stagedDockerfile = path.join(buildCtx, "Dockerfile");
   const sourceNemoclawDir = path.join(rootDir, "nemoclaw");
@@ -52,13 +53,13 @@ function stageOptimizedSandboxBuildContext(
   fs.copyFileSync(path.join(rootDir, "Dockerfile"), stagedDockerfile);
 
   fs.mkdirSync(stagedNemoclawDir, { recursive: true });
-  for (const file of [
+  for (const fileName of [
     "package.json",
     "package-lock.json",
     "tsconfig.json",
     "openclaw.plugin.json",
   ]) {
-    fs.copyFileSync(path.join(sourceNemoclawDir, file), path.join(stagedNemoclawDir, file));
+    fs.copyFileSync(path.join(sourceNemoclawDir, fileName), path.join(stagedNemoclawDir, fileName));
   }
   fs.cpSync(path.join(sourceNemoclawDir, "src"), path.join(stagedNemoclawDir, "src"), {
     recursive: true,
