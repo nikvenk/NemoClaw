@@ -74,9 +74,10 @@ function validateNetworkEntry(
   if (typeof address !== "string" || address.length === 0) {
     throw new Error(`${where}: missing or empty 'address'`);
   }
-  if (typeof prefix !== "number" || !Number.isInteger(prefix) || prefix < 0) {
+  const maxPrefix = family === "ipv4" ? 32 : 128;
+  if (typeof prefix !== "number" || !Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) {
     throw new Error(
-      `${where}: 'prefix' must be a non-negative integer, got ${JSON.stringify(prefix)}`,
+      `${where}: 'prefix' must be an integer in [0, ${String(maxPrefix)}], got ${JSON.stringify(prefix)}`,
     );
   }
   if (typeof purpose !== "string" || purpose.trim().length === 0) {
@@ -126,6 +127,13 @@ function parseDocument(raw: string, source: string): NetworkDocument {
 function load(): LoadedNetworks {
   if (cached) return cached;
   const source = join(resolveBlueprintPath(), "private-networks.yaml");
+  if (!existsSync(source)) {
+    throw new Error(
+      `private-networks.yaml not found at ${source}. ` +
+        `Set NEMOCLAW_BLUEPRINT_PATH to the directory containing the blueprint, ` +
+        `or run from a checkout that includes nemoclaw-blueprint/.`,
+    );
+  }
   const networks = parseDocument(readFileSync(source, "utf-8"), source);
   const blockList = new BlockList();
   for (const { address, prefix } of networks.ipv4) blockList.addSubnet(address, prefix, "ipv4");

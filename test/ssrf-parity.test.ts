@@ -43,8 +43,26 @@ interface NetworkHelper {
   isPrivateHostname(hostname: string): boolean;
 }
 
-const cliHelper = require("../dist/lib/private-networks") as NetworkHelper;
-const pluginHelper = require("../nemoclaw/dist/blueprint/private-networks.js") as NetworkHelper;
+function loadHelper(modulePath: string, buildHint: string): NetworkHelper {
+  try {
+    return require(modulePath) as NetworkHelper;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "MODULE_NOT_FOUND") {
+      throw new Error(
+        `ssrf-parity.test.ts could not load '${modulePath}'. ` +
+          `Run ${buildHint} first so the dist/ artifact exists.`,
+      );
+    }
+    throw error;
+  }
+}
+
+const cliHelper = loadHelper("../dist/lib/private-networks", "`npm run build:cli`");
+const pluginHelper = loadHelper(
+  "../nemoclaw/dist/blueprint/private-networks.js",
+  "`npm run build` inside nemoclaw/",
+);
 
 function entryLabel(entry: NetworkEntry | NameEntry): string {
   return "address" in entry ? `${entry.address}/${String(entry.prefix)}` : entry.name;

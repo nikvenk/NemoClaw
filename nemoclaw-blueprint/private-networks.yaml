@@ -55,6 +55,10 @@ ipv4:
   - address: 192.0.0.0
     prefix: 24
     purpose: IETF protocol assignments (includes DS-Lite)
+  # Note: 192.0.1.0/24 is intentionally absent — it is globally routable
+  # space (assigned via APNIC), not a reserved range. The two /24 blocks
+  # on either side are IANA SPECIAL-PURPOSE REGISTRY entries; the gap
+  # between them is deliberate and must not be filled.
   - address: 192.0.2.0
     prefix: 24
     purpose: TEST-NET-1 documentation

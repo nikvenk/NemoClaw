@@ -65,9 +65,17 @@ describe("private-networks loader", () => {
       seedYaml("/custom/path/private-networks.yaml", VALID_YAML);
       const entries = getNetworkEntries();
       expect(entries.ipv4).toHaveLength(2);
-      // existsSync is only consulted for the dev-guess fallback, which
-      // is skipped when the env var is set.
-      expect(existsCalls).toEqual([]);
+      // resolveBlueprintPath's dev-guess probe is skipped when the env
+      // var is set; the only existsSync call is load()'s existence
+      // precheck on the final source path.
+      expect(existsCalls).toEqual(["/custom/path/private-networks.yaml"]);
+    });
+
+    it("throws a descriptive error when the YAML is missing", () => {
+      process.env.NEMOCLAW_BLUEPRINT_PATH = "/missing/path";
+      expect(() => getNetworkEntries()).toThrow(
+        /private-networks\.yaml not found at \/missing\/path\/private-networks\.yaml.*NEMOCLAW_BLUEPRINT_PATH/s,
+      );
     });
 
     it("falls back to current directory when no env var and no dev guess", () => {
@@ -159,7 +167,31 @@ describe("private-networks loader", () => {
         "/blueprint/private-networks.yaml",
         "ipv4:\n  - address: 10.0.0.0\n    prefix: 8.5\n    purpose: fractional\nipv6: []\nnames: []\n",
       );
-      expect(() => getNetworkEntries()).toThrow(/must be a non-negative integer/);
+      expect(() => getNetworkEntries()).toThrow(/'prefix' must be an integer in \[0, 32\]/);
+    });
+
+    it("rejects an ipv4 entry with a negative prefix", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        "ipv4:\n  - address: 10.0.0.0\n    prefix: -1\n    purpose: negative\nipv6: []\nnames: []\n",
+      );
+      expect(() => getNetworkEntries()).toThrow(/'prefix' must be an integer in \[0, 32\]/);
+    });
+
+    it("rejects an ipv4 entry with prefix above 32", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        "ipv4:\n  - address: 10.0.0.0\n    prefix: 33\n    purpose: too-wide\nipv6: []\nnames: []\n",
+      );
+      expect(() => getNetworkEntries()).toThrow(/'prefix' must be an integer in \[0, 32\]/);
+    });
+
+    it("rejects an ipv6 entry with prefix above 128", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        'ipv4: []\nipv6:\n  - address: "::1"\n    prefix: 129\n    purpose: too-wide\nnames: []\n',
+      );
+      expect(() => getNetworkEntries()).toThrow(/'prefix' must be an integer in \[0, 128\]/);
     });
 
     it("rejects an ipv4 entry with an empty purpose", () => {
