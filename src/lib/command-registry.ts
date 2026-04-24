@@ -76,10 +76,7 @@ export const COMMANDS: readonly CommandDef[] = [
     scope: "global",
   },
 
-  // ── Sandbox commands ──
-  // Ordered to match the dispatch sandboxActions array:
-  // connect, status, logs, policy-add, policy-remove, policy-list,
-  // destroy, skill, rebuild, snapshot×3, shields×3, config×3, channels×5
+  // ── Sandbox Management ──
   {
     usage: "nemoclaw list",
     description: "List all sandboxes",
@@ -106,6 +103,50 @@ export const COMMANDS: readonly CommandDef[] = [
     scope: "sandbox",
   },
   {
+    usage: "nemoclaw <name> snapshot create",
+    description: "Create a snapshot of sandbox state",
+    flags: "[--name <label>]",
+    group: "Sandbox Management",
+    scope: "sandbox",
+  },
+  {
+    usage: "nemoclaw <name> snapshot list",
+    description: "List available snapshots",
+    group: "Sandbox Management",
+    scope: "sandbox",
+  },
+  {
+    usage: "nemoclaw <name> snapshot restore",
+    description: "Restore state from a snapshot",
+    flags: "[v<N>|name|timestamp]",
+    group: "Sandbox Management",
+    scope: "sandbox",
+  },
+  {
+    usage: "nemoclaw <name> rebuild",
+    description: "Upgrade sandbox to current agent version",
+    flags: "(--yes to skip prompt)",
+    group: "Sandbox Management",
+    scope: "sandbox",
+  },
+  {
+    usage: "nemoclaw <name> destroy",
+    description: "Stop NIM + delete sandbox",
+    flags: "(--yes to skip prompt)",
+    group: "Sandbox Management",
+    scope: "sandbox",
+  },
+
+  // ── Skills ──
+  {
+    usage: "nemoclaw <name> skill install",
+    description: "Deploy a skill directory to the sandbox",
+    group: "Skills",
+    scope: "sandbox",
+  },
+
+  // ── Policy Presets ──
+  {
     usage: "nemoclaw <name> policy-add",
     description: "Add a network or filesystem policy preset",
     flags: "(--yes, --dry-run)",
@@ -125,44 +166,36 @@ export const COMMANDS: readonly CommandDef[] = [
     group: "Policy Presets",
     scope: "sandbox",
   },
+
+  // ── Messaging Channels ──
   {
-    usage: "nemoclaw <name> destroy",
-    description: "Stop NIM + delete sandbox",
-    flags: "(--yes to skip prompt)",
-    group: "Sandbox Management",
+    usage: "nemoclaw <name> channels list",
+    description: "List supported messaging channels",
+    group: "Messaging Channels",
     scope: "sandbox",
   },
   {
-    usage: "nemoclaw <name> skill install",
-    description: "Deploy a skill directory to the sandbox",
-    group: "Skills",
+    usage: "nemoclaw <name> channels add",
+    description: "Save credentials and rebuild",
+    group: "Messaging Channels",
     scope: "sandbox",
   },
   {
-    usage: "nemoclaw <name> rebuild",
-    description: "Upgrade sandbox to current agent version",
-    flags: "(--yes to skip prompt)",
-    group: "Sandbox Management",
+    usage: "nemoclaw <name> channels remove",
+    description: "Clear credentials and rebuild",
+    group: "Messaging Channels",
     scope: "sandbox",
   },
   {
-    usage: "nemoclaw <name> snapshot create",
-    description: "Create a snapshot of sandbox state",
-    flags: "[--name <label>]",
-    group: "Sandbox Management",
+    usage: "nemoclaw <name> channels stop",
+    description: "Disable channel (keeps credentials)",
+    group: "Messaging Channels",
     scope: "sandbox",
   },
   {
-    usage: "nemoclaw <name> snapshot list",
-    description: "List available snapshots",
-    group: "Sandbox Management",
-    scope: "sandbox",
-  },
-  {
-    usage: "nemoclaw <name> snapshot restore",
-    description: "Restore state from a snapshot",
-    flags: "[v<N>|name|timestamp]",
-    group: "Sandbox Management",
+    usage: "nemoclaw <name> channels start",
+    description: "Re-enable a previously stopped channel",
+    group: "Messaging Channels",
     scope: "sandbox",
   },
 
@@ -210,38 +243,6 @@ export const COMMANDS: readonly CommandDef[] = [
     group: "Sandbox Management",
     scope: "sandbox",
     hidden: true,
-  },
-
-  // ── Messaging Channels ──
-  {
-    usage: "nemoclaw <name> channels list",
-    description: "List supported messaging channels",
-    group: "Messaging Channels",
-    scope: "sandbox",
-  },
-  {
-    usage: "nemoclaw <name> channels add",
-    description: "Save credentials and rebuild",
-    group: "Messaging Channels",
-    scope: "sandbox",
-  },
-  {
-    usage: "nemoclaw <name> channels remove",
-    description: "Clear credentials and rebuild",
-    group: "Messaging Channels",
-    scope: "sandbox",
-  },
-  {
-    usage: "nemoclaw <name> channels stop",
-    description: "Disable channel (keeps credentials)",
-    group: "Messaging Channels",
-    scope: "sandbox",
-  },
-  {
-    usage: "nemoclaw <name> channels start",
-    description: "Re-enable a previously stopped channel",
-    group: "Messaging Channels",
-    scope: "sandbox",
   },
 
   // ── Compatibility Commands ──

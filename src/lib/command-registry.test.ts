@@ -167,9 +167,11 @@ describe("command-registry", () => {
   });
 
   describe("sandboxActionTokens()", () => {
-    it("returns the exact 14 entries matching the old sandboxActions array", () => {
+    it("returns exactly 14 unique action tokens including empty string", () => {
       const tokens = sandboxActionTokens();
-      const expected = [
+      expect(tokens).toHaveLength(14);
+      // Must contain the same set as the old sandboxActions array
+      const expected = new Set([
         "connect",
         "status",
         "logs",
@@ -184,8 +186,13 @@ describe("command-registry", () => {
         "config",
         "channels",
         "",
-      ];
-      expect(tokens).toEqual(expected);
+      ]);
+      expect(new Set(tokens)).toEqual(expected);
+    });
+
+    it("has no duplicates", () => {
+      const tokens = sandboxActionTokens();
+      expect(new Set(tokens).size).toBe(tokens.length);
     });
   });
 
