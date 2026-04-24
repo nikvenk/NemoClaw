@@ -833,8 +833,7 @@ Pass `--control-ui-port <N>` to require a specific port.
 ## NemoHermes Alias
 
 `nemohermes` is a convenience alias that pre-selects the Hermes agent.
-Every `nemohermes` command is equivalent to running `nemoclaw` with
-`--agent hermes` (for onboard) or `NEMOCLAW_AGENT=hermes` (for all commands).
+Every `nemohermes` command is equivalent to running `nemoclaw` with `--agent hermes` (for onboard) or `NEMOCLAW_AGENT=hermes` (for all commands).
 
 ```console
 $ nemohermes onboard              # equivalent to: nemoclaw onboard --agent hermes

@@ -49,20 +49,16 @@ describe("nemohermes alias", () => {
   });
 
   it("nemoclaw --version does not contain nemohermes", () => {
-    try {
-      const out = execSync(`node "${NEMOCLAW_CLI}" --version`, {
-        encoding: "utf-8",
-        timeout: 10000,
-        env: {
-          ...process.env,
-          HOME: "/tmp/nemohermes-test-" + Date.now(),
-        },
-      });
-      expect(out).toMatch(/^nemoclaw v[\d.]+/);
-      expect(out).not.toContain("nemohermes");
-    } catch {
-      // If nemoclaw --version fails for some reason, skip gracefully
-    }
+    const out = execSync(`node "${NEMOCLAW_CLI}" --version`, {
+      encoding: "utf-8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        HOME: "/tmp/nemohermes-test-" + Date.now(),
+      },
+    });
+    expect(out).toMatch(/^nemoclaw v[\d.]+/);
+    expect(out).not.toContain("nemohermes");
   });
 
   it("help output shows NemoHermes header", () => {
