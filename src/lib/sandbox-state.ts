@@ -31,7 +31,8 @@ import { resolveOpenshell } from "./resolve-openshell.js";
 import { captureOpenshellCommand } from "./openshell.js";
 import { sanitizeConfigFile, isSensitiveFile } from "./credential-filter.js";
 
-const REBUILD_BACKUPS_DIR = path.join(process.env.HOME || "/tmp", ".nemoclaw", "rebuild-backups");
+const HOME_DIR = path.resolve(process.env.HOME || os.homedir());
+const REBUILD_BACKUPS_DIR = path.join(HOME_DIR, ".nemoclaw", "rebuild-backups");
 
 const MANIFEST_VERSION = 1;
 
@@ -179,7 +180,7 @@ function isWithinRoot(candidatePath: string, rootPath: string): boolean {
  * nemoclaw/src/blueprint/snapshot.ts.
  */
 function rejectSymlinksOnPath(targetPath: string): void {
-  const home = path.resolve(process.env.HOME || os.homedir());
+  const home = HOME_DIR;
   const resolved = path.resolve(targetPath);
 
   const relToHome = path.relative(home, resolved);
@@ -570,6 +571,9 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
   rejectSymlinksOnPath(backupPath);
 
   mkdirSync(backupPath, { recursive: true, mode: 0o700 });
+  // Re-check after creation to narrow the TOCTOU race window —
+  // a symlink swapped in between the first check and mkdirSync is caught here.
+  rejectSymlinksOnPath(backupPath);
 
   // Capture applied policy presets from the registry so they can be
   // re-applied after rebuild. Presets live in the gateway policy engine,
