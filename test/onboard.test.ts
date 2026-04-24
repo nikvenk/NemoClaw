@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 
 import { buildChain, buildControlUiUrls } from "../dist/lib/dashboard-contract.js";
 import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context.js";
-import { buildWebSearchDockerConfig } from "../dist/lib/web-search.js";
 
 type ShimScalar = string | number | boolean | null | undefined;
 type ShimCallable = (...args: readonly string[]) => ShimValue;

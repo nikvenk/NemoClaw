@@ -522,7 +522,8 @@ describe("regression guards", () => {
       delete require.cache[require.resolve(runnerPath)];
       const { runInteractive } = require(runnerPath);
       runInteractive("echo interactive");
-      expect(calls[0][2].stdio).toEqual(["inherit", "pipe", "pipe"]);
+      const firstCall = requireCall(calls, 0);
+      expect(firstCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
       expect(stdoutSpy).toHaveBeenCalledWith("visit https://****:****@example.com/?token=****\n");
       expect(stderrSpy).not.toHaveBeenCalled();
     } finally {
