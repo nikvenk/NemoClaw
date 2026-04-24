@@ -1,0 +1,157 @@
+# Validation Plan: Brev Launchable Pairing Fix
+
+Generated from: specs/2026-04-24_brev-launchable-pairing-fix/spec.md
+Test Spec: specs/2026-04-24_brev-launchable-pairing-fix/tests.md
+
+## Overview
+**Feature**: Extract inline Dockerfile Python config generation to a standalone script;
+auto-disable device auth for non-loopback URLs (fixes #2341).
+
+**Available Tools**: vitest, python3, bash (file verification), spawnSync
+
+## Coverage Summary
+- Happy Paths: 6 scenarios
+- Sad Paths: 3 scenarios
+- Total: 9 scenarios
+
+---
+
+## Phase 1: Extract Inline Python to `scripts/generate-openclaw-config.py`
+
+### Scenario 1.1: Config script generates identical output to inline Python [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: The `scripts/generate-openclaw-config.py` script exists and is executable
+**When**: The script is invoked with the same env vars the Dockerfile inline block uses
+**Then**: The generated `openclaw.json` contains all expected keys: gateway (auth, allowedOrigins), model config, agent config
+
+**Validation Steps**:
+1. **Setup**: Bash: Verify `scripts/generate-openclaw-config.py` exists
+2. **Execute**: Bash: Run `python3 scripts/generate-openclaw-config.py` with BASE_ENV in a temp HOME
+3. **Verify**: Bash: Parse generated `openclaw.json`, assert keys: `gateway.auth.dangerouslyDisableDeviceAuth`, `gateway.auth.allowInsecureAuth`, `gateway.allowedOrigins`, `gateway.auth.token`
+
+**Tools Required**: python3, bash, jq
+
+### Scenario 1.2: Dockerfile uses COPY + RUN instead of inline python3 -c [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: The Dockerfile has been modified to reference the extracted script
+**When**: The Dockerfile is scanned for config generation patterns
+**Then**: `COPY scripts/generate-openclaw-config.py` and `RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py` are present; no `python3 -c` block for config generation remains
+
+**Validation Steps**:
+1. **Execute**: Bash: `grep -n "COPY.*generate-openclaw-config.py" Dockerfile`
+2. **Execute**: Bash: `grep -n "RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py" Dockerfile`
+3. **Verify**: Bash: Count `python3 -c` blocks — none should contain config generation logic (68-line block is gone)
+
+**Tools Required**: bash, grep
+
+### Scenario 1.3: C-2 security regression tests pass with updated patterns [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: `test/security-c2-dockerfile-injection.test.ts` has been updated for the extraction
+**When**: `npx vitest run test/security-c2-dockerfile-injection.test.ts`
+**Then**: All tests pass — PoC tests still verify vulnerable/fixed patterns, Dockerfile regression guards updated for script COPY/RUN
+
+**Validation Steps**:
+1. **Execute**: Bash: `npx vitest run test/security-c2-dockerfile-injection.test.ts`
+2. **Verify**: Exit code 0, all tests pass
+
+**Tools Required**: vitest
+
+### Scenario 1.4: New functional tests validate all config derivation paths [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: `test/generate-openclaw-config.test.ts` exists with ≥10 tests
+**When**: `npx vitest run test/generate-openclaw-config.test.ts`
+**Then**: All tests pass — covers loopback, HTTPS, non-loopback, device auth, channels, web search, timeout, token clearing, file permissions
+
+**Validation Steps**:
+1. **Execute**: Bash: `npx vitest run test/generate-openclaw-config.test.ts`
+2. **Verify**: Exit code 0, ≥10 test cases pass
+3. **Verify**: Bash: `grep -c 'it(' test/generate-openclaw-config.test.ts` shows ≥10
+
+**Tools Required**: vitest
+
+### Scenario 1.5: --clear-token flag clears only the token [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: A `openclaw.json` exists with a non-empty `gateway.auth.token`
+**When**: `python3 scripts/generate-openclaw-config.py --clear-token` is run
+**Then**: `gateway.auth.token` is `""` but all other fields are preserved
+
+**Validation Steps**:
+1. **Setup**: Bash: Create temp dir, run script to generate config, then manually set token to "test-token-123"
+2. **Execute**: Bash: Run `python3 scripts/generate-openclaw-config.py --clear-token` with HOME set to temp dir
+3. **Verify**: Bash: Parse JSON — token is `""`, model config and gateway.allowedOrigins unchanged
+
+**Tools Required**: python3, bash, jq
+
+### Scenario 1.6: patchStagedDockerfile() requires no changes [STATUS: pending]
+**Type**: Sad Path (regression guard)
+
+**Given**: `patchStagedDockerfile()` in `src/lib/onboard-command.ts` works via ARG patching
+**When**: The Dockerfile extraction preserves the `ARG→ENV` promotion contract
+**Then**: No modifications to onboard-command.ts are needed; existing onboard tests pass
+
+**Validation Steps**:
+1. **Execute**: Bash: `git diff HEAD -- src/lib/onboard-command.ts | wc -l` → 0 (no changes)
+2. **Execute**: Bash: `npx vitest run src/lib/onboard-command.test.ts` (if exists)
+3. **Verify**: onboard-related tests pass
+
+**Tools Required**: bash, vitest
+
+---
+
+## Phase 2: Auto-Disable Device Auth for Non-Loopback URLs
+
+### Scenario 2.1: Brev Launchable URL auto-disables device auth [STATUS: pending]
+**Type**: Happy Path — **The core fix for #2341**
+
+**Given**: `scripts/generate-openclaw-config.py` has the non-loopback auto-disable logic
+**When**: Script runs with `CHAT_UI_URL=https://nemoclaw0-xxx.brevlab.com:18789`
+**Then**: Generated config has `gateway.auth.dangerouslyDisableDeviceAuth: true`
+
+**Validation Steps**:
+1. **Setup**: Bash: Create temp HOME dir
+2. **Execute**: Bash: `CHAT_UI_URL=https://nemoclaw0-xxx.brevlab.com:18789 HOME=$TMPDIR python3 scripts/generate-openclaw-config.py` (with other required env vars)
+3. **Verify**: Bash: `python3 -c "import json; c=json.load(open('$TMPDIR/.openclaw/openclaw.json')); assert c['gateway']['auth']['dangerouslyDisableDeviceAuth'] == True"`
+
+**Tools Required**: python3, bash
+
+### Scenario 2.2: Loopback URLs preserve device auth (no regression) [STATUS: pending]
+**Type**: Sad Path (regression guard)
+
+**Given**: `scripts/generate-openclaw-config.py` has the non-loopback auto-disable logic
+**When**: Script runs with loopback URLs (`127.0.0.1`, `localhost`, `[::1]`)
+**Then**: Generated config has `gateway.auth.dangerouslyDisableDeviceAuth: false` for all
+
+**Validation Steps**:
+1. **Execute**: Bash: Run script with `CHAT_UI_URL=http://127.0.0.1:18789`, verify `dangerouslyDisableDeviceAuth: false`
+2. **Execute**: Bash: Run script with `CHAT_UI_URL=http://localhost:18789`, verify `dangerouslyDisableDeviceAuth: false`
+3. **Execute**: Bash: Run script with `CHAT_UI_URL=http://[::1]:18789`, verify `dangerouslyDisableDeviceAuth: false`
+
+**Tools Required**: python3, bash
+
+### Scenario 2.3: dashboard-contract buildChain returns shouldDisableDeviceAuth [STATUS: pending]
+**Type**: Happy Path
+
+**Given**: `DashboardDeliveryChain` interface has `shouldDisableDeviceAuth` field
+**When**: `buildChain()` is called with various hints
+**Then**: Returns correct `shouldDisableDeviceAuth` for each scenario
+
+**Validation Steps**:
+1. **Execute**: Bash: `npx vitest run src/lib/dashboard-contract.test.ts`
+2. **Verify**: Exit code 0, all tests pass including new `shouldDisableDeviceAuth` assertions
+
+**Tools Required**: vitest
+
+---
+
+## Summary
+
+| Phase | Happy | Sad | Total | Passed | Failed | Pending |
+|-------|-------|-----|-------|--------|--------|---------|
+| Phase 1 | 4 | 2 | 6 | 0 | 0 | 6 |
+| Phase 2 | 2 | 1 | 3 | 0 | 0 | 3 |
+| **Total** | **6** | **3** | **9** | **0** | **0** | **9** |
