@@ -587,11 +587,52 @@ describe("probeContainerDns", () => {
     expect(result.reason).toBeUndefined();
   });
 
-  it("flags resolution_failed when output has no Address line", () => {
+  it("flags servers_unreachable when resolver is unreachable (UDP:53 blocked)", () => {
+    // Typical #2101 signature.
     const result = probeContainerDns({ outputOverride: BUSYBOX_FAILURE });
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe("resolution_failed");
+    expect(result.reason).toBe("servers_unreachable");
     expect(result.details).toContain("connection timed out");
+  });
+
+  it("flags servers_unreachable on 'no servers could be reached' alone", () => {
+    const result = probeContainerDns({
+      outputOverride: ";; no servers could be reached\n",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("servers_unreachable");
+  });
+
+  it("flags image_pull_failed when docker can't fetch the test image", () => {
+    const pullError =
+      "Unable to find image 'busybox:latest' locally\n" +
+      "latest: Pulling from library/busybox\n" +
+      "docker: Error response from daemon: Head \"https://registry-1.docker.io/v2/library/busybox/manifests/latest\": dial tcp: lookup registry-1.docker.io: no such host.\n";
+    const result = probeContainerDns({ outputOverride: pullError });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("image_pull_failed");
+    expect(result.details).toContain("registry-1.docker.io");
+  });
+
+  it("flags image_pull_failed on pull access denied", () => {
+    const result = probeContainerDns({
+      outputOverride:
+        "docker: Error response from daemon: pull access denied for busybox, repository does not exist.\n",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("image_pull_failed");
+  });
+
+  it("flags resolution_failed for NXDOMAIN-style failures (resolver OK, name unknown)", () => {
+    const result = probeContainerDns({
+      outputOverride:
+        "Server:\t\t1.1.1.1\n" +
+        "Address:\t1.1.1.1:53\n" +
+        "\n" +
+        "** server can't find registry.npmjs.org: NXDOMAIN\n",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("resolution_failed");
   });
 
   it("flags no_output when docker run returns empty", () => {
@@ -650,6 +691,31 @@ describe("probeContainerDns", () => {
     expect(result.ok).toBe(false);
     expect(result.details?.length).toBeLessThanOrEqual(400);
     expect(result.details).toContain("real_error_here");
+  });
+
+  it("adds a `timeout 20` prefix on Linux to bound the probe", () => {
+    let captured = "";
+    probeContainerDns({
+      platform: "linux",
+      runCaptureImpl: (command) => {
+        captured = command;
+        return BUSYBOX_SUCCESS;
+      },
+    });
+    expect(captured.startsWith("timeout 20 ")).toBe(true);
+  });
+
+  it("does not add a timeout prefix outside Linux (not portable)", () => {
+    let captured = "";
+    probeContainerDns({
+      platform: "darwin",
+      runCaptureImpl: (command) => {
+        captured = command;
+        return BUSYBOX_SUCCESS;
+      },
+    });
+    expect(captured.startsWith("timeout ")).toBe(false);
+    expect(captured.startsWith("docker run")).toBe(true);
   });
 });
 

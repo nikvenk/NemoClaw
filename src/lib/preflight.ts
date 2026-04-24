@@ -799,7 +799,12 @@ export function ensureSwap(minTotalMB?: number, opts: EnsureSwapOpts = {}): Swap
 
 export interface DnsProbeResult {
   ok: boolean;
-  reason?: "no_output" | "resolution_failed" | "error";
+  reason?:
+    | "no_output"
+    | "resolution_failed"
+    | "servers_unreachable"
+    | "image_pull_failed"
+    | "error";
   details?: string;
 }
 
@@ -810,6 +815,8 @@ export interface ProbeContainerDnsOpts {
   outputOverride?: string | null;
   /** Override runCapture. */
   runCaptureImpl?: (command: string, opts?: { ignoreError?: boolean }) => string | null;
+  /** Override platform detection (mainly for tests). */
+  platform?: NodeJS.Platform;
 }
 
 /**
@@ -844,13 +851,27 @@ export function getDockerBridgeGatewayIp(
 /**
  * Probe whether DNS resolution works from inside a docker container.
  * Returns `{ ok: true }` when a busybox test container resolves
- * `registry.npmjs.org` within the image's nslookup timeout; otherwise
- * returns a `reason` + truncated `details` that callers can show.
+ * `registry.npmjs.org`; otherwise returns a structured `reason` +
+ * truncated `details` so callers can tailor the error message:
+ *
+ * - `image_pull_failed` — the busybox image couldn't be pulled (docker
+ *   daemon can't reach the registry). Distinct from DNS-inside-container.
+ * - `servers_unreachable` — resolver was unreachable (UDP:53 dropped).
+ *   The typical #2101 signature on corp-firewalled hosts.
+ * - `resolution_failed` — resolver answered but lookup failed (NXDOMAIN
+ *   or similar). Unusual.
+ * - `no_output` / `error` — probe couldn't run at all.
  */
 export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeResult {
+  // Cap the whole probe at 20 s on Linux via GNU coreutils `timeout` to
+  // avoid preflight hanging if docker itself is wedged. macOS doesn't ship
+  // `timeout` by default and busybox nslookup has its own ~15 s internal
+  // budget there, so we skip the prefix outside Linux.
+  const platform = opts.platform ?? process.platform;
+  const timeoutPrefix = platform === "linux" ? "timeout 20 " : "";
   const command =
     opts.command ??
-    "docker run --rm --pull=missing busybox:latest " +
+    `${timeoutPrefix}docker run --rm --pull=missing busybox:latest ` +
       "nslookup registry.npmjs.org 2>&1";
 
   let output: string | null | undefined = opts.outputOverride;
@@ -878,12 +899,37 @@ export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeRes
     };
   }
 
-  // busybox nslookup prints "Name:" and "Address:" lines for each answer on
-  // success; on DNS failure it emits "can't resolve" or times out silently.
+  // Success: busybox nslookup prints "Name:" and "Address:" lines.
   if (/\bName:\s*registry\.npmjs\.org\b/.test(output) && /\bAddress:\s*\d/.test(output)) {
     return { ok: true };
   }
 
+  // Docker image-pull failure — the probe never got to run nslookup, so
+  // framing this as a DNS problem would mislead. Signatures from
+  // `docker run --pull=missing` when the daemon can't fetch the image.
+  if (
+    /Error response from daemon:.*(pull|manifest|not found)|pull access denied|manifest.*unknown|unauthorized: authentication required|Head.*https?:\/\/.*: dial/i.test(
+      output,
+    )
+  ) {
+    return {
+      ok: false,
+      reason: "image_pull_failed",
+      details: output.slice(-400),
+    };
+  }
+
+  // UDP:53 egress blocked — the #2101 signature. nslookup gave up after
+  // its retry budget without getting any DNS response.
+  if (/no servers could be reached|connection timed out/i.test(output)) {
+    return {
+      ok: false,
+      reason: "servers_unreachable",
+      details: output.slice(-400),
+    };
+  }
+
+  // Something else — resolver responded but couldn't answer.
   return {
     ok: false,
     reason: "resolution_failed",

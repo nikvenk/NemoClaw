@@ -2642,94 +2642,129 @@ async function preflight() {
   if (dns.ok) {
     console.log("  ✓ Container DNS resolution works");
   } else {
-    console.error("  ✗ DNS resolution from inside a docker container failed.");
+    // Tailor the headline to the actual probe failure. image_pull_failed is
+    // a different kind of problem from DNS inside the container; others all
+    // point at DNS.
+    if (dns.reason === "image_pull_failed") {
+      console.error("  ✗ Could not run the DNS probe: docker failed to pull busybox.");
+      console.error(
+        "    (this usually means the docker daemon itself cannot reach Docker Hub —",
+      );
+      console.error(
+        "     e.g., a firewall blocks outbound TCP:443 to registry-1.docker.io, or",
+      );
+      console.error("     the host needs an HTTP proxy).");
+    } else {
+      console.error("  ✗ DNS resolution from inside a docker container failed.");
+    }
     if (dns.details) {
       for (const line of String(dns.details).split("\n").slice(-4)) {
         if (line.trim()) console.error(`    ${line.trim()}`);
       }
     }
     console.error("");
-    console.error(
-      "  The sandbox build runs `npm ci` inside a container and needs to resolve",
-    );
-    console.error(
-      "  registry.npmjs.org. On networks that block outbound UDP:53 to public DNS",
-    );
-    console.error(
-      "  (common in corporate environments that force DNS-over-TLS on the host),",
-    );
-    console.error(
-      "  the build appears to hang for ~15 minutes and then prints the cryptic",
-    );
-    console.error("  `npm error Exit handler never called`. See issue #2101.");
-    console.error("");
-    console.error("  Fix options:");
-    console.error("");
 
-    // Platform-aware remediation hints. The systemd-resolved fix is
-    // Linux-specific; macOS / Windows / WSL-backed-by-Docker-Desktop hosts
-    // configure DNS through Docker Desktop's GUI or a platform-specific
-    // daemon.json path, so we avoid printing shell commands that would
-    // mislead those users.
-    const isLinuxWithSystemd =
-      host.platform === "linux" && !host.isWsl && host.systemctlAvailable;
-
-    if (isLinuxWithSystemd) {
-      const detectedBridgeIp = getDockerBridgeGatewayIp();
-      const bridgeIp = detectedBridgeIp || "172.17.0.1";
-      let bridgeNote: string | null = null;
-      if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
-        bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
-      } else if (!detectedBridgeIp) {
-        bridgeNote =
-          "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
-          "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
-      }
-      console.error("  1. Make systemd-resolved reachable from containers (recommended):");
-      if (bridgeNote) console.error(bridgeNote);
+    // Only show the #2101-specific context for DNS failures, not for image
+    // pull failures (which are a different category of problem).
+    if (dns.reason !== "image_pull_failed") {
       console.error(
-        "     (warning: overwrites /etc/docker/daemon.json — back up or merge if you already have one)",
+        "  The sandbox build runs `npm ci` inside a container and needs to resolve",
       );
-      console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
       console.error(
-        `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
+        "  registry.npmjs.org. On networks that block outbound UDP:53 to public DNS",
       );
-      console.error("       sudo systemctl restart systemd-resolved");
       console.error(
-        `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
+        "  (common in corporate environments that force DNS-over-TLS on the host),",
       );
-      console.error("       sudo systemctl restart docker");
+      console.error(
+        "  the build appears to hang for ~15 minutes and then prints the cryptic",
+      );
+      console.error("  `npm error Exit handler never called`. See issue #2101.");
       console.error("");
-      console.error(
-        "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
-      );
-      console.error("     (ask your IT team for an internal DNS server IP).");
-    } else if (host.platform === "darwin") {
-      console.error("  Configure Docker Desktop's DNS (macOS):");
-      console.error("     Docker Desktop → Settings → Docker Engine — edit the JSON to add:");
-      console.error('       { "dns": ["<corp-dns-ip>"] }');
-      console.error("     Then click Apply & Restart.");
-      console.error("     Ask your IT team for an internal DNS server IP that accepts UDP:53.");
-    } else if (host.platform === "win32" || host.isWsl) {
-      console.error(
-        "  Configure Docker Desktop's DNS (Windows / WSL via Docker Desktop):",
-      );
-      console.error(
-        "     Docker Desktop for Windows → Settings → Docker Engine — edit the JSON to add:",
-      );
-      console.error('       { "dns": ["<corp-dns-ip>"] }');
-      console.error("     Then click Apply & Restart.");
-      console.error(
-        "     (If you run docker natively inside WSL instead of Docker Desktop, see the Linux fix in issue #2101.)",
-      );
-    } else {
-      console.error(
-        "  Configure your docker daemon to use a DNS server that accepts UDP:53.",
-      );
-      console.error(
-        '  Add { "dns": ["<corp-dns-ip>"] } to your docker daemon.json and restart the daemon.',
-      );
-      console.error("  Ask your IT team for an internal DNS server IP.");
+      console.error("  Fix options:");
+      console.error("");
+
+      // Platform-aware remediation hints. The systemd-resolved fix is
+      // Linux-specific; macOS / Windows / WSL-backed-by-Docker-Desktop
+      // hosts configure DNS through Docker Desktop's GUI or a
+      // platform-specific daemon.json path, so we avoid printing shell
+      // commands that would mislead those users.
+      const isLinuxWithSystemd =
+        host.platform === "linux" && !host.isWsl && host.systemctlAvailable;
+
+      const printLinuxFix = (bridgeIp: string, note: string | null) => {
+        if (note) console.error(note);
+        console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
+        console.error(
+          `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
+        );
+        console.error("       sudo systemctl restart systemd-resolved");
+        console.error("");
+        console.error(
+          "     Then add the dns key to /etc/docker/daemon.json (safely merges with existing config if jq is installed):",
+        );
+        console.error(
+          "       sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak-$(date +%s) 2>/dev/null",
+        );
+        console.error(
+          `       { sudo jq '. + {"dns":["${bridgeIp}"]}' /etc/docker/daemon.json 2>/dev/null || echo '{"dns":["${bridgeIp}"]}'; } | sudo tee /etc/docker/daemon.json.new >/dev/null`,
+        );
+        console.error("       sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json");
+        console.error("       sudo systemctl restart docker");
+      };
+
+      if (isLinuxWithSystemd) {
+        const detectedBridgeIp = getDockerBridgeGatewayIp();
+        const bridgeIp = detectedBridgeIp || "172.17.0.1";
+        let bridgeNote: string | null = null;
+        if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
+          bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
+        } else if (!detectedBridgeIp) {
+          bridgeNote =
+            "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
+            "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+        }
+        console.error("  1. Make systemd-resolved reachable from containers (recommended):");
+        printLinuxFix(bridgeIp, bridgeNote);
+        console.error("");
+        console.error(
+          "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
+        );
+        console.error("     (ask your IT team for an internal DNS server IP).");
+      } else if (host.platform === "darwin") {
+        console.error("  Configure Docker Desktop's DNS (macOS):");
+        console.error("     Docker Desktop → Settings → Docker Engine — edit the JSON to add:");
+        console.error('       { "dns": ["<corp-dns-ip>"] }');
+        console.error("     Then click Apply & Restart.");
+        console.error(
+          "     Ask your IT team for an internal DNS server IP that accepts UDP:53.",
+        );
+      } else if (host.platform === "win32" || host.isWsl) {
+        console.error(
+          "  1. Configure Docker Desktop's DNS (Windows / WSL via Docker Desktop):",
+        );
+        console.error(
+          "       Docker Desktop for Windows → Settings → Docker Engine — edit the JSON to add:",
+        );
+        console.error('         { "dns": ["<corp-dns-ip>"] }');
+        console.error("       Then click Apply & Restart.");
+        console.error("");
+        console.error(
+          "  2. If you run docker natively inside WSL (not Docker Desktop), apply the Linux fix:",
+        );
+        printLinuxFix("172.17.0.1", null);
+      } else {
+        console.error(
+          "  Configure your docker daemon to use a DNS server that accepts UDP:53.",
+        );
+        console.error(
+          '  Add { "dns": ["<corp-dns-ip>"] } to your docker daemon.json and restart the daemon.',
+        );
+        console.error("  Ask your IT team for an internal DNS server IP.");
+      }
+      console.error("");
+      console.error("  Verify the fix worked:");
+      console.error("    docker run --rm busybox nslookup registry.npmjs.org");
     }
     process.exit(1);
   }
