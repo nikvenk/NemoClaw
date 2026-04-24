@@ -57,7 +57,7 @@ export const GROUP_ORDER: readonly CommandGroup[] = [
 ] as const;
 
 /**
- * All 42 CLI commands. This is the single source of truth.
+ * All 46 CLI commands. This is the single source of truth.
  *
  * The order within each group matches the current help() display order.
  */
@@ -118,7 +118,8 @@ export const COMMANDS: readonly CommandDef[] = [
   {
     usage: "nemoclaw <name> snapshot restore",
     description: "Restore state from a snapshot",
-    flags: "[v<N>|name|timestamp]",
+    flags:
+      "[v<N>|name|timestamp] [--to <dst>] (omit version for latest; auto-creates <dst> from this sandbox image if needed)",
     group: "Sandbox Management",
     scope: "sandbox",
   },

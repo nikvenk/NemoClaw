@@ -20,10 +20,15 @@ const { validateName } = require("./runner");
 const credentialFilter: typeof import("./credential-filter") = require("./credential-filter");
 const { stripCredentials, isConfigObject, isConfigValue } = credentialFilter;
 const { appendAuditEntry } = require("./shields-audit");
+const { isPrivateHostname } = require("./private-networks");
 
 type ConfigObject = import("./credential-filter").ConfigObject;
 type ConfigValue = import("./credential-filter").ConfigValue;
 const { runOpenshellCommand, captureOpenshellCommand } = require("./openshell");
+
+function parseJson<T>(text: string): T {
+  return JSON.parse(text);
+}
 
 const K3S_CONTAINER = "openshell-cluster-nemoclaw";
 
@@ -135,16 +140,16 @@ function setDotpath(obj: ConfigObject, dotpath: string, value: ConfigValue): voi
  * Return true when every segment in a dotpath is an own property on the
  * current config object, which keeps config set constrained to recognized keys.
  */
-function isRecognizedConfigPath(obj: unknown, dotpath: string): boolean {
+function isRecognizedConfigPath(obj: ConfigValue, dotpath: string): boolean {
   if (!dotpath || typeof dotpath !== "string") return false;
   const keys = dotpath.split(".");
   if (keys.some((key) => !key)) return false;
 
-  let current: unknown = obj;
+  let current: ConfigValue = obj;
   for (const key of keys) {
-    if (current == null || typeof current !== "object" || Array.isArray(current)) return false;
-    if (!Object.prototype.hasOwnProperty.call(current as Record<string, unknown>, key)) return false;
-    current = (current as Record<string, unknown>)[key];
+    if (!isConfigObject(current)) return false;
+    if (!Object.prototype.hasOwnProperty.call(current, key)) return false;
+    current = current[key];
   }
   return true;
 }
@@ -177,7 +182,7 @@ function serializeConfig(config: ConfigObject, format: string): string {
  */
 function parseCliConfigValue(rawValue: string): ConfigValue {
   try {
-    const parsed: unknown = JSON.parse(rawValue);
+    const parsed = parseJson<ConfigValue>(rawValue);
     return isConfigValue(parsed) ? parsed : rawValue;
   } catch {
     return rawValue;
@@ -210,7 +215,7 @@ function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Conf
 
   try {
     return parseConfig(raw, target.format);
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`  Failed to parse ${target.agentName} config: ${message}`);
     process.exit(1);
@@ -218,21 +223,13 @@ function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Conf
 }
 
 // ---------------------------------------------------------------------------
-// URL validation (lightweight SSRF check for config set)
+// URL validation (literal-IP SSRF check for config set)
+//
+// isPrivateHostname is defined in ./private-networks alongside the shared
+// BlockList built from nemoclaw-blueprint/private-networks.yaml. DNS
+// rebinding (TOCTOU) protection is out of scope — the plugin's
+// validateEndpointUrl handles that via async DNS resolution and pinning.
 // ---------------------------------------------------------------------------
-
-const PRIVATE_IP_PREFIXES = ["127.", "10.", "0.", "169.254.", "192.168."];
-
-const PRIVATE_IP_172_RE = /^172\.(1[6-9]|2[0-9]|3[01])\./;
-
-function isPrivateIp(hostname: string): boolean {
-  if (hostname === "localhost" || hostname === "[::1]") return true;
-  for (const prefix of PRIVATE_IP_PREFIXES) {
-    if (hostname.startsWith(prefix)) return true;
-  }
-  if (PRIVATE_IP_172_RE.test(hostname)) return true;
-  return false;
-}
 
 function validateUrlValue(value: string): void {
   let parsed: URL;
@@ -246,7 +243,7 @@ function validateUrlValue(value: string): void {
     throw new Error(`URL scheme "${parsed.protocol}" is not allowed. Use http: or https:.`);
   }
 
-  if (isPrivateIp(parsed.hostname)) {
+  if (isPrivateHostname(parsed.hostname)) {
     throw new Error(
       `URL points to private/internal address "${parsed.hostname}". ` +
         `This could expose internal services to the sandbox.`,
@@ -328,14 +325,13 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 2. Parse and validate value
   const parsedValue = parseCliConfigValue(opts.value);
 
-  // 3. Validate URLs for SSRF
-  if (
-    typeof parsedValue === "string" &&
-    (parsedValue.startsWith("http://") || parsedValue.startsWith("https://"))
-  ) {
+  // 3. Validate URLs for SSRF. validateUrlValue no-ops on non-URL input,
+  // so run it for every string to avoid bypasses via mixed-case schemes
+  // ("HTTP://127.0.0.1") or leading whitespace.
+  if (typeof parsedValue === "string") {
     try {
-      validateUrlValue(parsedValue);
-    } catch (err: unknown) {
+      validateUrlValue(parsedValue.trim());
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`  URL validation failed: ${message}`);
       process.exit(1);
@@ -350,7 +346,9 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   }
 
   if (!isRecognizedConfigPath(config, opts.key)) {
-    console.error(`  Key validation failed: "${opts.key}" is not a recognized ${target.agentName} config path.`);
+    console.error(
+      `  Key validation failed: "${opts.key}" is not a recognized ${target.agentName} config path.`,
+    );
     process.exit(1);
   }
 

@@ -157,7 +157,7 @@ run_cli_check() {
   grep -E '^### `nemoclaw ' "$COMMANDS_MD" | LC_ALL=C perl -CS -ne '
     if (/^### `([^`]+)`\s*(?:\{[^}]+\})?\s*$/) {
       my $c = $1;
-      $c =~ s/\s*\[[^\]]*\]\s*$//;
+      while ($c =~ s/\s*\[[^\]]*\]\s*$//) {}
       while ($c =~ s/\s+<[^>]+>\s*$//) {}
       $c =~ s/\s+$//;
       print "$c\n";
