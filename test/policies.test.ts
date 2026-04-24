@@ -38,14 +38,6 @@ function requirePresetContent(content: string | null): string {
   return content;
 }
 
-function parseJson<T>(raw: string): T {
-  return JSON.parse(raw);
-}
-
-function parseCalls(output: string): PolicyCall[] {
-  return parseJson<PolicyCall[]>(output.split("__CALLS__")[1].trim());
-}
-
 function runPolicyAdd(
   confirmAnswer: string,
   extraArgs: string[] = [],

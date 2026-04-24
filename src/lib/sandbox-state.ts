@@ -143,8 +143,10 @@ function isRebuildManifest(value: unknown): value is RebuildManifest {
     typeof value.backupPath === "string" &&
     (value.blueprintDigest === null || typeof value.blueprintDigest === "string") &&
     (value.policyPresets === undefined || isStringArray(value.policyPresets)) &&
-    (value.instances === undefined || (Array.isArray(value.instances) && value.instances.every((entry) => isInstanceBackup(entry)))) &&
-    (value.name === undefined || typeof value.name === "string")
+    (value.instances === undefined ||
+      (Array.isArray(value.instances) && value.instances.every((entry) => isInstanceBackup(entry)))) &&
+    (value.name === undefined || typeof value.name === "string") &&
+    (value.error === undefined || typeof value.error === "string")
   );
 }
 

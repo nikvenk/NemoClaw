@@ -3409,7 +3409,7 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   }
 
   // 3. Cross-reference to find orphans
-  const orphans = allImages.filter((img: { tag: string; id: string }) => !registeredTags.has(img.tag));
+  const orphans = allImages.filter((img: { tag: string; size: string }) => !registeredTags.has(img.tag));
 
   if (orphans.length === 0) {
     console.log(`  All ${allImages.length} sandbox image(s) are in use. Nothing to clean up.`);
