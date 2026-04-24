@@ -43,7 +43,8 @@ describe("nemohermes alias", () => {
   });
 
   it("--version outputs nemohermes branding", () => {
-    const { out } = runHermes("--version");
+    const { code, out } = runHermes("--version");
+    expect(code).toBe(0);
     expect(out).toMatch(/^nemohermes v[\d.]+/);
     expect(out).toContain("(nemoclaw)");
   });
@@ -62,7 +63,8 @@ describe("nemohermes alias", () => {
   });
 
   it("help output shows NemoHermes header", () => {
-    const { out } = runHermes("--help");
+    const { code, out } = runHermes("--help");
+    expect(code).toBe(0);
     expect(out).toContain("NemoHermes");
   });
 
@@ -70,7 +72,8 @@ describe("nemohermes alias", () => {
     // The launcher sets the env var before requiring dist/nemoclaw.
     // We verify indirectly: --version shows nemohermes branding which
     // requires both NEMOCLAW_AGENT=hermes AND argv containing nemohermes.
-    const { out } = runHermes("--version");
+    const { code, out } = runHermes("--version");
+    expect(code).toBe(0);
     expect(out).toContain("nemohermes");
   });
 });
