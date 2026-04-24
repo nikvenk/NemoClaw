@@ -2665,33 +2665,72 @@ async function preflight() {
     console.error("");
     console.error("  Fix options:");
     console.error("");
-    const detectedBridgeIp = getDockerBridgeGatewayIp();
-    const bridgeIp = detectedBridgeIp || "172.17.0.1";
-    let bridgeNote: string | null = null;
-    if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
-      bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
-    } else if (!detectedBridgeIp) {
-      bridgeNote =
-        "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
-        "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+
+    // Platform-aware remediation hints. The systemd-resolved fix is
+    // Linux-specific; macOS / Windows / WSL-backed-by-Docker-Desktop hosts
+    // configure DNS through Docker Desktop's GUI or a platform-specific
+    // daemon.json path, so we avoid printing shell commands that would
+    // mislead those users.
+    const isLinuxWithSystemd =
+      host.platform === "linux" && !host.isWsl && host.systemctlAvailable;
+
+    if (isLinuxWithSystemd) {
+      const detectedBridgeIp = getDockerBridgeGatewayIp();
+      const bridgeIp = detectedBridgeIp || "172.17.0.1";
+      let bridgeNote: string | null = null;
+      if (detectedBridgeIp && detectedBridgeIp !== "172.17.0.1") {
+        bridgeNote = `     (detected your docker bridge gateway at ${detectedBridgeIp})`;
+      } else if (!detectedBridgeIp) {
+        bridgeNote =
+          "     (could not auto-detect bridge IP; using docker's default — verify with:\n" +
+          "      docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')";
+      }
+      console.error("  1. Make systemd-resolved reachable from containers (recommended):");
+      if (bridgeNote) console.error(bridgeNote);
+      console.error(
+        "     (warning: overwrites /etc/docker/daemon.json — back up or merge if you already have one)",
+      );
+      console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
+      console.error(
+        `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
+      );
+      console.error("       sudo systemctl restart systemd-resolved");
+      console.error(
+        `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
+      );
+      console.error("       sudo systemctl restart docker");
+      console.error("");
+      console.error(
+        "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
+      );
+      console.error("     (ask your IT team for an internal DNS server IP).");
+    } else if (host.platform === "darwin") {
+      console.error("  Configure Docker Desktop's DNS (macOS):");
+      console.error("     Docker Desktop → Settings → Docker Engine — edit the JSON to add:");
+      console.error('       { "dns": ["<corp-dns-ip>"] }');
+      console.error("     Then click Apply & Restart.");
+      console.error("     Ask your IT team for an internal DNS server IP that accepts UDP:53.");
+    } else if (host.platform === "win32" || host.isWsl) {
+      console.error(
+        "  Configure Docker Desktop's DNS (Windows / WSL via Docker Desktop):",
+      );
+      console.error(
+        "     Docker Desktop for Windows → Settings → Docker Engine — edit the JSON to add:",
+      );
+      console.error('       { "dns": ["<corp-dns-ip>"] }');
+      console.error("     Then click Apply & Restart.");
+      console.error(
+        "     (If you run docker natively inside WSL instead of Docker Desktop, see the Linux fix in issue #2101.)",
+      );
+    } else {
+      console.error(
+        "  Configure your docker daemon to use a DNS server that accepts UDP:53.",
+      );
+      console.error(
+        '  Add { "dns": ["<corp-dns-ip>"] } to your docker daemon.json and restart the daemon.',
+      );
+      console.error("  Ask your IT team for an internal DNS server IP.");
     }
-    console.error("  1. Make systemd-resolved reachable from containers (recommended):");
-    if (bridgeNote) console.error(bridgeNote);
-    console.error("     (warning: overwrites /etc/docker/daemon.json — back up or merge if you already have one)");
-    console.error("       sudo mkdir -p /etc/systemd/resolved.conf.d/");
-    console.error(
-      `       printf '[Resolve]\\nDNSStubListenerExtra=${bridgeIp}\\n' | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf`,
-    );
-    console.error("       sudo systemctl restart systemd-resolved");
-    console.error(
-      `       echo '{"dns":["${bridgeIp}"]}' | sudo tee /etc/docker/daemon.json`,
-    );
-    console.error("       sudo systemctl restart docker");
-    console.error("");
-    console.error(
-      "  2. Configure an explicit UDP:53-capable DNS in /etc/docker/daemon.json",
-    );
-    console.error("     (ask your IT team for an internal DNS server IP).");
     process.exit(1);
   }
 
