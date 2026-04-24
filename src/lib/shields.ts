@@ -105,7 +105,9 @@ interface TimerMarker {
   restoreAt: string;
 }
 
-function isObjectRecord(value: unknown): value is object {
+type UnknownRecord = { [key: string]: unknown };
+
+function isObjectRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -132,26 +134,24 @@ function isOptionalNullableNumber(value: unknown): value is number | null | unde
 function isShieldsState(value: unknown): value is ShieldsState {
   return (
     isObjectRecord(value) &&
-    isOptionalBoolean(Reflect.get(value, "shieldsDown")) &&
-    isOptionalNullableString(Reflect.get(value, "shieldsDownAt")) &&
-    isOptionalNullableNumber(Reflect.get(value, "shieldsDownTimeout")) &&
-    isOptionalNullableString(Reflect.get(value, "shieldsDownReason")) &&
-    isOptionalNullableString(Reflect.get(value, "shieldsDownPolicy")) &&
-    isOptionalNullableString(Reflect.get(value, "shieldsPolicySnapshotPath")) &&
-    isOptionalBoolean(Reflect.get(value, "permanent")) &&
-    isOptionalString(Reflect.get(value, "updatedAt"))
+    isOptionalBoolean(value.shieldsDown) &&
+    isOptionalNullableString(value.shieldsDownAt) &&
+    isOptionalNullableNumber(value.shieldsDownTimeout) &&
+    isOptionalNullableString(value.shieldsDownReason) &&
+    isOptionalNullableString(value.shieldsDownPolicy) &&
+    isOptionalNullableString(value.shieldsPolicySnapshotPath) &&
+    isOptionalBoolean(value.permanent) &&
+    isOptionalString(value.updatedAt)
   );
 }
 
-function isTimerMarker(value: object | null): value is TimerMarker {
-  if (value === null || Array.isArray(value)) {
-    return false;
-  }
+function isTimerMarker(value: unknown): value is TimerMarker {
   return (
-    typeof Reflect.get(value, "pid") === "number" &&
-    typeof Reflect.get(value, "sandboxName") === "string" &&
-    typeof Reflect.get(value, "snapshotPath") === "string" &&
-    typeof Reflect.get(value, "restoreAt") === "string"
+    isObjectRecord(value) &&
+    typeof value.pid === "number" &&
+    typeof value.sandboxName === "string" &&
+    typeof value.snapshotPath === "string" &&
+    typeof value.restoreAt === "string"
   );
 }
 

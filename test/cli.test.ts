@@ -20,8 +20,21 @@ type CliErrorShape = {
   stderr?: string | Buffer;
 };
 
-function readBufferOrStringProperty(value: object, key: "stdout" | "stderr"): string | Buffer | undefined {
-  const property = Reflect.get(value, key);
+type CliErrorCandidate = {
+  status?: unknown;
+  stdout?: unknown;
+  stderr?: unknown;
+};
+
+function isCliErrorCandidate(value: unknown): value is CliErrorCandidate {
+  return typeof value === "object" && value !== null;
+}
+
+function readBufferOrStringProperty(
+  value: CliErrorCandidate,
+  key: "stdout" | "stderr",
+): string | Buffer | undefined {
+  const property = value[key];
   return typeof property === "string" || Buffer.isBuffer(property) ? property : undefined;
 }
 
@@ -62,12 +75,9 @@ function runWithEnv(
     });
     return { code: 0, out };
   } catch (err) {
-    if (typeof err === "object" && err !== null) {
+    if (isCliErrorCandidate(err)) {
       return readCliErrorOutput({
-        status:
-          typeof Reflect.get(err, "status") === "number"
-            ? Number(Reflect.get(err, "status"))
-            : undefined,
+        status: typeof err.status === "number" ? err.status : undefined,
         stdout: readBufferOrStringProperty(err, "stdout"),
         stderr: readBufferOrStringProperty(err, "stderr"),
       });

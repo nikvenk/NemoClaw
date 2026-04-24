@@ -9,10 +9,12 @@ type OnboardValidationInternals = {
   getValidationProbeCurlArgs: (opts?: { isWsl?: boolean }) => string[];
 };
 
+type OnboardValidationCandidate = Partial<OnboardValidationInternals> | null;
+
 function isOnboardValidationInternals(
-  value: object | null,
+  value: OnboardValidationCandidate,
 ): value is OnboardValidationInternals {
-  return value !== null && typeof Reflect.get(value, "getValidationProbeCurlArgs") === "function";
+  return value !== null && typeof value.getValidationProbeCurlArgs === "function";
 }
 
 const loadedOnboardValidationModule = await import("../dist/lib/onboard.js");

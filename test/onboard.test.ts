@@ -86,12 +86,14 @@ function parseStdoutJson<T>(stdout: string): T {
   return JSON.parse(line);
 }
 
-function isOnboardTestInternals(value: object | null): value is OnboardTestInternals {
+type OnboardTestInternalsCandidate = Partial<OnboardTestInternals> | null;
+
+function isOnboardTestInternals(value: OnboardTestInternalsCandidate): value is OnboardTestInternals {
   return (
     value !== null &&
-    typeof Reflect.get(value, "buildProviderArgs") === "function" &&
-    typeof Reflect.get(value, "classifySandboxCreateFailure") === "function" &&
-    typeof Reflect.get(value, "writeSandboxConfigSyncFile") === "function"
+    typeof value.buildProviderArgs === "function" &&
+    typeof value.classifySandboxCreateFailure === "function" &&
+    typeof value.writeSandboxConfigSyncFile === "function"
   );
 }
 

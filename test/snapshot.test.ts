@@ -26,15 +26,15 @@ type BackupScalar = string | number | boolean | null | undefined;
 type BackupValue = BackupScalar | BackupManifestOverrides | BackupValue[];
 
 type SandboxStateModule = typeof import("../dist/lib/sandbox-state.js");
+type SandboxStateModuleCandidate = Partial<SandboxStateModule> | null;
 
-function isSandboxStateModule(value: object | null): value is SandboxStateModule {
+function isSandboxStateModule(value: SandboxStateModuleCandidate): value is SandboxStateModule {
   return (
-    typeof value === "object" &&
     value !== null &&
-    typeof Reflect.get(value, "listBackups") === "function" &&
-    typeof Reflect.get(value, "findBackup") === "function" &&
-    typeof Reflect.get(value, "validateSnapshotName") === "function" &&
-    typeof Reflect.get(value, "parseRestoreArgs") === "function"
+    typeof value.listBackups === "function" &&
+    typeof value.findBackup === "function" &&
+    typeof value.validateSnapshotName === "function" &&
+    typeof value.parseRestoreArgs === "function"
   );
 }
 

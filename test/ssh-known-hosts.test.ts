@@ -7,10 +7,12 @@ type OnboardKnownHostsInternals = {
   pruneKnownHostsEntries: (contents: string) => string;
 };
 
+type OnboardKnownHostsCandidate = Partial<OnboardKnownHostsInternals> | null;
+
 function isOnboardKnownHostsInternals(
-  value: object | null,
+  value: OnboardKnownHostsCandidate,
 ): value is OnboardKnownHostsInternals {
-  return value !== null && typeof Reflect.get(value, "pruneKnownHostsEntries") === "function";
+  return value !== null && typeof value.pruneKnownHostsEntries === "function";
 }
 
 const loadedOnboardKnownHostsModule = await import("../dist/lib/onboard.js");
