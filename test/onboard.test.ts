@@ -1,3 +1,4 @@
+// @ts-nocheck — String.raw template literals trigger false TS2345/TS7006 on CI (Node 22.22+)
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
