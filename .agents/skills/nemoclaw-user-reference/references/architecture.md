@@ -92,7 +92,7 @@ graph TB
 
             subgraph GWCON["OpenShell gateway container"]
                 direction TB
-                ROUTER["Inference router<br/><small>credential injection<br/>policy enforcement</small>"]:::gateway
+                PROXY["OpenShell L7 proxy<br/><small>rewrites Authorization headers<br/>and URL-path segments at egress<br/>(credential injection)</small>"]:::gateway
 
                 subgraph K3S["Embedded k3s cluster"]
                     direction TB
@@ -109,8 +109,8 @@ graph TB
     INFER["Inference provider<br/><small>NVIDIA Endpoints · OpenAI<br/>Anthropic · Ollama · vLLM</small>"]:::external
 
     CLI -->|"openshell CLI<br/>(orchestrates)"| GWCON
-    AGENT -->|"inference requests<br/><small>no credentials</small>"| ROUTER
-    ROUTER -->|"proxied with<br/>credentials injected"| INFER
+    AGENT -->|"inference requests<br/><small>placeholder credentials</small>"| PROXY
+    PROXY -->|"egress with real credentials<br/>injected at the L7 proxy"| INFER
 
     class HOST host
     class DOCKER docker
@@ -125,10 +125,14 @@ Layering from top to bottom:
 |---|---|---|
 | Host CLI | Host process (`nemoclaw` on Node.js) | Orchestrates OpenShell via `openshell` CLI calls. |
 | Docker daemon | Host service | Runs the OpenShell gateway container. |
-| Gateway container | Docker container | Hosts the credential store, inference router, and the embedded k3s control plane. |
+| Gateway container | Docker container | Hosts the credential store, the L7 proxy, and the embedded k3s control plane. |
 | k3s | Process tree inside the gateway container | Kubernetes control plane that schedules the sandbox pod. |
 | Sandbox pod | Pod in the embedded k3s cluster | Runs the OpenClaw agent and the NemoClaw plugin under Landlock + seccomp + netns. |
-| Inference router | Process in the gateway container | Intercepts agent inference calls and proxies them to the configured provider. |
+| OpenShell L7 proxy | Process in the gateway container | Intercepts agent egress and rewrites `Authorization` headers (Bearer/Bot) and URL-path segments to inject the real credential at the network boundary. |
+
+NemoClaw never gives the sandbox a raw provider key.
+At onboard time it registers credentials with OpenShell's provider/placeholder system, and the L7 proxy substitutes the real value into outbound requests at egress.
+The CLI helper `isInferenceRouteReady` (in `src/lib/onboard.ts`) is a host-side readiness check used by the resume flow to decide whether the active route already covers the chosen provider and model — it is not a runtime component.
 
 For the DGX Spark-specific variant of this topology (cgroup v2, aarch64, unified memory), refer to the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw).
 
