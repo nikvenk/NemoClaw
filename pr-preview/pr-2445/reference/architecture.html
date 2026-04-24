@@ -996,7 +996,11 @@ window.runMermaid = runMermaid;</script>
     </pre></section>
 <section id="deployment-topology">
 <h2>Deployment Topology<a class="headerlink" href="#deployment-topology" title="Link to this heading">#</a></h2>
-<p>The logical diagram above shows how components relate. This section shows what actually runs where on the host. NemoClaw runs on a Docker daemon: the OpenShell gateway runs as a container and embeds a k3s cluster, and the sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
+<p>The logical diagram above shows how components relate.
+This section shows what actually runs where on the host.
+NemoClaw uses a Docker daemon.
+The OpenShell gateway runs as a container that embeds a k3s cluster.
+The sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
 <pre  class="mermaid">
         graph TB
     classDef host fill:#fff,stroke:#76b900,stroke-width:2px,color:#1a1a1a,font-weight:bold
