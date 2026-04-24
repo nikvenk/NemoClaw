@@ -669,7 +669,6 @@ install_configure_guard() {
   # /sandbox/.openclaw/ fail with EACCES. Instead of a cryptic error, guide
   # the user to the correct host-side workflow.
   local marker_begin="# nemoclaw-configure-guard begin"
-  local marker_end="# nemoclaw-configure-guard end"
   local snippet
   read -r -d '' snippet <<'GUARD' || true
 # nemoclaw-configure-guard begin
@@ -738,21 +737,19 @@ openclaw() {
 GUARD
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    # Guard baked in at Docker build time (Dockerfile COPY + cat).
+    # Skip if already present — avoids Landlock EACCES on OpenShell ≥0.0.32
+    # where /sandbox is read-only before the entrypoint starts.
     if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-      local tmp
-      tmp="$(mktemp)"
-      awk -v b="$marker_begin" -v e="$marker_end" \
-        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
-      printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file"
-      rm -f "$tmp"
-    elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
-      printf '\n%s\n' "$snippet" >>"$rc_file"
+      continue
+    fi
+    # Fallback for older images without the build-time guard: attempt the
+    # write, but tolerate failure (Landlock may block it).
+    if [ -f "$rc_file" ]; then
+      printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
     fi
   done
-  # Final lock after all rc-file mutations are complete so Landlock
-  # read_only enforcement holds.
-  lock_rc_files "$_SANDBOX_HOME"
+  lock_rc_files "$_SANDBOX_HOME" 2>/dev/null || true
 }
 
 # validate_openclaw_symlinks / harden_openclaw_symlinks — thin wrappers

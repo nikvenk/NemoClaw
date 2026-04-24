@@ -316,8 +316,8 @@ describe("nemoclaw-start configure guard (#1114)", () => {
     const body = guardBlock[1];
     expect(body).toContain("nemoclaw-configure-guard begin");
     expect(body).toContain("nemoclaw-configure-guard end");
-    // Uses awk to strip existing block before re-inserting
-    expect(body).toContain("awk");
+    // Skips write if guard is already baked in at build time
+    expect(body).toContain("continue");
   });
 
   it("calls install_configure_guard in both root and non-root paths", () => {
@@ -405,6 +405,37 @@ describe("nemoclaw-start configure guard blocks channels mutators (#2097)", () =
   it("redirects users to the host-side channels commands", () => {
     expect(src).toMatch(/channels\)[\s\S]*?nemoclaw <sandbox> channels add/);
     expect(src).toMatch(/channels\)[\s\S]*?nemoclaw <sandbox> channels remove/);
+  });
+});
+
+describe("build-time configure guard script (#996, #2457)", () => {
+  const GUARD_SCRIPT = path.join(import.meta.dirname, "..", "scripts", "configure-guard.sh");
+  const guardSrc = fs.readFileSync(GUARD_SCRIPT, "utf-8");
+
+  it("contains the same marker blocks as the runtime function", () => {
+    expect(guardSrc).toContain("# nemoclaw-configure-guard begin");
+    expect(guardSrc).toContain("# nemoclaw-configure-guard end");
+  });
+
+  it("intercepts openclaw configure with an actionable error", () => {
+    expect(guardSrc).toContain("openclaw configure");
+    expect(guardSrc).toContain("nemoclaw onboard --resume");
+    expect(guardSrc).toContain("return 1");
+  });
+
+  it("blocks openclaw agent --local", () => {
+    expect(guardSrc).toContain('"--local"');
+    expect(guardSrc).toContain("bypasses the gateway");
+  });
+
+  it("passes non-intercepted commands through to the real binary", () => {
+    expect(guardSrc).toContain('command openclaw "$@"');
+  });
+
+  it("Dockerfile references the guard script for build-time injection", () => {
+    const dockerfile = fs.readFileSync(path.join(import.meta.dirname, "..", "Dockerfile"), "utf-8");
+    expect(dockerfile).toContain("configure-guard.sh");
+    expect(dockerfile).toContain("nemoclaw-configure-guard begin");
   });
 });
 

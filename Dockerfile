@@ -197,8 +197,9 @@ COPY scripts/nemoclaw-start.sh /usr/local/bin/nemoclaw-start
 # blocks /opt/nemoclaw-blueprint/ from non-root users, but the entrypoint
 # needs to read this file to install the NODE_OPTIONS --require preload.
 COPY nemoclaw-blueprint/scripts/ws-proxy-fix.js /usr/local/lib/nemoclaw/ws-proxy-fix.js
+COPY scripts/configure-guard.sh /usr/local/lib/nemoclaw/configure-guard.sh
 RUN chmod 755 /usr/local/bin/nemoclaw-start /usr/local/lib/nemoclaw/sandbox-init.sh \
-    && chmod 644 /usr/local/lib/nemoclaw/ws-proxy-fix.js
+    && chmod 644 /usr/local/lib/nemoclaw/ws-proxy-fix.js /usr/local/lib/nemoclaw/configure-guard.sh
 
 # Build args for config that varies per deployment.
 # nemoclaw onboard passes these at image build time.
@@ -450,6 +451,17 @@ RUN OPENCLAW_DIST_DIR="$(npm root -g)/openclaw/dist" \
         echo "Error: OpenClaw exec approvals path patch failed"; \
         exit 1; \
     fi
+
+# Bake the configure guard into .bashrc and .profile at build time.
+# OpenShell ≥0.0.32 applies Landlock BEFORE the entrypoint, making
+# /sandbox read-only at the kernel level. Writing to rc files at runtime
+# would fail with EACCES. Ref: #996, #2457
+RUN for rc_file in /sandbox/.bashrc /sandbox/.profile; do \
+        if [ -f "$rc_file" ] && ! grep -qF 'nemoclaw-configure-guard begin' "$rc_file"; then \
+            printf '\n' >> "$rc_file" \
+            && cat /usr/local/lib/nemoclaw/configure-guard.sh >> "$rc_file"; \
+        fi; \
+    done
 
 RUN chown root:root /sandbox/.openclaw \
     && rm -rf /root/.npm /sandbox/.npm \

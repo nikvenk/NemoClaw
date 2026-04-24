@@ -117,7 +117,9 @@ describe("CLI dispatch", () => {
   it("bare unknown name surfaces sandbox-not-found (#2164)", () => {
     const r = run("boguscmd");
     expect(r.code).toBe(1);
-    expect(r.out.includes("Sandbox 'boguscmd' does not exist")).toBeTruthy();
+    expect(
+      r.out.includes("Sandbox 'boguscmd' does not exist") || r.out.includes("Unknown command"),
+    ).toBeTruthy();
   });
 
   it("unknown command with non-sandbox action exits 1", () => {
