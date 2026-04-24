@@ -31,11 +31,6 @@ get_jetpack_version() {
     return 0
   fi
 
-  if ((release >= 39)); then
-    info "Jetson detected (L4T $l4t_version) — this version does not require any host setup" >&2
-    return 0
-  fi
-
   case "$l4t_version" in
     36.*)
       printf "%s" "jp6"
@@ -43,10 +38,27 @@ get_jetpack_version() {
     38.*)
       printf "%s" "jp7-r38"
       ;;
+    39.*)
+      # JP7 R39 does not need iptables or daemon.json changes (same as R38),
+      # but k3s inside the OpenShell gateway container requires br_netfilter
+      # + net.bridge.bridge-nf-call-iptables=1 for ClusterIP service routing.
+      # The earlier "R39 needs no host setup" assumption was wrong: some R39
+      # kernel builds ship without the module loaded, and sandbox agent pods
+      # then crash-loop on cluster.local lookups. See #2418.
+      printf "%s" "jp7-r39"
+      ;;
     *)
       info "Jetson detected (L4T $l4t_version) but version is not recognized — skipping host setup" >&2
       ;;
   esac
+}
+
+# Returns 0 when `br_netfilter` is loaded AND the bridge-nf-call-iptables
+# sysctl is already set to 1. Used so we can skip host-state changes on
+# Jetson images that ship with this configured out of the box.
+bridge_netfilter_ready() {
+  [[ -f /proc/sys/net/bridge/bridge-nf-call-iptables ]] \
+    && [[ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null)" == "1" ]]
 }
 
 configure_jetson_host() {
@@ -119,17 +131,34 @@ PYEOF
     jp7-r38)
       # JP7 R38 does not need iptables or Docker daemon.json changes.
       ;;
+    jp7-r39)
+      # Same as R38 — no iptables or daemon.json changes. Only the
+      # br_netfilter setup below is relevant, and that's applied
+      # conditionally further down (some R39 images already ship with
+      # it loaded).
+      ;;
     *)
       error "Unsupported Jetson version: $jetpack_version"
       ;;
   esac
 
-  "${SUDO[@]}" modprobe br_netfilter
-  "${SUDO[@]}" sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null
+  # Apply br_netfilter setup. For JP6/JP7-R38 keep the pre-existing
+  # unconditional behavior — writing the persistent drop-ins is
+  # idempotent on re-runs, and we don't want to change what works for
+  # those already-shipped versions. For JP7-R39, only touch host state
+  # when the module isn't already configured, so images that ship with
+  # it in place don't end up with NemoClaw-owned files they didn't
+  # need.
+  if [[ "$jetpack_version" == "jp7-r39" ]] && bridge_netfilter_ready; then
+    info "br_netfilter already loaded and net.bridge.bridge-nf-call-iptables=1 — skipping"
+  else
+    "${SUDO[@]}" modprobe br_netfilter
+    "${SUDO[@]}" sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null
 
-  # Persist across reboots
-  echo "br_netfilter" | "${SUDO[@]}" tee /etc/modules-load.d/nemoclaw.conf >/dev/null
-  echo "net.bridge.bridge-nf-call-iptables=1" | "${SUDO[@]}" tee /etc/sysctl.d/99-nemoclaw.conf >/dev/null
+    # Persist across reboots
+    echo "br_netfilter" | "${SUDO[@]}" tee /etc/modules-load.d/nemoclaw.conf >/dev/null
+    echo "net.bridge.bridge-nf-call-iptables=1" | "${SUDO[@]}" tee /etc/sysctl.d/99-nemoclaw.conf >/dev/null
+  fi
 
   if [[ "$jetpack_version" == "jp6" ]]; then
     "${SUDO[@]}" systemctl restart docker
