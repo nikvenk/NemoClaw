@@ -162,17 +162,15 @@ describe("nemoclaw-start externalized gateway token", () => {
     expect(src).toContain('OPENCLAW_GATEWAY_TOKEN="$_NONROOT_GATEWAY_TOKEN"');
   });
 
-  it("does not export token or write token file in non-root mode", () => {
-    // Token must NOT be globally exported to sandbox shell env
+  it("writes non-root token file with restrictive permissions", () => {
+    // Non-root token file uses XDG_RUNTIME_DIR, not /run
+    expect(src).toContain('_NONROOT_TOKEN_DIR="${XDG_RUNTIME_DIR:-/tmp}/nemoclaw"');
+    // File must be locked down to 0400
+    expect(src).toContain('chmod 0400 "$_NONROOT_TOKEN_FILE"');
+  });
+
+  it("does not export token to sandbox shell env", () => {
     expect(src).not.toMatch(/export OPENCLAW_GATEWAY_TOKEN/);
-    // The non-root path must not write to GATEWAY_TOKEN_FILE (prevents
-    // filesystem leak via XDG_RUNTIME_DIR fallback)
-    const nonRootTokenGen = src.indexOf("_NONROOT_GATEWAY_TOKEN");
-    const rootGenerateCall = src.indexOf("generate_gateway_token\n");
-    // Between the non-root token gen and the root path, there should be
-    // no reference to GATEWAY_TOKEN_FILE
-    const nonRootSection = src.slice(nonRootTokenGen, rootGenerateCall);
-    expect(nonRootSection).not.toContain("GATEWAY_TOKEN_FILE");
   });
 });
 

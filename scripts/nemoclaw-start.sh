@@ -977,13 +977,19 @@ if [ "$(id -u)" -ne 0 ]; then
   apply_model_override
   apply_cors_override
   apply_slack_token_override
-  # Non-root: no privilege separation, but we still avoid unnecessary exposure.
-  # Generate a token and store it in a script-local variable — do NOT export
-  # it or write it to a file. Pass it only on the gateway launch line so it
-  # lives solely in the gateway process env, not in the sandbox shell env or
-  # the filesystem.
+  # Non-root: no privilege separation — uid separation is unavailable, so the
+  # sandbox user can read the token file. This is no worse than the pre-PR
+  # state where the token lived in openclaw.json (also sandbox-readable).
+  # Write the token to a restrictive file (0400) so it is not world-readable,
+  # and pass it on the gateway launch line (not exported to the shell env).
   _NONROOT_GATEWAY_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(32), end='')")"
-  printf '[SECURITY] Non-root mode — gateway token generated (process-env only, no file written)\n' >&2
+  _NONROOT_TOKEN_DIR="${XDG_RUNTIME_DIR:-/tmp}/nemoclaw"
+  _NONROOT_TOKEN_FILE="${_NONROOT_TOKEN_DIR}/gateway-token"
+  mkdir -p "$_NONROOT_TOKEN_DIR"
+  rm -f "$_NONROOT_TOKEN_FILE"
+  printf '%s' "$_NONROOT_GATEWAY_TOKEN" >"$_NONROOT_TOKEN_FILE"
+  chmod 0400 "$_NONROOT_TOKEN_FILE"
+  printf '[SECURITY] Non-root mode — gateway token at %s (no uid isolation)\n' "$_NONROOT_TOKEN_FILE" >&2
   install_configure_guard
   configure_messaging_channels
   validate_openclaw_symlinks
