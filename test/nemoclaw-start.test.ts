@@ -181,7 +181,14 @@ describe("Dockerfile gateway token externalization", () => {
   );
 
   it("writes empty token in initial openclaw.json config", () => {
-    expect(dockerfile).toContain("'auth': {'token': ''}");
+    // Config generation now lives in scripts/generate-openclaw-config.py.
+    // The script writes gateway.auth.token = '' by default.
+    // Verify the Dockerfile invokes the script for config generation.
+    expect(dockerfile).toContain("generate-openclaw-config.py");
+    // Verify the script itself writes an empty token
+    const scriptPath = path.join(import.meta.dirname, "..", "scripts", "generate-openclaw-config.py");
+    const scriptSrc = fs.readFileSync(scriptPath, "utf-8");
+    expect(scriptSrc).toContain('"auth": {"token": ""}');
   });
 
   it("clears any auto-generated token after openclaw doctor/plugins", () => {
@@ -189,14 +196,14 @@ describe("Dockerfile gateway token externalization", () => {
     // an empty one. A post-doctor step must re-clear it so the token is never
     // baked into the image. Verify the clearing step comes AFTER doctor.
     const doctorIdx = dockerfile.indexOf("openclaw doctor --fix");
-    const clearIdx = dockerfile.indexOf("cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = ''");
+    const clearIdx = dockerfile.indexOf("generate-openclaw-config.py --clear-token");
     expect(doctorIdx).toBeGreaterThan(-1);
     expect(clearIdx).toBeGreaterThan(-1);
     expect(clearIdx).toBeGreaterThan(doctorIdx);
   });
 
   it("pins config hash after token is cleared", () => {
-    const clearIdx = dockerfile.indexOf("['token'] = ''");
+    const clearIdx = dockerfile.indexOf("--clear-token");
     const hashIdx = dockerfile.indexOf("sha256sum /sandbox/.openclaw/openclaw.json");
     // Both must exist and hash must come after the clear step
     expect(clearIdx).toBeGreaterThan(-1);
@@ -213,11 +220,12 @@ describe("gateway token security regression tests", () => {
   );
 
   it("openclaw.json never contains a non-empty gateway auth token at build time", () => {
-    // The Dockerfile must write an empty token, clear after doctor, then pin hash.
+    // The Dockerfile must generate config (empty token), clear after doctor, then pin hash.
     // At no point should a real token survive into the final image layer.
-    expect(dockerfile).toContain("'auth': {'token': ''}");
+    // Config generation now in scripts/generate-openclaw-config.py (writes token='').
+    expect(dockerfile).toContain("generate-openclaw-config.py");
     // Post-doctor clearing step exists
-    expect(dockerfile).toContain("cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = ''");
+    expect(dockerfile).toContain("generate-openclaw-config.py --clear-token");
   });
 
   it("gateway process runs under a distinct uid via gosu in root mode", () => {
