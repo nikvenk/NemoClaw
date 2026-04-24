@@ -262,10 +262,8 @@ export function createSession(overrides: Partial<Session> = {}): Session {
     nimContainer: overrides.nimContainer ?? null,
     webSearchConfig:
       overrides.webSearchConfig?.fetchEnabled === true ? { fetchEnabled: true } : null,
-    policyPresets: Array.isArray(overrides.policyPresets) ? [...overrides.policyPresets] : null,
-    messagingChannels: Array.isArray(overrides.messagingChannels)
-      ? [...overrides.messagingChannels]
-      : null,
+    policyPresets: readStringArray(overrides.policyPresets),
+    messagingChannels: readStringArray(overrides.messagingChannels),
     metadata: {
       gatewayName: overrides.metadata?.gatewayName ?? "nemoclaw",
       fromDockerfile: overrides.metadata?.fromDockerfile ?? null,

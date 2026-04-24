@@ -415,6 +415,16 @@ describe("onboard session", () => {
     expect(created.provider).toBeNull();
   });
 
+  it("filters non-string array entries in createSession overrides", () => {
+    const created = session.createSession({
+      policyPresets: ["pypi", 7, null, "npm"] as unknown as string[],
+      messagingChannels: ["telegram", 42, null, "discord"] as unknown as string[],
+    });
+
+    expect(created.policyPresets).toEqual(["pypi", "npm"]);
+    expect(created.messagingChannels).toEqual(["telegram", "discord"]);
+  });
+
   it("summarizes the session for debug output", () => {
     session.saveSession(session.createSession({ sandboxName: "my-assistant" }));
     session.markStepStarted("preflight");
