@@ -285,10 +285,10 @@ When you re-run the installer, it detects the failed session and will not silent
   $ curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- --fresh
   ```
 
-  Or equivalently, via env var:
+  Or equivalently, via env var (note: the variable must be set on the `bash` side of the pipe, not on `curl` — only the right-hand process inherits it):
 
   ```console
-  $ NEMOCLAW_FRESH=1 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+  $ curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_FRESH=1 bash
   ```
 
   Retry the same session without re-prompting (only useful if the original failure was transient — a network blip, a stopped Docker daemon, and so on — not a wrong provider choice):

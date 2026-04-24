@@ -1216,8 +1216,13 @@ run_onboard() {
             out = "skip";
           } else if (data.status === "failed" || data.failure) {
             out = "failed";
-          } else {
+          } else if (data.status === "in_progress") {
             out = "resume";
+          } else {
+            // Unknown or missing status — do not auto-resume a file we
+            // cannot classify against what onboard-session.ts actually
+            // writes (in_progress / failed / complete).
+            out = "corrupt";
           }
         } catch {
           out = "corrupt";
