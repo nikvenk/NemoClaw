@@ -1004,7 +1004,7 @@ migrate_legacy_layout() {
 
   # Write the migration sentinel (root-owned, read-only) so we never
   # re-run migration on this sandbox.
-  echo "migrated=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$sentinel"
+  printf 'migrated=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$sentinel"
   chown root:root "$sentinel" 2>/dev/null || true
   chmod 444 "$sentinel" 2>/dev/null || true
 
