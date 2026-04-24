@@ -126,7 +126,7 @@ Layering from top to bottom:
 | Sandbox pod | Pod in the embedded k3s cluster | Runs the OpenClaw agent and the NemoClaw plugin under Landlock + seccomp + netns. |
 | Inference router | Process in the gateway container | Intercepts agent inference calls and proxies them to the configured provider. |
 
-For the DGX Spark-specific variant of this topology (cgroup v2, aarch64, unified memory), see the DGX Spark tutorial (use the `nemoclaw-user-tutorial` skill).
+For the DGX Spark-specific variant of this topology (cgroup v2, aarch64, unified memory), refer to the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw).
 
 ## NemoClaw Plugin
 

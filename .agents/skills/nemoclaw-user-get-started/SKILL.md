@@ -1,6 +1,6 @@
 ---
 name: "nemoclaw-user-get-started"
-description: "Lists the hardware, software, and container runtime requirements for running NemoClaw. Use when verifying prerequisites before installation. Trigger keywords - nemoclaw prerequisites, nemoclaw supported platforms, nemoclaw hardware software, nemoclaw quickstart, install nemoclaw openclaw sandbox."
+description: "Lists the hardware, software, and container runtime requirements for running NemoClaw. Use when verifying prerequisites before installation. Trigger keywords - nemoclaw prerequisites, nemoclaw supported platforms, nemoclaw hardware software, nemoclaw quickstart, install nemoclaw openclaw sandbox, nemoclaw windows wsl2 setup, nemoclaw install windows docker desktop."
 ---
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
@@ -339,6 +339,7 @@ For a full comparison of the two forms — what they fetch, what they trust, and
 ## References
 
 - **Load [references/prerequisites.md](references/prerequisites.md)** when verifying prerequisites before installation. Lists the hardware, software, and container runtime requirements for running NemoClaw.
+- **Load [references/windows-preparation.md](references/windows-preparation.md)** when preparing a Windows machine for NemoClaw, enabling WSL 2, configuring Docker Desktop for Windows, or troubleshooting a Windows-specific install error. Covers Windows-only preparation steps required before the Quickstart.
 
 ## Related Skills
 

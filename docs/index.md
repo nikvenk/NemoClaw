@@ -297,9 +297,7 @@ Release Notes <about/release-notes>
 :hidden:
 
 Prerequisites <get-started/prerequisites>
-Platform Setup <get-started/platform-setup/index>
 Quickstart <get-started/quickstart>
-Tutorial <get-started/tutorials/dgx-spark>
 ```
 
 ```{toctree}

@@ -40,17 +40,32 @@ The sandbox image is approximately 2.4 GB compressed. During image push, the Doc
 |------------|----------------------------------|
 | Node.js    | 22.16 or later |
 | npm        | 10 or later |
-| Platform   | See [Platform Setup](platform-setup/index.md) |
+| Platform   | See [Platforms](#platforms) below |
 
 :::{warning} OpenShell Lifecycle
 For NemoClaw-managed environments, use `nemoclaw onboard` when you need to create or recreate the OpenShell gateway or sandbox.
 Avoid `openshell self-update`, `npm update -g openshell`, `openshell gateway start --recreate`, or `openshell sandbox create` directly unless you intend to manage OpenShell separately and then rerun `nemoclaw onboard`.
 :::
 
-## Supported Platforms
+## Platforms
 
-For the list of tested platform and container runtime combinations, and for platform-specific pre-setup steps (Windows, DGX Spark), see [Platform Setup](platform-setup/index.md).
+The following table lists tested platform and runtime combinations.
+Availability is not limited to these entries, but untested configurations can have issues.
+The table is generated from [`ci/platform-matrix.json`](https://github.com/NVIDIA/NemoClaw/blob/main/ci/platform-matrix.json), the single source of truth kept in sync by CI and QA.
 
-## Next
+```{include} ../../README.md
+:start-after: <!-- platform-matrix:begin -->
+:end-before: <!-- platform-matrix:end -->
+```
 
-Once your hardware, software, and platform prerequisites are met, continue with the [Quickstart](quickstart.md).
+## Next Steps
+
+- [Prepare Windows for NemoClaw](windows-preparation.md) if you are using Windows.
+- [Quickstart](quickstart.md) to install NemoClaw and launch your first sandbox.
+
+```{toctree}
+:maxdepth: 1
+:hidden:
+
+windows-preparation
+```

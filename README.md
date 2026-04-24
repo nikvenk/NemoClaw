@@ -70,11 +70,11 @@ Availability is not limited to these entries, but untested configurations may ha
 |----|-------------------|--------|-------|
 | Linux | Docker | Tested | Primary tested path. |
 | macOS (Apple Silicon) | Colima, Docker Desktop | Tested with limitations | Install Xcode Command Line Tools (`xcode-select --install`) and start the runtime before running the installer. |
-| DGX Spark | Docker | Tested | Use the standard installer and `nemoclaw onboard`. For an end-to-end walkthrough with local Ollama inference, see the [DGX Spark tutorial](https://docs.nvidia.com/nemoclaw/latest/get-started/tutorials/dgx-spark.html). |
+| DGX Spark | Docker | Tested | Use the standard installer and `nemoclaw onboard`. For an end-to-end walkthrough with local Ollama inference, see the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw). |
 | Windows WSL2 | Docker Desktop (WSL backend) | Tested with limitations | Requires WSL2 with Docker Desktop backend. |
 <!-- platform-matrix:end -->
 
-For the full list of platform-specific setup guides, see [Platform Setup](https://docs.nvidia.com/nemoclaw/latest/get-started/platform-setup/).
+For platform-specific pre-setup (for example, Windows WSL 2), see [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html).
 
 ### Install NemoClaw and Onboard OpenClaw Agent
 
@@ -168,7 +168,7 @@ Refer to the following pages on the official documentation website for more info
 | [Overview](https://docs.nvidia.com/nemoclaw/latest/about/overview.html) | What NemoClaw does and how it fits together. |
 | [How It Works](https://docs.nvidia.com/nemoclaw/latest/about/how-it-works.html) | Plugin, blueprint, sandbox lifecycle, and protection layers. |
 | [Architecture](https://docs.nvidia.com/nemoclaw/latest/reference/architecture.html) | Plugin structure, blueprint lifecycle, sandbox environment, and host-side state. |
-| [Platform Setup](https://docs.nvidia.com/nemoclaw/latest/get-started/platform-setup/) | Platform-specific pre-setup steps (Windows, DGX Spark) before running the installer. |
+| [Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html) | Hardware, software, and supported platforms, with any platform-specific pre-setup. |
 | [Inference Options](https://docs.nvidia.com/nemoclaw/latest/inference/inference-options.html) | Supported providers, validation, and routed inference configuration. |
 | [Network Policies](https://docs.nvidia.com/nemoclaw/latest/reference/network-policies.html) | Baseline rules, operator approval flow, and egress control. |
 | [Customize Network Policy](https://docs.nvidia.com/nemoclaw/latest/network-policy/customize-network-policy.html) | Static and dynamic policy changes, presets. |

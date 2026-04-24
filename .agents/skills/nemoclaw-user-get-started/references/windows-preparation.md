@@ -1,6 +1,6 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# Windows Pre-Setup for NemoClaw
+# Prepare Windows for NemoClaw
 
 You can run NemoClaw inside Windows Subsystem for Linux (WSL 2) on Windows.
 Complete these steps before following the Quickstart (use the `nemoclaw-user-get-started` skill).
@@ -91,10 +91,6 @@ Open a WSL terminal (type `wsl` in PowerShell, or open Ubuntu from Windows Termi
 
 All NemoClaw commands run inside WSL, not in PowerShell.
 
-## Related
-
-- Platform Setup (use the `nemoclaw-user-platform-setup` skill) — hub page covering all platforms with extra pre-setup.
-
 ## Troubleshooting
 
-For Windows-specific troubleshooting, see the Windows Subsystem for Linux section (use the `nemoclaw-user-reference` skill) in the Troubleshooting guide.
+For Windows-specific troubleshooting, refer to the Windows Subsystem for Linux section (use the `nemoclaw-user-reference` skill) in the Troubleshooting guide.

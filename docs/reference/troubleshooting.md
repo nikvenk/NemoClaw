@@ -656,7 +656,7 @@ Use `--follow` to stream logs in real time while debugging.
 
 ## DGX Spark
 
-For platform overview and the end-to-end Ollama tutorial, see [NemoClaw on DGX Spark with Local Ollama](../get-started/tutorials/dgx-spark.md).
+For an end-to-end Ollama walkthrough on DGX Spark, refer to the [NVIDIA Spark playbook](https://build.nvidia.com/spark/nemoclaw).
 
 ### CoreDNS CrashLoop after onboarding
 
@@ -677,7 +677,7 @@ $ openshell gateway start
 
 GPU passthrough is not CI-tested on DGX Spark.
 It is expected to work when you pass `--gpu` and the NVIDIA Container Toolkit is configured.
-Verify the toolkit is configured by running the runtime check from step 1 of the [DGX Spark tutorial](../get-started/tutorials/dgx-spark.md).
+Verify the toolkit is configured by running `docker run --rm --runtime=nvidia --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi` from the host.
 
 ### `pip install` fails with a system-packages error
 
@@ -700,7 +700,7 @@ If you run other services on Spark that expect port 3000, bind them to a differe
 
 ## Windows Subsystem for Linux
 
-For environment setup steps, see [Windows Prerequisites](../get-started/platform-setup/windows.md).
+For environment setup steps, see [Windows Prerequisites](../get-started/windows-preparation.md).
 
 ### `wsl --install --no-distribution` returns Forbidden (403)
 
@@ -760,7 +760,7 @@ $ sudo systemctl stop ollama
 $ OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 ```
 
-For additional troubleshooting, see the [Quickstart](../get-started/quickstart.md) and [Windows Setup](../get-started/platform-setup/windows.md) pages.
+For additional troubleshooting, see the [Quickstart](../get-started/quickstart.md) and [Windows Setup](../get-started/windows-preparation.md) pages.
 
 ## Podman
 

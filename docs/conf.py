@@ -42,13 +42,12 @@ extensions = [
 
 redirects = {
     "reference/inference-profiles": "../inference/inference-options.html",
-    # Platform Setup reorganization: Windows and DGX Spark moved under
-    # get-started/platform-setup/ in April 2026. DGX Spark then moved again
-    # to get-started/tutorials/ when it was reframed as a tutorial.
-    "get-started/windows-setup": "platform-setup/windows.html",
-    "get-started/dgx-spark-setup": "tutorials/dgx-spark.html",
-    "get-started/platform-setup": "platform-setup/index.html",
-    "get-started/platform-setup/dgx-spark": "../tutorials/dgx-spark.html",
+    # Get Started reorganization (April 2026): the Windows pre-setup page
+    # moved out of its earlier locations and is now get-started/
+    # windows-preparation.html. The short-lived platform-setup hub and
+    # tutorials/dgx-spark pages were removed; DGX Spark content now lives
+    # in the NVIDIA Spark playbook (https://build.nvidia.com/spark/nemoclaw).
+    "get-started/windows-setup": "windows-preparation.html",
 }
 
 autodoc_default_options = {
