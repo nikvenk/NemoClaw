@@ -2732,10 +2732,40 @@ async function preflight() {
         );
         console.error("     (ask your IT team for an internal DNS server IP).");
       } else if (host.platform === "darwin") {
-        console.error("  Configure Docker Desktop's DNS (macOS):");
-        console.error("     Docker Desktop → Settings → Docker Engine — edit the JSON to add:");
-        console.error('       { "dns": ["<corp-dns-ip>"] }');
-        console.error("     Then click Apply & Restart.");
+        // On macOS, branch by the detected runtime (host.runtime) so users get
+        // shell commands they can actually paste, not a "click this GUI" hint.
+        if (host.runtime === "colima") {
+          console.error("  Configure Colima's DNS (macOS):");
+          console.error("       colima stop");
+          console.error("       colima start --dns <corp-dns-ip>");
+          console.error(
+            "     (or edit ~/.colima/default/colima.yaml and `colima restart`)",
+          );
+        } else if (host.runtime === "docker-desktop" || host.runtime === "docker") {
+          console.error("  Configure Docker Desktop's DNS (macOS):");
+          console.error(
+            "       cp ~/.docker/daemon.json ~/.docker/daemon.json.bak-$(date +%s) 2>/dev/null",
+          );
+          console.error(
+            `       { jq '. + {"dns":["<corp-dns-ip>"]}' ~/.docker/daemon.json 2>/dev/null || echo '{"dns":["<corp-dns-ip>"]}'; } > ~/.docker/daemon.json.new && mv ~/.docker/daemon.json.new ~/.docker/daemon.json`,
+          );
+          console.error("       osascript -e 'quit app \"Docker\"' && sleep 3 && open -a Docker");
+          console.error(
+            "     (or do the same via the Docker Desktop UI: Settings → Docker Engine)",
+          );
+        } else {
+          // Unknown / podman / other
+          console.error("  Configure your container runtime's DNS (macOS):");
+          console.error("     - Docker Desktop:");
+          console.error(
+            "         { jq '. + {\"dns\":[\"<corp-dns-ip>\"]}' ~/.docker/daemon.json 2>/dev/null || echo '{\"dns\":[\"<corp-dns-ip>\"]}'; } > ~/.docker/daemon.json.new && mv ~/.docker/daemon.json.new ~/.docker/daemon.json",
+          );
+          console.error("         osascript -e 'quit app \"Docker\"' && sleep 3 && open -a Docker");
+          console.error("     - Colima:");
+          console.error("         colima stop && colima start --dns <corp-dns-ip>");
+          console.error("     - Rancher Desktop / Podman: edit the runtime's DNS config");
+          console.error("       and restart it.");
+        }
         console.error(
           "     Ask your IT team for an internal DNS server IP that accepts UDP:53.",
         );
