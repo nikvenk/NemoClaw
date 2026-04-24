@@ -327,7 +327,7 @@ NEMOCLAW_INFERENCE_COMPAT_B64, NEMOCLAW_PROXY_HOST, NEMOCLAW_PROXY_PORT
 
 ---
 
-## Phase 2: Auto-Disable Device Auth for Non-Loopback URLs
+## Phase 2: Auto-Disable Device Auth for Non-Loopback URLs [COMPLETED: 054f1d73]
 
 **Goal:** When `CHAT_UI_URL` is non-loopback, automatically set
 `dangerouslyDisableDeviceAuth: true` in the generated `openclaw.json`. This fixes
