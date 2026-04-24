@@ -203,7 +203,7 @@ const HIGH_RISK_STATE_DIRS = [
   "cron",
   "agents",
   "extensions",
-  "plugins",    // Hermes equivalent of extensions
+  "plugins", // Hermes equivalent of extensions
 ];
 
 // ---------------------------------------------------------------------------
