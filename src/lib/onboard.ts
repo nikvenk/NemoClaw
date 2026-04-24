@@ -59,6 +59,7 @@ const {
   VLLM_PORT,
   OLLAMA_PORT,
   OLLAMA_PROXY_PORT,
+  findFreeDashboardPort,
 } = require("./ports");
 const localInference: typeof import("./local-inference") = require("./local-inference");
 const {
@@ -3969,7 +3970,11 @@ async function createSandbox(
                 "  Pass --recreate-sandbox or set NEMOCLAW_RECREATE_SANDBOX=1 to force recreation.",
               );
             }
-            ensureDashboardForward(sandboxName, chatUiUrl);
+            const reusePort = ensureDashboardForward(
+              sandboxName,
+              reuseChatUiUrlFor(sandboxName, chatUiUrl),
+            );
+            registry.updateSandbox(sandboxName, { dashboardPort: reusePort });
             return sandboxName;
           }
         } else {
@@ -3998,7 +4003,11 @@ async function createSandbox(
           const normalizedAnswer = answer.trim().toLowerCase();
           if (normalizedAnswer !== "n" && normalizedAnswer !== "no") {
             upsertMessagingProviders(messagingTokenDefs);
-            ensureDashboardForward(sandboxName, chatUiUrl);
+            const reusePort = ensureDashboardForward(
+              sandboxName,
+              reuseChatUiUrlFor(sandboxName, chatUiUrl),
+            );
+            registry.updateSandbox(sandboxName, { dashboardPort: reusePort });
             return sandboxName;
           }
         }
@@ -4042,7 +4051,11 @@ async function createSandbox(
           if (Object.keys(abortHashes).length > 0) {
             registry.updateSandbox(sandboxName, { providerCredentialHashes: abortHashes });
           }
-          ensureDashboardForward(sandboxName, chatUiUrl);
+          const reusePort = ensureDashboardForward(
+            sandboxName,
+            reuseChatUiUrlFor(sandboxName, chatUiUrl),
+          );
+          registry.updateSandbox(sandboxName, { dashboardPort: reusePort });
           return sandboxName;
         }
       } catch (err) {
@@ -4058,7 +4071,11 @@ async function createSandbox(
         if (Object.keys(abortHashes).length > 0) {
           registry.updateSandbox(sandboxName, { providerCredentialHashes: abortHashes });
         }
-        ensureDashboardForward(sandboxName, chatUiUrl);
+        const reusePort = ensureDashboardForward(
+          sandboxName,
+          reuseChatUiUrlFor(sandboxName, chatUiUrl),
+        );
+        registry.updateSandbox(sandboxName, { dashboardPort: reusePort });
         return sandboxName;
       }
     }
@@ -4477,7 +4494,8 @@ async function createSandbox(
   // Release any stale forward on the dashboard port before claiming it for the new sandbox.
   // A previous onboard run may have left the port forwarded to a different sandbox,
   // which would silently prevent the new sandbox's dashboard from being reachable.
-  ensureDashboardForward(sandboxName, chatUiUrl);
+  // ensureDashboardForward may auto-allocate a different port on conflict (#2174).
+  const allocatedDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl);
 
   // Register only after confirmed ready — prevents phantom entries
   const effectiveAgent = agent || agentDefs.loadAgent("openclaw");
@@ -4501,6 +4519,7 @@ async function createSandbox(
       Object.keys(providerCredentialHashes).length > 0 ? providerCredentialHashes : undefined,
     messagingChannels: activeMessagingChannels,
     disabledChannels: disabledChannels.length > 0 ? [...disabledChannels] : undefined,
+    dashboardPort: allocatedDashboardPort,
   });
 
   // Restore workspace state if we backed it up during credential rotation.
@@ -6734,27 +6753,90 @@ function findDashboardForwardOwner(
   return portLine ? (portLine.split(/\s+/)[0] ?? null) : null;
 }
 
+/**
+ * Pick the chatUiUrl to use when re-forwarding an already-registered sandbox.
+ * Precedence: user-set CHAT_UI_URL env > stored dashboardPort > caller-supplied
+ * default. Prevents reuse paths from always re-requesting the default port and
+ * ratcheting an auto-allocated sandbox upward on each onboard (#2174).
+ */
+function reuseChatUiUrlFor(sandboxName: string, fallbackUrl: string): string {
+  if (process.env.CHAT_UI_URL) return fallbackUrl;
+  const stored = registry.getSandbox(sandboxName)?.dashboardPort;
+  return typeof stored === "number" ? `http://127.0.0.1:${stored}` : fallbackUrl;
+}
+
 function ensureDashboardForward(
   sandboxName: string,
   chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
-) {
+): number {
   const chain = buildChain({ chatUiUrl, isWsl: isWsl() });
-  const portToStop = String(chain.port);
-  const forwardTarget = chain.forwardTarget;
-  // Detect port already claimed by a different sandbox and fail fast with an
-  // actionable message rather than silently stealing that sandbox's forward.
-  // (Same sandbox is always allowed — covers reconnect and resume paths.)
+  const requestedPort = chain.port;
   const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
-  const portOwner = findDashboardForwardOwner(existingForwards, portToStop);
+  const portOwner = findDashboardForwardOwner(existingForwards, String(requestedPort));
+
+  let effectivePort = requestedPort;
+  let forwardTarget = chain.forwardTarget;
   if (portOwner !== null && portOwner !== sandboxName) {
-    // Match the preflight pattern (printed error + exit) instead of throwing,
-    // so the user sees a clean message rather than a raw Node stack trace
-    // from the top-level IIFE's unhandled rejection. See #2169.
-    console.error(`  Port ${portToStop} is already forwarded for sandbox '${portOwner}'.`);
-    console.error(`  Set CHAT_UI_URL to a different local port (e.g. http://127.0.0.1:18790)`);
-    console.error(`  before onboarding a second sandbox.`);
-    process.exit(1);
+    // Port is held by a different sandbox. Auto-allocate on loopback default;
+    // fail fast (with cleanup) when the user explicitly pinned via CHAT_UI_URL
+    // env or a non-loopback URL (#2174).
+    const userPinnedEnv = !!process.env.CHAT_UI_URL;
+    let isLoopback = true;
+    try {
+      const parsed = new URL(
+        /^[a-z]+:\/\//i.test(chatUiUrl) ? chatUiUrl : `http://${chatUiUrl}`,
+      );
+      isLoopback = isLoopbackHostname(parsed.hostname);
+    } catch {
+      isLoopback = true;
+    }
+    if (userPinnedEnv || !isLoopback) {
+      // Pre-existing sandbox (this openshell-create already succeeded). Roll it
+      // back so `nemoclaw list` and `openshell sandbox list` don't drift
+      // ("leaks ghost sandbox" from #2174 title).
+      runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      console.error(`  Port ${requestedPort} is already forwarded for sandbox '${portOwner}'.`);
+      console.error(`  Unset CHAT_UI_URL or pick a free port to onboard '${sandboxName}'.`);
+      process.exit(1);
+    }
+    // Parse held ports from the forward list we already fetched.
+    const heldPorts = (existingForwards ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => Number(l.split(/\s+/)[2]))
+      .filter((p) => Number.isFinite(p) && p > 0);
+    const isPortBoundLocally = (p: number): boolean => {
+      const out = runCapture(["lsof", "-i", `:${p}`, "-sTCP:LISTEN", "-P", "-n"], {
+        ignoreError: true,
+      });
+      return typeof out === "string" && out.trim().length > 0;
+    };
+    const chosen = findFreeDashboardPort(requestedPort, {
+      probe: {
+        listForwardPorts: () => heldPorts,
+        probePortFree: (p: number) => !isPortBoundLocally(p),
+      },
+    });
+    if (chosen === null) {
+      runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      console.error(`  All ports ${requestedPort}-${requestedPort + 9} are forwarded.`);
+      console.error(
+        `  Destroy an unused sandbox, or set CHAT_UI_URL=http://127.0.0.1:${requestedPort + 10} (or higher) and retry.`,
+      );
+      process.exit(1);
+    }
+    effectivePort = chosen;
+    forwardTarget = buildChain({
+      chatUiUrl: `http://127.0.0.1:${effectivePort}`,
+      isWsl: isWsl(),
+    }).forwardTarget;
+    console.log(
+      `  Dashboard port ${requestedPort} in use by '${portOwner}'; allocated port ${effectivePort} for '${sandboxName}'.`,
+    );
   }
+
+  const portToStop = String(effectivePort);
   runOpenshell(["forward", "stop", portToStop], { ignoreError: true });
   // Use stdio "ignore" to prevent spawnSync from waiting on inherited pipe fds.
   // The --background flag forks a child that inherits stdout/stderr; if those are
@@ -6776,6 +6858,7 @@ function ensureDashboardForward(
     );
     console.warn(`  Free the port, then reconnect: nemoclaw ${sandboxName} connect`);
   }
+  return effectivePort;
 }
 
 function findFileRecursive(dir: string, filename: string): string | null {
@@ -7007,8 +7090,16 @@ function getDashboardAccessInfo(
   const token = Object.prototype.hasOwnProperty.call(options, "token")
     ? options.token
     : fetchGatewayAuthTokenFromSandbox(sandboxName);
+  // Precedence: caller-supplied > CHAT_UI_URL env > stored dashboardPort > default.
+  // The stored-port tier ensures the completion banner shows the port actually
+  // allocated by ensureDashboardForward, not the original default (#2174).
+  const storedPort = registry.getSandbox(sandboxName)?.dashboardPort;
+  const storedUrl = typeof storedPort === "number" ? `http://127.0.0.1:${storedPort}` : null;
   const chatUiUrl =
-    options.chatUiUrl || process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
+    options.chatUiUrl ||
+    process.env.CHAT_UI_URL ||
+    storedUrl ||
+    `http://127.0.0.1:${CONTROL_UI_PORT}`;
   const chain = buildDashboardChain(chatUiUrl, options);
   const dashboardAccess = buildControlUiUrls(token, chain.port, chain.accessUrl).map(
     (url, index) => ({
@@ -7038,10 +7129,17 @@ function getDashboardGuidanceLines(
     platform?: NodeJS.Platform;
     release?: string;
     isWsl?: boolean;
+    sandboxName?: string;
   } = {},
 ): string[] {
+  const storedPort =
+    options.sandboxName && registry.getSandbox(options.sandboxName)?.dashboardPort;
+  const storedUrl = typeof storedPort === "number" ? `http://127.0.0.1:${storedPort}` : null;
   const chatUiUrl =
-    options.chatUiUrl || process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
+    options.chatUiUrl ||
+    process.env.CHAT_UI_URL ||
+    storedUrl ||
+    `http://127.0.0.1:${CONTROL_UI_PORT}`;
   const chain = buildDashboardChain(chatUiUrl, options);
   const guidance = [`Port ${String(chain.port)} must be forwarded before opening these URLs.`];
   if (isWsl(options)) {

@@ -1662,6 +1662,9 @@ async function sandboxStatus(sandboxName: string) {
     }
     console.log(`    GPU:      ${sb.gpuEnabled ? "yes" : "no"}`);
     console.log(`    Policies: ${(sb.policies || []).join(", ") || "none"}`);
+    if (typeof sb.dashboardPort === "number") {
+      console.log(`    Dashboard: http://127.0.0.1:${sb.dashboardPort}`);
+    }
 
     // Active session indicator
     try {

@@ -28,6 +28,8 @@ export interface SandboxEntry {
   providerCredentialHashes?: Record<string, string>;
   messagingChannels?: string[];
   disabledChannels?: string[];
+  /** Host-side port for the openshell forward to the OpenClaw dashboard (#2174). */
+  dashboardPort?: number;
 }
 
 export interface SandboxRegistry {
@@ -197,6 +199,12 @@ export function registerSandbox(entry: SandboxEntry): void {
       disabledChannels:
         Array.isArray(entry.disabledChannels) && entry.disabledChannels.length > 0
           ? [...entry.disabledChannels]
+          : undefined,
+      dashboardPort:
+        Number.isInteger(entry.dashboardPort) &&
+        (entry.dashboardPort as number) >= 1024 &&
+        (entry.dashboardPort as number) <= 65535
+          ? entry.dashboardPort
           : undefined,
     };
     if (!data.defaultSandbox) {
