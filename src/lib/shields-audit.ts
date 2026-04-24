@@ -12,7 +12,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureConfigDir } from "./config-io";
-import { redact } from "./runner";
+import { redact } from "./redact";
 
 const AUDIT_DIR = join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
 const AUDIT_FILE = join(AUDIT_DIR, "shields-audit.jsonl");
