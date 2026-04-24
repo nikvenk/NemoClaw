@@ -195,6 +195,76 @@ if command -v openshell >/dev/null 2>&1; then
 fi
 pass "Pre-cleanup complete"
 
+# Pre-merge Slack policy into the base sandbox policy.
+#
+# The base policy (openclaw-sandbox.yaml) includes Telegram and Discord
+# network rules but NOT Slack — Slack access normally comes from the
+# slack.yaml preset, applied in onboard Step 8. However, the sandbox
+# container starts in Step 6, so the gateway boots without Slack access.
+# The Slack SDK's connection attempt hangs or gets a CONNECT 403 before
+# the preset is applied, preventing the gateway from serving on 18789.
+#
+# By appending the Slack rules to the base policy BEFORE install.sh, the
+# sandbox is created with Slack access from the start. The Slack SDK gets
+# a fast "invalid_auth" response, the channel guard catches it, and the
+# gateway continues serving.
+# Ref: #2340
+BASE_POLICY="$REPO/nemoclaw-blueprint/policies/openclaw-sandbox.yaml"
+SLACK_PRESET="$REPO/nemoclaw-blueprint/policies/presets/slack.yaml"
+if [ -f "$BASE_POLICY" ] && [ -f "$SLACK_PRESET" ] && ! grep -q "api.slack.com" "$BASE_POLICY"; then
+  info "Pre-merging Slack network policy into base sandbox policy..."
+  cat >> "$BASE_POLICY" <<'SLACK_POLICY_EOF'
+
+  # ── Slack — pre-merged for messaging E2E (#2340) ──────────────
+  # Normally applied as a preset in onboard Step 8, but the sandbox
+  # container starts before presets are applied. Inline here so the
+  # gateway has Slack access from first boot.
+  slack:
+    name: slack
+    endpoints:
+      - host: slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: api.slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: hooks.slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: wss-primary.slack.com
+        port: 443
+        access: full
+        tls: skip
+      - host: wss-backup.slack.com
+        port: 443
+        access: full
+        tls: skip
+    binaries:
+      - { path: /usr/local/bin/node }
+      - { path: /usr/bin/node }
+SLACK_POLICY_EOF
+  pass "Slack network policy pre-merged into base policy"
+else
+  if grep -q "api.slack.com" "$BASE_POLICY" 2>/dev/null; then
+    info "Slack policy already present in base policy — skipping pre-merge"
+  else
+    fail "Cannot pre-merge Slack policy: missing base policy or preset file"
+    exit 1
+  fi
+fi
+
 # Run install.sh --non-interactive which installs Node.js, openshell,
 # NemoClaw, and runs onboard. Messaging tokens are already exported so
 # the onboard step creates providers and attaches them to the sandbox.
@@ -272,51 +342,6 @@ if openshell provider get "${SANDBOX_NAME}-discord-bridge" >/dev/null 2>&1; then
   pass "M2: Provider '${SANDBOX_NAME}-discord-bridge' exists in gateway"
 else
   fail "M2: Provider '${SANDBOX_NAME}-discord-bridge' not found in gateway"
-fi
-
-# ══════════════════════════════════════════════════════════════════
-# Phase 1b: Restart sandbox so policy presets are active
-#
-# Onboard applies policy presets (Step 8) AFTER the sandbox container
-# is created (Step 6). The base policy includes Telegram and Discord
-# network rules but NOT Slack — Slack access requires the slack preset.
-# When the Slack SDK tries to reach api.slack.com before the preset is
-# applied, the connection hangs (packets silently dropped), blocking
-# the gateway's HTTP listener on port 18789.
-#
-# Restarting after install.sh ensures the gateway boots with ALL
-# presets already in place. The Slack SDK gets a fast "invalid_auth"
-# rejection, the channel guard catches it, and the gateway continues.
-# Ref: #2340
-# ══════════════════════════════════════════════════════════════════
-section "Phase 1b: Restart sandbox for messaging policy presets"
-
-# Verify the Slack policy preset was applied by onboard Step 8
-current_policy=$(openshell policy get --full "$SANDBOX_NAME" 2>/dev/null || true)
-if echo "$current_policy" | grep -q "slack"; then
-  pass "P1b: Slack network policy preset is applied"
-else
-  info "Slack network policy not detected — gateway may hang on Slack init"
-fi
-
-info "Restarting sandbox so gateway starts with all policy presets active..."
-openshell sandbox restart "$SANDBOX_NAME" 2>&1 || true
-
-# Wait for sandbox to return to Ready after restart
-ready=0
-for i in $(seq 1 30); do
-  if openshell sandbox list 2>&1 | grep -q "$SANDBOX_NAME.*Ready"; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
-
-if [ "$ready" -eq 1 ]; then
-  pass "P1b: Sandbox ready after restart"
-else
-  fail "P1b: Sandbox not ready after restart (timeout 60s)"
-  exit 1
 fi
 
 # ══════════════════════════════════════════════════════════════════
