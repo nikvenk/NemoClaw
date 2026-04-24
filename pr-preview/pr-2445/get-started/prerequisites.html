@@ -65,7 +65,7 @@
     <link rel="icon" href="../_static/favicon.png"/>
 
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Platform Setup" href="platform-setup/index.html" />
+    <link rel="next" title="Prepare Windows for NemoClaw" href="windows-preparation.html" />
     <link rel="prev" title="Release Notes" href="../about/release-notes.html" />
 
 
@@ -390,13 +390,11 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Prerequisites</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="platform-setup/index.html">Platform Setup</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="platform-setup/windows.html">Windows Pre-Setup for NemoClaw</a></li>
+<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Prerequisites</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="windows-preparation.html">Prepare Windows for NemoClaw</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/dgx-spark.html">Tutorial</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -544,7 +542,7 @@
 <td><p>10 or later</p></td>
 </tr>
 <tr class="row-even"><td><p>Platform</p></td>
-<td><p>See <a class="reference internal" href="platform-setup/index.html"><span class="std std-doc">Platform Setup</span></a></p></td>
+<td><p>See <a class="reference internal" href="#platforms">Platforms</a> below</p></td>
 </tr>
 </tbody>
 </table>
@@ -556,13 +554,52 @@ For NemoClaw-managed environments, use <code class="docutils literal notranslate
 Avoid <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">self-update</span></code>, <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">update</span> <span class="pre">-g</span> <span class="pre">openshell</span></code>, <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">gateway</span> <span class="pre">start</span> <span class="pre">--recreate</span></code>, or <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">create</span></code> directly unless you intend to manage OpenShell separately and then rerun <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
 </div>
 </section>
-<section id="supported-platforms">
-<h2>Supported Platforms<a class="headerlink" href="#supported-platforms" title="Link to this heading">#</a></h2>
-<p>For the list of tested platform and container runtime combinations, and for platform-specific pre-setup steps (Windows, DGX Spark), see <a class="reference internal" href="platform-setup/index.html"><span class="std std-doc">Platform Setup</span></a>.</p>
+<section id="platforms">
+<h2>Platforms<a class="headerlink" href="#platforms" title="Link to this heading">#</a></h2>
+<p>The following table lists tested platform and runtime combinations.
+Availability is not limited to these entries, but untested configurations can have issues.
+The table is generated from <a class="reference external" href="https://github.com/NVIDIA/NemoClaw/blob/main/ci/platform-matrix.json" rel="noreferer noopener" target="_blank"><code class="docutils literal notranslate"><span class="pre">ci/platform-matrix.json</span></code></a>, the single source of truth kept in sync by CI and QA.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>OS</p></th>
+<th class="head"><p>Container runtime</p></th>
+<th class="head"><p>Status</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Linux</p></td>
+<td><p>Docker</p></td>
+<td><p>Tested</p></td>
+<td><p>Primary tested path.</p></td>
+</tr>
+<tr class="row-odd"><td><p>macOS (Apple Silicon)</p></td>
+<td><p>Colima, Docker Desktop</p></td>
+<td><p>Tested with limitations</p></td>
+<td><p>Install Xcode Command Line Tools (<code class="docutils literal notranslate"><span class="pre">xcode-select</span> <span class="pre">--install</span></code>) and start the runtime before running the installer.</p></td>
+</tr>
+<tr class="row-even"><td><p>DGX Spark</p></td>
+<td><p>Docker</p></td>
+<td><p>Tested</p></td>
+<td><p>Use the standard installer and <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>. For an end-to-end walkthrough with local Ollama inference, see the <a class="reference external" href="https://build.nvidia.com/spark/nemoclaw" rel="noreferer noopener" target="_blank">NVIDIA Spark playbook</a>.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Windows WSL2</p></td>
+<td><p>Docker Desktop (WSL backend)</p></td>
+<td><p>Tested with limitations</p></td>
+<td><p>Requires WSL2 with Docker Desktop backend.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
-<section id="next">
-<h2>Next<a class="headerlink" href="#next" title="Link to this heading">#</a></h2>
-<p>Once your hardware, software, and platform prerequisites are met, continue with the <a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a>.</p>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="windows-preparation.html"><span class="std std-doc">Prepare Windows for NemoClaw</span></a> if you are using Windows.</p></li>
+<li><p><a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a> to install NemoClaw and launch your first sandbox.</p></li>
+</ul>
+<div class="toctree-wrapper compound">
+</div>
 </section>
 </section>
 
@@ -586,11 +623,11 @@ Avoid <code class="docutils literal notranslate"><span class="pre">openshell</sp
       </div>
     </a>
     <a class="right-next"
-       href="platform-setup/index.html"
+       href="windows-preparation.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Platform Setup</p>
+        <p class="prev-next-title">Prepare Windows for NemoClaw</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -617,8 +654,8 @@ Avoid <code class="docutils literal notranslate"><span class="pre">openshell</sp
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-platforms">Supported Platforms</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next">Next</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#platforms">Platforms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
 </ul>
   </nav></div>
 

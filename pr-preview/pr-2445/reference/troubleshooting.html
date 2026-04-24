@@ -390,13 +390,11 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../get-started/prerequisites.html">Prerequisites</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../get-started/platform-setup/index.html">Platform Setup</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../get-started/platform-setup/windows.html">Windows Pre-Setup for NemoClaw</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../get-started/prerequisites.html">Prerequisites</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../get-started/windows-preparation.html">Prepare Windows for NemoClaw</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../get-started/tutorials/dgx-spark.html">Tutorial</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -1035,7 +1033,7 @@ binds an IPv4 address and not only <code class="docutils literal notranslate"><s
 </section>
 <section id="dgx-spark">
 <span id="id1"></span><h2>DGX Spark<a class="headerlink" href="#dgx-spark" title="Link to this heading">#</a></h2>
-<p>For platform overview and the end-to-end Ollama tutorial, see <a class="reference internal" href="../get-started/tutorials/dgx-spark.html"><span class="std std-doc">NemoClaw on DGX Spark with Local Ollama</span></a>.</p>
+<p>For an end-to-end Ollama walkthrough on DGX Spark, refer to the <a class="reference external" href="https://build.nvidia.com/spark/nemoclaw" rel="noreferer noopener" target="_blank">NVIDIA Spark playbook</a>.</p>
 <section id="coredns-crashloop-after-onboarding">
 <h3>CoreDNS CrashLoop after onboarding<a class="headerlink" href="#coredns-crashloop-after-onboarding" title="Link to this heading">#</a></h3>
 <p>If CoreDNS in the embedded k3s cluster crashes shortly after setup, it is usually because it resolves against <code class="docutils literal notranslate"><span class="pre">127.0.0.11</span></code>, which does not route inside the gateway container.
@@ -1054,7 +1052,7 @@ Destroy and restart the gateway, then re-run setup.</p>
 <h3>GPU passthrough on Spark<a class="headerlink" href="#gpu-passthrough-on-spark" title="Link to this heading">#</a></h3>
 <p>GPU passthrough is not CI-tested on DGX Spark.
 It is expected to work when you pass <code class="docutils literal notranslate"><span class="pre">--gpu</span></code> and the NVIDIA Container Toolkit is configured.
-Verify the toolkit is configured by running the runtime check from step 1 of the <a class="reference internal" href="../get-started/tutorials/dgx-spark.html"><span class="std std-doc">DGX Spark tutorial</span></a>.</p>
+Verify the toolkit is configured by running <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">run</span> <span class="pre">--rm</span> <span class="pre">--runtime=nvidia</span> <span class="pre">--gpus</span> <span class="pre">all</span> <span class="pre">nvidia/cuda:12.8.0-base-ubuntu24.04</span> <span class="pre">nvidia-smi</span></code> from the host.</p>
 </section>
 <section id="pip-install-fails-with-a-system-packages-error">
 <h3><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> fails with a system-packages error<a class="headerlink" href="#pip-install-fails-with-a-system-packages-error" title="Link to this heading">#</a></h3>
@@ -1075,7 +1073,7 @@ If you run other services on Spark that expect port 3000, bind them to a differe
 </section>
 <section id="windows-subsystem-for-linux">
 <span id="windows-wsl-2"></span><h2>Windows Subsystem for Linux<a class="headerlink" href="#windows-subsystem-for-linux" title="Link to this heading">#</a></h2>
-<p>For environment setup steps, see <a class="reference internal" href="../get-started/platform-setup/windows.html"><span class="std std-doc">Windows Prerequisites</span></a>.</p>
+<p>For environment setup steps, see <a class="reference internal" href="../get-started/windows-preparation.html"><span class="std std-doc">Windows Prerequisites</span></a>.</p>
 <section id="wsl-install-no-distribution-returns-forbidden-403">
 <h3><code class="docutils literal notranslate"><span class="pre">wsl</span> <span class="pre">--install</span> <span class="pre">--no-distribution</span></code> returns Forbidden (403)<a class="headerlink" href="#wsl-install-no-distribution-returns-forbidden-403" title="Link to this heading">#</a></h3>
 <p>Check your network connectivity.
@@ -1123,7 +1121,7 @@ Force a larger context length:</p>
 <span class="gp">$ </span><span class="nv">OLLAMA_CONTEXT_LENGTH</span><span class="o">=</span><span class="m">16384</span><span class="w"> </span>ollama<span class="w"> </span>serve
 </pre></div>
 </div>
-<p>For additional troubleshooting, see the <a class="reference internal" href="../get-started/quickstart.html"><span class="std std-doc">Quickstart</span></a> and <a class="reference internal" href="../get-started/platform-setup/windows.html"><span class="std std-doc">Windows Setup</span></a> pages.</p>
+<p>For additional troubleshooting, see the <a class="reference internal" href="../get-started/quickstart.html"><span class="std std-doc">Quickstart</span></a> and <a class="reference internal" href="../get-started/windows-preparation.html"><span class="std std-doc">Windows Setup</span></a> pages.</p>
 </section>
 </section>
 <section id="podman">
