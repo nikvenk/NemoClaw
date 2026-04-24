@@ -1020,7 +1020,7 @@ The sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
 
             subgraph GWCON[&quot;OpenShell gateway container&quot;]
                 direction TB
-                ROUTER[&quot;Inference router&lt;br/&gt;&lt;small&gt;credential injection&lt;br/&gt;policy enforcement&lt;/small&gt;&quot;]:::gateway
+                PROXY[&quot;OpenShell L7 proxy&lt;br/&gt;&lt;small&gt;rewrites Authorization headers&lt;br/&gt;and URL-path segments at egress&lt;br/&gt;(credential injection)&lt;/small&gt;&quot;]:::gateway
 
                 subgraph K3S[&quot;Embedded k3s cluster&quot;]
                     direction TB
@@ -1037,8 +1037,8 @@ The sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
     INFER[&quot;Inference provider&lt;br/&gt;&lt;small&gt;NVIDIA Endpoints · OpenAI&lt;br/&gt;Anthropic · Ollama · vLLM&lt;/small&gt;&quot;]:::external
 
     CLI --&gt;|&quot;openshell CLI&lt;br/&gt;(orchestrates)&quot;| GWCON
-    AGENT --&gt;|&quot;inference requests&lt;br/&gt;&lt;small&gt;no credentials&lt;/small&gt;&quot;| ROUTER
-    ROUTER --&gt;|&quot;proxied with&lt;br/&gt;credentials injected&quot;| INFER
+    AGENT --&gt;|&quot;inference requests&lt;br/&gt;&lt;small&gt;placeholder credentials&lt;/small&gt;&quot;| PROXY
+    PROXY --&gt;|&quot;egress with real credentials&lt;br/&gt;injected at the L7 proxy&quot;| INFER
 
     class HOST host
     class DOCKER docker
@@ -1064,7 +1064,7 @@ The sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
 </tr>
 <tr class="row-even"><td><p>Gateway container</p></td>
 <td><p>Docker container</p></td>
-<td><p>Hosts the credential store, inference router, and the embedded k3s control plane.</p></td>
+<td><p>Hosts the credential store, the L7 proxy, and the embedded k3s control plane.</p></td>
 </tr>
 <tr class="row-odd"><td><p>k3s</p></td>
 <td><p>Process tree inside the gateway container</p></td>
@@ -1074,13 +1074,16 @@ The sandbox runs as a Kubernetes pod inside that embedded cluster.</p>
 <td><p>Pod in the embedded k3s cluster</p></td>
 <td><p>Runs the OpenClaw agent and the NemoClaw plugin under Landlock + seccomp + netns.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Inference router</p></td>
+<tr class="row-odd"><td><p>OpenShell L7 proxy</p></td>
 <td><p>Process in the gateway container</p></td>
-<td><p>Intercepts agent inference calls and proxies them to the configured provider.</p></td>
+<td><p>Intercepts agent egress and rewrites <code class="docutils literal notranslate"><span class="pre">Authorization</span></code> headers (Bearer/Bot) and URL-path segments to inject the real credential at the network boundary.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>NemoClaw never gives the sandbox a raw provider key.
+At onboard time it registers credentials with OpenShell’s provider/placeholder system, and the L7 proxy substitutes the real value into outbound requests at egress.
+The CLI helper <code class="docutils literal notranslate"><span class="pre">isInferenceRouteReady</span></code> (in <code class="docutils literal notranslate"><span class="pre">src/lib/onboard.ts</span></code>) is a host-side readiness check used by the resume flow to decide whether the active route already covers the chosen provider and model — it is not a runtime component.</p>
 <p>For the DGX Spark-specific variant of this topology (cgroup v2, aarch64, unified memory), refer to the <a class="reference external" href="https://build.nvidia.com/spark/nemoclaw" rel="noreferer noopener" target="_blank">NVIDIA Spark playbook</a>.</p>
 </section>
 <section id="nemoclaw-plugin">
