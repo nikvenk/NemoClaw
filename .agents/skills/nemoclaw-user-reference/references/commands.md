@@ -174,6 +174,15 @@ $ NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS=1 nemoclaw onboard --non-interactive --y
 
 The flag is persisted on the sandbox registry entry, so `nemoclaw <sandbox> status` surfaces `Permissions: dangerously-skip-permissions (shields permanently down)` for sandboxes created this way. To tighten a sandbox after the fact, re-run `nemoclaw onboard` without the flag.
 
+### `nemoclaw onboard --from`
+
+Use a custom Dockerfile for the sandbox image.
+This variant of `nemoclaw onboard` accepts a `--from <Dockerfile>` argument to build the sandbox from a user-supplied Dockerfile instead of the default NemoClaw image.
+
+```console
+$ nemoclaw onboard --from ./Dockerfile.custom
+```
+
 ### `nemoclaw list`
 
 List all registered sandboxes with their model, provider, and policy presets.
@@ -566,12 +575,35 @@ $ nemoclaw tunnel stop
 
 `nemoclaw stop` remains as a deprecated alias that prints a warning and delegates to `tunnel stop`.
 
+### `nemoclaw start`
+
+> **Warning:** Deprecated. Use `nemoclaw tunnel start` instead.
+
+This command remains as a compatibility alias to `nemoclaw tunnel start`.
+
+### `nemoclaw stop`
+
+> **Warning:** Deprecated. Use `nemoclaw tunnel stop` instead.
+
+This command remains as a compatibility alias to `nemoclaw tunnel stop`.
+
 ### `nemoclaw status`
 
 Show the sandbox list and the status of host auxiliary services (for example cloudflared).
 
 ```console
 $ nemoclaw status
+```
+
+### `nemoclaw setup`
+
+> **Warning:** The `nemoclaw setup` command is deprecated.
+> Use `nemoclaw onboard` instead.
+
+This command remains as a compatibility alias to `nemoclaw onboard`.
+
+```console
+$ nemoclaw setup
 ```
 
 ### `nemoclaw setup-spark`
@@ -684,6 +716,20 @@ $ nemoclaw onboard
 
 These overrides apply to onboarding, status checks, health probes, and the uninstaller.
 Defaults are unchanged when no variable is set.
+
+## NemoHermes Alias
+
+`nemohermes` is a convenience alias that pre-selects the Hermes agent.
+Every `nemohermes` command is equivalent to running `nemoclaw` with
+`--agent hermes` (for onboard) or `NEMOCLAW_AGENT=hermes` (for all commands).
+
+```console
+$ nemohermes onboard              # equivalent to: nemoclaw onboard --agent hermes
+$ nemohermes my-sandbox connect   # same as: nemoclaw my-sandbox connect
+```
+
+The alias is installed alongside `nemoclaw` via `npm link` or `npm install -g`.
+Help text, version output, and error messages automatically adjust to show `nemohermes` when launched through the alias.
 
 ### Legacy `nemoclaw setup`
 

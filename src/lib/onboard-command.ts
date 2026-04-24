@@ -34,9 +34,18 @@ const ONBOARD_BASE_ARGS = [
   "--dangerously-skip-permissions",
 ];
 
+/** CLI binary name — respects the NemoHermes alias when NEMOCLAW_AGENT is set. */
+function cliName(): string {
+  return process.env.NEMOCLAW_AGENT === "hermes" &&
+    (process.argv[1]?.includes("nemohermes") ?? false)
+    ? "nemohermes"
+    : "nemoclaw";
+}
+
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
+  const name = cliName();
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
+    `  Usage: ${name} onboard [--non-interactive] [--resume] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
     "",
   ];
 }
@@ -125,11 +134,11 @@ export async function runDeprecatedOnboardAliasCommand(
   const log = deps.log ?? console.log;
   log("");
   if (deps.kind === "setup") {
-    log("  ⚠  `nemoclaw setup` is deprecated. Use `nemoclaw onboard` instead.");
+    log(`  ⚠  \`${cliName()} setup\` is deprecated. Use \`${cliName()} onboard\` instead.`);
   } else {
-    log("  ⚠  `nemoclaw setup-spark` is deprecated.");
+    log(`  ⚠  \`${cliName()} setup-spark\` is deprecated.`);
     log("  Current OpenShell releases handle the old DGX Spark cgroup issue themselves.");
-    log("  Use `nemoclaw onboard` instead.");
+    log(`  Use \`${cliName()} onboard\` instead.`);
   }
   log("");
   await runOnboardCommand(deps);
