@@ -4493,7 +4493,9 @@ async function createSandbox(
   // A previous onboard run may have left the port forwarded to a different sandbox,
   // which would silently prevent the new sandbox's dashboard from being reachable.
   // ensureDashboardForward may auto-allocate a different port on conflict (#2174).
-  const allocatedDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl);
+  const allocatedDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl, {
+    rollbackSandboxOnFailure: true,
+  });
 
   // Register only after confirmed ready — prevents phantom entries
   const effectiveAgent = agent || agentDefs.loadAgent("openclaw");
@@ -6780,7 +6782,9 @@ function reuseChatUiUrlFor(sandboxName: string, fallbackUrl: string): string {
 function ensureDashboardForward(
   sandboxName: string,
   chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
+  options: { rollbackSandboxOnFailure?: boolean } = {},
 ): number {
+  const rollbackSandboxOnFailure = options.rollbackSandboxOnFailure ?? false;
   const chain = buildChain({ chatUiUrl, isWsl: isWsl() });
   const requestedPort = chain.port;
   const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
@@ -6806,7 +6810,9 @@ function ensureDashboardForward(
       // Pre-existing sandbox (this openshell-create already succeeded). Roll it
       // back so `nemoclaw list` and `openshell sandbox list` don't drift
       // ("leaks ghost sandbox" from #2174 title).
-      runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      if (rollbackSandboxOnFailure) {
+        runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      }
       console.error(`  Port ${requestedPort} is already forwarded for sandbox '${portOwner}'.`);
       console.error(`  Unset CHAT_UI_URL or pick a free port to onboard '${sandboxName}'.`);
       process.exit(1);
@@ -6831,7 +6837,9 @@ function ensureDashboardForward(
       },
     });
     if (chosen === null) {
-      runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      if (rollbackSandboxOnFailure) {
+        runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+      }
       console.error(`  All ports ${requestedPort}-${requestedPort + 9} are forwarded.`);
       console.error(
         `  Destroy an unused sandbox, or set CHAT_UI_URL=http://127.0.0.1:${requestedPort + 10} (or higher) and retry.`,
@@ -7187,7 +7195,10 @@ function printDashboard(
   else if (provider === "ollama-local") providerLabel = "Local Ollama";
 
   const token = fetchGatewayAuthTokenFromSandbox(sandboxName);
-  const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
+  // Use the same stored-port precedence logic as getDashboardAccessInfo (#2174)
+  const storedPort = registry.getSandbox(sandboxName)?.dashboardPort;
+  const storedUrl = typeof storedPort === "number" ? `http://127.0.0.1:${storedPort}` : null;
+  const chatUiUrl = process.env.CHAT_UI_URL || storedUrl || `http://127.0.0.1:${CONTROL_UI_PORT}`;
   const wslAddr = isWsl() ? (String(runCapture("hostname -I 2>/dev/null", { ignoreError: true }) || "").trim().split(/\s+/)[0] || null) : null;
   const chain = buildChain({ chatUiUrl, isWsl: isWsl(), wslHostAddress: wslAddr });
 

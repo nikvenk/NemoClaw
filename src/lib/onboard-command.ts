@@ -143,10 +143,20 @@ export async function runOnboardCommand(deps: RunOnboardCommandDeps): Promise<vo
   // --control-ui-port takes precedence over existing CHAT_UI_URL. The onboard
   // flow reads CHAT_UI_URL directly in many places, so setting it here is the
   // single seam that makes the flag effective without threading it through.
-  if (options.controlUiPort !== null) {
-    process.env.CHAT_UI_URL = `http://127.0.0.1:${options.controlUiPort}`;
+  const _origChatUiUrl = process.env.CHAT_UI_URL;
+  try {
+    if (options.controlUiPort !== null) {
+      process.env.CHAT_UI_URL = `http://127.0.0.1:${options.controlUiPort}`;
+    }
+    await deps.runOnboard(options);
+  } finally {
+    // Restore original value to prevent cross-invocation leakage
+    if (_origChatUiUrl === undefined) {
+      delete process.env.CHAT_UI_URL;
+    } else {
+      process.env.CHAT_UI_URL = _origChatUiUrl;
+    }
   }
-  await deps.runOnboard(options);
 }
 
 export async function runDeprecatedOnboardAliasCommand(
