@@ -239,7 +239,10 @@ repos:
         entry: npx tsc -p tsconfig.cli.json
         language: system
         pass_filenames: false
-        files: ^(bin|scripts)/
+        # Match what tsconfig.cli.json actually typechecks — previously ^(bin|scripts)/
+        # missed test-only and src-only PRs, which allowed a strict-mode regression
+        # (#2130 × #2422) to land on main silently.
+        files: ^(bin/|scripts/|src/|test/|tsconfig.*\.json$)
         types_or: [ts, tsx]
         stages: [pre-push]
         priority: 10
