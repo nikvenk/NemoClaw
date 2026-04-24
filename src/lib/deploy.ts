@@ -7,7 +7,15 @@ import path from "node:path";
 
 import { sleepSeconds } from "./wait";
 
-type ExecLikeValue = string | number | boolean | null | undefined | string[] | NodeJS.ProcessEnv | object;
+type ExecLikeValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | string[]
+  | NodeJS.ProcessEnv
+  | object;
 type ExecLikeOptions = { [key: string]: ExecLikeValue };
 
 function readCommandOutput(error: object | null, key: "stdout" | "stderr"): string {
@@ -258,7 +266,9 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
   const name = validateName(instanceName, "instance name");
   const qname = shellQuote(name);
   const gpu = env.NEMOCLAW_GPU || "a2-highgpu-1g:nvidia-tesla-a100:1";
-  const brevProvider = String(env.NEMOCLAW_BREV_PROVIDER || "gcp").trim().toLowerCase();
+  const brevProvider = String(env.NEMOCLAW_BREV_PROVIDER || "gcp")
+    .trim()
+    .toLowerCase();
   const skipConnect = ["1", "true"].includes(
     String(env.NEMOCLAW_DEPLOY_NO_CONNECT || "").toLowerCase(),
   );
@@ -418,9 +428,7 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     fs.writeFileSync(envTmp, envLines.join("\n") + "\n", { mode: 0o600 });
     try {
       run(`scp -q ${sshOpts} ${shellQuote(envTmp)} ${qname}:${shellQuote(`${remoteDir}/.env`)}`);
-      run(
-        `ssh -q ${sshOpts} ${qname} 'chmod 600 ${shellQuote(`${remoteDir}/.env`)}'`,
-      );
+      run(`ssh -q ${sshOpts} ${qname} 'chmod 600 ${shellQuote(`${remoteDir}/.env`)}'`);
     } finally {
       try {
         fs.unlinkSync(envTmp);

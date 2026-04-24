@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { execSync, execFileSync, type ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
+import {
+  execSync,
+  execFileSync,
+  type ExecFileSyncOptionsWithStringEncoding,
+} from "node:child_process";
 import { mkdtempSync, writeFileSync, unlinkSync, readFileSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

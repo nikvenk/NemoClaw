@@ -101,7 +101,9 @@ function hasBrevInstance(instanceName: string): boolean {
 
 function isBrevInstanceDeleting(instanceName: string): boolean {
   const instances = listBrevInstances();
-  const instance = instances.find((i: { name: string; status?: string }) => i.name === instanceName);
+  const instance = instances.find(
+    (i: { name: string; status?: string }) => i.name === instanceName,
+  );
   return Boolean(instance && (instance.status === "DELETING" || instance.status === "STOPPING"));
 }
 
@@ -185,7 +187,10 @@ function waitForSsh(maxAttempts = 40, intervalMs = 5_000): void {
       ssh("echo ok", { timeout: 10_000 });
       return;
     } catch {
-      if (i === maxAttempts) throw new Error(`SSH not ready after ${maxAttempts} attempts (~${Math.round(maxAttempts * (intervalMs + 10_000) / 60_000)} min)`);
+      if (i === maxAttempts)
+        throw new Error(
+          `SSH not ready after ${maxAttempts} attempts (~${Math.round((maxAttempts * (intervalMs + 10_000)) / 60_000)} min)`,
+        );
       console.log(`  SSH attempt ${i}/${maxAttempts} failed, retrying in ${intervalMs / 1000}s...`);
       if (i % 5 === 0) {
         console.log(`  Refreshing brev SSH config...`);
@@ -445,13 +450,10 @@ function bootstrapLaunchable(elapsed: () => string): { remoteDir: string; needsO
   // --ignore-scripts` skipped the `prepare` lifecycle that normally runs
   // `build:cli`, so do it explicitly.
   console.log(`[${elapsed()}] Building CLI (dist/) for PR branch...`);
-  ssh(
-    `source ~/.nvm/nvm.sh 2>/dev/null || true && cd ${resolvedRemoteDir} && npm run build:cli`,
-    {
-      timeout: 120_000,
-      stream: true,
-    },
-  );
+  ssh(`source ~/.nvm/nvm.sh 2>/dev/null || true && cd ${resolvedRemoteDir} && npm run build:cli`, {
+    timeout: 120_000,
+    stream: true,
+  });
   console.log(`[${elapsed()}] CLI built`);
 
   // Rebuild TS plugin for our branch (reinstall plugin deps in case they changed)
@@ -553,15 +555,10 @@ function pollForSandboxReady(elapsed: () => string): void {
       }
       // Show onboard progress from the log
       try {
-        const tail = ssh(
-          "tail -2 /tmp/nemoclaw-onboard.log 2>/dev/null || echo '(no log yet)'",
-          {
-            timeout: 10_000,
-          },
-        );
-        console.log(
-          `[${onboardElapsed()}] Onboard in progress... ${tail.replace(/\n/g, " | ")}`,
-        );
+        const tail = ssh("tail -2 /tmp/nemoclaw-onboard.log 2>/dev/null || echo '(no log yet)'", {
+          timeout: 10_000,
+        });
+        console.log(`[${onboardElapsed()}] Onboard in progress... ${tail.replace(/\n/g, " | ")}`);
       } catch {
         /* ignore */
       }

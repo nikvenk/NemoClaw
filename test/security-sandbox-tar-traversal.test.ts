@@ -133,7 +133,7 @@ function isSandboxStateModule(
 async function loadSandboxState(): Promise<SandboxStateModule> {
   // The CLI compiles to dist/lib/ — import from there
   const loaded = await import(
-    path.join(import.meta.dirname, "..", "dist", "lib", "sandbox-state.js"),
+    path.join(import.meta.dirname, "..", "dist", "lib", "sandbox-state.js")
   );
   const mod = typeof loaded === "object" && loaded !== null ? loaded : null;
   if (!isSandboxStateModule(mod)) {
@@ -157,9 +157,7 @@ async function loadSandboxState(): Promise<SandboxStateModule> {
 // ═══════════════════════════════════════════════════════════════════
 describe("PoC: malicious tar archives contain path traversal entries", () => {
   it("tar archive contains a ../../ traversal entry", () => {
-    const tar = buildTar([
-      { path: "../../evil.txt", content: "attacker-payload" },
-    ]);
+    const tar = buildTar([{ path: "../../evil.txt", content: "attacker-payload" }]);
 
     // Verify the archive actually contains the traversal entry
     const list = spawnSync("tar", ["-tf", "-"], {
@@ -174,9 +172,7 @@ describe("PoC: malicious tar archives contain path traversal entries", () => {
   });
 
   it("tar archive contains an absolute path entry", () => {
-    const tar = buildTar([
-      { path: "/etc/cron.d/backdoor", content: "malicious" },
-    ]);
+    const tar = buildTar([{ path: "/etc/cron.d/backdoor", content: "malicious" }]);
 
     const list = spawnSync("tar", ["-tf", "-"], {
       input: tar,
@@ -196,9 +192,7 @@ describe("Fix: validateTarEntries rejects malicious tar entries", () => {
   it("rejects relative path traversal (../../.ssh/authorized_keys)", async () => {
     const { validateTarEntries } = await loadSandboxState();
     const targetDir = "/tmp/nemoclaw-test-target";
-    const tar = buildTar([
-      { path: "../../.ssh/authorized_keys", content: "ssh-rsa ATTACKER_KEY" },
-    ]);
+    const tar = buildTar([{ path: "../../.ssh/authorized_keys", content: "ssh-rsa ATTACKER_KEY" }]);
 
     const result = validateTarEntries(tar, targetDir);
 
@@ -223,9 +217,7 @@ describe("Fix: validateTarEntries rejects malicious tar entries", () => {
   it("rejects hidden traversal (safe-dir/../../escape.txt)", async () => {
     const { validateTarEntries } = await loadSandboxState();
     const targetDir = "/tmp/nemoclaw-test-target";
-    const tar = buildTar([
-      { path: "safe-dir/../../escape.txt", content: "hidden-traversal" },
-    ]);
+    const tar = buildTar([{ path: "safe-dir/../../escape.txt", content: "hidden-traversal" }]);
 
     const result = validateTarEntries(tar, targetDir);
 
@@ -253,7 +245,7 @@ describe("Fix: validateTarEntries rejects malicious tar entries", () => {
     const { validateTarEntries } = await loadSandboxState();
     const targetDir = "/tmp/nemoclaw-test-target";
     const tar = buildTar([
-      { path: "legitimate/config.json", content: '{}' },
+      { path: "legitimate/config.json", content: "{}" },
       { path: "../../.bashrc", content: 'echo "pwned"' },
       { path: "legitimate/data.txt", content: "safe" },
     ]);
@@ -274,9 +266,7 @@ describe("Fix: safeTarExtract blocks malicious archives and extracts safe ones",
       const targetDir = path.join(workDir, "backup");
       fs.mkdirSync(targetDir, { recursive: true });
 
-      const tar = buildTar([
-        { path: "../../evil.txt", content: "attacker-payload" },
-      ]);
+      const tar = buildTar([{ path: "../../evil.txt", content: "attacker-payload" }]);
 
       const result = safeTarExtract(tar, targetDir);
 
@@ -296,9 +286,7 @@ describe("Fix: safeTarExtract blocks malicious archives and extracts safe ones",
       const targetDir = path.join(workDir, "backup");
       fs.mkdirSync(targetDir, { recursive: true });
 
-      const tar = buildTar([
-        { path: "config.json", content: '{"model": "test"}' },
-      ]);
+      const tar = buildTar([{ path: "config.json", content: '{"model": "test"}' }]);
 
       const result = safeTarExtract(tar, targetDir);
 
@@ -332,9 +320,7 @@ describe("Fix: safeTarExtract blocks malicious archives and extracts safe ones",
       expect(result.success).toBe(false);
       expect(result.error).toContain("symlink");
       // Target dir should be cleaned after symlink violation
-      const entries = fs.existsSync(targetDir)
-        ? fs.readdirSync(targetDir)
-        : [];
+      const entries = fs.existsSync(targetDir) ? fs.readdirSync(targetDir) : [];
       expect(entries.length).toBe(0);
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });

@@ -265,9 +265,7 @@ function removePresetFromPolicy(
   try {
     const wrapped = "network_policies:\n" + presetEntries;
     const parsed = YAML.parse(wrapped);
-    presetKeys = parsed?.network_policies
-      ? Object.keys(parsed.network_policies)
-      : [];
+    presetKeys = parsed?.network_policies ? Object.keys(parsed.network_policies) : [];
   } catch {
     presetKeys = [];
   }

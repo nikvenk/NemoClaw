@@ -354,7 +354,9 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   }
 
   if (!isRecognizedConfigPath(config, opts.key)) {
-    console.error(`  Key validation failed: "${opts.key}" is not a recognized ${target.agentName} config path.`);
+    console.error(
+      `  Key validation failed: "${opts.key}" is not a recognized ${target.agentName} config path.`,
+    );
     process.exit(1);
   }
 

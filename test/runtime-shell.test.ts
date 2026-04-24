@@ -9,7 +9,10 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
 const RUNTIME_SH = path.join(import.meta.dirname, "..", "scripts", "lib", "runtime.sh");
 
-function runShell(script: string, env: Record<string, string | undefined> = {}): SpawnSyncReturns<string> {
+function runShell(
+  script: string,
+  env: Record<string, string | undefined> = {},
+): SpawnSyncReturns<string> {
   return spawnSync("bash", ["-lc", script], {
     cwd: path.join(import.meta.dirname, ".."),
     encoding: "utf-8",

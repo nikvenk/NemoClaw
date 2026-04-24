@@ -13,11 +13,7 @@ const CREDENTIAL_RETRY_PROMPT =
 const CREDENTIAL_RETRY_PROMPT_RE =
   /Options: retry \(re-enter key\), back \(change provider\), exit \[retry\]: /;
 
-function writeOpenAiStyleAuthRetryCurl(
-  fakeBin: string,
-  goodToken: string,
-  models = ["gpt-5.4"],
-) {
+function writeOpenAiStyleAuthRetryCurl(fakeBin: string, goodToken: string, models = ["gpt-5.4"]) {
   fs.writeFileSync(
     path.join(fakeBin, "curl"),
     `#!/usr/bin/env bash
@@ -195,9 +191,13 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.promptCalls, 2);
     assert.match(payload.messages[0], /Choose \[/);
     assert.match(payload.messages[1], /Choose model \[1\]/);
-    assert.ok(payload.lines.some((line: string) => line.includes("Detected local inference option")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Detected local inference option")),
+    );
     assert.ok(payload.lines.some((line: string) => line.includes("Cloud models:")));
-    assert.ok(payload.lines.some((line: string) => line.includes("Chat Completions API available")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Chat Completions API available")),
+    );
   });
 
   it("does not label NVIDIA Endpoints as recommended in the provider list", () => {
@@ -272,7 +272,9 @@ const { setupNim } = require(${onboardPath});
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout.trim());
     assert.ok(payload.lines.some((line: string) => line.includes("NVIDIA Endpoints")));
-    assert.ok(!payload.lines.some((line: string) => line.includes("NVIDIA Endpoints (recommended)")));
+    assert.ok(
+      !payload.lines.some((line: string) => line.includes("NVIDIA Endpoints (recommended)")),
+    );
   });
 
   it("accepts a manually entered NVIDIA Endpoints model after validating it against /models", () => {
@@ -463,7 +465,8 @@ const { setupNim } = require(${onboardPath});
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.model, "z-ai/glm5");
     assert.equal(
-      payload.messages.filter((message: string) => /NVIDIA Endpoints model id:/.test(message)).length,
+      payload.messages.filter((message: string) => /NVIDIA Endpoints model id:/.test(message))
+        .length,
       2,
     );
     assert.ok(
@@ -561,7 +564,9 @@ const { setupNim } = require(${onboardPath});
     assert.ok(payload.lines.some((line: string) => line.includes("Google Gemini models:")));
     assert.ok(payload.lines.some((line: string) => line.includes("gemini-2.5-flash")));
     assert.ok(payload.lines.some((line: string) => line.includes("Other...")));
-    assert.ok(payload.lines.some((line: string) => line.includes("Chat Completions API available")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Chat Completions API available")),
+    );
   });
 
   it("warms and validates Ollama via 127.0.0.1 before moving on", () => {
@@ -659,10 +664,14 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.provider, "ollama-local");
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
     assert.ok(
-      payload.lines.some((line: string) => line.includes("Loading Ollama model: nemotron-3-nano:30b")),
+      payload.lines.some((line: string) =>
+        line.includes("Loading Ollama model: nemotron-3-nano:30b"),
+      ),
     );
     assert.ok(
-      payload.commands.some((command: string) => command.includes("http://127.0.0.1:11434/api/generate")),
+      payload.commands.some((command: string) =>
+        command.includes("http://127.0.0.1:11434/api/generate"),
+      ),
     );
   });
 
@@ -755,9 +764,14 @@ const { setupNim } = require(${onboardPath});
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.provider, "nvidia-prod");
-    assert.ok(payload.lines.some((line: string) => line.includes("Returning to provider selection.")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Returning to provider selection.")),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 2);
-    assert.equal(payload.messages.filter((message: string) => /Ollama model id: /.test(message)).length, 1);
+    assert.equal(
+      payload.messages.filter((message: string) => /Ollama model id: /.test(message)).length,
+      1,
+    );
   });
 
   it("offers starter Ollama models when none are installed and pulls the selected model", () => {
@@ -862,9 +876,13 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.model, "qwen2.5:7b");
     assert.ok(payload.lines.some((line: string) => line.includes("Ollama starter models:")));
     assert.ok(
-      payload.lines.some((line: string) => line.includes("No local Ollama models are installed yet")),
+      payload.lines.some((line: string) =>
+        line.includes("No local Ollama models are installed yet"),
+      ),
     );
-    assert.ok(payload.lines.some((line: string) => line.includes("Pulling Ollama model: qwen2.5:7b")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Pulling Ollama model: qwen2.5:7b")),
+    );
     assert.equal(fs.readFileSync(pullLog, "utf8").trim(), "qwen2.5:7b");
   });
 
@@ -972,14 +990,19 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.provider, "ollama-local");
     assert.equal(payload.result.model, "llama3.2:3b");
     assert.ok(
-      payload.lines.some((line: string) => line.includes("Failed to pull Ollama model 'qwen2.5:7b'")),
+      payload.lines.some((line: string) =>
+        line.includes("Failed to pull Ollama model 'qwen2.5:7b'"),
+      ),
     );
     assert.ok(
       payload.lines.some((line: string) =>
         line.includes("Choose a different Ollama model or select Other."),
       ),
     );
-    assert.equal(payload.messages.filter((message: string) => /Ollama model id:/.test(message)).length, 1);
+    assert.equal(
+      payload.messages.filter((message: string) => /Ollama model id:/.test(message)).length,
+      1,
+    );
     assert.equal(fs.readFileSync(pullLog, "utf8").trim(), "qwen2.5:7b\nllama3.2:3b");
   });
 
@@ -1066,7 +1089,10 @@ const { setupNim } = require(${onboardPath});
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.model, "gpt-5.4-mini");
-    assert.equal(payload.messages.filter((message: string) => /OpenAI model id:/.test(message)).length, 2);
+    assert.equal(
+      payload.messages.filter((message: string) => /OpenAI model id:/.test(message)).length,
+      2,
+    );
     assert.ok(payload.lines.some((line: string) => line.includes("is not available from OpenAI")));
   });
 
@@ -1153,7 +1179,9 @@ const { setupNim } = require(${onboardPath});
       payload.messages.filter((message: string) => /Anthropic model id:/.test(message)).length,
       2,
     );
-    assert.ok(payload.lines.some((line: string) => line.includes("is not available from Anthropic")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("is not available from Anthropic")),
+    );
   });
 
   it("returns to provider selection when Anthropic live validation fails interactively", () => {
@@ -1245,8 +1273,12 @@ const { setupNim } = require(${onboardPath});
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.provider, "anthropic-prod");
     assert.equal(payload.result.model, "claude-haiku-4-5");
-    assert.ok(payload.lines.some((line: string) => line.includes("Anthropic endpoint validation failed")));
-    assert.ok(payload.lines.some((line: string) => line.includes("Please choose a provider/model again")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Anthropic endpoint validation failed")),
+    );
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Please choose a provider/model again")),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 2);
   });
 
@@ -1332,7 +1364,9 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.preferredInferenceApi, "anthropic-messages");
     assert.match(payload.messages[1], /Anthropic-compatible base URL/);
     assert.match(payload.messages[2], /Other Anthropic-compatible endpoint model/);
-    assert.ok(payload.lines.some((line: string) => line.includes("Anthropic Messages API available")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Anthropic Messages API available")),
+    );
   });
 
   it("reprompts only for model name when Other OpenAI-compatible endpoint validation fails", () => {
@@ -1435,12 +1469,14 @@ const { setupNim } = require(${onboardPath});
       ),
     );
     assert.equal(
-      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message)).length,
+      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message))
+        .length,
       1,
     );
     assert.equal(
-      payload.messages.filter((message: string) => /Other OpenAI-compatible endpoint model/.test(message))
-        .length,
+      payload.messages.filter((message: string) =>
+        /Other OpenAI-compatible endpoint model/.test(message),
+      ).length,
       2,
     );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
@@ -1537,7 +1573,9 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.provider, "compatible-endpoint");
     assert.equal(payload.result.model, "custom-model");
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
-    assert.ok(payload.lines.some((line: string) => line.includes("Chat Completions API available")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Chat Completions API available")),
+    );
   });
 
   it("forces chat completions for custom OpenAI-compatible endpoints even when /responses returns valid tool calls (#1932)", () => {
@@ -1638,9 +1676,7 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
     // Verify the wizard selected chat completions (either via our forced
     // override or via the streaming fallback — both are correct).
-    assert.ok(
-      payload.lines.some((line: string) => line.includes("openai-completions")),
-    );
+    assert.ok(payload.lines.some((line: string) => line.includes("openai-completions")));
   });
 
   it("honors NEMOCLAW_PREFERRED_API=openai-responses override for custom OpenAI-compatible endpoints (#1932)", () => {
@@ -1837,8 +1873,12 @@ const { setupNim } = require(${onboardPath});
         line.includes("Endpoint URL is required for Other OpenAI-compatible endpoint."),
       ),
     );
-    assert.ok(payload.messages.some((message: string) => /OpenAI-compatible base URL/.test(message)));
-    assert.ok(payload.messages.filter((message: string) => /Choose \[1\]/.test(message)).length >= 2);
+    assert.ok(
+      payload.messages.some((message: string) => /OpenAI-compatible base URL/.test(message)),
+    );
+    assert.ok(
+      payload.messages.filter((message: string) => /Choose \[1\]/.test(message)).length >= 2,
+    );
   });
 
   it("reprompts only for model name when Other Anthropic-compatible endpoint validation fails", () => {
@@ -1940,7 +1980,8 @@ const { setupNim } = require(${onboardPath});
       ),
     );
     assert.equal(
-      payload.messages.filter((message: string) => /Anthropic-compatible base URL/.test(message)).length,
+      payload.messages.filter((message: string) => /Anthropic-compatible base URL/.test(message))
+        .length,
       1,
     );
     assert.equal(
@@ -2030,10 +2071,13 @@ const { setupNim } = require(${onboardPath});
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.provider, "nvidia-prod");
-    assert.ok(payload.lines.some((line: string) => line.includes("Returning to provider selection.")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Returning to provider selection.")),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 2);
     assert.equal(
-      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message)).length,
+      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message))
+        .length,
       1,
     );
   });
@@ -2120,9 +2164,13 @@ const { setupNim } = require(${onboardPath});
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.provider, "nvidia-prod");
     assert.ok(
-      payload.lines.some((line: string) => line.includes("could not resolve the provider hostname")),
+      payload.lines.some((line: string) =>
+        line.includes("could not resolve the provider hostname"),
+      ),
     );
-    assert.ok(payload.lines.some((line: string) => line.includes("Returning to provider selection.")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Returning to provider selection.")),
+    );
     assert.equal(
       payload.messages.filter((message: string) =>
         /Type 'retry', 'back', or 'exit' \[retry\]: /.test(message),
@@ -2229,8 +2277,12 @@ const { setupNim } = require(${onboardPath});
     const payload = JSON.parse(result.stdout.trim());
     assert.equal(payload.result.provider, "nvidia-prod");
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
-    assert.ok(payload.lines.some((line: string) => line.includes("OpenAI endpoint validation failed")));
-    assert.ok(payload.lines.some((line: string) => line.includes("Please choose a provider/model again")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("OpenAI endpoint validation failed")),
+    );
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Please choose a provider/model again")),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 2);
   });
 
@@ -2326,7 +2378,9 @@ const { setupNim, __setNonInteractive } = onboardModule.exports;
     assert.equal(payload.completed, false);
     assert.equal(payload.exitCode, 1);
     assert.equal(payload.prompts.length, 0);
-    assert.ok(payload.lines.some((line: string) => line.includes("Invalid key. Must start with nvapi-")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Invalid key. Must start with nvapi-")),
+    );
     assert.ok(
       payload.lines.some((line: string) =>
         line.includes("Get a key from https://build.nvidia.com/settings/api-keys"),
@@ -2430,19 +2484,25 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.provider, "nvidia-prod");
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
     assert.equal(payload.key, "nvapi-good");
-    assert.ok(payload.lines.some((line: string) => line.includes("NVIDIA Endpoints authorization failed")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("NVIDIA Endpoints authorization failed")),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
     assert.equal(
       payload.messages.filter((message: string) => /Choose model \[1\]/.test(message)).length,
       1,
     );
     assert.ok(payload.messages.some((message: string) => CREDENTIAL_RETRY_PROMPT_RE.test(message)));
-    const retryPrompt = payload.prompts.find((entry: { message: string }) => CREDENTIAL_RETRY_PROMPT_RE.test(entry.message));
+    const retryPrompt = payload.prompts.find((entry: { message: string }) =>
+      CREDENTIAL_RETRY_PROMPT_RE.test(entry.message),
+    );
     assert.deepEqual(retryPrompt, {
       message: CREDENTIAL_RETRY_PROMPT,
       secret: true,
     });
-    assert.ok(payload.messages.some((message: string) => /NVIDIA Endpoints API key: /.test(message)));
+    assert.ok(
+      payload.messages.some((message: string) => /NVIDIA Endpoints API key: /.test(message)),
+    );
   });
 
   it("treats a pasted NVIDIA API key at the retry prompt as retry and re-prompts securely", () => {
@@ -2511,7 +2571,9 @@ const { setupNim } = require(${onboardPath});
     assert.ok(payload.lines.some((line: string) => line.includes("That looks like an API key")));
     assert.ok(payload.lines.some((line: string) => line.includes("Treating as 'retry'")));
     assert.ok(payload.messages.some((message: string) => CREDENTIAL_RETRY_PROMPT_RE.test(message)));
-    assert.ok(payload.messages.some((message: string) => /NVIDIA Endpoints API key: /.test(message)));
+    assert.ok(
+      payload.messages.some((message: string) => /NVIDIA Endpoints API key: /.test(message)),
+    );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
     assert.equal(
       payload.messages.filter((message: string) => /Choose model \[1\]/.test(message)).length,
@@ -2659,7 +2721,9 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.model, "claude-sonnet-4-6");
     assert.equal(payload.result.preferredInferenceApi, "anthropic-messages");
     assert.equal(payload.key, "anthropic-good");
-    assert.ok(payload.lines.some((line: string) => line.includes("Anthropic authorization failed")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Anthropic authorization failed")),
+    );
     assert.ok(payload.messages.some((message: string) => CREDENTIAL_RETRY_PROMPT_RE.test(message)));
     assert.ok(payload.messages.some((message: string) => /Anthropic API key: /.test(message)));
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
@@ -2733,7 +2797,9 @@ const { setupNim } = require(${onboardPath});
     assert.equal(payload.result.model, "gemini-2.5-flash");
     assert.equal(payload.result.preferredInferenceApi, "openai-completions");
     assert.equal(payload.key, "gemini-good");
-    assert.ok(payload.lines.some((line: string) => line.includes("Google Gemini authorization failed")));
+    assert.ok(
+      payload.lines.some((line: string) => line.includes("Google Gemini authorization failed")),
+    );
     assert.ok(payload.messages.some((message: string) => CREDENTIAL_RETRY_PROMPT_RE.test(message)));
     assert.ok(payload.messages.some((message: string) => /Google Gemini API key: /.test(message)));
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
@@ -2822,12 +2888,14 @@ const { setupNim } = require(${onboardPath});
       ),
     );
     assert.equal(
-      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message)).length,
+      payload.messages.filter((message: string) => /OpenAI-compatible base URL/.test(message))
+        .length,
       1,
     );
     assert.equal(
-      payload.messages.filter((message: string) => /Other OpenAI-compatible endpoint model/.test(message))
-        .length,
+      payload.messages.filter((message: string) =>
+        /Other OpenAI-compatible endpoint model/.test(message),
+      ).length,
       2,
     );
     assert.equal(payload.messages.filter((message: string) => /Choose \[/.test(message)).length, 1);
@@ -2912,7 +2980,8 @@ const { setupNim } = require(${onboardPath});
       ),
     );
     assert.equal(
-      payload.messages.filter((message: string) => /Anthropic-compatible base URL/.test(message)).length,
+      payload.messages.filter((message: string) => /Anthropic-compatible base URL/.test(message))
+        .length,
       1,
     );
     assert.equal(
@@ -3278,7 +3347,7 @@ const { setupNim } = require(${onboardPath});
     // Should have shown the "Install Ollama (Linux)" option
     assert.ok(
       payload.lines.some((line: string) => line.includes("Install Ollama (Linux)")),
-      "Should show Install Ollama option on Linux"
+      "Should show Install Ollama option on Linux",
     );
 
     // Should have selected ollama-local provider after install
@@ -3287,11 +3356,11 @@ const { setupNim } = require(${onboardPath});
     // Should have run the curl installer (not brew)
     assert.ok(
       payload.runCommands.some((cmd: string) => cmd.includes("ollama.com/install.sh")),
-      "Should use curl installer on Linux"
+      "Should use curl installer on Linux",
     );
     assert.ok(
       !payload.runCommands.some((cmd: string) => cmd.includes("brew install")),
-      "Should NOT use brew on Linux"
+      "Should NOT use brew on Linux",
     );
   });
 });

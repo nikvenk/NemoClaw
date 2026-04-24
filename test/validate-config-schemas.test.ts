@@ -83,9 +83,7 @@ function cloneObject(value: LooseObject | undefined): LooseObject {
 function expectValid(validate: ValidateFunction, data: object, label: string): void {
   const valid = validate(data);
   if (!valid) {
-    const messages = (validate.errors ?? []).map(
-      (e) => `  ${e.instancePath || "/"}: ${e.message}`,
-    );
+    const messages = (validate.errors ?? []).map((e) => `  ${e.instancePath || "/"}: ${e.message}`);
     expect.unreachable(`${label} failed schema validation:\n${messages.join("\n")}`);
   }
 }
@@ -188,9 +186,7 @@ describe("blueprint.schema.json", () => {
 
 describe("sandbox-policy.schema.json", () => {
   const validate = compileSchema("schemas/sandbox-policy.schema.json");
-  const data = loadYAML(
-    repoPath("nemoclaw-blueprint/policies/openclaw-sandbox.yaml"),
-  );
+  const data = loadYAML(repoPath("nemoclaw-blueprint/policies/openclaw-sandbox.yaml"));
 
   it("openclaw-sandbox.yaml passes schema validation", () => {
     expectValid(validate, data, "openclaw-sandbox.yaml");
@@ -231,8 +227,7 @@ describe("policy-preset.schema.json", () => {
   try {
     presetFiles = readdirSync(presetsDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
   } catch (err) {
-    const code =
-      typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
+    const code = typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
     if (code !== "ENOENT") throw err;
     // directory may not exist
   }
@@ -245,7 +240,11 @@ describe("policy-preset.schema.json", () => {
   }
 
   it("rejects preset without preset metadata", () => {
-    const bad = { network_policies: { test: { name: "test", endpoints: [{ host: "a.com", port: 443, access: "full" }] } } };
+    const bad = {
+      network_policies: {
+        test: { name: "test", endpoints: [{ host: "a.com", port: 443, access: "full" }] },
+      },
+    };
     expect(validate(bad)).toBe(false);
   });
 

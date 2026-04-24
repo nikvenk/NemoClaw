@@ -52,7 +52,9 @@ describe("sandbox-create-stream", () => {
 
     child.stdout.emit(
       "data",
-      Buffer.from("  Building image sandbox\n  Pushing image layers\nCreated sandbox: demo\n✓ Ready\n"),
+      Buffer.from(
+        "  Building image sandbox\n  Pushing image layers\nCreated sandbox: demo\n✓ Ready\n",
+      ),
     );
     child.emit("close", 0);
 

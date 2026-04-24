@@ -42,7 +42,10 @@ type OnboardTestInternals = {
   compactText: (value?: string) => string;
   computeSetupPresetSuggestions: ShimFn<string[]>;
   formatEnvAssignment: (name: string, value: string) => string;
-  findDashboardForwardOwner: (forwardListOutput: string | null | undefined, portToStop: string) => string | null;
+  findDashboardForwardOwner: (
+    forwardListOutput: string | null | undefined,
+    portToStop: string,
+  ) => string | null;
   formatOnboardConfigSummary: ShimFn<string>;
   getDashboardAccessInfo: ShimFn<DashboardAccess[]>;
   getDashboardForwardStartCommand: ShimFn<string>;
@@ -59,7 +62,10 @@ type OnboardTestInternals = {
   getRequestedProviderHint: ShimFn<string | null>;
   getRequestedSandboxNameHint: ShimFn<string | null>;
   getResumeConfigConflicts: ShimFn<ResumeConflict[]>;
-  getResumeSandboxConflict: ShimFn<{ requestedSandboxName: string; recordedSandboxName: string } | null>;
+  getResumeSandboxConflict: ShimFn<{
+    requestedSandboxName: string;
+    recordedSandboxName: string;
+  } | null>;
   getSandboxStateFromOutputs: ShimFn<string>;
   getStableGatewayImageRef: (versionOutput?: string | null) => string | null;
   getSuggestedPolicyPresets: ShimFn<string[]>;
@@ -67,7 +73,10 @@ type OnboardTestInternals = {
   classifyValidationFailure: ShimFn<ValidationClassification>;
   hasResponsesToolCall: (body?: string | null) => boolean;
   isLoopbackHostname: (hostname?: string) => boolean;
-  normalizeProviderBaseUrl: (value: string | null | undefined, flavor: "openai" | "anthropic") => string;
+  normalizeProviderBaseUrl: (
+    value: string | null | undefined,
+    flavor: "openai" | "anthropic",
+  ) => string;
   parsePolicyPresetEnv: (value: string | null) => string[];
   patchStagedDockerfile: ShimFn<void>;
   pullAndResolveBaseImageDigest: () => { digest: string; ref: string } | null;
@@ -88,7 +97,9 @@ function parseStdoutJson<T>(stdout: string): T {
 
 type OnboardTestInternalsCandidate = Partial<OnboardTestInternals> | null;
 
-function isOnboardTestInternals(value: OnboardTestInternalsCandidate): value is OnboardTestInternals {
+function isOnboardTestInternals(
+  value: OnboardTestInternalsCandidate,
+): value is OnboardTestInternals {
   return (
     value !== null &&
     typeof value.buildProviderArgs === "function" &&
@@ -2301,7 +2312,8 @@ const { setupInference } = require(${onboardPath});
     }>(result.stdout);
     assert.deepEqual(payload.result, { retry: "selection" });
     assert.equal(
-      payload.commands.filter((entry: CommandEntry) => entry.command.includes("inference set")).length,
+      payload.commands.filter((entry: CommandEntry) => entry.command.includes("inference set"))
+        .length,
       1,
     );
   });
@@ -2992,7 +3004,9 @@ const { createSandbox } = require(${onboardPath});
       assert.match(telegramProvider.command, /--credential TELEGRAM_BOT_TOKEN/);
 
       // Verify sandbox create includes --provider flags for all three
-      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) =>
+        e.command.includes("sandbox create"),
+      );
       assert.ok(createCommand, "expected sandbox create command");
       assert.match(createCommand.command, /--provider my-assistant-discord-bridge/);
       assert.match(createCommand.command, /--provider my-assistant-slack-bridge/);
@@ -3222,7 +3236,9 @@ const { createSandbox } = require(${onboardPath});
         entry.command.includes("provider update"),
       );
       assert.ok(
-        providerUpserts.some((e: CommandEntry) => e.command.includes("my-assistant-discord-bridge")),
+        providerUpserts.some((e: CommandEntry) =>
+          e.command.includes("my-assistant-discord-bridge"),
+        ),
         "should upsert discord provider on reuse to refresh credentials",
       );
       assert.ok(
@@ -3777,11 +3793,15 @@ const { createSandbox } = require(${onboardPath});
       const payload = JSON.parse(payloadLine);
 
       assert.ok(
-        payload.commands.some((entry: CommandEntry) => /sandbox.*delete/.test(String(entry.command))),
+        payload.commands.some((entry: CommandEntry) =>
+          /sandbox.*delete/.test(String(entry.command)),
+        ),
         "should delete existing sandbox when user confirms recreate",
       );
       assert.ok(
-        payload.commands.some((entry: CommandEntry) => /sandbox.*create/.test(String(entry.command))),
+        payload.commands.some((entry: CommandEntry) =>
+          /sandbox.*create/.test(String(entry.command)),
+        ),
         "should create a new sandbox when user confirms recreate",
       );
       assert.ok(
@@ -3923,7 +3943,10 @@ const { createSandbox } = require(${onboardPath});
       path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
       "utf-8",
     );
-    assert.match(source, /const selectionDrift = getSelectionDrift\(sandboxName, provider, model\);/);
+    assert.match(
+      source,
+      /const selectionDrift = getSelectionDrift\(sandboxName, provider, model\);/,
+    );
     assert.match(
       source,
       /const confirmedSelectionDrift = selectionDrift\.changed && !selectionDrift\.unknown;/,
@@ -4777,7 +4800,9 @@ const { createSandbox } = require(${onboardPath});
       assert.ok(!slackProvider, "slack provider should be filtered out");
 
       // Sandbox create should only have the telegram --provider flag
-      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) =>
+        e.command.includes("sandbox create"),
+      );
       assert.ok(createCommand, "expected sandbox create command");
       assert.match(createCommand.command, /--provider my-assistant-telegram-bridge/);
       assert.doesNotMatch(createCommand.command, /my-assistant-discord-bridge/);
@@ -4895,7 +4920,9 @@ const { createSandbox } = require(${onboardPath});
       );
 
       // Sandbox create should have no --provider flags for messaging bridges
-      const createCommand = payload.commands.find((e: CommandEntry) => e.command.includes("sandbox create"));
+      const createCommand = payload.commands.find((e: CommandEntry) =>
+        e.command.includes("sandbox create"),
+      );
       assert.ok(createCommand, "expected sandbox create command");
       assert.doesNotMatch(createCommand.command, /discord-bridge/);
       assert.doesNotMatch(createCommand.command, /slack-bridge/);

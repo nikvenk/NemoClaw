@@ -39,7 +39,7 @@ function isSandboxStateModule(value: SandboxStateModuleCandidate): value is Sand
 }
 
 const loadedSandboxState = await import(
-  pathToFileURL(path.join(REPO_ROOT, "dist", "lib", "sandbox-state.js")).href,
+  pathToFileURL(path.join(REPO_ROOT, "dist", "lib", "sandbox-state.js")).href
 );
 if (!isSandboxStateModule(loadedSandboxState)) {
   throw new Error("Expected sandbox-state module exports to be available");
@@ -71,10 +71,7 @@ function writeBackup(
     blueprintDigest: null,
     ...overrides,
   };
-  fs.writeFileSync(
-    path.join(dir, "rebuild-manifest.json"),
-    JSON.stringify(manifest, null, 2),
-  );
+  fs.writeFileSync(path.join(dir, "rebuild-manifest.json"), JSON.stringify(manifest, null, 2));
   return manifest;
 }
 
@@ -190,7 +187,6 @@ describe("listBackups computes virtual versions", () => {
 
     expect(sandboxState.listBackups("test-sandbox")).toEqual([]);
   });
-
 });
 
 describe("findBackup", () => {
@@ -297,18 +293,13 @@ describe("parseRestoreArgs", () => {
   });
 
   it("preserves timestamp-shaped selectors alongside --to", () => {
-    expect(
-      parseRestoreArgs("src", [
-        "restore",
-        "2026-04-21T14-00-00-000Z",
-        "--to",
-        "dst",
-      ]),
-    ).toEqual({
-      ok: true,
-      targetSandbox: "dst",
-      selector: "2026-04-21T14-00-00-000Z",
-    });
+    expect(parseRestoreArgs("src", ["restore", "2026-04-21T14-00-00-000Z", "--to", "dst"])).toEqual(
+      {
+        ok: true,
+        targetSandbox: "dst",
+        selector: "2026-04-21T14-00-00-000Z",
+      },
+    );
   });
 
   it("rejects --to at end-of-args with no value", () => {

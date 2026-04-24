@@ -64,16 +64,15 @@ export function createAgentSandbox(agent: AgentDefinition): {
 
   if (baseDockerfile) {
     const baseImageTag = `ghcr.io/nvidia/nemoclaw/${agent.name}-sandbox-base:latest`;
-    const inspectResult = run(
-      ["docker", "image", "inspect", baseImageTag],
-      { ignoreError: true, suppressOutput: true },
-    );
+    const inspectResult = run(["docker", "image", "inspect", baseImageTag], {
+      ignoreError: true,
+      suppressOutput: true,
+    });
     if (inspectResult.status !== 0) {
       console.log(`  Building ${agent.displayName} base image (first time only)...`);
-      run(
-        ["docker", "build", "-f", baseDockerfile, "-t", baseImageTag, ROOT],
-        { stdio: ["ignore", "inherit", "inherit"] },
-      );
+      run(["docker", "build", "-f", baseDockerfile, "-t", baseImageTag, ROOT], {
+        stdio: ["ignore", "inherit", "inherit"],
+      });
       console.log(`  \u2713 Base image built: ${baseImageTag}`);
     } else {
       console.log(`  Base image exists: ${baseImageTag}`);
@@ -168,10 +167,10 @@ export async function handleAgentSetup(
     const scriptFile = writeSandboxConfigSyncFile(script);
     try {
       const scriptContent = fs.readFileSync(scriptFile, "utf-8");
-      run(
-        [openshellBin, "sandbox", "connect", sandboxName],
-        { stdio: ["pipe", "ignore", "inherit"], input: scriptContent },
-      );
+      run([openshellBin, "sandbox", "connect", sandboxName], {
+        stdio: ["pipe", "ignore", "inherit"],
+        input: scriptContent,
+      });
     } finally {
       cleanupTempDir(scriptFile, "nemoclaw-sync");
     }
@@ -198,12 +197,8 @@ export async function handleAgentSetup(
     if (healthy) {
       console.log(`  \u2713 ${agent.displayName} gateway is healthy`);
     } else {
-      console.log(
-        `  \u26a0 ${agent.displayName} gateway did not respond within ${timeoutSecs}s.`,
-      );
-      console.log(
-        `    The gateway may still be starting. Check: nemoclaw ${sandboxName} logs`,
-      );
+      console.log(`  \u26a0 ${agent.displayName} gateway did not respond within ${timeoutSecs}s.`);
+      console.log(`    The gateway may still be starting. Check: nemoclaw ${sandboxName} logs`);
     }
   } else {
     console.log(`  \u2713 ${agent.displayName} configured inside sandbox`);

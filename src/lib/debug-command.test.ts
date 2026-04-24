@@ -3,11 +3,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  parseDebugArgs,
-  printDebugHelp,
-  runDebugCommand,
-} from "../../dist/lib/debug-command";
+import { parseDebugArgs, printDebugHelp, runDebugCommand } from "../../dist/lib/debug-command";
 
 function exitWithCode(code: number): never {
   throw new Error(`exit:${code}`);

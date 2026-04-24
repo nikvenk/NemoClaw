@@ -253,7 +253,9 @@ export function streamSandboxCreate(
     resolvePromise = resolve;
     child.on("error", (error) => {
       const code = error?.code;
-      const detail = code ? `spawn failed: ${error.message} (${code})` : `spawn failed: ${error.message}`;
+      const detail = code
+        ? `spawn failed: ${error.message} (${code})`
+        : `spawn failed: ${error.message}`;
       lines.push(detail);
       finish(1);
     });

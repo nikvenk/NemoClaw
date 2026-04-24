@@ -170,7 +170,9 @@ describe("sandbox connect inference route swap (#1248)", () => {
 
       // Verify the notice was printed
       const combined = (result.stdout || "") + (result.stderr || "");
-      expect(combined).toContain("Switching inference route to anthropic-prod/claude-sonnet-4-20250514");
+      expect(combined).toContain(
+        "Switching inference route to anthropic-prod/claude-sonnet-4-20250514",
+      );
     },
   );
 

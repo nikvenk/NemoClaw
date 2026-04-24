@@ -59,11 +59,12 @@ function discoverTargets(): ConfigTarget[] {
         files: presetFiles,
       });
     } else {
-      console.warn("WARN: presets directory exists but contains no .yaml/.yml files — no preset validation performed");
+      console.warn(
+        "WARN: presets directory exists but contains no .yaml/.yml files — no preset validation performed",
+      );
     }
   } catch (err) {
-    const code =
-      typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
+    const code = typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
     if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
     // presets directory may not exist — not an error
   }
@@ -129,13 +130,7 @@ function formatError(err: {
 // legitimate pattern for real deployments.
 // ────────────────────────────────────────────────────────────────────
 
-const DANGEROUS_HOSTS: ReadonlySet<string> = new Set([
-  "*",
-  "0.0.0.0",
-  "0.0.0.0/0",
-  "::",
-  "::/0",
-]);
+const DANGEROUS_HOSTS: ReadonlySet<string> = new Set(["*", "0.0.0.0", "0.0.0.0/0", "::", "::/0"]);
 
 /**
  * Return true if `host` is a catch-all value that grants access to any destination.
@@ -287,6 +282,9 @@ function main(): void {
 export { DANGEROUS_HOSTS, isDangerousHost, findDangerousHosts };
 
 // Only run main() when invoked directly (skip on test `import`).
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("validate-configs.ts")) {
+if (
+  import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith("validate-configs.ts")
+) {
   main();
 }

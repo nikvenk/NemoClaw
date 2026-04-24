@@ -19,12 +19,11 @@ function isOnboardKnownHostsInternals(
 }
 
 const loadedOnboardKnownHostsModule = await import("../dist/lib/onboard.js");
-const onboardKnownHostsInternals =
-  isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule)
-    ? loadedOnboardKnownHostsModule
-    : isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule.default)
-      ? loadedOnboardKnownHostsModule.default
-      : null;
+const onboardKnownHostsInternals = isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule)
+  ? loadedOnboardKnownHostsModule
+  : isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule.default)
+    ? loadedOnboardKnownHostsModule.default
+    : null;
 if (!isOnboardKnownHostsInternals(onboardKnownHostsInternals)) {
   throw new Error("Expected onboard internals to expose pruneKnownHostsEntries");
 }

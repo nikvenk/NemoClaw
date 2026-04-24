@@ -165,11 +165,16 @@ export function sshExec(
     const result = spawnSync(
       "ssh",
       [
-        "-F", ctx.configFile,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "-o", "ConnectTimeout=10",
-        "-o", "LogLevel=ERROR",
+        "-F",
+        ctx.configFile,
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "LogLevel=ERROR",
         `openshell-${ctx.sandboxName}`,
         command,
       ],
@@ -261,9 +266,7 @@ export function uploadDirectory(
   const failed: string[] = [];
   for (const rel of files) {
     const localFile = path.join(localDir, rel);
-    const remoteSubdir = rel.includes("/")
-      ? `${remoteDir}/${path.dirname(rel)}`
-      : remoteDir;
+    const remoteSubdir = rel.includes("/") ? `${remoteDir}/${path.dirname(rel)}` : remoteDir;
     const result = uploadFile(ctx, localFile, remoteSubdir, path.basename(rel));
     if (!result || result.status !== 0) {
       failed.push(rel);
@@ -306,11 +309,9 @@ export function postInstall(
         // mirrorDir contains $HOME which must expand, so we use double
         // quotes (not shellQuote). Safe because validateRelativePath
         // restricts filenames to [A-Za-z0-9._-/] before we reach here.
-        const result = runSsh(
-          ctx,
-          `mkdir -p "${mirrorSubdir}" && cat > "${mirrorFile}"`,
-          { input: content },
-        );
+        const result = runSsh(ctx, `mkdir -p "${mirrorSubdir}" && cat > "${mirrorFile}"`, {
+          input: content,
+        });
         if (!result || result.status !== 0) {
           mirrorFailed = true;
         }

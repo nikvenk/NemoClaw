@@ -250,7 +250,11 @@ describe("base sandbox policy", () => {
     for (const ep of sentryEndpoints) {
       const rules = Array.isArray(ep.rules) ? ep.rules : [];
       const hasPost = rules.some(
-        (r) => r && r.allow && typeof r.allow.method === "string" && r.allow.method.toUpperCase() === "POST",
+        (r) =>
+          r &&
+          r.allow &&
+          typeof r.allow.method === "string" &&
+          r.allow.method.toUpperCase() === "POST",
       );
       expect(hasPost).toBe(false);
     }
@@ -261,7 +265,11 @@ describe("base sandbox policy", () => {
     for (const ep of sentryEndpoints) {
       const rules = Array.isArray(ep.rules) ? ep.rules : [];
       const hasGet = rules.some(
-        (r) => r && r.allow && typeof r.allow.method === "string" && r.allow.method.toUpperCase() === "GET",
+        (r) =>
+          r &&
+          r.allow &&
+          typeof r.allow.method === "string" &&
+          r.allow.method.toUpperCase() === "GET",
       );
       expect(hasGet).toBe(true);
     }
@@ -281,9 +289,7 @@ describe("base sandbox policy", () => {
     // Belt and braces: also assert no endpoint in any base-policy
     // entry references github.com or api.github.com, so the
     // regression can't be smuggled in under a renamed key.
-    const githubHosts = findEndpoints(
-      (h) => h === "github.com" || h === "api.github.com",
-    );
+    const githubHosts = findEndpoints((h) => h === "github.com" || h === "api.github.com");
     expect(githubHosts).toEqual([]);
   });
 
@@ -350,7 +356,10 @@ describe("huggingface preset", () => {
       const rules = Array.isArray(ep.rules) ? ep.rules : [];
       const hasPost = rules.some(
         (r) =>
-          r && r.allow && typeof r.allow.method === "string" && r.allow.method.toUpperCase() === "POST",
+          r &&
+          r.allow &&
+          typeof r.allow.method === "string" &&
+          r.allow.method.toUpperCase() === "POST",
       );
       expect(hasPost).toBe(false);
     }
@@ -362,7 +371,10 @@ describe("huggingface preset", () => {
       const rules = Array.isArray(ep.rules) ? ep.rules : [];
       const hasGet = rules.some(
         (r) =>
-          r && r.allow && typeof r.allow.method === "string" && r.allow.method.toUpperCase() === "GET",
+          r &&
+          r.allow &&
+          typeof r.allow.method === "string" &&
+          r.allow.method.toUpperCase() === "GET",
       );
       expect(hasGet).toBe(true);
     }

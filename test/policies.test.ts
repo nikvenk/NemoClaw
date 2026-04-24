@@ -306,7 +306,15 @@ describe("policies", () => {
   describe("buildPolicySetCommand", () => {
     it("returns an argv array with sandbox name as a separate element", () => {
       const cmd = policies.buildPolicySetCommand("/tmp/policy.yaml", "my-assistant");
-      expect(cmd).toEqual(["openshell", "policy", "set", "--policy", "/tmp/policy.yaml", "--wait", "my-assistant"]);
+      expect(cmd).toEqual([
+        "openshell",
+        "policy",
+        "set",
+        "--policy",
+        "/tmp/policy.yaml",
+        "--wait",
+        "my-assistant",
+      ]);
     });
 
     it("preserves shell metacharacters literally in sandbox name (no injection)", () => {
@@ -326,7 +334,15 @@ describe("policies", () => {
       process.env.NEMOCLAW_OPENSHELL_BIN = "/tmp/fake path/openshell";
       try {
         const cmd = policies.buildPolicySetCommand("/tmp/policy.yaml", "my-assistant");
-        expect(cmd).toEqual(["/tmp/fake path/openshell", "policy", "set", "--policy", "/tmp/policy.yaml", "--wait", "my-assistant"]);
+        expect(cmd).toEqual([
+          "/tmp/fake path/openshell",
+          "policy",
+          "set",
+          "--policy",
+          "/tmp/policy.yaml",
+          "--wait",
+          "my-assistant",
+        ]);
       } finally {
         delete process.env.NEMOCLAW_OPENSHELL_BIN;
       }
@@ -819,8 +835,7 @@ describe("policies", () => {
     });
 
     it("returns policy unchanged when network_policies is a legacy array", () => {
-      const current =
-        "version: 1\n\nnetwork_policies:\n  - host: pypi.org\n    allow: true\n";
+      const current = "version: 1\n\nnetwork_policies:\n  - host: pypi.org\n    allow: true\n";
       const result = policies.removePresetFromPolicy(current, pypiEntries);
       expect(result).toContain("pypi.org");
       expect(result).toContain("allow: true");
@@ -973,16 +988,18 @@ selectForRemoval(items, options)
       const result = runPolicyAdd("y", [], { NEMOCLAW_NON_INTERACTIVE: "1" });
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toMatch(/Non-interactive mode requires a preset name/);
+      expect(`${result.stdout}${result.stderr}`).toMatch(
+        /Non-interactive mode requires a preset name/,
+      );
     });
   });
 
   describe("policy-remove confirmation", () => {
     function runPolicyRemove(
-  confirmAnswer: string,
-  extraArgs: string[] = [],
-  envOverrides: Record<string, string | undefined> = {},
-) {
+      confirmAnswer: string,
+      extraArgs: string[] = [],
+      envOverrides: Record<string, string | undefined> = {},
+    ) {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-policy-remove-"));
       const scriptPath = path.join(tmpDir, "policy-remove-check.js");
       const script = String.raw`
@@ -1097,7 +1114,9 @@ setImmediate(() => {
       const result = runPolicyRemove("y", [], { NEMOCLAW_NON_INTERACTIVE: "1" });
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toMatch(/Non-interactive mode requires a preset name/);
+      expect(`${result.stdout}${result.stderr}`).toMatch(
+        /Non-interactive mode requires a preset name/,
+      );
     });
   });
 });

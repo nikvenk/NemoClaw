@@ -73,7 +73,10 @@ export function acquireLock(): void {
       }
       return;
     } catch (error) {
-      if (!(typeof error === "object" && error !== null && isErrnoException(error)) || error.code !== "EEXIST") {
+      if (
+        !(typeof error === "object" && error !== null && isErrnoException(error)) ||
+        error.code !== "EEXIST"
+      ) {
         throw error;
       }
       let ownerChecked = false;
@@ -123,14 +126,20 @@ export function releaseLock(): void {
   try {
     fs.unlinkSync(LOCK_OWNER);
   } catch (error) {
-    if (!(typeof error === "object" && error !== null && isErrnoException(error)) || error.code !== "ENOENT") {
+    if (
+      !(typeof error === "object" && error !== null && isErrnoException(error)) ||
+      error.code !== "ENOENT"
+    ) {
       throw error;
     }
   }
   try {
     fs.rmSync(LOCK_DIR, { recursive: true, force: true });
   } catch (error) {
-    if (!(typeof error === "object" && error !== null && isErrnoException(error)) || error.code !== "ENOENT") {
+    if (
+      !(typeof error === "object" && error !== null && isErrnoException(error)) ||
+      error.code !== "ENOENT"
+    ) {
       throw error;
     }
   }
@@ -180,8 +189,7 @@ export function registerSandbox(entry: SandboxEntry): void {
       policies: entry.policies || [],
       policyTier: entry.policyTier || null,
       agent: entry.agent || null,
-      dangerouslySkipPermissions:
-        entry.dangerouslySkipPermissions === true ? true : undefined,
+      dangerouslySkipPermissions: entry.dangerouslySkipPermissions === true ? true : undefined,
       agentVersion: entry.agentVersion || null,
       imageTag: entry.imageTag || null,
       providerCredentialHashes: entry.providerCredentialHashes || undefined,

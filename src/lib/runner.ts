@@ -357,11 +357,7 @@ function redactError<T>(err: T): T {
   const stackValue = readStringProperty(err, "stack");
   const redactedMessageValue = readStringProperty(err, "message");
   if (originalMessage && stackValue) {
-    Reflect.set(
-      err,
-      "stack",
-      stackValue.replaceAll(originalMessage, String(redactedMessageValue)),
-    );
+    Reflect.set(err, "stack", stackValue.replaceAll(originalMessage, String(redactedMessageValue)));
   }
 
   return err;
@@ -371,7 +367,10 @@ function redactError<T>(err: T): T {
  * Write redacted stdout/stderr from a spawnSync result to the parent process streams.
  * No-op when stdio is 'inherit' or not an array.
  */
-function writeRedactedResult(result: SpawnResult | null | undefined, stdio: RunnerOptions["stdio"]): void {
+function writeRedactedResult(
+  result: SpawnResult | null | undefined,
+  stdio: RunnerOptions["stdio"],
+): void {
   if (!result || stdio === "inherit" || !Array.isArray(stdio)) return;
   if (stdio[1] === "pipe" && result.stdout) {
     process.stdout.write(redact(result.stdout.toString()));

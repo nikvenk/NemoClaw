@@ -33,7 +33,9 @@ function isMetricSummary(value: { pct?: number } | null | undefined): value is {
   return typeof value?.pct === "number";
 }
 
-function isCoverageSummary(value: { total?: Record<MetricName, { pct: number }> } | null | undefined): value is CoverageSummary {
+function isCoverageSummary(
+  value: { total?: Record<MetricName, { pct: number }> } | null | undefined,
+): value is CoverageSummary {
   const total = value?.total;
   if (!total) {
     return false;
@@ -52,7 +54,7 @@ function main(): void {
   const [summaryPath, thresholdPath, label = "coverage"] = process.argv.slice(2);
   if (!summaryPath || !thresholdPath) {
     throw new Error(
-      "Usage: check-coverage-ratchet.ts <coverage-summary.json> <coverage-threshold.json> [label]"
+      "Usage: check-coverage-ratchet.ts <coverage-summary.json> <coverage-threshold.json> [label]",
     );
   }
 

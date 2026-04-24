@@ -19,7 +19,7 @@ describe("setup-dns-proxy.sh", () => {
 
   it("sources runtime.sh successfully", () => {
     const result = spawnSync("bash", ["-c", `source "${RUNTIME_SH}"; echo ok`], {
-      encoding: /** @type {const} */ ("utf-8"),
+      encoding: /** @type {const} */ "utf-8",
       env: { ...process.env },
     });
     expect(result.status).toBe(0);
@@ -28,7 +28,7 @@ describe("setup-dns-proxy.sh", () => {
 
   it("exits with usage when no sandbox name provided", () => {
     const result = spawnSync("bash", [SETUP_DNS_PROXY, "nemoclaw"], {
-      encoding: /** @type {const} */ ("utf-8"),
+      encoding: /** @type {const} */ "utf-8",
       env: { ...process.env },
     });
     expect(result.status).not.toBe(0);

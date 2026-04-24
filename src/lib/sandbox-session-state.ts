@@ -68,7 +68,10 @@ export function parseForwardList(output: string | null | undefined): ForwardEntr
   if (!output || typeof output !== "string") return [];
 
   const entries: ForwardEntry[] = [];
-  const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = output
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   for (const line of lines) {
     // Skip header row
@@ -137,15 +140,16 @@ function escapeRegExp(value: string): string {
  * Active forwards (status includes "running") indicate an active connection.
  */
 export function hasActiveForwards(entries: ForwardEntry[], sandboxName: string): boolean {
-  return entries.some(
-    (e) => e.sandboxName === sandboxName && e.status.includes("running"),
-  );
+  return entries.some((e) => e.sandboxName === sandboxName && e.status.includes("running"));
 }
 
 /**
  * Get forward entries for a specific sandbox.
  */
-export function getForwardsForSandbox(entries: ForwardEntry[], sandboxName: string): ForwardEntry[] {
+export function getForwardsForSandbox(
+  entries: ForwardEntry[],
+  sandboxName: string,
+): ForwardEntry[] {
   return entries.filter((e) => e.sandboxName === sandboxName);
 }
 
@@ -177,8 +181,8 @@ export function classifySessionState(
 ): SessionClassification {
   const sources: string[] = [];
 
-  const activeForwards = getForwardsForSandbox(forwardEntries, sandboxName).filter(
-    (e) => e.status.includes("running"),
+  const activeForwards = getForwardsForSandbox(forwardEntries, sandboxName).filter((e) =>
+    e.status.includes("running"),
   );
   if (activeForwards.length > 0) {
     sources.push("forward");

@@ -27,9 +27,7 @@ function isRecord(value: object | null): value is ModuleRecord {
   return value !== null && !Array.isArray(value);
 }
 
-function isCredentialRotationInternals(
-  value: object | null,
-): value is CredentialRotationInternals {
+function isCredentialRotationInternals(value: object | null): value is CredentialRotationInternals {
   return (
     isRecord(value) &&
     typeof value.hashCredential === "function" &&
@@ -37,9 +35,7 @@ function isCredentialRotationInternals(
   );
 }
 
-function isRegistryModule(
-  value: object | null,
-): value is typeof import("../dist/lib/registry.js") {
+function isRegistryModule(value: object | null): value is typeof import("../dist/lib/registry.js") {
   return isRecord(value) && typeof value.getSandbox === "function";
 }
 

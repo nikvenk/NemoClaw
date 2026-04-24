@@ -21,12 +21,11 @@ function isOnboardValidationInternals(
 }
 
 const loadedOnboardValidationModule = await import("../dist/lib/onboard.js");
-const onboardValidationInternals =
-  isOnboardValidationInternals(loadedOnboardValidationModule)
-    ? loadedOnboardValidationModule
-    : isOnboardValidationInternals(loadedOnboardValidationModule.default)
-      ? loadedOnboardValidationModule.default
-      : null;
+const onboardValidationInternals = isOnboardValidationInternals(loadedOnboardValidationModule)
+  ? loadedOnboardValidationModule
+  : isOnboardValidationInternals(loadedOnboardValidationModule.default)
+    ? loadedOnboardValidationModule.default
+    : null;
 if (!isOnboardValidationInternals(onboardValidationInternals)) {
   throw new Error("Expected onboard validation internals to expose getValidationProbeCurlArgs");
 }

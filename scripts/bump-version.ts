@@ -234,7 +234,9 @@ function parseArgs(args: string[]): Options {
   }
 
   if (createPr && push) {
-    throw new Error("--push cannot be combined with --create-pr; PR mode pushes a release branch instead");
+    throw new Error(
+      "--push cannot be combined with --create-pr; PR mode pushes a release branch instead",
+    );
   }
 
   if (!branchName) {
@@ -276,7 +278,9 @@ function ensureCleanGit(): void {
 function ensureOnMainBranch(): void {
   const branch = run("git", ["branch", "--show-current"]).trim();
   if (branch !== "main") {
-    throw new Error(`Release bumps must run from main. Current branch: ${branch || "(detached HEAD)"}`);
+    throw new Error(
+      `Release bumps must run from main. Current branch: ${branch || "(detached HEAD)"}`,
+    );
   }
 }
 
@@ -304,12 +308,16 @@ function ensureUpToDateWithOriginMain(): void {
 
   if (localHead !== originHead) {
     if (mergeBase === originHead) {
-      throw new Error("Local main is ahead of origin/main. Push or reconcile before cutting a release.");
+      throw new Error(
+        "Local main is ahead of origin/main. Push or reconcile before cutting a release.",
+      );
     }
     if (mergeBase === localHead) {
       throw new Error("Local main is behind origin/main. Pull/rebase before cutting a release.");
     }
-    throw new Error("Local main has diverged from origin/main. Reconcile before cutting a release.");
+    throw new Error(
+      "Local main has diverged from origin/main. Reconcile before cutting a release.",
+    );
   }
 }
 
@@ -435,10 +443,26 @@ function updateInstallAndUninstallDocs(nextDocsVersion: string): void {
   const installReplacement = `curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash # ${nextDocsVersion}`;
   const uninstallReplacement = `curl -fsSL https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/uninstall.sh | bash # ${nextDocsVersion}`;
 
-  replaceCodeBlockLine(README_MD, /^curl -fsSL https:\/\/www\.nvidia\.com\/nemoclaw\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m, installReplacement);
-  replaceCodeBlockLine(QUICKSTART_MD, /^curl -fsSL https:\/\/www\.nvidia\.com\/nemoclaw\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m, installReplacement);
-  replaceCodeBlockLine(README_MD, /^curl -fsSL https:\/\/raw\.githubusercontent\.com\/NVIDIA\/NemoClaw\/refs\/heads\/main\/uninstall\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m, uninstallReplacement);
-  replaceCodeBlockLine(QUICKSTART_MD, /^curl -fsSL https:\/\/raw\.githubusercontent\.com\/NVIDIA\/NemoClaw\/refs\/heads\/main\/uninstall\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m, uninstallReplacement);
+  replaceCodeBlockLine(
+    README_MD,
+    /^curl -fsSL https:\/\/www\.nvidia\.com\/nemoclaw\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m,
+    installReplacement,
+  );
+  replaceCodeBlockLine(
+    QUICKSTART_MD,
+    /^curl -fsSL https:\/\/www\.nvidia\.com\/nemoclaw\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m,
+    installReplacement,
+  );
+  replaceCodeBlockLine(
+    README_MD,
+    /^curl -fsSL https:\/\/raw\.githubusercontent\.com\/NVIDIA\/NemoClaw\/refs\/heads\/main\/uninstall\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m,
+    uninstallReplacement,
+  );
+  replaceCodeBlockLine(
+    QUICKSTART_MD,
+    /^curl -fsSL https:\/\/raw\.githubusercontent\.com\/NVIDIA\/NemoClaw\/refs\/heads\/main\/uninstall\.sh \| bash(?: # v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)?$/m,
+    uninstallReplacement,
+  );
 }
 
 function replaceCodeBlockLine(filePath: string, pattern: RegExp, replacement: string): void {
@@ -450,9 +474,21 @@ function replaceCodeBlockLine(filePath: string, pattern: RegExp, replacement: st
   writeFileSync(filePath, updated, "utf8");
 }
 
-function verifyVersionState(version: string, docsPublicUrl: string, docsDisplayVersion: string): void {
-  assertEqual(readJson<PackageJson>(ROOT_PACKAGE_JSON).version, version, "root package.json version mismatch");
-  assertEqual(readJson<PackageJson>(PLUGIN_PACKAGE_JSON).version, version, "plugin package.json version mismatch");
+function verifyVersionState(
+  version: string,
+  docsPublicUrl: string,
+  docsDisplayVersion: string,
+): void {
+  assertEqual(
+    readJson<PackageJson>(ROOT_PACKAGE_JSON).version,
+    version,
+    "root package.json version mismatch",
+  );
+  assertEqual(
+    readJson<PackageJson>(PLUGIN_PACKAGE_JSON).version,
+    version,
+    "plugin package.json version mismatch",
+  );
 
   const blueprint = parseYaml<BlueprintManifest>(readText(BLUEPRINT_YAML));
   assertEqual(blueprint.version, version, "blueprint version mismatch");
@@ -509,21 +545,18 @@ function createReleasePr(options: Options, previousVersion: string, tagName: str
     ranTests: !options.skipTests,
     ranFormat: false,
   });
-  const prUrl = run(
-    "gh",
-    [
-      "pr",
-      "create",
-      "--base",
-      "main",
-      "--head",
-      options.branchName,
-      "--title",
-      `chore(release): bump version to ${tagName}`,
-      "--body",
-      prBody,
-    ],
-  ).trim();
+  const prUrl = run("gh", [
+    "pr",
+    "create",
+    "--base",
+    "main",
+    "--head",
+    options.branchName,
+    "--title",
+    `chore(release): bump version to ${tagName}`,
+    "--body",
+    prBody,
+  ]).trim();
 
   log(`Release PR created: ${prUrl}`);
   log(`Review and merge the PR before creating release tags on main.`);
@@ -540,7 +573,11 @@ function ensureBranchDoesNotExist(branchName: string): void {
 }
 
 function gitRemoteBranchExists(branchName: string): boolean {
-  return run("git", ["ls-remote", "--exit-code", "--heads", "origin", branchName], { allowFailure: true }).exitCode === 0;
+  return (
+    run("git", ["ls-remote", "--exit-code", "--heads", "origin", branchName], {
+      allowFailure: true,
+    }).exitCode === 0
+  );
 }
 
 type PrBodyOptions = {
@@ -594,7 +631,7 @@ function buildPrBody(previousVersion: string, nextVersion: string, options: PrBo
     "- [x] Doc pages updated for any user-facing behavior changes (new commands, changed defaults, new features, bug fixes that contradict existing docs).",
     "",
     "### Doc Changes",
-    "- [ ] Follows the [style guide](https://github.com/NVIDIA/NemoClaw/blob/main/docs/CONTRIBUTING.md). Try running the `update-docs` agent skill to draft changes while complying with the style guide. For example, prompt your agent with \"`/update-docs` catch up the docs for the new changes I made in this PR.\"",
+    '- [ ] Follows the [style guide](https://github.com/NVIDIA/NemoClaw/blob/main/docs/CONTRIBUTING.md). Try running the `update-docs` agent skill to draft changes while complying with the style guide. For example, prompt your agent with "`/update-docs` catch up the docs for the new changes I made in this PR."',
     "- [ ] New pages include SPDX license header and frontmatter, if creating a new page.",
     "- [x] Cross-references and links verified.",
     "",
@@ -613,7 +650,9 @@ function updateLatestTag(tagName: string): void {
 }
 
 function gitRefExists(ref: string): boolean {
-  return run("git", ["show-ref", "--verify", "--quiet", ref], { allowFailure: true }).exitCode === 0;
+  return (
+    run("git", ["show-ref", "--verify", "--quiet", ref], { allowFailure: true }).exitCode === 0
+  );
 }
 
 function readJson<T>(filePath: string): T {
@@ -702,7 +741,11 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
   }
 }
 
-function run(command: string, args: string[], options?: { allowFailure?: boolean }): string & { exitCode?: number } {
+function run(
+  command: string,
+  args: string[],
+  options?: { allowFailure?: boolean },
+): string & { exitCode?: number } {
   try {
     const output = execFileSync(command, args, {
       cwd: REPO_ROOT,
@@ -738,8 +781,12 @@ function printDryRunPlan(
   log(`Docs mode: ${docsMode}`);
   log(`Docs URL target: ${docsPublicUrl}/`);
   log(`Files to update: ${FILES_TO_STAGE.map((filePath) => relative(filePath)).join(", ")}`);
-  log("Pre-checks: clean git tree, main branch, canonical origin, origin/main sync, tag availability");
-  log(`Mode: ${docsMode === "versioned" ? "versioned docs" : "latest docs"}, ${skipTests ? "tests skipped" : "tests enabled"}`);
+  log(
+    "Pre-checks: clean git tree, main branch, canonical origin, origin/main sync, tag availability",
+  );
+  log(
+    `Mode: ${docsMode === "versioned" ? "versioned docs" : "latest docs"}, ${skipTests ? "tests skipped" : "tests enabled"}`,
+  );
   if (skipTests) {
     log("Checks: installer version and build:cli only (typecheck and tests skipped)");
   } else {

@@ -108,9 +108,7 @@ describe("backfillMessagingChannels", () => {
   });
 
   it("leaves entries with existing messagingChannels alone", () => {
-    const registry = makeRegistry([
-      { name: "alice", messagingChannels: ["telegram"] },
-    ]);
+    const registry = makeRegistry([{ name: "alice", messagingChannels: ["telegram"] }]);
     const probe: ConflictProbe = {
       providerExists: vi.fn<ProviderExists>(() => "present"),
     };

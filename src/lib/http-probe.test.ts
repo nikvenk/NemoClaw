@@ -29,9 +29,7 @@ describe("http-probe helpers", () => {
   });
 
   it("summarizes JSON and text HTTP probe failures", () => {
-    expect(summarizeProbeError('{"error":{"message":"bad key"}}', 401)).toBe(
-      "HTTP 401: bad key",
-    );
+    expect(summarizeProbeError('{"error":{"message":"bad key"}}', 401)).toBe("HTTP 401: bad key");
     expect(
       summarizeProbeError('{"error":{"details":{"reason":"bad key","retry":false}}}', 401),
     ).toBe('HTTP 401: {"reason":"bad key","retry":false}');
@@ -192,23 +190,20 @@ describe("runStreamingEventProbe", () => {
   });
 
   it("fails on spawn error", () => {
-    const result = runStreamingEventProbe(
-      ["-sS", "https://example.test/v1/responses"],
-      {
-        spawnSyncImpl: () => {
-          const error = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
-          return {
-            pid: 1,
-            output: [],
-            stdout: "",
-            stderr: "",
-            status: null,
-            signal: null,
-            error,
-          };
-        },
+    const result = runStreamingEventProbe(["-sS", "https://example.test/v1/responses"], {
+      spawnSyncImpl: () => {
+        const error = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+        return {
+          pid: 1,
+          output: [],
+          stdout: "",
+          stderr: "",
+          status: null,
+          signal: null,
+          error,
+        };
       },
-    );
+    });
 
     expect(result.ok).toBe(false);
     expect(result.message).toContain("Streaming probe failed");
@@ -216,29 +211,26 @@ describe("runStreamingEventProbe", () => {
 
   it("cleans up temp files after probe", () => {
     let outputPath = "";
-    runStreamingEventProbe(
-      ["-sS", "--max-time", "15", "https://example.test/v1/responses"],
-      {
-        spawnSyncImpl: (_command, args) => {
-          const oIdx = args.indexOf("-o");
-          if (oIdx !== -1) {
-            const nextArg = args[oIdx + 1];
-            if (typeof nextArg === "string") {
-              outputPath = nextArg;
-              fs.writeFileSync(outputPath, "event: response.output_text.delta\ndata: {}\n");
-            }
+    runStreamingEventProbe(["-sS", "--max-time", "15", "https://example.test/v1/responses"], {
+      spawnSyncImpl: (_command, args) => {
+        const oIdx = args.indexOf("-o");
+        if (oIdx !== -1) {
+          const nextArg = args[oIdx + 1];
+          if (typeof nextArg === "string") {
+            outputPath = nextArg;
+            fs.writeFileSync(outputPath, "event: response.output_text.delta\ndata: {}\n");
           }
-          return {
-            pid: 1,
-            output: [],
-            stdout: "",
-            stderr: "",
-            status: 0,
-            signal: null,
-          };
-        },
+        }
+        return {
+          pid: 1,
+          output: [],
+          stdout: "",
+          stderr: "",
+          status: 0,
+          signal: null,
+        };
       },
-    );
+    });
 
     expect(outputPath).not.toBe("");
     expect(fs.existsSync(outputPath)).toBe(false);

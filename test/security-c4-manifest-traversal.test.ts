@@ -88,9 +88,11 @@ function buildSnapshotDir(parentDir: string, manifest: SnapshotManifest): string
  * Simulate restoreSnapshotToHost WITHOUT the fix (vulnerable).
  * Returns { result, errors, written }.
  */
-function restoreVulnerable(
-  snapshotDir: string,
-): { result: boolean; errors: string[]; written: boolean } {
+function restoreVulnerable(snapshotDir: string): {
+  result: boolean;
+  errors: string[];
+  written: boolean;
+} {
   const manifest = readSnapshotManifest(snapshotDir);
   const snapshotStateDir = path.join(snapshotDir, "openclaw");
   const errors: string[] = [];

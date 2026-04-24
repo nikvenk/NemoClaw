@@ -9,7 +9,14 @@ import noticeConfig from "../../bin/lib/usage-notice.json";
 
 export const NOTICE_ACCEPT_FLAG = "--yes-i-accept-third-party-software";
 export const NOTICE_ACCEPT_ENV = "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE";
-export const NOTICE_CONFIG_FILE = path.join(__dirname, "..", "..", "bin", "lib", "usage-notice.json");
+export const NOTICE_CONFIG_FILE = path.join(
+  __dirname,
+  "..",
+  "..",
+  "bin",
+  "lib",
+  "usage-notice.json",
+);
 
 const OSC8_OPEN = "\u001B]8;;";
 const OSC8_CLOSE = "\u001B]8;;\u001B\\";

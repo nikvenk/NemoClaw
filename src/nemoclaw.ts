@@ -223,10 +223,7 @@ function getInstalledOpenshellVersionOrNull() {
  * Run a command inside the sandbox via SSH and return { status, stdout, stderr }.
  * Returns null if SSH config cannot be obtained.
  */
-function executeSandboxCommand(
-  sandboxName: string,
-  command: string,
-): SandboxCommandResult | null {
+function executeSandboxCommand(sandboxName: string, command: string): SandboxCommandResult | null {
   const sshConfigResult = captureOpenshell(["sandbox", "ssh-config", sandboxName], {
     ignoreError: true,
   });
@@ -541,9 +538,9 @@ function applyRecoveredDefault(
   return registry.listSandboxes();
 }
 
-async function recoverRegistryEntries(
-  { requestedSandboxName = null }: { requestedSandboxName?: string | null } = {},
-) {
+async function recoverRegistryEntries({
+  requestedSandboxName = null,
+}: { requestedSandboxName?: string | null } = {}) {
   const current = registry.listSandboxes();
   const session = onboardSession.loadSession();
   const recoveryCheck = shouldRecoverRegistryEntries(current, session, requestedSandboxName);
@@ -1101,7 +1098,10 @@ async function deploy(instanceName: string): Promise<void> {
     execFileSync: (
       file: string,
       args: string[],
-      opts: Omit<import("node:child_process").ExecFileSyncOptionsWithStringEncoding, "encoding"> = {},
+      opts: Omit<
+        import("node:child_process").ExecFileSyncOptionsWithStringEncoding,
+        "encoding"
+      > = {},
     ) => String(execFileSync(file, args, { encoding: "utf-8", ...opts })),
     spawnSync,
     log: console.log,
@@ -1321,10 +1321,7 @@ function backfillAndFindOverlaps() {
   // Non-critical path: status must remain usable even if the gateway probe or
   // registry write throws, so any failure yields an empty overlap list.
   try {
-    const {
-      backfillMessagingChannels,
-      findAllOverlaps,
-    } = require("./lib/messaging-conflict");
+    const { backfillMessagingChannels, findAllOverlaps } = require("./lib/messaging-conflict");
     backfillMessagingChannels(registry, makeConflictProbe());
     return findAllOverlaps(registry);
   } catch {
@@ -1340,7 +1337,16 @@ function readGatewayLog(sandboxName: string) {
   try {
     const result = spawnSync(
       getOpenshellBinary(),
-      ["sandbox", "exec", "-n", sandboxName, "--", "sh", "-c", "tail -n 10 /tmp/gateway.log 2>/dev/null"],
+      [
+        "sandbox",
+        "exec",
+        "-n",
+        sandboxName,
+        "--",
+        "sh",
+        "-c",
+        "tail -n 10 /tmp/gateway.log 2>/dev/null",
+      ],
       { encoding: "utf-8", timeout: 3000, stdio: ["ignore", "pipe", "pipe"] },
     );
     const output = (result.stdout || "").trim();
@@ -1483,7 +1489,9 @@ async function sandboxConnect(
   if (rawTimeout !== undefined) {
     const parsed = parseInt(rawTimeout, 10);
     if (Number.isNaN(parsed) || parsed <= 0) {
-      console.warn(`  Warning: invalid NEMOCLAW_CONNECT_TIMEOUT="${rawTimeout}", using default 120s`);
+      console.warn(
+        `  Warning: invalid NEMOCLAW_CONNECT_TIMEOUT="${rawTimeout}", using default 120s`,
+      );
     } else {
       timeout = parsed;
     }
@@ -1553,7 +1561,9 @@ async function sandboxConnect(
       console.error("");
       console.error(`  Timed out after ${timeout}s waiting for sandbox '${sandboxName}'.`);
       console.error(`  Check: openshell sandbox list`);
-      console.error(`  Override timeout: NEMOCLAW_CONNECT_TIMEOUT=300 nemoclaw ${sandboxName} connect`);
+      console.error(
+        `  Override timeout: NEMOCLAW_CONNECT_TIMEOUT=300 nemoclaw ${sandboxName} connect`,
+      );
       process.exit(1);
     }
     console.log(`\r    Status: ${"Ready".padEnd(20)} (${elapsedSec()}s elapsed)`);
@@ -1576,7 +1586,9 @@ async function sandboxConnect(
     console.log(
       `  ${D}Inside the sandbox, run \`${agentCmd}\` to start chatting with the agent.${R}`,
     );
-    console.log(`  ${D}Type \`/exit\` to leave the chat, then \`exit\` to return to the host shell.${R}`);
+    console.log(
+      `  ${D}Type \`/exit\` to leave the chat, then \`exit\` to return to the host shell.${R}`,
+    );
     console.log("");
   }
   const result = spawnSync(getOpenshellBinary(), ["sandbox", "connect", sandboxName], {
@@ -1606,13 +1618,9 @@ async function sandboxStatus(sandboxName: string) {
       if (!inferenceHealth.probed) {
         console.log(`    Inference: ${D}not probed${R} (${inferenceHealth.detail})`);
       } else if (inferenceHealth.ok) {
-        console.log(
-          `    Inference: ${G}healthy${R} (${inferenceHealth.endpoint})`,
-        );
+        console.log(`    Inference: ${G}healthy${R} (${inferenceHealth.endpoint})`);
       } else {
-        console.log(
-          `    Inference: ${_RD}unreachable${R} (${inferenceHealth.endpoint})`,
-        );
+        console.log(`    Inference: ${_RD}unreachable${R} (${inferenceHealth.endpoint})`);
         console.log(`      ${inferenceHealth.detail}`);
       }
     }
@@ -1623,10 +1631,15 @@ async function sandboxStatus(sandboxName: string) {
     try {
       const opsBinStatus = resolveOpenshell();
       if (opsBinStatus) {
-        const sessionResult = getActiveSandboxSessions(sandboxName, createSessionDeps(opsBinStatus));
+        const sessionResult = getActiveSandboxSessions(
+          sandboxName,
+          createSessionDeps(opsBinStatus),
+        );
         if (sessionResult.detected) {
           const count = sessionResult.sessions.length;
-          console.log(`    Connected: ${count > 0 ? `${G}yes${R} (${count} session${count > 1 ? "s" : ""})` : "no"}`);
+          console.log(
+            `    Connected: ${count > 0 ? `${G}yes${R} (${count} session${count > 1 ? "s" : ""})` : "no"}`,
+          );
         }
       }
     } catch {
@@ -1661,7 +1674,7 @@ async function sandboxStatus(sandboxName: string) {
     console.log("");
     if ("recoveredGateway" in lookup && lookup.recoveredGateway) {
       console.log(
-        `  Recovered NemoClaw gateway runtime via ${(("recoveryVia" in lookup ? lookup.recoveryVia : null) || "gateway reattach")}.`,
+        `  Recovered NemoClaw gateway runtime via ${("recoveryVia" in lookup ? lookup.recoveryVia : null) || "gateway reattach"}.`,
       );
       console.log("");
     }
@@ -1822,7 +1835,9 @@ function buildSandboxLogsArgs(sandboxName: string, follow: boolean): string[] {
 async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
-    args.includes("--yes") || args.includes("--force") || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
+    args.includes("--yes") ||
+    args.includes("--force") ||
+    process.env.NEMOCLAW_NON_INTERACTIVE === "1";
   const allPresets = policies.listPresets();
   const applied = policies.getAppliedPresets(sandboxName);
 
@@ -1833,7 +1848,9 @@ async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promi
     const preset = allPresets.find((item: { name: string }) => item.name === normalized);
     if (!preset) {
       console.error(`  Unknown preset '${presetArg}'.`);
-      console.error(`  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`);
+      console.error(
+        `  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`,
+      );
       process.exit(1);
     }
     if (applied.includes(preset.name)) {
@@ -1927,9 +1944,7 @@ function sandboxChannelsList(sandboxName: string) {
 async function promptAndRebuild(sandboxName: string, actionDesc: string): Promise<void> {
   if (isNonInteractive()) {
     console.log("");
-    console.log(
-      `  Change queued. Run 'nemoclaw ${sandboxName} rebuild' to apply (${actionDesc}).`,
-    );
+    console.log(`  Change queued. Run 'nemoclaw ${sandboxName} rebuild' to apply (${actionDesc}).`);
     return;
   }
   const answer = (await askPrompt(`  Rebuild '${sandboxName}' now to apply? [Y/n]: `))
@@ -2055,9 +2070,7 @@ async function sandboxChannelsSetEnabled(
   }
 
   if (dryRun) {
-    console.log(
-      `  --dry-run: would ${verb} channel '${normalized}' for '${sandboxName}'.`,
-    );
+    console.log(`  --dry-run: would ${verb} channel '${normalized}' for '${sandboxName}'.`);
     return;
   }
 
@@ -2236,7 +2249,9 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
 async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
-    args.includes("--yes") || args.includes("--force") || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
+    args.includes("--yes") ||
+    args.includes("--force") ||
+    process.env.NEMOCLAW_NON_INTERACTIVE === "1";
   const allPresets = policies.listPresets();
   const applied = policies.getAppliedPresets(sandboxName);
 
@@ -2247,7 +2262,9 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
     const preset = allPresets.find((item: { name: string }) => item.name === normalized);
     if (!preset) {
       console.error(`  Unknown preset '${presetArg}'.`);
-      console.error(`  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`);
+      console.error(
+        `  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`,
+      );
       process.exit(1);
     }
     if (!applied.includes(preset.name)) {
@@ -2319,7 +2336,9 @@ function removeSandboxImage(sandboxName: string) {
   if (result.status === 0) {
     console.log(`  Removed Docker image ${sb.imageTag}`);
   } else {
-    console.warn(`  ${YW}⚠${R} Failed to remove Docker image ${sb.imageTag}; run 'nemoclaw gc' to clean up.`);
+    console.warn(
+      `  ${YW}⚠${R} Failed to remove Docker image ${sb.imageTag}; run 'nemoclaw gc' to clean up.`,
+    );
   }
 }
 
@@ -2344,8 +2363,12 @@ async function sandboxDestroy(sandboxName: string, args: string[] = []): Promise
     console.log(`  ${YW}Destroy sandbox '${sandboxName}'?${R}`);
     if (activeSessionCount > 0) {
       const plural = activeSessionCount > 1 ? "sessions" : "session";
-      console.log(`  ${YW}⚠  Active SSH ${plural} detected (${activeSessionCount} connection${activeSessionCount > 1 ? "s" : ""})${R}`);
-      console.log(`  Destroying will terminate ${activeSessionCount === 1 ? "the" : "all"} active ${plural} with a Broken pipe error.`);
+      console.log(
+        `  ${YW}⚠  Active SSH ${plural} detected (${activeSessionCount} connection${activeSessionCount > 1 ? "s" : ""})${R}`,
+      );
+      console.log(
+        `  Destroying will terminate ${activeSessionCount === 1 ? "the" : "all"} active ${plural} with a Broken pipe error.`,
+      );
     }
     console.log("  This will permanently delete the sandbox and all workspace files inside it.");
     console.log("  This cannot be undone.");
@@ -2484,8 +2507,12 @@ async function sandboxRebuild(
   if (!skipConfirm) {
     if (rebuildActiveSessionCount > 0) {
       const plural = rebuildActiveSessionCount > 1 ? "sessions" : "session";
-      console.log(`  ${YW}⚠  Active SSH ${plural} detected (${rebuildActiveSessionCount} connection${rebuildActiveSessionCount > 1 ? "s" : ""})${R}`);
-      console.log(`  Rebuilding will terminate ${rebuildActiveSessionCount === 1 ? "the" : "all"} active ${plural} with a Broken pipe error.`);
+      console.log(
+        `  ${YW}⚠  Active SSH ${plural} detected (${rebuildActiveSessionCount} connection${rebuildActiveSessionCount > 1 ? "s" : ""})${R}`,
+      );
+      console.log(
+        `  Rebuilding will terminate ${rebuildActiveSessionCount === 1 ? "the" : "all"} active ${plural} with a Broken pipe error.`,
+      );
       console.log("");
     }
     console.log("  This will:");
@@ -2511,22 +2538,28 @@ async function sandboxRebuild(
     // wrong (e.g. hermes session while rebuilding openclaw).  Skip the
     // credential preflight; the agent sync from the registry (#2201)
     // and onboard itself will handle provider selection.
-    log(`Preflight warning: session belongs to '${session.sandboxName}', not '${sandboxName}' — skipping credential preflight`);
+    log(
+      `Preflight warning: session belongs to '${session.sandboxName}', not '${sandboxName}' — skipping credential preflight`,
+    );
     console.log(
       `  ${D}Note: onboard session belongs to '${session.sandboxName}', not '${sandboxName}'. ` +
-      `Skipping credential preflight.${R}`,
+        `Skipping credential preflight.${R}`,
     );
   } else {
     rebuildCredentialEnv = session?.credentialEnv || null;
   }
   if (rebuildCredentialEnv) {
     const credentialValue = getCredential(rebuildCredentialEnv);
-    log(`Preflight credential check: ${rebuildCredentialEnv} → ${credentialValue ? "present" : "MISSING"}`);
+    log(
+      `Preflight credential check: ${rebuildCredentialEnv} → ${credentialValue ? "present" : "MISSING"}`,
+    );
     if (!credentialValue) {
       console.error("");
       console.error(`  ${_RD}Rebuild preflight failed:${R} provider credential not found.`);
       console.error(`  The non-interactive recreate step requires ${rebuildCredentialEnv},`);
-      console.error("  but it is not set in the environment or saved in ~/.nemoclaw/credentials.json.");
+      console.error(
+        "  but it is not set in the environment or saved in ~/.nemoclaw/credentials.json.",
+      );
       console.error("");
       console.error("  To fix, do one of:");
       console.error(`    export ${rebuildCredentialEnv}=<your-key>`);
@@ -2540,7 +2573,9 @@ async function sandboxRebuild(
     // No credentialEnv in session — local inference (Ollama/vLLM) or
     // session was lost.  Either way, skip the credential preflight;
     // onboard will handle it.
-    log("Preflight credential check: no credentialEnv in session (local inference or missing session)");
+    log(
+      "Preflight credential check: no credentialEnv in session (local inference or missing session)",
+    );
   }
 
   // Step 1: Ensure sandbox is live for backup
@@ -2653,7 +2688,9 @@ async function sandboxRebuild(
   // same custom image.  Without this, the conflict check rejects the resume
   // because requestedFrom (null) !== recordedFrom (the stored path).  (#2301)
   const storedFromDockerfile = sessionAfter?.metadata?.fromDockerfile || null;
-  log(`Calling onboard({ resume: true, nonInteractive: true, recreateSandbox: true, fromDockerfile: ${storedFromDockerfile} })`);
+  log(
+    `Calling onboard({ resume: true, nonInteractive: true, recreateSandbox: true, fromDockerfile: ${storedFromDockerfile} })`,
+  );
 
   // Intercept process.exit during onboard so we can attempt rollback
   // instead of dying with the sandbox destroyed.  onboard() has ~87
@@ -2706,13 +2743,19 @@ async function sandboxRebuild(
     // threw from the overridden process.exit instead of actually
     // exiting.  Without this the onboard lock file stays on disk and
     // blocks the next onboard/rebuild invocation.
-    try { onboardSession.releaseOnboardLock(); } catch { /* best effort */ }
+    try {
+      onboardSession.releaseOnboardLock();
+    } catch {
+      /* best effort */
+    }
     try {
       const failedStep = onboardSession.loadSession()?.lastStepStarted;
       if (failedStep) {
         onboardSession.markStepFailed(failedStep, "Rebuild recreate failed");
       }
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
 
     console.error("");
     console.error(`  ${_RD}Recreate failed after sandbox was destroyed.${R}`);
@@ -2725,7 +2768,10 @@ async function sandboxRebuild(
     console.error(`    3. Then restore your workspace state:`);
     console.error(`       nemoclaw ${sandboxName} snapshot restore "${backup.manifest.timestamp}"`);
     console.error("");
-    bail(`Recreate failed (sandbox destroyed). Backup: ${backup.manifest.backupPath}`, onboardExitCode);
+    bail(
+      `Recreate failed (sandbox destroyed). Backup: ${backup.manifest.backupPath}`,
+      onboardExitCode,
+    );
     return;
   }
 
@@ -3041,9 +3087,7 @@ async function autoCreateSandboxFromSource(
 
   const fromImage = resolveSrcPodImage(srcName);
   if (!fromImage) {
-    console.error(
-      `  Cannot auto-create '${dstName}': could not resolve '${srcName}' pod image.`,
-    );
+    console.error(`  Cannot auto-create '${dstName}': could not resolve '${srcName}' pod image.`);
     console.error(`  Create '${dstName}' manually with 'nemoclaw onboard'.`);
     process.exit(1);
   }
@@ -3064,9 +3108,7 @@ async function autoCreateSandboxFromSource(
   ].map((p) => shellQuote(p));
   const command = `${cmdParts.join(" ")} 2>&1`;
 
-  console.log(
-    `  '${dstName}' does not exist. Creating from '${srcName}' image (${fromImage})...`,
-  );
+  console.log(`  '${dstName}' does not exist. Creating from '${srcName}' image (${fromImage})...`);
 
   const createResult = await sandboxCreateStream.streamSandboxCreate(command, process.env, {
     // Use a pre-built image, so skip build+push and jump to pod creation.
@@ -3137,8 +3179,7 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
         // Virtual snapshotVersion is only assigned by listBackups, so re-resolve
         // the just-created snapshot by its timestamp to get a valid v<N>.
         const entry =
-          sandboxState.findBackup(sandboxName, result.manifest.timestamp).match ??
-          result.manifest;
+          sandboxState.findBackup(sandboxName, result.manifest.timestamp).match ?? result.manifest;
         const v = formatSnapshotVersion(entry);
         const nameSuffix = entry.name ? ` name=${entry.name}` : "";
         console.log(
@@ -3276,9 +3317,7 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
           const summary: string[] = [];
           if (toAdd.length > 0) summary.push(`add ${toAdd.join(", ")}`);
           if (toRemove.length > 0) summary.push(`remove ${toRemove.join(", ")}`);
-          console.log(
-            `  Reconciling policy presets on '${targetSandbox}': ${summary.join("; ")}`,
-          );
+          console.log(`  Reconciling policy presets on '${targetSandbox}': ${summary.join("; ")}`);
 
           const failed: string[] = [];
           for (const preset of toRemove) {
@@ -3311,12 +3350,20 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
     default:
       console.log(`  Usage:`);
       console.log(`    nemoclaw ${sandboxName} snapshot create [--name <name>]`);
-      console.log(`                                             Create a snapshot (auto-versioned v1, v2, ...)`);
+      console.log(
+        `                                             Create a snapshot (auto-versioned v1, v2, ...)`,
+      );
       console.log(`    nemoclaw ${sandboxName} snapshot list            List available snapshots`);
       console.log(`    nemoclaw ${sandboxName} snapshot restore [selector] [--to <dst>]`);
-      console.log(`                                             Restore by version (v1), name, or timestamp.`);
-      console.log(`                                             Omit selector to restore the most recent.`);
-      console.log(`                                             Use --to to restore into another sandbox; <dst> is auto-created if missing.`);
+      console.log(
+        `                                             Restore by version (v1), name, or timestamp.`,
+      );
+      console.log(
+        `                                             Omit selector to restore the most recent.`,
+      );
+      console.log(
+        `                                             Use --to to restore into another sandbox; <dst> is auto-created if missing.`,
+      );
       break;
   }
 }
@@ -3379,7 +3426,13 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   // 1. List all openshell/sandbox-from images on the host
   const imagesResult = spawnSync(
     "docker",
-    ["images", "--filter", "reference=openshell/sandbox-from", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}"],
+    [
+      "images",
+      "--filter",
+      "reference=openshell/sandbox-from",
+      "--format",
+      "{{.Repository}}:{{.Tag}}\t{{.Size}}",
+    ],
     { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
   );
   if (imagesResult.status !== 0) {
@@ -3409,7 +3462,9 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   }
 
   // 3. Cross-reference to find orphans
-  const orphans = allImages.filter((img: { tag: string; size: string }) => !registeredTags.has(img.tag));
+  const orphans = allImages.filter(
+    (img: { tag: string; size: string }) => !registeredTags.has(img.tag),
+  );
 
   if (orphans.length === 0) {
     console.log(`  All ${allImages.length} sandbox image(s) are in use. Nothing to clean up.`);
@@ -3450,9 +3505,7 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
       removed++;
     } else {
       const details = `${rmiResult.stderr || rmiResult.stdout || ""}`.trim();
-      console.error(
-        `  ${YW}⚠${R} Failed to remove ${img.tag}${details ? `: ${details}` : ""}`,
-      );
+      console.error(`  ${YW}⚠${R} Failed to remove ${img.tag}${details ? `: ${details}` : ""}`);
       failed++;
     }
   }
@@ -3714,7 +3767,11 @@ const [cmd, ...args] = process.argv.slice(2);
         const shieldsFlags = actionArgs.slice(1);
         switch (shieldsSub) {
           case "down": {
-            const opts: { timeout: string | null; reason: string | null; policy: string } = { timeout: null, reason: null, policy: "permissive" };
+            const opts: { timeout: string | null; reason: string | null; policy: string } = {
+              timeout: null,
+              reason: null,
+              policy: "permissive",
+            };
             for (let i = 0; i < shieldsFlags.length; i++) {
               if (shieldsFlags[i] === "--timeout") {
                 if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
@@ -3730,7 +3787,9 @@ const [cmd, ...args] = process.argv.slice(2);
                 opts.reason = shieldsFlags[++i];
               } else if (shieldsFlags[i] === "--policy") {
                 if (i + 1 >= shieldsFlags.length || shieldsFlags[i + 1].startsWith("--")) {
-                  console.error("  --policy requires a value (e.g. permissive, /path/to/policy.yaml)");
+                  console.error(
+                    "  --policy requires a value (e.g. permissive, /path/to/policy.yaml)",
+                  );
                   process.exit(1);
                 }
                 opts.policy = shieldsFlags[++i];
@@ -3794,7 +3853,10 @@ const [cmd, ...args] = process.argv.slice(2);
         const configSub = actionArgs[0];
         switch (configSub) {
           case "get": {
-            const configOpts: { key: string | null; format: string } = { key: null, format: "json" };
+            const configOpts: { key: string | null; format: string } = {
+              key: null,
+              format: "json",
+            };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") configOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--format") configOpts.format = actionArgs[++i];
@@ -3803,7 +3865,11 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "set": {
-            const setOpts: { key: string | null; value: string | null; restart: boolean } = { key: null, value: null, restart: false };
+            const setOpts: { key: string | null; value: string | null; restart: boolean } = {
+              key: null,
+              value: null,
+              restart: false,
+            };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") setOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--value") setOpts.value = actionArgs[++i];
@@ -3813,7 +3879,10 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "rotate-token": {
-            const tokenOpts: { fromEnv: string | null; fromStdin: boolean } = { fromEnv: null, fromStdin: false };
+            const tokenOpts: { fromEnv: string | null; fromStdin: boolean } = {
+              fromEnv: null,
+              fromStdin: false,
+            };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--from-env") tokenOpts.fromEnv = actionArgs[++i];
               else if (actionArgs[i] === "--from-stdin") tokenOpts.fromStdin = true;

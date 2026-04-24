@@ -108,7 +108,9 @@ describe("config set helpers", () => {
     });
 
     it("accepts existing keys whose value is null", () => {
-      expect(isRecognizedConfigPath({ provider: { endpoint: null } }, "provider.endpoint")).toBe(true);
+      expect(isRecognizedConfigPath({ provider: { endpoint: null } }, "provider.endpoint")).toBe(
+        true,
+      );
     });
 
     it("rejects an unknown top-level key", () => {

@@ -238,7 +238,10 @@ export function redactSensitiveText(value: SessionJsonValue | undefined): string
 }
 
 export function sanitizeFailure(
-  input: { step?: SessionJsonValue; message?: SessionJsonValue; recordedAt?: SessionJsonValue } | null | undefined,
+  input:
+    | { step?: SessionJsonValue; message?: SessionJsonValue; recordedAt?: SessionJsonValue }
+    | null
+    | undefined,
 ): SessionFailure | null {
   if (!input) return null;
   const step = readString(input.step);
@@ -294,7 +297,8 @@ export function createSession(overrides: Partial<Session> = {}): Session {
     credentialEnv: overrides.credentialEnv ?? null,
     preferredInferenceApi: overrides.preferredInferenceApi ?? null,
     nimContainer: overrides.nimContainer ?? null,
-    webSearchConfig: overrides.webSearchConfig?.fetchEnabled === true ? { fetchEnabled: true } : null,
+    webSearchConfig:
+      overrides.webSearchConfig?.fetchEnabled === true ? { fetchEnabled: true } : null,
     policyPresets: Array.isArray(overrides.policyPresets) ? [...overrides.policyPresets] : null,
     messagingChannels: Array.isArray(overrides.messagingChannels)
       ? [...overrides.messagingChannels]
@@ -458,7 +462,11 @@ export function acquireOnboardLock(command: string | null = null): LockResult {
         staleInode = stat.ino;
         existing = parseLockFile(fs.readFileSync(LOCK_FILE, "utf8"));
       } catch (readError) {
-        if (readError instanceof Error && isErrnoException(readError) && readError.code === "ENOENT") {
+        if (
+          readError instanceof Error &&
+          isErrnoException(readError) &&
+          readError.code === "ENOENT"
+        ) {
           continue;
         }
         throw readError;
@@ -544,7 +552,13 @@ function unlinkIfInodeMatches(filePath: string, expectedInode: bigint | null): v
   try {
     fs.unlinkSync(filePath);
   } catch (unlinkError) {
-    if (!(unlinkError instanceof Error && isErrnoException(unlinkError) && unlinkError.code === "ENOENT")) {
+    if (
+      !(
+        unlinkError instanceof Error &&
+        isErrnoException(unlinkError) &&
+        unlinkError.code === "ENOENT"
+      )
+    ) {
       throw unlinkError;
     }
   }
@@ -573,7 +587,13 @@ export function releaseOnboardLock(): void {
         try {
           fs.unlinkSync(LOCK_FILE);
         } catch (unlinkError) {
-          if (!(unlinkError instanceof Error && isErrnoException(unlinkError) && unlinkError.code === "ENOENT")) {
+          if (
+            !(
+              unlinkError instanceof Error &&
+              isErrnoException(unlinkError) &&
+              unlinkError.code === "ENOENT"
+            )
+          ) {
             // Best effort — surfacing this would mask the real error.
           }
         }

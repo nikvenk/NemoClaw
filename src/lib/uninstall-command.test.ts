@@ -31,9 +31,9 @@ describe("uninstall command", () => {
   });
 
   it("maps spawn signals to shell-style exit codes", () => {
-    expect(() =>
-      exitWithSpawnResult({ status: null, signal: "SIGTERM" }, exitWithCode),
-    ).toThrow("exit:143");
+    expect(() => exitWithSpawnResult({ status: null, signal: "SIGTERM" }, exitWithCode)).toThrow(
+      "exit:143",
+    );
   });
 
   it("runs the local uninstall script when present", () => {
@@ -52,11 +52,15 @@ describe("uninstall command", () => {
         exit: exitWithCode,
       }),
     ).toThrow("exit:0");
-    expect(spawnSyncImpl).toHaveBeenCalledWith("bash", [path.join("/repo", "uninstall.sh"), "--yes"], {
-      stdio: "inherit",
-      cwd: "/repo",
-      env: process.env,
-    });
+    expect(spawnSyncImpl).toHaveBeenCalledWith(
+      "bash",
+      [path.join("/repo", "uninstall.sh"), "--yes"],
+      {
+        stdio: "inherit",
+        cwd: "/repo",
+        env: process.env,
+      },
+    );
   });
 
   it("does not download or run a remote uninstall script when no local copy exists", () => {

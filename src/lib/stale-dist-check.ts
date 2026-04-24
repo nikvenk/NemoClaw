@@ -47,9 +47,7 @@ export function maxMtime(root: string, accept: (name: string) => boolean): numbe
 }
 
 /** Return `{ srcMtime, distMtime }` when compiled dist/ is older than src/ by more than the grace window; return null otherwise or when either directory is missing. */
-export function checkStaleDist(
-  repoRoot: string,
-): { srcMtime: number; distMtime: number } | null {
+export function checkStaleDist(repoRoot: string): { srcMtime: number; distMtime: number } | null {
   const srcDir = path.join(repoRoot, "src");
   const distDir = path.join(repoRoot, "dist");
   if (!fs.existsSync(srcDir) || !fs.existsSync(distDir)) return null;

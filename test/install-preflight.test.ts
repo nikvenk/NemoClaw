@@ -1848,7 +1848,10 @@ describe("installer runtime checks (sourced)", () => {
    * Call ensure_supported_runtime() in isolation by sourcing install.sh.
    * This avoids triggering install_nodejs() which would download real nvm.
    */
-  function callEnsureSupportedRuntime(fakeBin: string, env: Record<string, string | undefined> = {}) {
+  function callEnsureSupportedRuntime(
+    fakeBin: string,
+    env: Record<string, string | undefined> = {},
+  ) {
     return spawnSync(
       "bash",
       ["-c", `source "${INSTALLER}" 2>/dev/null; ensure_supported_runtime`],

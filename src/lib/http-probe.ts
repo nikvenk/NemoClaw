@@ -108,12 +108,7 @@ export function summarizeProbeError(body = "", status = 0): string {
   return `HTTP ${status}: ${compact.slice(0, 200)}`;
 }
 
-export function summarizeProbeFailure(
-  body = "",
-  status = 0,
-  curlStatus = 0,
-  stderr = "",
-): string {
+export function summarizeProbeFailure(body = "", status = 0, curlStatus = 0, stderr = ""): string {
   if (curlStatus) {
     return summarizeCurlFailure(curlStatus, stderr, body);
   }
@@ -143,7 +138,7 @@ export function runCurlProbe(argv: string[], opts: CurlProbeOptions = {}): CurlP
     const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8") : "";
     if (result.error) {
       const rawErrorCode = isErrnoException(result.error)
-        ? result.error.errno ?? result.error.code
+        ? (result.error.errno ?? result.error.code)
         : undefined;
       const errorCode = typeof rawErrorCode === "number" ? rawErrorCode : 1;
       const errorMessage = compactText(
@@ -165,14 +160,20 @@ export function runCurlProbe(argv: string[], opts: CurlProbeOptions = {}): CurlP
       curlStatus: result.status || 0,
       body,
       stderr: String(result.stderr || ""),
-      message: summarizeProbeFailure(body, status || 0, result.status || 0, String(result.stderr || "")),
+      message: summarizeProbeFailure(
+        body,
+        status || 0,
+        result.status || 0,
+        String(result.stderr || ""),
+      ),
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
       httpStatus: 0,
-      curlStatus: typeof error === "object" && error && "status" in error ? Number(error.status) || 1 : 1,
+      curlStatus:
+        typeof error === "object" && error && "status" in error ? Number(error.status) || 1 : 1,
       body: "",
       stderr: detail,
       message: summarizeCurlFailure(
@@ -211,19 +212,15 @@ export function runStreamingEventProbe(
     const args = [...argv];
     const url = args.pop();
     const spawnSyncImpl = opts.spawnSyncImpl ?? spawnSync;
-    const result = spawnSyncImpl(
-      "curl",
-      [...args, "-N", "-o", bodyFile, String(url || "")],
-      {
-        cwd: opts.cwd ?? ROOT,
-        encoding: "utf8",
-        timeout: 30_000,
-        env: {
-          ...process.env,
-          ...opts.env,
-        },
+    const result = spawnSyncImpl("curl", [...args, "-N", "-o", bodyFile, String(url || "")], {
+      cwd: opts.cwd ?? ROOT,
+      encoding: "utf8",
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        ...opts.env,
       },
-    );
+    });
 
     const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8") : "";
 

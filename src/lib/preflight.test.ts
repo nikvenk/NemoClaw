@@ -308,7 +308,8 @@ describe("assessHost", () => {
         CgroupVersion: "2",
       }),
       readFileImpl: () => '{"default-cgroupns-mode":"private"}',
-      commandExistsImpl: (name: string) => name === "docker" || name === "apt-get" || name === "systemctl",
+      commandExistsImpl: (name: string) =>
+        name === "docker" || name === "apt-get" || name === "systemctl",
       runCaptureImpl: (command: string) => {
         if (command === "command -v apt-get") return "/usr/bin/apt-get";
         if (command === "command -v systemctl") return "/usr/bin/systemctl";
@@ -437,7 +438,9 @@ describe("planHostRemediation", () => {
       notes: [],
     });
 
-    const action = actions.find((entry: { id: string }) => entry.id === "unsupported_runtime_warning");
+    const action = actions.find(
+      (entry: { id: string }) => entry.id === "unsupported_runtime_warning",
+    );
     expect(action).toBeTruthy();
     expect(action?.blocking).toBe(false);
   });

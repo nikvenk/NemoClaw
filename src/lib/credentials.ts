@@ -39,7 +39,10 @@ export function resolveHomeDir(): string {
       );
     }
   } catch (error) {
-    if (!(typeof error === "object" && error !== null && isErrnoException(error)) || error.code !== "ENOENT") {
+    if (
+      !(typeof error === "object" && error !== null && isErrnoException(error)) ||
+      error.code !== "ENOENT"
+    ) {
       throw error;
     }
   }
