@@ -22,6 +22,17 @@ const _RD = _useColor ? "\x1b[1;31m" : "";
 const YW = _useColor ? "\x1b[1;33m" : "";
 
 const { ROOT, run, runInteractive, shellQuote, validateName } = require("./lib/runner");
+
+// ---------------------------------------------------------------------------
+// NemoHermes alias detection — when launched via bin/nemohermes.js the env var
+// is set before this module loads and argv[1] contains the launcher path.
+// ---------------------------------------------------------------------------
+const IS_HERMES_ALIAS =
+  process.env.NEMOCLAW_AGENT === "hermes" &&
+  (process.argv[1]?.includes("nemohermes") ?? false);
+const CLI_NAME = IS_HERMES_ALIAS ? "nemohermes" : "nemoclaw";
+const CLI_DISPLAY_NAME = IS_HERMES_ALIAS ? "NemoHermes" : "NemoClaw";
+
 const {
   dockerCapture,
   dockerListImagesFormat,
@@ -4160,7 +4171,7 @@ function help() {
   const lines = [];
 
   lines.push("");
-  lines.push(`  ${B}${G}NemoClaw${R}  ${D}v${getVersion()}${R}`);
+  lines.push(`  ${B}${G}${CLI_DISPLAY_NAME}${R}  ${D}v${getVersion()}${R}`);
   lines.push(`  ${D}Deploy more secure, always-on AI assistants with a single command.${R}`);
 
   for (const [group, cmds] of grouped) {
@@ -4294,7 +4305,11 @@ const [cmd, ...args] = process.argv.slice(2);
         break;
       case "--version":
       case "-v": {
-        console.log(`nemoclaw v${getVersion()}`);
+        if (IS_HERMES_ALIAS) {
+          console.log(`nemohermes v${getVersion()} (nemoclaw)`);
+        } else {
+          console.log(`nemoclaw v${getVersion()}`);
+        }
         break;
       }
       default:
@@ -4318,9 +4333,9 @@ const [cmd, ...args] = process.argv.slice(2);
       if (allNames.length > 0) {
         console.error("");
         console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
-        console.error(`  Run 'nemoclaw list' to see all sandboxes.`);
+        console.error(`  Run '${CLI_NAME} list' to see all sandboxes.`);
       } else {
-        console.error(`  Run 'nemoclaw onboard' to create one.`);
+        console.error(`  Run '${CLI_NAME} onboard' to create one.`);
       }
       process.exit(1);
     }
@@ -4540,10 +4555,10 @@ const [cmd, ...args] = process.argv.slice(2);
   const allNames = registry.listSandboxes().sandboxes.map((s: { name: string }) => s.name);
   if (allNames.length > 0) {
     console.error(`  Registered sandboxes: ${allNames.join(", ")}`);
-    console.error(`  Try: nemoclaw <sandbox-name> connect`);
+    console.error(`  Try: ${CLI_NAME} <sandbox-name> connect`);
     console.error("");
   }
 
-  console.error(`  Run 'nemoclaw help' for usage.`);
+  console.error(`  Run '${CLI_NAME} help' for usage.`);
   process.exit(1);
 })();

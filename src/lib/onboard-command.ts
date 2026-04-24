@@ -39,9 +39,18 @@ const ONBOARD_BASE_ARGS = [
   "--recreate-sandbox",
 ];
 
+/** CLI binary name — respects the NemoHermes alias when NEMOCLAW_AGENT is set. */
+function cliName(): string {
+  return process.env.NEMOCLAW_AGENT === "hermes" &&
+    (process.argv[1]?.includes("nemohermes") ?? false)
+    ? "nemohermes"
+    : "nemoclaw";
+}
+
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
+  const name = cliName();
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [${noticeAcceptFlag}]`,
+    `  Usage: ${name} onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [${noticeAcceptFlag}]`,
     "",
     "  --from <Dockerfile> uses the Dockerfile's parent directory as the Docker build context.",
     "  Put files referenced by COPY/ADD next to that Dockerfile, or move the Dockerfile into",
@@ -189,11 +198,11 @@ export async function runDeprecatedOnboardAliasCommand(
   const log = deps.log ?? console.log;
   log("");
   if (deps.kind === "setup") {
-    log("  ⚠  `nemoclaw setup` is deprecated. Use `nemoclaw onboard` instead.");
+    log(`  ⚠  \`${cliName()} setup\` is deprecated. Use \`${cliName()} onboard\` instead.`);
   } else {
-    log("  ⚠  `nemoclaw setup-spark` is deprecated.");
+    log(`  ⚠  \`${cliName()} setup-spark\` is deprecated.`);
     log("  Current OpenShell releases handle the old DGX Spark cgroup issue themselves.");
-    log("  Use `nemoclaw onboard` instead.");
+    log(`  Use \`${cliName()} onboard\` instead.`);
   }
   log("");
   await runOnboardCommand(deps);
