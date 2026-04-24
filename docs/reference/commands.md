@@ -198,6 +198,15 @@ $ NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS=1 nemoclaw onboard --non-interactive --y
 
 The flag is persisted on the sandbox registry entry, so `nemoclaw <sandbox> status` surfaces `Permissions: dangerously-skip-permissions (shields permanently down)` for sandboxes created this way. To tighten a sandbox after the fact, re-run `nemoclaw onboard` without the flag.
 
+### `nemoclaw onboard --from`
+
+Use a custom Dockerfile for the sandbox image.
+This variant of `nemoclaw onboard` accepts a `--from <Dockerfile>` argument to build the sandbox from a user-supplied Dockerfile instead of the default NemoClaw image.
+
+```console
+$ nemoclaw onboard --from ./Dockerfile.custom
+```
+
 ### `nemoclaw list`
 
 List all registered sandboxes with their model, provider, and policy presets.
@@ -530,7 +539,7 @@ Versions (`v1`, `v2`, ...) are computed on read from timestamp-ascending order, 
 $ nemoclaw my-assistant snapshot list
 ```
 
-### `nemoclaw <name> snapshot restore [selector]`
+### `nemoclaw <name> snapshot restore [selector] [--to <dst>]`
 
 Restore sandbox state from a snapshot.
 The sandbox must be running before you restore.
@@ -543,14 +552,27 @@ The selector accepts any of:
 - An exact name passed to `snapshot create --name`.
 - An exact or prefix timestamp (partial prefixes are accepted when they match exactly one snapshot).
 
+Pass `--to <dst>` to restore the snapshot into a different sandbox instead of the source.
+When `dst` does not exist, it is auto-created by reusing the source sandbox's container image — no re-onboarding needed.
+
 ```console
+# restore latest snapshot in-place
 $ nemoclaw my-assistant snapshot restore
+
+# restore by version
 $ nemoclaw my-assistant snapshot restore v3
+
+# restore by user-assigned name
 $ nemoclaw my-assistant snapshot restore before-upgrade
-$ nemoclaw my-assistant snapshot restore 2026-04-14T
+
+# restore by exact timestamp
+$ nemoclaw my-assistant snapshot restore 2026-04-21T07-35-55-987Z
+
+# clone v3 into another sandbox
+$ nemoclaw my-assistant snapshot restore v3 --to my-assistant-clone
 ```
 
-### `openshell term`
+## `openshell term`
 
 Open the OpenShell TUI to monitor sandbox activity and approve network egress requests.
 Run this on the host where the sandbox is running.
@@ -581,12 +603,41 @@ $ nemoclaw tunnel stop
 
 `nemoclaw stop` remains as a deprecated alias that prints a warning and delegates to `tunnel stop`.
 
+### `nemoclaw start`
+
+:::{warning}
+Deprecated. Use `nemoclaw tunnel start` instead.
+:::
+
+This command remains as a compatibility alias to `nemoclaw tunnel start`.
+
+### `nemoclaw stop`
+
+:::{warning}
+Deprecated. Use `nemoclaw tunnel stop` instead.
+:::
+
+This command remains as a compatibility alias to `nemoclaw tunnel stop`.
+
 ### `nemoclaw status`
 
 Show the sandbox list and the status of host auxiliary services (for example cloudflared).
 
 ```console
 $ nemoclaw status
+```
+
+### `nemoclaw setup`
+
+:::{warning}
+The `nemoclaw setup` command is deprecated.
+Use `nemoclaw onboard` instead.
+:::
+
+This command remains as a compatibility alias to `nemoclaw onboard`.
+
+```console
+$ nemoclaw setup
 ```
 
 ### `nemoclaw setup-spark`
@@ -685,11 +736,14 @@ All ports must be non-privileged integers between 1024 and 65535.
 | Variable | Default | Service |
 |----------|---------|---------|
 | `NEMOCLAW_GATEWAY_PORT` | 8080 | OpenShell gateway |
-| `NEMOCLAW_DASHBOARD_PORT` | 18789 | Dashboard UI |
+| `NEMOCLAW_DASHBOARD_PORT` | 18789 (auto-derived from `CHAT_UI_URL` port if set) | Dashboard UI |
 | `NEMOCLAW_VLLM_PORT` | 8000 | vLLM / NIM inference |
 | `NEMOCLAW_OLLAMA_PORT` | 11434 | Ollama inference |
+| `NEMOCLAW_OLLAMA_PROXY_PORT` | 11435 | Ollama auth proxy |
 
 If a port value is not a valid integer or falls outside the allowed range, the CLI exits with an error.
+On non-WSL hosts, `NEMOCLAW_OLLAMA_PORT` and `NEMOCLAW_OLLAMA_PROXY_PORT` must be different.
+If you run Ollama on port 11435, set `NEMOCLAW_OLLAMA_PROXY_PORT` to another free port before onboarding.
 
 ```console
 $ export NEMOCLAW_DASHBOARD_PORT=19000
