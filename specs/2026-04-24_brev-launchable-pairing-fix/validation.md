@@ -10,9 +10,9 @@ auto-disable device auth for non-loopback URLs (fixes #2341).
 **Available Tools**: vitest, python3, bash (file verification), spawnSync
 
 ## Coverage Summary
-- Happy Paths: 6 scenarios
+- Happy Paths: 7 scenarios
 - Sad Paths: 3 scenarios
-- Total: 9 scenarios
+- Total: 10 scenarios
 
 ---
 
@@ -133,7 +133,114 @@ auto-disable device auth for non-loopback URLs (fixes #2341).
 
 **Tools Required**: python3, bash
 
-### Scenario 2.3: dashboard-contract buildChain returns shouldDisableDeviceAuth [STATUS: pending]
+### Scenario 2.3: Docker build with Brev URL produces correct openclaw.json [STATUS: pending]
+**Type**: Happy Path — **End-to-end integration: Dockerfile + Python script + ARG→ENV**
+
+**Given**: The Dockerfile COPYs `generate-openclaw-config.py` and runs it during build;
+the `ARG→ENV` promotion feeds `CHAT_UI_URL` to the script via `os.environ`
+**When**: `docker build` is run with `--build-arg CHAT_UI_URL=https://nemoclaw0-xxx.brevlab.com:18789`
+(plus other required build-args for a minimal config)
+**Then**: The `/sandbox/.openclaw/openclaw.json` baked into the image has
+`gateway.auth.dangerouslyDisableDeviceAuth: true` — confirming that a Brev Launchable
+user would NOT see "pairing required"
+
+**Validation Steps**:
+1. **Setup**: Bash: Verify Docker daemon is running (`docker info`). If not available,
+   skip with a clear message — this scenario is for CI or machines with Docker.
+2. **Execute**: Bash: Build a **minimal target** that stops right after config generation
+   to avoid needing the full base image and all build stages. Create a one-off
+   Dockerfile snippet that:
+   ```bash
+   # Extract just the config generation layers into a throwaway image
+   # Uses multi-stage: copy the script, set the ARGs/ENVs, run the script, stop.
+   cat > /tmp/nemoclaw-config-test.Dockerfile <<'DOCKERFILE'
+   FROM python:3.11-slim
+   RUN useradd -m sandbox
+   COPY scripts/generate-openclaw-config.py /usr/local/lib/nemoclaw/generate-openclaw-config.py
+   ARG CHAT_UI_URL=http://127.0.0.1:18789
+   ARG NEMOCLAW_MODEL=test-model
+   ARG NEMOCLAW_PROVIDER_KEY=test-provider
+   ARG NEMOCLAW_PRIMARY_MODEL_REF=test-ref
+   ARG NEMOCLAW_INFERENCE_BASE_URL=http://localhost:8080
+   ARG NEMOCLAW_INFERENCE_API=openai
+   ARG NEMOCLAW_CONTEXT_WINDOW=131072
+   ARG NEMOCLAW_MAX_TOKENS=4096
+   ARG NEMOCLAW_REASONING=false
+   ARG NEMOCLAW_AGENT_TIMEOUT=600
+   ARG NEMOCLAW_INFERENCE_COMPAT_B64=e30=
+   ARG NEMOCLAW_MESSAGING_CHANNELS_B64=
+   ARG NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=
+   ARG NEMOCLAW_DISCORD_GUILDS_B64=
+   ARG NEMOCLAW_DISABLE_DEVICE_AUTH=0
+   ARG NEMOCLAW_PROXY_HOST=10.200.0.1
+   ARG NEMOCLAW_PROXY_PORT=3128
+   ARG NEMOCLAW_WEB_SEARCH_ENABLED=0
+   ENV NEMOCLAW_MODEL=${NEMOCLAW_MODEL} \
+       NEMOCLAW_PROVIDER_KEY=${NEMOCLAW_PROVIDER_KEY} \
+       NEMOCLAW_PRIMARY_MODEL_REF=${NEMOCLAW_PRIMARY_MODEL_REF} \
+       CHAT_UI_URL=${CHAT_UI_URL} \
+       NEMOCLAW_INFERENCE_BASE_URL=${NEMOCLAW_INFERENCE_BASE_URL} \
+       NEMOCLAW_INFERENCE_API=${NEMOCLAW_INFERENCE_API} \
+       NEMOCLAW_CONTEXT_WINDOW=${NEMOCLAW_CONTEXT_WINDOW} \
+       NEMOCLAW_MAX_TOKENS=${NEMOCLAW_MAX_TOKENS} \
+       NEMOCLAW_REASONING=${NEMOCLAW_REASONING} \
+       NEMOCLAW_AGENT_TIMEOUT=${NEMOCLAW_AGENT_TIMEOUT} \
+       NEMOCLAW_INFERENCE_COMPAT_B64=${NEMOCLAW_INFERENCE_COMPAT_B64} \
+       NEMOCLAW_MESSAGING_CHANNELS_B64=${NEMOCLAW_MESSAGING_CHANNELS_B64} \
+       NEMOCLAW_MESSAGING_ALLOWED_IDS_B64=${NEMOCLAW_MESSAGING_ALLOWED_IDS_B64} \
+       NEMOCLAW_DISCORD_GUILDS_B64=${NEMOCLAW_DISCORD_GUILDS_B64} \
+       NEMOCLAW_DISABLE_DEVICE_AUTH=${NEMOCLAW_DISABLE_DEVICE_AUTH} \
+       NEMOCLAW_PROXY_HOST=${NEMOCLAW_PROXY_HOST} \
+       NEMOCLAW_PROXY_PORT=${NEMOCLAW_PROXY_PORT} \
+       NEMOCLAW_WEB_SEARCH_ENABLED=${NEMOCLAW_WEB_SEARCH_ENABLED}
+   USER sandbox
+   RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py
+   DOCKERFILE
+   ```
+3. **Execute**: Bash: Build with Brev URL:
+   ```bash
+   docker build -f /tmp/nemoclaw-config-test.Dockerfile \
+     --build-arg CHAT_UI_URL=https://nemoclaw0-xxx.brevlab.com:18789 \
+     -t nemoclaw-config-test:brev .
+   ```
+4. **Verify**: Bash: Extract and check the config:
+   ```bash
+   docker run --rm nemoclaw-config-test:brev \
+     cat /home/sandbox/.openclaw/openclaw.json | python3 -c "
+   import json, sys
+   c = json.load(sys.stdin)
+   assert c['gateway']['auth']['dangerouslyDisableDeviceAuth'] == True, \
+     f'Expected dangerouslyDisableDeviceAuth=True, got {c[\"gateway\"][\"auth\"][\"dangerouslyDisableDeviceAuth\"]}'
+   assert c['gateway']['auth']['allowInsecureAuth'] == False, \
+     'HTTPS URL should have allowInsecureAuth=False'
+   assert 'https://nemoclaw0-xxx.brevlab.com:18789' in str(c['gateway'].get('allowedOrigins', [])), \
+     'Brev origin should be in allowedOrigins'
+   print('PASS: Brev Launchable config verified')
+   "
+   ```
+5. **Verify**: Bash: Also build with loopback URL and confirm device auth stays enabled:
+   ```bash
+   docker build -f /tmp/nemoclaw-config-test.Dockerfile \
+     --build-arg CHAT_UI_URL=http://127.0.0.1:18789 \
+     -t nemoclaw-config-test:local .
+   docker run --rm nemoclaw-config-test:local \
+     cat /home/sandbox/.openclaw/openclaw.json | python3 -c "
+   import json, sys
+   c = json.load(sys.stdin)
+   assert c['gateway']['auth']['dangerouslyDisableDeviceAuth'] == False, \
+     'Loopback URL should have dangerouslyDisableDeviceAuth=False'
+   print('PASS: Loopback config verified')
+   "
+   ```
+6. **Cleanup**: Bash: `docker rmi nemoclaw-config-test:brev nemoclaw-config-test:local 2>/dev/null`
+
+**Tools Required**: docker, python3
+**Prerequisites**: Docker daemon running. Skippable in environments without Docker.
+**Why this matters**: This validates the full Dockerfile ARG→ENV→Python pipeline — the
+same path a real Brev Launchable build follows. Unit tests cover the Python logic in
+isolation; this proves the Dockerfile wiring is correct.
+
+### Scenario 2.4: dashboard-contract buildChain returns shouldDisableDeviceAuth [STATUS: pending]
 **Type**: Happy Path
 
 **Given**: `DashboardDeliveryChain` interface has `shouldDisableDeviceAuth` field
@@ -153,5 +260,5 @@ auto-disable device auth for non-loopback URLs (fixes #2341).
 | Phase | Happy | Sad | Total | Passed | Failed | Pending |
 |-------|-------|-----|-------|--------|--------|---------|
 | Phase 1 | 4 | 2 | 6 | 0 | 0 | 6 |
-| Phase 2 | 2 | 1 | 3 | 0 | 0 | 3 |
-| **Total** | **6** | **3** | **9** | **0** | **0** | **9** |
+| Phase 2 | 3 | 1 | 4 | 0 | 0 | 4 |
+| **Total** | **7** | **3** | **10** | **0** | **0** | **10** |
