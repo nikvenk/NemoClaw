@@ -74,6 +74,12 @@ function validateNetworkEntry(
   if (typeof address !== "string" || address.length === 0) {
     throw new Error(`${where}: missing or empty 'address'`);
   }
+  const expectedFamily = family === "ipv4" ? 4 : 6;
+  if (isIP(address) !== expectedFamily) {
+    throw new Error(
+      `${where}: 'address' must be a valid ${family} literal, got ${JSON.stringify(address)}`,
+    );
+  }
   const maxPrefix = family === "ipv4" ? 32 : 128;
   if (typeof prefix !== "number" || !Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) {
     throw new Error(

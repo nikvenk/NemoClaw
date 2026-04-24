@@ -194,6 +194,30 @@ describe("private-networks loader", () => {
       expect(() => getNetworkEntries()).toThrow(/'prefix' must be an integer in \[0, 128\]/);
     });
 
+    it("rejects an ipv4 entry whose address parses as ipv6", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        'ipv4:\n  - address: "::1"\n    prefix: 8\n    purpose: wrong-family\nipv6: []\nnames: []\n',
+      );
+      expect(() => getNetworkEntries()).toThrow(/'address' must be a valid ipv4 literal/);
+    });
+
+    it("rejects an ipv6 entry whose address parses as ipv4", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        "ipv4: []\nipv6:\n  - address: 10.0.0.0\n    prefix: 8\n    purpose: wrong-family\nnames: []\n",
+      );
+      expect(() => getNetworkEntries()).toThrow(/'address' must be a valid ipv6 literal/);
+    });
+
+    it("rejects an entry whose address is not a valid IP literal", () => {
+      seedYaml(
+        "/blueprint/private-networks.yaml",
+        "ipv4:\n  - address: not-an-ip\n    prefix: 8\n    purpose: malformed\nipv6: []\nnames: []\n",
+      );
+      expect(() => getNetworkEntries()).toThrow(/'address' must be a valid ipv4 literal/);
+    });
+
     it("rejects an ipv4 entry with an empty purpose", () => {
       seedYaml(
         "/blueprint/private-networks.yaml",
