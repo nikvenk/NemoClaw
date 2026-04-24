@@ -3281,7 +3281,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   // When --control-ui-port is set, check that port instead of the default.
   // When auto-allocation is possible (no explicit port), skip the dashboard
   // port check entirely — ensureDashboardForward will find a free port.
-  const dashboardPortToCheck = _preflightDashboardPort ?? DASHBOARD_PORT;
+  const dashboardPortToCheck = _preflightDashboardPort ?? null;
   const requiredPorts = [
     { port: GATEWAY_PORT, label: "OpenShell gateway" },
     ...(dashboardPortToCheck !== null
