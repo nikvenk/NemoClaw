@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=095250c9"></script>
+    <script src="../_static/documentation_options.js?v=8883b710"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.22';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.24';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -533,7 +533,7 @@ Prefer provisioning the remote host separately, then running the standard NemoCl
 <li><p>Installs Docker and the NVIDIA Container Toolkit if a GPU is present.</p></li>
 <li><p>Installs the OpenShell CLI.</p></li>
 <li><p>Runs <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> (the setup wizard) to create the gateway, register providers, and launch the sandbox.</p></li>
-<li><p>Starts optional host auxiliary services (for example the cloudflared tunnel) when <code class="docutils literal notranslate"><span class="pre">cloudflared</span></code> is available. Channel messaging is configured during onboarding and runs through OpenShell-managed processes, not through <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code>.</p></li>
+<li><p>Starts optional host auxiliary services (for example the cloudflared tunnel) when <code class="docutils literal notranslate"><span class="pre">cloudflared</span></code> is available. Channel messaging is configured during onboarding and runs through OpenShell-managed processes, not through <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code>.</p></li>
 </ol>
 <p>By default, the compatibility wrapper asks Brev to provision on <code class="docutils literal notranslate"><span class="pre">gcp</span></code>. Override this with <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_BREV_PROVIDER</span></code> if you need a different Brev cloud provider.</p>
 </section>
