@@ -145,7 +145,7 @@ function readSandboxConfig(sandboxName: string, target: AgentConfigTarget): Conf
 
   try {
     return parseConfig(raw, target.format);
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`  Failed to parse ${target.agentName} config: ${message}`);
     process.exit(1);

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -53,7 +52,7 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
-let tmpDir;
+let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "shields-test-"));
@@ -276,7 +275,7 @@ describe("shields — unit logic", () => {
       // Manually replicate the deriveShieldsMode logic to test the invariant
       // (we can't import the CJS module directly)
       const hasStateFile = false;
-      const state = {};
+      const state: Record<string, unknown> = {};
       // deriveShieldsMode: no state file => mutable_default
       let mode: string;
       if (!hasStateFile) mode = "mutable_default";
@@ -326,7 +325,7 @@ describe("shields — unit logic", () => {
     it("state file with undefined shieldsDown reports mutable_default", () => {
       const stateDir = path.join(tmpDir, ".nemoclaw", "state");
       fs.mkdirSync(stateDir, { recursive: true });
-      const state = { updatedAt: new Date().toISOString() };
+      const state: Record<string, unknown> = { updatedAt: new Date().toISOString() };
       fs.writeFileSync(path.join(stateDir, "shields-undef.json"), JSON.stringify(state, null, 2));
 
       const hasStateFile = true;

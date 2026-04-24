@@ -127,7 +127,8 @@ function loadShieldsState(sandboxName: string): ShieldsState & { _hasStateFile: 
   const filePath = stateFilePath(sandboxName);
   if (!fs.existsSync(filePath)) return { _hasStateFile: false };
   try {
-    const state = JSON.parse(fs.readFileSync(filePath, "utf-8")) as ShieldsState;
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const state: ShieldsState = isShieldsState(parsed) ? parsed : {};
     return { ...state, _hasStateFile: true };
   } catch {
     return { _hasStateFile: false };
@@ -156,6 +157,57 @@ interface TimerMarker {
   restoreAt: string;
 }
 
+type UnknownRecord = { [key: string]: unknown };
+
+function isObjectRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || typeof value === "boolean";
+}
+
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalNullableNumber(value: unknown): value is number | null | undefined {
+  return (
+    value === undefined || value === null || (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
+function isShieldsState(value: unknown): value is ShieldsState {
+  return (
+    isObjectRecord(value) &&
+    isOptionalBoolean(value.shieldsDown) &&
+    isOptionalNullableString(value.shieldsDownAt) &&
+    isOptionalNullableNumber(value.shieldsDownTimeout) &&
+    isOptionalNullableString(value.shieldsDownReason) &&
+    isOptionalNullableString(value.shieldsDownPolicy) &&
+    isOptionalNullableString(value.shieldsPolicySnapshotPath) &&
+    isOptionalString(value.updatedAt)
+  );
+}
+
+function isTimerMarker(value: unknown): value is TimerMarker {
+  return (
+    isObjectRecord(value) &&
+    typeof value.pid === "number" &&
+    typeof value.sandboxName === "string" &&
+    typeof value.snapshotPath === "string" &&
+    typeof value.restoreAt === "string"
+  );
+}
+
 function timerMarkerPath(sandboxName: string): string {
   return path.join(STATE_DIR, `shields-timer-${sandboxName}.json`);
 }
@@ -164,7 +216,8 @@ function readTimerMarker(sandboxName: string): TimerMarker | null {
   const p = timerMarkerPath(sandboxName);
   if (!fs.existsSync(p)) return null;
   try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as TimerMarker;
+    const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
+    return isTimerMarker(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -368,7 +421,7 @@ function lockAgentConfig(
     const [mode, owner] = perms.split(" ");
     if (!/^4[0-4][0-4]$/.test(mode)) issues.push(`file mode=${mode} (expected 444)`);
     if (owner !== "root:root") issues.push(`file owner=${owner} (expected root:root)`);
-  } catch (err: unknown) {
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     issues.push(`file stat failed: ${msg}`);
   }
@@ -378,7 +431,7 @@ function lockAgentConfig(
     const [dirMode, dirOwner] = dirPerms.split(" ");
     if (dirMode !== "755") issues.push(`dir mode=${dirMode} (expected 755)`);
     if (dirOwner !== "root:root") issues.push(`dir owner=${dirOwner} (expected root:root)`);
-  } catch (err: unknown) {
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     issues.push(`dir stat failed: ${msg}`);
   }
@@ -519,7 +572,7 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
       }),
       { mode: 0o600 },
     );
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`  Cannot start auto-restore timer: ${message}`);
     console.error("  Rolling back — restoring policy from snapshot...");
@@ -616,7 +669,7 @@ function shieldsUp(sandboxName: string): void {
   console.log(`  Locking ${target.agentName} config (${target.configPath})...`);
   try {
     lockAgentConfig(sandboxName, target);
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`  ERROR: ${message}`);
     console.error("  Config remains unlocked — manual intervention required.");

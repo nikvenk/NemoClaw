@@ -35,6 +35,10 @@ const REBUILD_BACKUPS_DIR = path.join(process.env.HOME || "/tmp", ".nemoclaw", "
 
 const MANIFEST_VERSION = 1;
 
+function parseJson<T>(text: string): T {
+  return JSON.parse(text);
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface RebuildManifest {
@@ -101,6 +105,50 @@ export interface TarValidationResult {
 export interface SafeExtractResult {
   success: boolean;
   error?: string;
+}
+
+type UnknownRecord = { [key: string]: unknown };
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isInstanceBackup(value: unknown): value is InstanceBackup {
+  return (
+    isRecord(value) &&
+    typeof value.instanceId === "string" &&
+    typeof value.agentType === "string" &&
+    typeof value.dataDir === "string" &&
+    isStringArray(value.stateDirs) &&
+    isStringArray(value.backedUpDirs)
+  );
+}
+
+function isRebuildManifest(value: unknown): value is RebuildManifest {
+  return (
+    isRecord(value) &&
+    typeof value.version === "number" &&
+    typeof value.sandboxName === "string" &&
+    typeof value.timestamp === "string" &&
+    typeof value.agentType === "string" &&
+    (value.agentVersion === null || typeof value.agentVersion === "string") &&
+    (value.expectedVersion === null || typeof value.expectedVersion === "string") &&
+    isStringArray(value.stateDirs) &&
+    (typeof value.dir === "string" || typeof value.writableDir === "string") &&
+    typeof value.backupPath === "string" &&
+    (value.blueprintDigest === undefined ||
+      value.blueprintDigest === null ||
+      typeof value.blueprintDigest === "string") &&
+    (value.policyPresets === undefined || isStringArray(value.policyPresets)) &&
+    (value.instances === undefined ||
+      (Array.isArray(value.instances) &&
+        value.instances.every((entry) => isInstanceBackup(entry)))) &&
+    (value.name === undefined || typeof value.name === "string")
+  );
 }
 
 // ── Safe tar extraction ──────────────────────────────────────────
@@ -187,10 +235,7 @@ export function validateTarEntries(tarBuffer: Buffer, targetDir: string): TarVal
  * like "escapes" relative to the extraction temp dir on the host, but
  * are intra-sandbox once the backup is restored. See issue #2268.
  */
-function auditExtractedSymlinks(
-  dirPath: string,
-  allowedRoots: string[],
-): string[] {
+function auditExtractedSymlinks(dirPath: string, allowedRoots: string[]): string[] {
   const violations: string[] = [];
   if (!existsSync(dirPath)) return violations;
 
@@ -202,11 +247,11 @@ function auditExtractedSymlinks(
         if (stat.isSymbolicLink()) {
           const linkTarget = readlinkSync(fullPath);
           const resolvedTarget = path.resolve(path.dirname(fullPath), linkTarget);
-          const inAnyAllowedRoot = allowedRoots.some((root) =>
-            isWithinRoot(resolvedTarget, root),
-          );
+          const inAnyAllowedRoot = allowedRoots.some((root) => isWithinRoot(resolvedTarget, root));
           if (!inAnyAllowedRoot) {
-            violations.push(`symlink escape: ${fullPath} -> ${linkTarget} (resolves to ${resolvedTarget})`);
+            violations.push(
+              `symlink escape: ${fullPath} -> ${linkTarget} (resolves to ${resolvedTarget})`,
+            );
           }
         } else if (stat.isDirectory()) {
           walk(fullPath);
@@ -541,10 +586,13 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const fullCheckCmd =
       `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
-    const existResult = spawnSync(
-      "ssh",
-      [...sshArgs(configFile, sandboxName), fullCheckCmd],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },
+    const existResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30000,
+    });
+    _log(
+      `Dir check: exit=${existResult.status}, stdout=${(existResult.stdout || "").trim().substring(0, 200)}, stderr=${(existResult.stderr || "").trim().substring(0, 200)}`,
     );
     const existingDirs = (existResult.stdout || "")
       .trim()
@@ -647,7 +695,9 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
   );
   if (discoveredWorkspaces.length > 0) {
     manifest.stateDirs = [...stateDirs, ...discoveredWorkspaces];
-    _log(`Manifest stateDirs extended with multi-agent workspaces: [${discoveredWorkspaces.join(",")}]`);
+    _log(
+      `Manifest stateDirs extended with multi-agent workspaces: [${discoveredWorkspaces.join(",")}]`,
+    );
   }
 
   writeManifest(backupPath, manifest);
@@ -784,7 +834,10 @@ function readManifest(backupPath: string): RebuildManifest | null {
   const manifestPath = path.join(backupPath, "rebuild-manifest.json");
   if (!existsSync(manifestPath)) return null;
   try {
-    return JSON.parse(readFileSync(manifestPath, "utf-8")) as RebuildManifest;
+    const parsed = parseJson<unknown>(readFileSync(manifestPath, "utf-8"));
+    return isRebuildManifest(parsed)
+      ? { ...parsed, blueprintDigest: parsed.blueprintDigest ?? null }
+      : null;
   } catch {
     return null;
   }
