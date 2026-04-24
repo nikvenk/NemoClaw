@@ -3,6 +3,8 @@
 //
 // Policy preset management — list, load, merge, and apply presets.
 
+import type { JsonValue, JsonObject } from "./json-types";
+
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -13,8 +15,6 @@ const registry = require("./registry");
 const { loadAgent } = require("./agent-defs");
 
 const PRESETS_DIR = path.join(ROOT, "nemoclaw-blueprint", "policies", "presets");
-
-import type { JsonValue, JsonObject } from "./json-types";
 
 type PresetInfo = {
   file: string;

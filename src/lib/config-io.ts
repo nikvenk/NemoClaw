@@ -10,6 +10,8 @@ import path from "node:path";
 import { shellQuote } from "./shell-quote";
 import { isErrnoException, isPermissionError } from "./errno";
 
+// Strict JSON types for file serialization — unlike json-types.ts,
+// these exclude undefined since actual JSON cannot contain it.
 type JsonScalar = string | number | boolean | null;
 type JsonValue = JsonScalar | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
