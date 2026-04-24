@@ -124,7 +124,7 @@ export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Prom
       if (providerDrifted) parts.push(`provider=${sb.provider || "unknown"}`);
       log(`      (onboarded: ${parts.join(", ")})`);
     }
-    if (sb.dashboardPort) {
+    if (sb.dashboardPort != null) {
       log(`      dashboard: http://127.0.0.1:${sb.dashboardPort}/`);
     }
   }
@@ -155,7 +155,7 @@ export function showStatusCommand(deps: ShowStatusCommandDeps): void {
       // agrees with `openshell inference get` (#2369).
       const liveModel = isDefault && live ? live.model : null;
       const model = liveModel || sb.model;
-      const portSuffix = sb.dashboardPort ? ` :${sb.dashboardPort}` : "";
+      const portSuffix = sb.dashboardPort != null ? ` :${sb.dashboardPort}` : "";
       log(`    ${sb.name}${def}${model ? ` (${model})` : ""}${portSuffix}`);
       if (isDefault && liveModel && liveModel !== sb.model) {
         log(`      (onboarded: ${sb.model || "unknown"})`);

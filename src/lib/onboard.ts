@@ -262,6 +262,9 @@ const DISCORD_SNOWFLAKE_RE = /^[0-9]{17,19}$/;
 // When active, all prompts use env var overrides or sensible defaults.
 let NON_INTERACTIVE = false;
 let RECREATE_SANDBOX = false;
+// Set by onboard() before preflight() when --control-ui-port is specified.
+// null means "use auto-allocation" (skip dashboard port check in preflight).
+let _preflightDashboardPort: number | null = null;
 
 function isNonInteractive() {
   return NON_INTERACTIVE || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
@@ -2836,10 +2839,16 @@ async function preflight() {
     }
   }
 
-  // Required ports — gateway and the dashboard port
+  // Required ports — gateway and the dashboard port.
+  // When --control-ui-port is set, check that port instead of the default.
+  // When auto-allocation is possible (no explicit port), skip the dashboard
+  // port check entirely — ensureDashboardForward will find a free port.
+  const dashboardPortToCheck = _preflightDashboardPort ?? DASHBOARD_PORT;
   const requiredPorts = [
     { port: GATEWAY_PORT, label: "OpenShell gateway" },
-    { port: DASHBOARD_PORT, label: "NemoClaw dashboard" },
+    ...(dashboardPortToCheck !== null
+      ? [{ port: dashboardPortToCheck, label: "NemoClaw dashboard" }]
+      : []),
   ];
   for (const { port, label } of requiredPorts) {
     let portCheck = await checkPortAvailable(port);
@@ -3366,8 +3375,12 @@ async function createSandbox(
   );
 
   // Port priority: --control-ui-port > CHAT_UI_URL env > registry (resume) > agent.forwardPort > default
-  const effectivePort = controlUiPort ?? (agent ? agent.forwardPort : CONTROL_UI_PORT);
-  const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${effectivePort}`;
+  const persistedPort = registry.getSandbox(sandboxName)?.dashboardPort ?? null;
+  const effectivePort = controlUiPort ?? persistedPort ?? (agent ? agent.forwardPort : CONTROL_UI_PORT);
+  let chatUiUrl =
+    controlUiPort != null
+      ? `http://127.0.0.1:${controlUiPort}`
+      : process.env.CHAT_UI_URL || `http://127.0.0.1:${effectivePort}`;
 
   // Check whether messaging providers will be needed — this must happen before
   // the sandbox reuse decision so we can detect stale sandboxes that were created
@@ -4018,6 +4031,10 @@ async function createSandbox(
   // which would silently prevent the new sandbox's dashboard from being reachable.
   // Auto-allocates the next free port if the preferred one is taken (Fixes #2174).
   const actualDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl);
+  // Update chatUiUrl so the post-onboard banner shows the correct port.
+  if (actualDashboardPort !== Number(getDashboardForwardPort(chatUiUrl))) {
+    chatUiUrl = `http://127.0.0.1:${actualDashboardPort}`;
+  }
 
   // Register only after confirmed ready — prevents phantom entries
   const effectiveAgent = agent || agentDefs.loadAgent("openclaw");
@@ -6548,6 +6565,7 @@ function skippedStepMessage(stepName, detail, reason = "resume") {
 async function onboard(opts = {}) {
   NON_INTERACTIVE = opts.nonInteractive || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
   RECREATE_SANDBOX = opts.recreateSandbox || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
+  _preflightDashboardPort = opts.controlUiPort || null;
   const dangerouslySkipPermissions =
     opts.dangerouslySkipPermissions || process.env.NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS === "1";
   if (dangerouslySkipPermissions) {
