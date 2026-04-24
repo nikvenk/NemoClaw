@@ -67,7 +67,11 @@ graph LR
 
 ## Deployment Topology
 
-The logical diagram above shows how components relate. This section shows what actually runs where on the host. NemoClaw runs on a Docker daemon: the OpenShell gateway runs as a container and embeds a k3s cluster, and the sandbox runs as a Kubernetes pod inside that embedded cluster.
+The logical diagram above shows how components relate.
+This section shows what actually runs where on the host.
+NemoClaw uses a Docker daemon.
+The OpenShell gateway runs as a container that embeds a k3s cluster.
+The sandbox runs as a Kubernetes pod inside that embedded cluster.
 
 ```mermaid
 graph TB
