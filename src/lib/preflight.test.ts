@@ -647,6 +647,12 @@ describe("probeContainerDns", () => {
     expect(result.reason).toBe("no_output");
   });
 
+  it("flags no_output on whitespace-only output (e.g., a killed child)", () => {
+    const result = probeContainerDns({ outputOverride: "  \n\n  \t\n" });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("no_output");
+  });
+
   it("captures the spawned command for runCapture override", () => {
     const captured: string[] = [];
     const result = probeContainerDns({
@@ -743,6 +749,24 @@ describe("getDockerBridgeGatewayIp", () => {
     expect(getDockerBridgeGatewayIp(() => "not-an-ip")).toBeNull();
     expect(getDockerBridgeGatewayIp(() => "fe80::1")).toBeNull();
     expect(getDockerBridgeGatewayIp(() => "172.17.0")).toBeNull();
+  });
+
+  it("extracts the IPv4 from concatenated dual-stack output (IPv4 first)", () => {
+    // When the bridge has both IPv4 and IPv6 gateways, docker's
+    // {{range .IPAM.Config}}{{.Gateway}}{{end}} template concatenates
+    // them with no separator — we need to pull the v4 out of the blob.
+    const result = getDockerBridgeGatewayIp(() => "172.17.0.1fd00:abcd::1");
+    expect(result).toBe("172.17.0.1");
+  });
+
+  it("extracts the IPv4 from concatenated dual-stack output (IPv6 first)", () => {
+    const result = getDockerBridgeGatewayIp(() => "fd00:abcd::1172.17.0.1");
+    expect(result).toBe("172.17.0.1");
+  });
+
+  it("returns the first IPv4 when multiple are present", () => {
+    const result = getDockerBridgeGatewayIp(() => "10.0.0.1 192.168.1.1");
+    expect(result).toBe("10.0.0.1");
   });
 
   it("returns null when runCapture throws", () => {

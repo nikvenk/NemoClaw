@@ -852,9 +852,19 @@ export function getDockerBridgeGatewayIp(
   }
   if (!raw) return null;
   const trimmed = String(raw).trim();
-  // Accept only a dotted-quad IPv4 address. Empty / garbage / IPv6 → null.
-  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(trimmed)) return null;
-  return trimmed;
+  if (!trimmed) return null;
+  // Dual-stack bridges have multiple entries in .IPAM.Config, and the
+  // `{{range}}` template concatenates their gateways with no separator —
+  // e.g., "172.17.0.1fd00:abcd::1" for an IPv4+IPv6 bridge. Word-boundary
+  // anchors don't help here because the boundary between "1" and "f" is
+  // absent (both are word chars) and a trailing IPv6 that ends in a digit
+  // ("...::1") eats the would-be start anchor of the IPv4. Scan for the
+  // first dotted-quad anywhere in the output and validate the octets.
+  const match = trimmed.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/);
+  if (!match) return null;
+  const octets = match[0].split(".").map((s) => Number(s));
+  if (octets.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return null;
+  return match[0];
 }
 
 /**
@@ -904,7 +914,10 @@ export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeRes
     }
   }
 
-  if (!output) {
+  // Treat whitespace-only output (e.g., bare newlines left by a killed
+  // child) the same as empty — otherwise the subsequent regex checks all
+  // miss and we'd mis-report it as `resolution_failed`.
+  if (!output || !output.trim()) {
     return {
       ok: false,
       reason: "no_output",
