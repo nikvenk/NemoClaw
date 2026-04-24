@@ -143,6 +143,29 @@ describe("listBackups computes virtual versions", () => {
     expect(entry.name).toBe("before-upgrade");
     expect(entry.snapshotVersion).toBe(1);
   });
+
+  it("ignores rebuild manifests with invalid typed fields", () => {
+    const dir = path.join(BACKUPS_ROOT, "test-sandbox", "2026-04-21T14-00-00-000Z");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "rebuild-manifest.json"),
+      JSON.stringify({
+        version: 1,
+        sandboxName: "test-sandbox",
+        timestamp: "2026-04-21T14-00-00-000Z",
+        agentType: "openclaw",
+        agentVersion: null,
+        expectedVersion: null,
+        stateDirs: [],
+        writableDir: "/sandbox/.openclaw-data",
+        backupPath: dir,
+        blueprintDigest: null,
+        policyPresets: [1],
+      }),
+    );
+
+    expect(sandboxState.listBackups("test-sandbox")).toEqual([]);
+  });
 });
 
 describe("findBackup", () => {

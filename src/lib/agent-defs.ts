@@ -18,7 +18,7 @@ type ManifestRecord = { [key: string]: ManifestValue };
 type StringMap = { [key: string]: string };
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const yaml: { load(input: string): ManifestValue } = require("js-yaml");
+const yaml: { load(input: string): unknown } = require("js-yaml");
 
 export interface AgentHealthProbe {
   url: string;
@@ -96,7 +96,7 @@ export interface AgentChoice {
 
 const _cache = new Map<string, AgentDefinition>();
 
-function isManifestValue(value: ManifestValue): boolean {
+function isManifestValue(value: unknown): value is ManifestValue {
   if (value === null || value instanceof Date) return true;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return true;
@@ -107,7 +107,7 @@ function isManifestValue(value: ManifestValue): boolean {
   return isManifestRecord(value);
 }
 
-function isManifestRecord(value: ManifestValue): value is ManifestRecord {
+function isManifestRecord(value: unknown): value is ManifestRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
@@ -141,7 +141,7 @@ function readStringArray(record: ManifestRecord, key: string): string[] | undefi
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function isValidPort(value: ManifestValue): value is number {
+function isValidPort(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
 }
 

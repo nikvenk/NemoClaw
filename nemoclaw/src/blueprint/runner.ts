@@ -29,13 +29,136 @@ type Action = "plan" | "apply" | "status" | "rollback";
 type BlueprintDataScalar = string | number | boolean | null;
 type BlueprintDataValue = BlueprintDataScalar | PolicyAdditions | BlueprintDataValue[];
 type RollbackPlanSource = { sandbox_name?: string };
+type UnknownRecord = { [key: string]: unknown };
 
 function isAction(value: string | undefined): value is Action {
   return value === "plan" || value === "apply" || value === "status" || value === "rollback";
 }
 
+function isObjectLike(value: unknown): value is UnknownRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null;
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isOptionalFiniteNumber(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isValidPort(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function isOptionalPortList(value: unknown): value is number[] | undefined {
+  return (
+    value === undefined || (Array.isArray(value) && value.every((entry) => isValidPort(entry)))
+  );
+}
+
+function isBlueprintDataValue(value: unknown): value is BlueprintDataValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every((entry) => isBlueprintDataValue(entry));
+  }
+  if (!isObjectLike(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => isBlueprintDataValue(entry));
+}
+
+function isInferenceProfile(value: unknown): value is InferenceProfile {
+  if (!isObjectLike(value)) {
+    return false;
+  }
+
+  return (
+    isOptionalString(value.provider_type) &&
+    isOptionalString(value.provider_name) &&
+    isOptionalString(value.endpoint) &&
+    isOptionalString(value.model) &&
+    isOptionalString(value.credential_env) &&
+    isOptionalString(value.credential_default) &&
+    isOptionalFiniteNumber(value.timeout_secs)
+  );
+}
+
 function isBlueprint(value: unknown): value is Blueprint {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (!isObjectLike(value)) {
+    return false;
+  }
+
+  const version = value.version;
+  if (!isOptionalString(version)) {
+    return false;
+  }
+
+  const components = value.components;
+  if (components === undefined) {
+    return true;
+  }
+  if (!isObjectLike(components)) {
+    return false;
+  }
+
+  const inference = components.inference;
+  if (inference !== undefined) {
+    if (!isObjectLike(inference)) {
+      return false;
+    }
+    const profiles = inference.profiles;
+    if (profiles !== undefined) {
+      if (
+        !isObjectLike(profiles) ||
+        !Object.values(profiles).every((entry) => isInferenceProfile(entry))
+      ) {
+        return false;
+      }
+    }
+  }
+
+  const sandbox = components.sandbox;
+  if (sandbox !== undefined) {
+    if (!isObjectLike(sandbox)) {
+      return false;
+    }
+    if (
+      !isOptionalString(sandbox.image) ||
+      !isOptionalString(sandbox.name) ||
+      !isOptionalPortList(sandbox.forward_ports)
+    ) {
+      return false;
+    }
+  }
+
+  const policy = components.policy;
+  if (policy !== undefined) {
+    if (!isObjectLike(policy)) {
+      return false;
+    }
+    const additions = policy.additions;
+    if (additions !== undefined) {
+      if (
+        !isObjectLike(additions) ||
+        !Object.values(additions).every((entry) => isBlueprintDataValue(entry))
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 // ── Logging helpers ─────────────────────────────────────────────
@@ -109,7 +232,9 @@ export function loadBlueprint(): Blueprint {
   }
   const parsed: unknown = YAML.parse(content);
   if (!isBlueprint(parsed)) {
-    throw new Error(`blueprint.yaml at ${bpFile} must contain a YAML mapping`);
+    throw new Error(
+      `blueprint.yaml at ${bpFile} must contain a YAML mapping with valid nested component shapes`,
+    );
   }
   return parsed;
 }

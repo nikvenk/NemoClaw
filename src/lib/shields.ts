@@ -105,8 +105,42 @@ interface TimerMarker {
   restoreAt: string;
 }
 
-function isShieldsState(value: object | null): value is ShieldsState {
-  return value !== null && !Array.isArray(value);
+function isObjectRecord(value: unknown): value is object {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || typeof value === "boolean";
+}
+
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalNullableNumber(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isShieldsState(value: unknown): value is ShieldsState {
+  return (
+    isObjectRecord(value) &&
+    isOptionalBoolean(Reflect.get(value, "shieldsDown")) &&
+    isOptionalNullableString(Reflect.get(value, "shieldsDownAt")) &&
+    isOptionalNullableNumber(Reflect.get(value, "shieldsDownTimeout")) &&
+    isOptionalNullableString(Reflect.get(value, "shieldsDownReason")) &&
+    isOptionalNullableString(Reflect.get(value, "shieldsDownPolicy")) &&
+    isOptionalNullableString(Reflect.get(value, "shieldsPolicySnapshotPath")) &&
+    isOptionalBoolean(Reflect.get(value, "permanent")) &&
+    isOptionalString(Reflect.get(value, "updatedAt"))
+  );
 }
 
 function isTimerMarker(value: object | null): value is TimerMarker {

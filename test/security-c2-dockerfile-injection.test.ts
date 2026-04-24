@@ -14,10 +14,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import type { ProcessEnv } from "node:process";
 
 const DOCKERFILE = path.join(import.meta.dirname, "..", "Dockerfile");
 
-function runPython(src: string, env: NodeJS.ProcessEnv = {}) {
+function runPython(src: string, env: ProcessEnv = {}) {
   return spawnSync("python3", ["-c", src], {
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],

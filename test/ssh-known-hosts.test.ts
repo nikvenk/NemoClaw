@@ -13,11 +13,13 @@ function isOnboardKnownHostsInternals(
   return value !== null && typeof Reflect.get(value, "pruneKnownHostsEntries") === "function";
 }
 
-const loadedOnboardKnownHostsInternals = require("../dist/lib/onboard");
+const loadedOnboardKnownHostsModule = await import("../dist/lib/onboard.js");
 const onboardKnownHostsInternals =
-  typeof loadedOnboardKnownHostsInternals === "object" && loadedOnboardKnownHostsInternals !== null
-    ? loadedOnboardKnownHostsInternals
-    : null;
+  isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule)
+    ? loadedOnboardKnownHostsModule
+    : isOnboardKnownHostsInternals(loadedOnboardKnownHostsModule.default)
+      ? loadedOnboardKnownHostsModule.default
+      : null;
 if (!isOnboardKnownHostsInternals(onboardKnownHostsInternals)) {
   throw new Error("Expected onboard internals to expose pruneKnownHostsEntries");
 }

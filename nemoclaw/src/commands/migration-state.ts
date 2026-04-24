@@ -593,6 +593,26 @@ function writeSnapshotManifest(snapshotDir: string, manifest: SnapshotManifest):
   writeFileSync(path.join(snapshotDir, "snapshot.json"), JSON.stringify(manifest, null, 2));
 }
 
+function isMigrationRootBinding(value: unknown): value is MigrationRootBinding {
+  return isRecord(value) && typeof value.configPath === "string";
+}
+
+function isMigrationExternalRoot(value: unknown): value is MigrationExternalRoot {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    (value.kind === "workspace" || value.kind === "agentDir" || value.kind === "skillsExtraDir") &&
+    typeof value.label === "string" &&
+    typeof value.sourcePath === "string" &&
+    typeof value.snapshotRelativePath === "string" &&
+    typeof value.sandboxPath === "string" &&
+    Array.isArray(value.symlinkPaths) &&
+    value.symlinkPaths.every((entry) => typeof entry === "string") &&
+    Array.isArray(value.bindings) &&
+    value.bindings.every((entry) => isMigrationRootBinding(entry))
+  );
+}
+
 function isSnapshotManifest(value: unknown): value is SnapshotManifest {
   return (
     isRecord(value) &&
@@ -603,7 +623,9 @@ function isSnapshotManifest(value: unknown): value is SnapshotManifest {
     (value.configPath === null || typeof value.configPath === "string") &&
     typeof value.hasExternalConfig === "boolean" &&
     Array.isArray(value.externalRoots) &&
+    value.externalRoots.every((entry) => isMigrationExternalRoot(entry)) &&
     Array.isArray(value.warnings) &&
+    value.warnings.every((entry) => typeof entry === "string") &&
     (value.blueprintDigest === undefined ||
       value.blueprintDigest === null ||
       typeof value.blueprintDigest === "string")

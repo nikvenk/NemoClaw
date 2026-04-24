@@ -108,6 +108,46 @@ export interface SafeExtractResult {
   error?: string;
 }
 
+type UnknownRecord = { [key: string]: unknown };
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isInstanceBackup(value: unknown): value is InstanceBackup {
+  return (
+    isRecord(value) &&
+    typeof value.instanceId === "string" &&
+    typeof value.agentType === "string" &&
+    typeof value.dataDir === "string" &&
+    isStringArray(value.stateDirs) &&
+    isStringArray(value.backedUpDirs)
+  );
+}
+
+function isRebuildManifest(value: unknown): value is RebuildManifest {
+  return (
+    isRecord(value) &&
+    typeof value.version === "number" &&
+    typeof value.sandboxName === "string" &&
+    typeof value.timestamp === "string" &&
+    typeof value.agentType === "string" &&
+    (value.agentVersion === null || typeof value.agentVersion === "string") &&
+    (value.expectedVersion === null || typeof value.expectedVersion === "string") &&
+    isStringArray(value.stateDirs) &&
+    typeof value.writableDir === "string" &&
+    typeof value.backupPath === "string" &&
+    (value.blueprintDigest === null || typeof value.blueprintDigest === "string") &&
+    (value.policyPresets === undefined || isStringArray(value.policyPresets)) &&
+    (value.instances === undefined || (Array.isArray(value.instances) && value.instances.every((entry) => isInstanceBackup(entry)))) &&
+    (value.name === undefined || typeof value.name === "string")
+  );
+}
+
 // ── Safe tar extraction ──────────────────────────────────────────
 
 /**
@@ -734,7 +774,8 @@ function readManifest(backupPath: string): RebuildManifest | null {
   const manifestPath = path.join(backupPath, "rebuild-manifest.json");
   if (!existsSync(manifestPath)) return null;
   try {
-    return parseJson<RebuildManifest>(readFileSync(manifestPath, "utf-8"));
+    const parsed = parseJson<unknown>(readFileSync(manifestPath, "utf-8"));
+    return isRebuildManifest(parsed) ? parsed : null;
   } catch {
     return null;
   }

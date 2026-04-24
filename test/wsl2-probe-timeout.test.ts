@@ -15,11 +15,13 @@ function isOnboardValidationInternals(
   return value !== null && typeof Reflect.get(value, "getValidationProbeCurlArgs") === "function";
 }
 
-const loadedOnboardValidationInternals = require("../dist/lib/onboard");
+const loadedOnboardValidationModule = await import("../dist/lib/onboard.js");
 const onboardValidationInternals =
-  typeof loadedOnboardValidationInternals === "object" && loadedOnboardValidationInternals !== null
-    ? loadedOnboardValidationInternals
-    : null;
+  isOnboardValidationInternals(loadedOnboardValidationModule)
+    ? loadedOnboardValidationModule
+    : isOnboardValidationInternals(loadedOnboardValidationModule.default)
+      ? loadedOnboardValidationModule.default
+      : null;
 if (!isOnboardValidationInternals(onboardValidationInternals)) {
   throw new Error("Expected onboard validation internals to expose getValidationProbeCurlArgs");
 }
