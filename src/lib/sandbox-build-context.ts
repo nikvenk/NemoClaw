@@ -73,6 +73,15 @@ function stageOptimizedSandboxBuildContext(
   fs.cpSync(path.join(sourceBlueprintDir, "policies"), path.join(stagedBlueprintDir, "policies"), {
     recursive: true,
   });
+  // ws-proxy-fix.js is COPYed into the runtime image (Dockerfile) so it lands
+  // at a Landlock-readable path; on OpenShell ≥0.0.36 the original location
+  // under /sandbox/.nemoclaw/blueprints is not in the read-allowlist (#2457).
+  const stagedBlueprintScriptsDir = path.join(stagedBlueprintDir, "scripts");
+  fs.mkdirSync(stagedBlueprintScriptsDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(sourceBlueprintDir, "scripts", "ws-proxy-fix.js"),
+    path.join(stagedBlueprintScriptsDir, "ws-proxy-fix.js"),
+  );
 
   fs.mkdirSync(stagedScriptsDir, { recursive: true });
   fs.copyFileSync(
