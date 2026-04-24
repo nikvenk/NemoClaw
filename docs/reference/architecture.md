@@ -107,7 +107,7 @@ graph TB
         direction TB
         CLI["nemoclaw CLI<br/><small>bin/nemoclaw.js → dist/<br/>onboard · connect · status · logs</small>"]:::cli
 
-        subgraph DOCKER["Docker daemon · 28.x / 29.x"]
+        subgraph DOCKER["Docker daemon"]
             direction TB
 
             subgraph GWCON["OpenShell gateway container"]
