@@ -1,6 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Default to the OpenClaw agent when launched via bin/nemoclaw.js (which does
+// not set NEMOCLAW_AGENT).  bin/nemohermes.js sets it to "hermes" before
+// requiring this module.  Must run before any import that reads the env var.
+if (!process.env.NEMOCLAW_AGENT) {
+  process.env.NEMOCLAW_AGENT = "openclaw";
+}
+
 const { execFileSync, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
