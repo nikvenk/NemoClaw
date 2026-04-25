@@ -13,6 +13,17 @@ const CREDENTIAL_RETRY_PROMPT =
 const CREDENTIAL_RETRY_PROMPT_RE =
   /Options: retry \(re-enter key\), back \(change provider\), exit \[retry\]: /;
 
+const EMBEDDED_COMMAND_HELPERS = String.raw`
+function renderCommand(command) {
+  return Array.isArray(command) ? command.join(" ") : command;
+}
+
+function isOllamaProbe(command) {
+  const cmd = renderCommand(command);
+  return cmd.includes("command -v ollama") || cmd.includes("ollama --version");
+}
+`;
+
 function writeOpenAiStyleAuthRetryCurl(fakeBin: string, goodToken: string, models = ["gpt-5.4"]) {
   fs.writeFileSync(
     path.join(fakeBin, "curl"),
@@ -127,7 +138,7 @@ printf '%s' "$status"
       { mode: 0o755 },
     );
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 const registry = require(${registryPath});
 
@@ -144,8 +155,8 @@ credentials.ensureApiKey = async () => {};
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "/usr/bin/ollama";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "/usr/bin/ollama";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return JSON.stringify({ models: [{ name: "nemotron-3-nano:30b" }] });
   if (cmd.includes("ollama list")) return "nemotron-3-nano:30b  abc  24 GB  now\\nqwen3:32b  def  20 GB  now";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
@@ -229,7 +240,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const messages = [];
@@ -312,7 +323,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["1", "7", "custom/provider-model"];
@@ -326,8 +337,8 @@ credentials.ensureApiKey = async () => { process.env.NVIDIA_API_KEY = "nvapi-tes
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
   return "";
@@ -408,7 +419,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["1", "7", "bad/model", "z-ai/glm5"];
@@ -422,8 +433,8 @@ credentials.ensureApiKey = async () => { process.env.NVIDIA_API_KEY = "nvapi-tes
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
   return "";
@@ -511,7 +522,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
     const answers = ["6", "7", "gemini-custom"];
@@ -599,7 +610,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["7", "1"];
@@ -611,14 +622,14 @@ credentials.prompt = async (message) => {
   return answers.shift() || "";
 };
 runner.run = (command, opts = {}) => {
-  commands.push(Array.isArray(command) ? command.join(" ") : command);
+  commands.push(renderCommand(command));
   return { status: 0 };
 };
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "/usr/bin/ollama";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "/usr/bin/ollama";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return JSON.stringify({ models: [{ name: "nemotron-3-nano:30b" }] });
   if (cmd.includes("ollama list")) return "nemotron-3-nano:30b  abc  24 GB  now";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
@@ -704,7 +715,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["7", "2", "back", "1", ""];
@@ -719,8 +730,8 @@ runner.run = () => ({ status: 0 });
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "/usr/bin/ollama";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "/usr/bin/ollama";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return JSON.stringify({ models: [{ name: "nemotron-3-nano:30b" }] });
   if (cmd.includes("ollama list")) return "nemotron-3-nano:30b  abc  24 GB  now";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
@@ -815,7 +826,7 @@ exit 0
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["7", "1"];
@@ -828,8 +839,8 @@ credentials.prompt = async (message) => {
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "/usr/bin/ollama";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "/usr/bin/ollama";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return JSON.stringify({ models: [] });
   if (cmd.includes("ollama list")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
@@ -930,7 +941,7 @@ exit 0
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["7", "1", "2", "llama3.2:3b"];
@@ -943,8 +954,8 @@ credentials.prompt = async (message) => {
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "/usr/bin/ollama";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "/usr/bin/ollama";
   if (cmd.includes("127.0.0.1:11434/api/tags")) return JSON.stringify({ models: [] });
   if (cmd.includes("ollama list")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
@@ -1041,7 +1052,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["2", "5", "bad-model", "gpt-5.4-mini"];
@@ -1127,7 +1138,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["4", "4", "claude-bad", "claude-haiku-4-5"];
@@ -1224,7 +1235,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["4", "", "4", "2"];
@@ -1311,7 +1322,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["5", "https://proxy.example.com/v1/messages?token=secret#frag", "claude-sonnet-proxy"];
@@ -1408,7 +1419,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://proxy.example.com/v1/chat/completions?token=secret#frag", "bad-model", "good-model"];
@@ -1523,7 +1534,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://proxy.example.com/v1", "custom-model"];
@@ -1621,7 +1632,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://ollama.local:11434/v1", "my-model"];
@@ -1720,7 +1731,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://openai-proxy.example.com/v1", "gpt-4o"];
@@ -1819,7 +1830,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "", "", ""];
@@ -1919,7 +1930,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["5", "https://proxy.example.com/v1/messages?token=secret#frag", "bad-claude", "good-claude"];
@@ -2022,7 +2033,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://proxy.example.com/v1", "back", "1", ""];
@@ -2114,7 +2125,7 @@ printf '200'
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["2", "", "back", "1", ""];
@@ -2226,7 +2237,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["2", "", "back", "1", ""];
@@ -2298,7 +2309,7 @@ const { setupNim } = require(${onboardPath});
     fs.mkdirSync(fakeBin, { recursive: true });
 
     const script = String.raw`
-const fs = require("fs");
+${EMBEDDED_COMMAND_HELPERS}const fs = require("fs");
 const path = require("path");
 const Module = require("module");
 const credentials = require(${credentialsPath});
@@ -2432,7 +2443,7 @@ printf '%s' "$status"
     );
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["", "", "retry", "nvapi-good"];
@@ -2518,7 +2529,7 @@ const { setupNim } = require(${onboardPath});
     writeOpenAiStyleAuthRetryCurl(fakeBin, "nvapi-good", ["nim/meta/llama-3.1-70b-instruct"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["1", "", "nvapi-fake-key-value", "nvapi-good", ""];
@@ -2594,7 +2605,7 @@ const { setupNim } = require(${onboardPath});
     writeOpenAiStyleAuthRetryCurl(fakeBin, "sk-good", ["gpt-5.4"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["2", "", "retry", "sk-good", ""];
@@ -2670,7 +2681,7 @@ const { setupNim } = require(${onboardPath});
     writeAnthropicStyleAuthRetryCurl(fakeBin, "anthropic-good", ["claude-sonnet-4-6"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["4", "", "retry", "anthropic-good", ""];
@@ -2746,7 +2757,7 @@ const { setupNim } = require(${onboardPath});
     writeOpenAiStyleAuthRetryCurl(fakeBin, "gemini-good", ["gemini-2.5-flash"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["6", "", "retry", "gemini-good", ""];
@@ -2824,7 +2835,7 @@ const { setupNim } = require(${onboardPath});
     writeOpenAiStyleAuthRetryCurl(fakeBin, "proxy-good", ["custom-model"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["3", "https://proxy.example.com/v1/chat/completions?token=secret#frag", "custom-model", "retry", "proxy-good", "custom-model"];
@@ -2916,7 +2927,7 @@ const { setupNim } = require(${onboardPath});
     writeAnthropicStyleAuthRetryCurl(fakeBin, "anthropic-proxy-good", ["claude-proxy"]);
 
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["5", "https://proxy.example.com/v1/messages?token=secret#frag", "claude-proxy", "retry", "anthropic-proxy-good", "claude-proxy"];
@@ -3033,7 +3044,7 @@ printf '%s' "$status"
 
     // vLLM is option 7 (build, openai, custom, anthropic, anthropicCompatible, gemini, vllm)
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 const answers = ["7"];
@@ -3047,8 +3058,8 @@ credentials.ensureApiKey = async () => {};
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "";
   if (cmd.includes("127.0.0.1:11434")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return JSON.stringify({ data: [{ id: "meta-llama/Llama-3.3-70B-Instruct" }] });
   return "";
@@ -3136,7 +3147,7 @@ printf '%s' "$status"
     // NIM-local is option 7 (build, openai, custom, anthropic, anthropicCompatible, gemini, nim-local)
     // No ollama, no vLLM — only NIM-local shows up as experimental option
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 
 // Mock nim module before onboard.js requires it
@@ -3160,8 +3171,8 @@ credentials.ensureApiKey = async () => {};
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "";
+  const cmd = renderCommand(command);
+  if (isOllamaProbe(command)) return "";
   if (cmd.includes("127.0.0.1:11434")) return "";
   if (cmd.includes("127.0.0.1:8000/v1/models")) return "";
   return "";
@@ -3245,7 +3256,7 @@ fi
     // Simulate: no Ollama installed, no Ollama running, no vLLM — only cloud + install-ollama should appear.
     // User picks install-ollama (option 7). The install command is mocked to succeed.
     const script = String.raw`
-const credentials = require(${credentialsPath});
+${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
 const registry = require(${registryPath});
 
@@ -3288,9 +3299,9 @@ credentials.prompt = async (message) => {
 credentials.ensureApiKey = async () => {};
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
-  const cmd = Array.isArray(command) ? command.join(" ") : command;
+  const cmd = renderCommand(command);
   // No ollama installed
-  if (cmd.includes("command -v ollama") || cmd.includes("ollama --version")) return "";
+  if (isOllamaProbe(command)) return "";
   // No ollama running
   if (cmd.includes("127.0.0.1:11434/api/tags")) return "";
   // No vLLM running
@@ -3304,7 +3315,7 @@ runner.runCapture = (command) => {
   return "";
 };
 runner.run = (command, opts) => {
-  runCommands.push(typeof command === "string" ? command : command.join(" "));
+  runCommands.push(renderCommand(command));
   return { status: 0, stdout: "", stderr: "", error: null };
 };
 registry.updateSandbox = (_name, update) => updates.push(update);

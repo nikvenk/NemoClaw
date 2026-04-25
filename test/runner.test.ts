@@ -8,6 +8,7 @@ import childProcess from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import { runCaptureShell } from "../dist/lib/runner";
@@ -44,6 +45,10 @@ function requireCall(calls: SpawnCall[], index: number): SpawnCall {
     throw new Error(`Expected spawnSync call ${index}`);
   }
   return call;
+}
+
+async function importRunnerFresh() {
+  return import(`${pathToFileURL(runnerPath).href}?update=${Date.now()}-${Math.random()}`);
 }
 
 describe("runner helpers", () => {
@@ -90,19 +95,17 @@ describe("runner helpers", () => {
     expect(secondCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
   });
 
-  it("runs argv-style interactive commands without going through bash -c", () => {
+  it("runs argv-style interactive commands without going through bash -c", async () => {
     const calls: SpawnCall[] = [];
     const originalSpawnSync = childProcess.spawnSync;
     // @ts-expect-error — intentional partial mock for testing
     childProcess.spawnSync = captureSpawnCall(calls, { status: 0, stdout: "", stderr: "" });
 
     try {
-      delete require.cache[require.resolve(runnerPath)];
-      const { runInteractive } = require(runnerPath);
+      const { runInteractive } = await importRunnerFresh();
       runInteractive(["ssh", "-t", "box", "echo hi"]);
     } finally {
       childProcess.spawnSync = originalSpawnSync;
-      delete require.cache[require.resolve(runnerPath)];
     }
 
     expect(calls).toHaveLength(1);
@@ -914,7 +917,9 @@ describe("regression guards", () => {
       expect(tsSrc).toContain('"scripts/install.sh"');
       expect(tsSrc).toContain('"--yes-i-accept-third-party-software"');
       expect(tsSrc).not.toContain("sandbox connect nemoclaw");
-      expect(tsSrc).toContain('commandArgs: ["openshell", "sandbox", "connect", sandboxName]');
+      expect(tsSrc).toMatch(
+        /commandArgs:\s*\[\s*"openshell",\s*"sandbox",\s*"connect",\s*sandboxName\s*\]/,
+      );
     });
 
     it("deploy syncs a complete buildable checkout instead of excluding src", () => {
@@ -927,7 +932,9 @@ describe("regression guards", () => {
       expect(src).toContain('"--exclude"');
       expect(src).toContain('"dist"');
       expect(src).toContain('const brevProvider = String(env.NEMOCLAW_BREV_PROVIDER || "gcp")');
-      expect(src).toContain('run(["brev", "create", name, "--type", gpu, "--provider", brevProvider]);');
+      expect(src).toMatch(
+        /run\(\[\s*"brev",\s*"create",\s*name,\s*"--type",\s*gpu,\s*"--provider",\s*brevProvider\s*\]\);/,
+      );
     });
 
     it("deploy supports test-friendly non-interactive skip flags", () => {
@@ -958,7 +965,7 @@ describe("regression guards", () => {
         "utf-8",
       );
       expect(src).toContain("function getBrevInstanceStatus(");
-      expect(src).toContain('["brev", "ls", "--json"]');
+      expect(src).toMatch(/\[\s*"brev",\s*"ls",\s*"--json"\s*\]/);
       expect(src).toContain("Brev instance '${name}' did not become ready.");
       expect(src).toContain("Try: brev reset");
       expect(src).toContain("Brev status at timeout:");
