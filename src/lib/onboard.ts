@@ -4712,12 +4712,9 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
   let preferredInferenceApi: string | null = null;
 
   // Detect local inference options.
-  // Probe via the shell so a missing binary yields an empty success sentinel
-  // rather than relying on captured stderr text.
-  const hasOllama =
-    runCapture(["sh", "-lc", "command -v ollama >/dev/null 2>&1 && printf yes"], {
-      ignoreError: true,
-    }) === "yes";
+  // Direct argv probing avoids a shell dependency on Windows, while the
+  // ignore-error capture path collapses missing-binary failures to "".
+  const hasOllama = runCapture(["ollama", "--version"], { ignoreError: true }) !== "";
   const ollamaRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${OLLAMA_PORT}/api/tags`], {
     ignoreError: true,
   });
