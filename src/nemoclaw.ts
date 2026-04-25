@@ -182,7 +182,7 @@ function listGatewayDockerVolumes() {
   )
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => line.startsWith(`openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`));
 }
 
 function cleanupGatewayAfterLastSandbox() {
