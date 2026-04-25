@@ -71,7 +71,7 @@ function resultStdoutBuffer(result: { stdout?: string | Buffer | null }): Buffer
 }
 
 function isSafeManifestStateDir(dir: string, backupRoot: string, writableDir: string): boolean {
-  if (!dir || dir.includes("\\0") || path.isAbsolute(dir) || path.posix.isAbsolute(dir)) {
+  if (!dir || dir.includes("\0") || path.isAbsolute(dir) || path.posix.isAbsolute(dir)) {
     return false;
   }
   const segments = dir.split("/");
