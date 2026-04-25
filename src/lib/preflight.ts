@@ -149,15 +149,10 @@ export interface AssessHostOpts {
 
 function commandExists(
   commandName: string,
-  runCaptureImpl: RunCaptureLike,
-  preferLocalLookup = false,
+  commandExistsImpl?: (commandName: string) => boolean,
 ): boolean {
-  if (preferLocalLookup) {
-    return hasExecutable(commandName);
-  }
   try {
-    const output = runCaptureImpl(`command -v ${commandName}`, { ignoreError: true });
-    return Boolean(String(output || "").trim());
+    return commandExistsImpl?.(commandName) ?? hasExecutable(commandName);
   } catch {
     return false;
   }
@@ -231,23 +226,20 @@ function isHeadlessLikely(env: NodeJS.ProcessEnv): boolean {
 
 function detectNvidiaGpu(
   runCaptureImpl: RunCaptureLike,
-  preferLocalLookup = false,
+  commandExistsImpl?: (commandName: string) => boolean,
 ): boolean {
-  if (!commandExists("nvidia-smi", runCaptureImpl, preferLocalLookup)) {
+  if (!commandExists("nvidia-smi", commandExistsImpl)) {
     return false;
   }
   return Boolean(String(runCaptureImpl("nvidia-smi -L", { ignoreError: true }) || "").trim());
 }
 
-function detectPackageManager(
-  runCaptureImpl: RunCaptureLike,
-  preferLocalLookup = false,
-): PackageManager {
-  if (commandExists("apt-get", runCaptureImpl, preferLocalLookup)) return "apt";
-  if (commandExists("dnf", runCaptureImpl, preferLocalLookup)) return "dnf";
-  if (commandExists("yum", runCaptureImpl, preferLocalLookup)) return "yum";
-  if (commandExists("brew", runCaptureImpl, preferLocalLookup)) return "brew";
-  if (commandExists("pacman", runCaptureImpl, preferLocalLookup)) return "pacman";
+function detectPackageManager(commandExistsImpl?: (commandName: string) => boolean): PackageManager {
+  if (commandExists("apt-get", commandExistsImpl)) return "apt";
+  if (commandExists("dnf", commandExistsImpl)) return "dnf";
+  if (commandExists("yum", commandExistsImpl)) return "yum";
+  if (commandExists("brew", commandExistsImpl)) return "brew";
+  if (commandExists("pacman", commandExistsImpl)) return "pacman";
   return "unknown";
 }
 
@@ -273,18 +265,12 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
   const env = opts.env ?? process.env;
   const runCaptureImpl = opts.runCaptureImpl ?? defaultRunCapture;
   const readFileImpl = opts.readFileImpl ?? fs.readFileSync;
-  const useLocalCommandLookup = opts.runCaptureImpl === undefined;
-  const dockerInstalled =
-    opts.commandExistsImpl?.("docker") ??
-    commandExists("docker", runCaptureImpl, useLocalCommandLookup);
-  const nodeInstalled =
-    opts.commandExistsImpl?.("node") ?? commandExists("node", runCaptureImpl, useLocalCommandLookup);
-  const openshellInstalled =
-    opts.commandExistsImpl?.("openshell") ??
-    commandExists("openshell", runCaptureImpl, useLocalCommandLookup);
-  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl, useLocalCommandLookup);
-  const packageManager = detectPackageManager(runCaptureImpl, useLocalCommandLookup);
-  const systemctlAvailable = commandExists("systemctl", runCaptureImpl, useLocalCommandLookup);
+  const dockerInstalled = commandExists("docker", opts.commandExistsImpl);
+  const nodeInstalled = commandExists("node", opts.commandExistsImpl);
+  const openshellInstalled = commandExists("openshell", opts.commandExistsImpl);
+  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl, opts.commandExistsImpl);
+  const packageManager = detectPackageManager(opts.commandExistsImpl);
+  const systemctlAvailable = commandExists("systemctl", opts.commandExistsImpl);
 
   let dockerInfoOutput = opts.dockerInfoOutput;
   let dockerReachable = false;
@@ -551,7 +537,7 @@ export async function checkPortAvailable(
     if (typeof o.lsofOutput === "string") {
       lsofOut = o.lsofOutput;
     } else {
-      const hasLsof = commandExists("lsof", runCapture, true);
+      const hasLsof = commandExists("lsof");
       if (hasLsof) {
         lsofOut = runCapture(["lsof", "-i", `:${p}`, "-sTCP:LISTEN", "-P", "-n"], {
           ignoreError: true,

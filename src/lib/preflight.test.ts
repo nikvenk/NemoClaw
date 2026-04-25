@@ -318,8 +318,6 @@ describe("assessHost", () => {
         name === "docker" || name === "apt-get" || name === "systemctl",
       runCaptureImpl: (command: string | readonly string[]) => {
         const rendered = renderCommand(command);
-        if (rendered === "command -v apt-get") return "/usr/bin/apt-get";
-        if (rendered === "command -v systemctl") return "/usr/bin/systemctl";
         if (rendered === "systemctl is-active docker") return "active";
         if (rendered === "systemctl is-enabled docker") return "enabled";
         return "";
