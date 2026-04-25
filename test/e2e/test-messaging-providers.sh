@@ -668,6 +668,12 @@ print('yes' if 'slack' in d else 'no')
     info "  NODE_OPTIONS: $node_opts"
     proxy_fix=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ls -la /tmp/nemoclaw-http-proxy-fix.js 2>/dev/null || echo "EXEC_FAILED")
     info "  Proxy fix file: $proxy_fix"
+    # Check if openclaw.json contains "slack" (same grep the guard uses)
+    slack_in_config=$(openshell sandbox exec --name "$SANDBOX_NAME" -- grep -c '"slack"' /sandbox/.openclaw/openclaw.json 2>/dev/null || echo "EXEC_FAILED")
+    info "  grep '\"slack\"' in openclaw.json: $slack_in_config matches"
+    # Check container logs for guard skip/install messages
+    container_log=$(nemoclaw "$SANDBOX_NAME" logs 2>&1 | grep -i "channel guard\|slack.*guard\|guard.*skip\|guard.*install" | head -5 || echo "no guard messages")
+    info "  Container guard log: $container_log"
     # Check what processes are running
     procs=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ps aux 2>/dev/null | head -10 || echo "EXEC_FAILED")
     info "  Processes:"
