@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDeployEnvLines,
+  executeDeploy,
   findBrevInstanceStatus,
   inferDeployProvider,
   isBrevInstanceFailed,
@@ -86,6 +87,48 @@ describe("buildDeployEnvLines", () => {
     });
 
     expect(envLines).not.toContain("ALLOWED_CHAT_IDS=111,222");
+  });
+});
+
+describe("executeDeploy", () => {
+  it("fails fast when `brev ls` errors instead of creating a new instance", async () => {
+    const commands: string[] = [];
+    const errors: string[] = [];
+
+    await expect(
+      executeDeploy({
+        instanceName: "target-box",
+        env: {},
+        rootDir: "/tmp/nemoclaw",
+        getCredential: (key: string) => (key === "NVIDIA_API_KEY" ? "nvapi-test" : null),
+        validateName: (value: string) => value,
+        run: (command) => {
+          commands.push(command.join(" "));
+          if (command[0] === "which") {
+            return { status: 0, stdout: "/usr/bin/brev\n", stderr: "" };
+          }
+          if (command[0] === "brev" && command[1] === "ls") {
+            return { status: 1, stdout: "", stderr: "brev auth failed" };
+          }
+          return { status: 0, stdout: "", stderr: "" };
+        },
+        runInteractive: () => {
+          throw new Error("should not connect interactively");
+        },
+        log: () => {},
+        error: (message?: string) => {
+          if (message) errors.push(message);
+        },
+        stdoutWrite: () => {},
+        exit: (code: number) => {
+          throw new Error(`exit:${code}`);
+        },
+      }),
+    ).rejects.toThrow("exit:1");
+
+    expect(errors).toContain("  Failed to query existing Brev instances.");
+    expect(errors.some((line) => line.includes("brev auth failed"))).toBe(true);
+    expect(commands.some((line) => line.startsWith("brev create "))).toBe(false);
   });
 });
 

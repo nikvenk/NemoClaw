@@ -331,6 +331,16 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     ignoreError: true,
     suppressOutput: true,
   });
+  if (brevLsResult.status !== 0) {
+    const detail =
+      readCommandOutput(brevLsResult, "stderr").trim() ||
+      readCommandOutput(brevLsResult, "stdout").trim();
+    const lines = ["  Failed to query existing Brev instances."];
+    if (detail) {
+      lines.push(`  ${detail}`);
+    }
+    return fail(lines, error, exit);
+  }
   exists = outputHasExactLine(readCommandOutput(brevLsResult, "stdout"), name);
   if (!exists) {
     exists = outputHasExactLine(readCommandOutput(brevLsResult, "stderr"), name);
