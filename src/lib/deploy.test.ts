@@ -49,7 +49,6 @@ describe("buildDeployEnvLines", () => {
       credentials: {
         NVIDIA_API_KEY: "nvapi-test",
       },
-      shellQuote: (value: string) => `'${value}'`,
     });
 
     expect(envLines).toContain("NEMOCLAW_NON_INTERACTIVE=1");
@@ -70,7 +69,6 @@ describe("buildDeployEnvLines", () => {
         TELEGRAM_BOT_TOKEN: "123456:telegram-token",
         ALLOWED_CHAT_IDS: "111,222",
       },
-      shellQuote: (value: string) => `'${value}'`,
     });
 
     expect(envLines).toContain("TELEGRAM_BOT_TOKEN=123456:telegram-token");
@@ -85,7 +83,6 @@ describe("buildDeployEnvLines", () => {
       credentials: {
         ALLOWED_CHAT_IDS: "111,222",
       },
-      shellQuote: (value: string) => `'${value}'`,
     });
 
     expect(envLines).not.toContain("ALLOWED_CHAT_IDS=111,222");

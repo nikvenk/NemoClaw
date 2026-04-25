@@ -7,18 +7,13 @@ import path from "node:path";
 import readline from "node:readline";
 
 import { readConfigFile, writeConfigFile } from "./config-io";
+import { isErrnoException } from "./errno";
 
 // runner.ts still uses CommonJS-style exports — use require here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { runCapture } = require("./runner.js");
 
 const UNSAFE_HOME_PATHS = new Set(["/tmp", "/var/tmp", "/dev/shm", "/"]);
-
-type ErrnoLike = Error | { code?: string | number } | null;
-
-function isErrnoException(error: ErrnoLike): error is NodeJS.ErrnoException {
-  return error !== null && typeof error === "object" && "code" in error;
-}
 
 type CredentialInput = string | null | undefined;
 
@@ -43,7 +38,7 @@ export function resolveHomeDir(): string {
     }
   } catch (error) {
     if (
-      !(typeof error === "object" && error !== null && isErrnoException(error)) ||
+      !isErrnoException(error) ||
       error.code !== "ENOENT"
     ) {
       throw error;

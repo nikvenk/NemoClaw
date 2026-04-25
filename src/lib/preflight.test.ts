@@ -312,11 +312,12 @@ describe("assessHost", () => {
       readFileImpl: () => '{"default-cgroupns-mode":"private"}',
       commandExistsImpl: (name: string) =>
         name === "docker" || name === "apt-get" || name === "systemctl",
-      runCaptureImpl: (command: string) => {
-        if (command === "command -v apt-get") return "/usr/bin/apt-get";
-        if (command === "command -v systemctl") return "/usr/bin/systemctl";
-        if (command === "systemctl is-active docker") return "active";
-        if (command === "systemctl is-enabled docker") return "enabled";
+      runCaptureImpl: (command: string | readonly string[]) => {
+        const rendered = String(command);
+        if (rendered === "command -v apt-get") return "/usr/bin/apt-get";
+        if (rendered === "command -v systemctl") return "/usr/bin/systemctl";
+        if (rendered === "systemctl is-active docker") return "active";
+        if (rendered === "systemctl is-enabled docker") return "enabled";
         return "";
       },
     });
@@ -667,7 +668,7 @@ describe("probeContainerDns", () => {
     const captured: string[] = [];
     const result = probeContainerDns({
       runCaptureImpl: (command) => {
-        captured.push(command);
+        captured.push(String(command));
         return BUSYBOX_SUCCESS;
       },
     });
@@ -683,7 +684,7 @@ describe("probeContainerDns", () => {
     probeContainerDns({
       command: "echo OVERRIDDEN",
       runCaptureImpl: (command) => {
-        seen = command;
+        seen = String(command);
         return "Name:\tregistry.npmjs.org\nAddress: 1.2.3.4\n";
       },
     });
@@ -729,7 +730,7 @@ describe("probeContainerDns", () => {
     let captured = "";
     probeContainerDns({
       runCaptureImpl: (command) => {
-        captured = command;
+        captured = String(command);
         return BUSYBOX_SUCCESS;
       },
     });
@@ -789,7 +790,7 @@ describe("getDockerBridgeGatewayIp", () => {
   it("uses the expected docker network inspect command shape", () => {
     let captured = "";
     getDockerBridgeGatewayIp((cmd) => {
-      captured = cmd;
+      captured = String(cmd);
       return "172.17.0.1";
     });
     expect(captured).toContain("docker network inspect bridge");

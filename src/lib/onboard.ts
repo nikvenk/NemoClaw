@@ -29,6 +29,8 @@ const { ROOT, SCRIPTS, redact, run, runCapture, runFile, validateName } = runner
 const { spawnChild } = require("./process-primitives");
 const { buildDockerExecScriptCommand } = require("./remote-script");
 const { joinShellWords } = require("./shell-quote");
+const errnoUtils: typeof import("./errno") = require("./errno");
+const { isErrnoException } = errnoUtils;
 
 type RunnerOptions = {
   env?: NodeJS.ProcessEnv;
@@ -38,10 +40,6 @@ type RunnerOptions = {
   timeout?: number;
   openshellBinary?: string;
 };
-
-function isErrnoException(error: object | null): error is NodeJS.ErrnoException {
-  return error !== null && "code" in error;
-}
 
 function parseJson<T>(text: string): T {
   return JSON.parse(text);
@@ -239,9 +237,9 @@ type RemoteProviderConfigEntry = {
   skipVerify?: boolean;
 };
 
-type LooseScalar = string | number | boolean | null | undefined;
-type LooseValue = LooseScalar | LooseObject | LooseValue[];
-type LooseObject = { [key: string]: LooseValue };
+// Re-export shared JSON types under the names used throughout this module.
+// See src/lib/json-types.ts for the canonical definitions.
+import type { JsonScalar as LooseScalar, JsonValue as LooseValue, JsonObject as LooseObject } from "./json-types";
 
 type OnboardOptions = {
   nonInteractive?: boolean;
@@ -4426,13 +4424,13 @@ async function createSandbox(
   // subprocesses (gateway start, openshell CLI) but the sandbox should
   // never have access to the host's Kubernetes cluster or SSH agent.
   const envArgs = [formatEnvAssignment("CHAT_UI_URL", chatUiUrl)];
-  // Pass the configured dashboard port into the sandbox so nemoclaw-start.sh
-  // can unconditionally override CHAT_UI_URL even when the Docker image was
-  // built with a different default. Without this, the baked-in Docker ENV
-  // value takes precedence and the gateway starts on the wrong port. (#1925)
-  if (process.env.NEMOCLAW_DASHBOARD_PORT) {
-    envArgs.push(formatEnvAssignment("NEMOCLAW_DASHBOARD_PORT", String(DASHBOARD_PORT)));
-  }
+  // Always pass the effective dashboard port into the sandbox so
+  // nemoclaw-start.sh starts the gateway on the correct port. When the
+  // user sets CHAT_UI_URL with a custom port (e.g. :18790), the port
+  // must reach the container — otherwise _DASHBOARD_PORT defaults to
+  // 18789 and the gateway listens on the wrong port. (#2267, #1925)
+  const effectiveDashboardPort = getDashboardForwardPort(chatUiUrl);
+  envArgs.push(formatEnvAssignment("NEMOCLAW_DASHBOARD_PORT", effectiveDashboardPort));
   if (webSearchConfig?.fetchEnabled) {
     const braveKey =
       getCredential(webSearch.BRAVE_API_KEY_ENV) || process.env[webSearch.BRAVE_API_KEY_ENV];
@@ -4547,7 +4545,7 @@ async function createSandbox(
   const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCaptureOpenshell(
-      ["sandbox", "exec", sandboxName, "curl", "-sf", `http://localhost:${effectivePort}/`],
+      ["sandbox", "exec", sandboxName, "curl", "-sf", `http://localhost:${effectiveDashboardPort}/`],
       { ignoreError: true },
     );
     if (readyMatch) {
@@ -5829,6 +5827,12 @@ async function setupMessagingChannels(): Promise<string[]> {
       console.log("");
       console.log(`  ${ch.help}`);
       const token = normalizeCredentialValue(await prompt(`  ${ch.label}: `, { secret: true }));
+      if (token && ch.tokenFormat && !ch.tokenFormat.test(token)) {
+        console.log(`  ✗ Invalid format. ${ch.tokenFormatHint || "Check the token and try again."}`);
+        console.log(`  Skipped ${ch.name} (invalid token format)`);
+        enabled.delete(ch.name);
+        continue;
+      }
       if (token) {
         saveCredential(ch.envKey, token);
         process.env[ch.envKey] = token;
@@ -5849,6 +5853,14 @@ async function setupMessagingChannels(): Promise<string[]> {
         const appToken = normalizeCredentialValue(
           await prompt(`  ${ch.appTokenLabel}: `, { secret: true }),
         );
+        if (appToken && ch.appTokenFormat && !ch.appTokenFormat.test(appToken)) {
+          console.log(
+            `  ✗ Invalid format. ${ch.appTokenFormatHint || "Check the token and try again."}`,
+          );
+          console.log(`  Skipped ${ch.name} app token (invalid token format)`);
+          enabled.delete(ch.name);
+          continue;
+        }
         if (appToken) {
           saveCredential(ch.appTokenEnvKey, appToken);
           process.env[ch.appTokenEnvKey] = appToken;
@@ -7917,6 +7929,7 @@ module.exports = {
   runCaptureOpenshell,
   setupInference,
   setupMessagingChannels,
+  MESSAGING_CHANNELS,
   setupNim,
   formatOnboardConfigSummary,
   isInferenceRouteReady,

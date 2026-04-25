@@ -474,6 +474,7 @@ describe("redact", () => {
 describe("regression guards", () => {
   it("runCaptureShell redacts secrets before rethrowing errors", () => {
     const originalSpawnSync = childProcess.spawnSync;
+    // @ts-expect-error — intentional partial mock for testing
     childProcess.spawnSync = () => ({
       pid: 1,
       output: [],
@@ -516,6 +517,7 @@ describe("regression guards", () => {
 
   it("runCaptureShell redacts shell error cmd/output fields", () => {
     const originalSpawnSync = childProcess.spawnSync;
+    // @ts-expect-error — intentional partial mock for testing
     childProcess.spawnSync = () => {
       const err: RedactedRunnerError = new Error("command failed");
       err.cmd = "echo nvapi-aaaabbbbcccc1111 && echo ghp_abcdefghijklmnopqrstuvwxyz123456";
