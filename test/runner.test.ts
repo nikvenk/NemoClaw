@@ -911,7 +911,7 @@ describe("regression guards", () => {
         path.join(import.meta.dirname, "..", "src", "nemoclaw.ts"),
         "utf-8",
       );
-      expect(src).toContain('const { executeDeploy } = require("./lib/deploy")');
+      expect(src).toMatch(/const \{[^}]*executeDeploy[^}]*\} = require\("\.\/lib\/deploy"\);/);
       expect(tsSrc).toContain("export function inferDeployProvider(");
       expect(tsSrc).toContain("export function buildDeployEnvLines(");
       expect(tsSrc).toContain('"scripts/install.sh"');

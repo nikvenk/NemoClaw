@@ -65,7 +65,7 @@ const {
   versionGte,
 } = require("./lib/openshell");
 const { listSandboxesCommand, showStatusCommand } = require("./lib/inventory-commands");
-const { executeDeploy } = require("./lib/deploy");
+const { buildSshArgs, executeDeploy, resolveRealHost } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
 const agentRuntime = require("../bin/lib/agent-runtime");
@@ -2094,6 +2094,47 @@ async function sandboxChannelsStart(sandboxName: string, args: string[] = []): P
   await sandboxChannelsSetEnabled(sandboxName, args, false);
 }
 
+function buildSkillInstallSshContext(configFile: string, sandboxName: string) {
+  const hostAlias = `openshell-${sandboxName}`;
+  const runForResolution = (command: readonly string[], opts: Record<string, unknown> = {}) => {
+    const [file, ...args] = command;
+    const normalizedArgs = file === "ssh" && args[0] === "-G" ? ["-F", configFile, ...args] : args;
+    return runFile(file, normalizedArgs, {
+      encoding: "utf-8",
+      ignoreError: true,
+      suppressOutput: true,
+      stdio: (opts.stdio as import("node:child_process").StdioOptions | undefined) ?? [
+        "ignore",
+        "pipe",
+        "ignore",
+      ],
+    });
+  };
+
+  const realHost = resolveRealHost(hostAlias, runForResolution);
+  const knownHostsDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-skill-known-hosts-"));
+  const knownHostsFile = path.join(knownHostsDir, "known_hosts");
+  const hostKeysResult = runFile("ssh-keyscan", ["-T", "5", "-H", realHost], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    ignoreError: true,
+    suppressOutput: true,
+  });
+  const hostKeys = String(hostKeysResult.stdout || "").trim();
+  if (hostKeysResult.status !== 0 || !hostKeys) {
+    fs.rmSync(knownHostsDir, { recursive: true, force: true });
+    throw new Error(`Failed to pin sandbox SSH host key for ${sandboxName}`);
+  }
+  fs.writeFileSync(knownHostsFile, `${hostKeys}\n`, { mode: 0o600 });
+
+  return {
+    configFile,
+    sandboxName,
+    sshArgs: ["-F", configFile, ...buildSshArgs(knownHostsFile), "-o", "ConnectTimeout=10"],
+    cleanupDir: knownHostsDir,
+  };
+}
+
 /**
  * Install or update a local skill directory into a live sandbox and perform
  * any agent-specific post-install refresh needed for the new content to load.
@@ -2205,8 +2246,21 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
   );
   fs.writeFileSync(tmpSshConfig, sshConfigResult.output, { mode: 0o600 });
 
+  let skillSshContext: {
+    configFile: string;
+    sandboxName: string;
+    sshArgs: string[];
+    cleanupDir: string;
+  } | null = null;
   try {
-    const ctx = { configFile: tmpSshConfig, sandboxName };
+    try {
+      skillSshContext = buildSkillInstallSshContext(tmpSshConfig, sandboxName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`  ${message}`);
+      process.exit(1);
+    }
+    const ctx = skillSshContext;
 
     // 5. Check if skill already exists (update vs fresh install)
     const isUpdate = skillInstall.checkExisting(ctx, paths);
@@ -2241,6 +2295,13 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
       process.exit(1);
     }
   } finally {
+    try {
+      if (skillSshContext?.cleanupDir) {
+        fs.rmSync(skillSshContext.cleanupDir, { recursive: true, force: true });
+      }
+    } catch {
+      /* ignore */
+    }
     try {
       fs.unlinkSync(tmpSshConfig);
     } catch {

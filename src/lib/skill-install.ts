@@ -147,6 +147,7 @@ export function validateRelativePath(rel: string): boolean {
 export interface SshContext {
   configFile: string;
   sandboxName: string;
+  sshArgs?: string[];
 }
 
 export interface SshResult {
@@ -165,22 +166,21 @@ export function sshExec(
   opts: { input?: string | Buffer; timeout?: number } = {},
 ): SshResult | null {
   try {
+    const sshArgs = ctx.sshArgs ?? [
+      "-F",
+      ctx.configFile,
+      "-o",
+      "StrictHostKeyChecking=no",
+      "-o",
+      "UserKnownHostsFile=/dev/null",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "LogLevel=ERROR",
+    ];
     const result = runFile(
       "ssh",
-      [
-        "-F",
-        ctx.configFile,
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "LogLevel=ERROR",
-        `openshell-${ctx.sandboxName}`,
-        command,
-      ],
+      [...sshArgs, `openshell-${ctx.sandboxName}`, command],
       {
         encoding: "utf-8",
         stdio: [opts.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
