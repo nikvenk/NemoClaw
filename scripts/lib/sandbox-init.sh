@@ -118,13 +118,18 @@ validate_tmp_permissions() {
     fi
   done
 
-  # Restricted log files — must be 600
+  # Restricted log files — gateway.log is 644 (world-readable for diagnostics),
+  # auto-pair.log is 600 (sandbox-writable, not shared).
   for f in /tmp/gateway.log /tmp/auto-pair.log; do
     [ -f "$f" ] || continue
-    local perms
+    local perms expected_perms
     perms="$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f" 2>/dev/null || echo "unknown")"
-    if [ "$perms" != "600" ]; then
-      echo "[SECURITY] $f has unexpected permissions: mode=$perms (expected 600)" >&2
+    case "$f" in
+      */gateway.log) expected_perms="644" ;;
+      *) expected_perms="600" ;;
+    esac
+    if [ "$perms" != "$expected_perms" ]; then
+      echo "[SECURITY] $f has unexpected permissions: mode=$perms (expected $expected_perms)" >&2
       failed=1
     fi
   done
