@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 
@@ -806,5 +807,104 @@ describe("nemoclaw-start CHAT_UI_URL override for configurable dashboard port (#
     expect(rootBlock).toMatch(
       /nohup gosu gateway "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/,
     );
+  });
+});
+
+describe("os.networkInterfaces() sandbox fix (#2427)", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+  const esmRequire = createRequire(import.meta.url);
+  const os = esmRequire("os");
+
+  // Extract the heredoc content between the OSNI_FIX_EOF markers.
+  const heredocMatch = src.match(
+    /emit_sandbox_sourced_file "\$_OSNI_FIX_SCRIPT" <<'OSNI_FIX_EOF'\n([\s\S]*?)\nOSNI_FIX_EOF/,
+  );
+
+  /** Run the heredoc JS with a working `require` in scope. */
+  function execPreload(jsCode: string): void {
+    new Function("require", jsCode)(esmRequire);
+  }
+
+  it("embeds a preload heredoc in nemoclaw-start.sh", () => {
+    expect(heredocMatch).toBeTruthy();
+  });
+
+  it("installs via NODE_OPTIONS --require", () => {
+    expect(src).toContain(
+      'export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_OSNI_FIX_SCRIPT"',
+    );
+  });
+
+  it("propagates to connect sessions", () => {
+    expect(src).toContain("--require $_OSNI_FIX_SCRIPT\"");
+    // Should appear at least twice: gateway boot + connect session export
+    const matches = src.match(/--require \$_OSNI_FIX_SCRIPT/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("heredoc content is valid JavaScript", () => {
+    expect(heredocMatch).toBeTruthy();
+    const jsCode = heredocMatch[1];
+    expect(() => new Function("require", jsCode)).not.toThrow();
+  });
+
+  it("returns loopback fallback on uv_interface_addresses error", () => {
+    expect(heredocMatch).toBeTruthy();
+    const jsCode = heredocMatch[1];
+    const origFn = os.networkInterfaces;
+    try {
+      os.networkInterfaces = () => {
+        throw Object.assign(new Error("uv_interface_addresses returned Unknown system error 1"), {
+          code: "ERR_SYSTEM_ERROR",
+        });
+      };
+      execPreload(jsCode);
+      const result = os.networkInterfaces();
+      expect(result).toHaveProperty("lo");
+      expect(result.lo[0].address).toBe("127.0.0.1");
+      expect(result.lo[0].internal).toBe(true);
+    } finally {
+      os.networkInterfaces = origFn;
+    }
+  });
+
+  it("re-throws unrelated errors", () => {
+    expect(heredocMatch).toBeTruthy();
+    const jsCode = heredocMatch[1];
+    const origFn = os.networkInterfaces;
+    try {
+      os.networkInterfaces = () => {
+        throw new Error("something completely different");
+      };
+      execPreload(jsCode);
+      expect(() => os.networkInterfaces()).toThrow("something completely different");
+    } finally {
+      os.networkInterfaces = origFn;
+    }
+  });
+
+  it("warns only once per process", () => {
+    expect(heredocMatch).toBeTruthy();
+    const jsCode = heredocMatch[1];
+    const origFn = os.networkInterfaces;
+    const origWarn = console.warn;
+    const warnings: string[] = [];
+    try {
+      os.networkInterfaces = () => {
+        throw Object.assign(new Error("uv_interface_addresses blocked"), {
+          code: "EACCES",
+        });
+      };
+      console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+      execPreload(jsCode);
+      os.networkInterfaces();
+      os.networkInterfaces();
+      os.networkInterfaces();
+      const osniWarnings = warnings.filter((w) => w.includes("loopback fallback"));
+      expect(osniWarnings).toHaveLength(1);
+    } finally {
+      os.networkInterfaces = origFn;
+      console.warn = origWarn;
+    }
   });
 });

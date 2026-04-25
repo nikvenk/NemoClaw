@@ -1166,6 +1166,52 @@ if [ -f "$_WS_FIX_SCRIPT" ]; then
   export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_WS_FIX_SCRIPT"
 fi
 
+# os.networkInterfaces() sandbox fix (NemoClaw#2427).
+# The @homebridge/ciao dependency calls os.networkInterfaces() for mDNS
+# discovery. In sandbox environments with restrictive seccomp profiles,
+# uv_interface_addresses is blocked and throws a fatal system error that
+# kills the gateway process. The preload wraps os.networkInterfaces() to
+# catch that error and return a loopback-only fallback.
+_OSNI_FIX_SCRIPT="/tmp/nemoclaw-os-networkinterfaces-fix.js"
+emit_sandbox_sourced_file "$_OSNI_FIX_SCRIPT" <<'OSNI_FIX_EOF'
+(function () {
+  'use strict';
+  var os = require('os');
+  var orig = os.networkInterfaces;
+  var warned = false;
+  os.networkInterfaces = function () {
+    try {
+      return orig.call(os);
+    } catch (err) {
+      if (
+        err && typeof err === 'object' &&
+        (String(err.message || '').indexOf('uv_interface_addresses') !== -1 ||
+         err.code === 'EACCES')
+      ) {
+        if (!warned) {
+          warned = true;
+          console.warn(
+            '[NemoClaw] os.networkInterfaces() blocked by sandbox — using loopback fallback'
+          );
+        }
+        return {
+          lo: [{
+            address: '127.0.0.1',
+            netmask: '255.0.0.0',
+            family: 'IPv4',
+            mac: '00:00:00:00:00:00',
+            internal: true,
+            cidr: '127.0.0.1/8'
+          }]
+        };
+      }
+      throw err;
+    }
+  };
+})();
+OSNI_FIX_EOF
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_OSNI_FIX_SCRIPT"
+
 # OpenShell re-injects narrow NO_PROXY/no_proxy=127.0.0.1,localhost,::1 every
 # time a user connects via `openshell sandbox connect`.  The connect path spawns
 # `/bin/bash -i` (interactive, non-login), which sources ~/.bashrc — NOT
@@ -1207,6 +1253,8 @@ PROXYEOF
   fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
+  # os.networkInterfaces() sandbox fix for connect sessions. (NemoClaw#2427)
+  echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_OSNI_FIX_SCRIPT\""
   # Tool cache redirects — generated from _TOOL_REDIRECTS (single source of truth)
   echo '# Tool cache redirects — /sandbox is Landlock read-only (#804)'
   for _redir in "${_TOOL_REDIRECTS[@]}"; do
