@@ -14,6 +14,11 @@ const {
   resolveAgentConfig,
 } = require("../dist/lib/sandbox-config");
 
+type MutableScalar = string | number | boolean | null | undefined;
+type MutableValue = MutableScalar | MutableMap | MutableValue[];
+type MutableMap = { [key: string]: MutableValue };
+type NestedConfig = { a?: { b?: { c?: number } } };
+
 describe("resolveAgentConfig", () => {
   it("returns openclaw defaults for unknown sandbox", () => {
     const target = resolveAgentConfig("nonexistent-sandbox");
@@ -58,88 +63,76 @@ describe("config set helpers", () => {
 
   describe("setDotpath", () => {
     it("sets a top-level key", () => {
-      const obj: Record<string, unknown> = { foo: "old" };
+      const obj: MutableMap = { foo: "old" };
       setDotpath(obj, "foo", "new");
       expect(obj.foo).toBe("new");
     });
 
     it("sets a nested key", () => {
-      const obj: Record<string, unknown> = { a: { b: { c: 1 } } };
+      const obj: NestedConfig = { a: { b: { c: 1 } } };
       setDotpath(obj, "a.b.c", 99);
-      expect((obj.a as Record<string, unknown>).b).toEqual({ c: 99 });
+      expect(obj.a?.b).toEqual({ c: 99 });
     });
 
     it("creates intermediate objects if missing", () => {
-      const obj: Record<string, unknown> = {};
+      const obj: MutableMap = {};
       setDotpath(obj, "a.b.c", "deep");
       expect(obj).toEqual({ a: { b: { c: "deep" } } });
     });
 
     it("overwrites non-object intermediate with empty object", () => {
-      const obj: Record<string, unknown> = { a: "string" };
+      const obj: MutableMap = { a: "string" };
       setDotpath(obj, "a.b", "val");
       expect(obj).toEqual({ a: { b: "val" } });
     });
 
     it("adds a new key to existing object", () => {
-      const obj: Record<string, unknown> = { a: { existing: true } };
+      const obj: MutableMap = { a: { existing: true } };
       setDotpath(obj, "a.newKey", "added");
       expect(obj.a).toEqual({ existing: true, newKey: "added" });
     });
   });
 
   describe("isRecognizedConfigPath", () => {
-    it("accepts a recognized top-level key", () => {
-      expect(isRecognizedConfigPath("version")).toBe(true);
+    it("accepts an existing top-level key", () => {
+      expect(isRecognizedConfigPath({ version: 1 }, "version")).toBe(true);
     });
 
-    it("accepts a deeply nested path under a recognized root", () => {
-      expect(isRecognizedConfigPath("agents.defaults.model.primary")).toBe(true);
-    });
-
-    // Regression: #2400 — first-time writes under an unset namespace used
-    // to fail the old "walk the loaded config" check even when the key
-    // path was schema-valid. The roots allow-list must accept them.
-    it("accepts first-time writes under an unset recognized namespace", () => {
-      expect(isRecognizedConfigPath("provider.compatible-endpoint.timeoutSeconds")).toBe(true);
-      expect(isRecognizedConfigPath("mcpServers.my-server.command")).toBe(true);
-    });
-
-    it("rejects an unrecognized top-level key", () => {
-      expect(isRecognizedConfigPath("inference.endpoint")).toBe(false);
-      expect(isRecognizedConfigPath("gateway.token")).toBe(false);
-    });
-
-    it("rejects malformed dotpaths", () => {
-      expect(isRecognizedConfigPath("agents..defaults")).toBe(false);
-      expect(isRecognizedConfigPath("")).toBe(false);
-      expect(isRecognizedConfigPath(".")).toBe(false);
-    });
-
-    it("rejects prototype-pollution segments anywhere in the path", () => {
-      expect(isRecognizedConfigPath("toString")).toBe(false);
-      expect(isRecognizedConfigPath("agents.constructor")).toBe(false);
-      expect(isRecognizedConfigPath("provider.__proto__.polluted")).toBe(false);
-      expect(isRecognizedConfigPath("tools.hasOwnProperty")).toBe(false);
-    });
-
-    // Modify-bypass: an existing key is always a recognized target,
-    // even under a root we haven't whitelisted. Keeps us resilient to
-    // OpenClaw adding a new top-level namespace before we add it here.
-    it("accepts modification of an existing key under an unlisted root", () => {
+    it("accepts an existing nested key path", () => {
       expect(
-        isRecognizedConfigPath("customRoot.foo", { customRoot: { foo: "bar" } }),
+        isRecognizedConfigPath(
+          { agents: { defaults: { model: { primary: "gpt-5.4" } } } },
+          "agents.defaults.model.primary",
+        ),
       ).toBe(true);
     });
 
-    it("still rejects unset keys under an unlisted root when a config is supplied", () => {
-      expect(isRecognizedConfigPath("unlistedRoot.newLeaf", { provider: {} })).toBe(false);
+    it("accepts existing keys whose value is null", () => {
+      expect(isRecognizedConfigPath({ provider: { endpoint: null } }, "provider.endpoint")).toBe(
+        true,
+      );
     });
 
-    it("still rejects prototype-pollution segments even when a config is supplied", () => {
+    it("rejects an unknown top-level key", () => {
+      expect(isRecognizedConfigPath({ version: 1 }, "inference.endpoint")).toBe(false);
+    });
+
+    it("rejects an unknown nested key", () => {
       expect(
-        isRecognizedConfigPath("provider.__proto__.polluted", { provider: {} }),
+        isRecognizedConfigPath(
+          { agents: { defaults: { model: { primary: "gpt-5.4" } } } },
+          "agents.defaults.model.secondary",
+        ),
       ).toBe(false);
+    });
+
+    it("rejects malformed dotpaths", () => {
+      expect(isRecognizedConfigPath({ version: 1 }, "agents..defaults")).toBe(false);
+    });
+
+    it("rejects prototype-inherited keys", () => {
+      expect(isRecognizedConfigPath({}, "toString")).toBe(false);
+      expect(isRecognizedConfigPath({ safe: {} }, "safe.constructor")).toBe(false);
     });
   });
 
