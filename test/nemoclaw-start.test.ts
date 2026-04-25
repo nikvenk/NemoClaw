@@ -163,6 +163,80 @@ describe("nemoclaw-start gateway token export (#1114)", () => {
   });
 });
 
+describe("nemoclaw-start runtime gateway token injection (#2480)", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("defines inject_gateway_token function", () => {
+    expect(src).toMatch(/inject_gateway_token\(\) \{/);
+  });
+
+  it("inject_gateway_token only applies in root mode", () => {
+    const fn = src.match(/inject_gateway_token\(\) \{([\s\S]*?)^\}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toMatch(/id -u.*-eq 0/);
+    expect(fn[1]).toContain("requires root");
+  });
+
+  it("inject_gateway_token guards against symlink attacks", () => {
+    const fn = src.match(/inject_gateway_token\(\) \{([\s\S]*?)^\}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('-L "$config_file"');
+    expect(fn[1]).toContain('-L "$hash_file"');
+  });
+
+  it("inject_gateway_token recomputes config hash", () => {
+    const fn = src.match(/inject_gateway_token\(\) \{([\s\S]*?)^\}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("sha256sum openclaw.json");
+  });
+
+  it("calls inject_gateway_token before export_gateway_token in root path", () => {
+    const rootBlock = src.match(
+      /# ── Root path[\s\S]*?inject_gateway_token[\s\S]*?export_gateway_token/,
+    );
+    expect(rootBlock).toBeTruthy();
+  });
+
+  it("export_gateway_token generates token in non-root when openclaw.json is empty", () => {
+    const fn = src.match(/export_gateway_token\(\) \{([\s\S]*?)^\}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("secrets.token_hex(32)");
+    expect(fn[1]).toContain("Non-root");
+  });
+
+  it("export_gateway_token writes /tmp token file via emit_sandbox_sourced_file", () => {
+    const fn = src.match(/export_gateway_token\(\) \{([\s\S]*?)^\}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("_GATEWAY_TOKEN_ENV_FILE");
+    expect(fn[1]).toContain("emit_sandbox_sourced_file");
+  });
+
+  it("proxy-env.sh sources the gateway token file for connect sessions", () => {
+    expect(src).toContain("nemoclaw-gateway-token.env");
+    // The proxy-env generation block should conditionally source the token file
+    expect(src).toMatch(
+      /\[ -f.*_GATEWAY_TOKEN_ENV_FILE.*\] && \. .*_GATEWAY_TOKEN_ENV_FILE/,
+    );
+  });
+
+  it("Dockerfile builds with empty token placeholder", () => {
+    const dockerfilePath = path.join(
+      path.dirname(START_SCRIPT),
+      "..",
+      "Dockerfile",
+    );
+    const dockerfile = fs.readFileSync(dockerfilePath, "utf-8");
+    expect(dockerfile).toContain("'auth': {'token': ''}");
+    // secrets.token_hex should not be used in the config generation RUN
+    // (it may still appear in comments or the token-clearing RUN)
+    const configRun = dockerfile.match(
+      /RUN.*python3 -c.*import base64.*json\.dump/s,
+    );
+    expect(configRun).toBeTruthy();
+    expect(configRun[0]).not.toContain("secrets.token_hex");
+  });
+});
+
 describe("nemoclaw-start configure guard (#1114)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
 

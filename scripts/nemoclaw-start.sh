@@ -600,8 +600,37 @@ SLACK_GUARD_EOF
   printf '[channels] Slack channel guard installed (NODE_OPTIONS updated)\n' >&2
 }
 
+# ── Gateway auth token (runtime injection) ───────────────────────
+# The gateway auth token is NOT baked into the Docker image. It is
+# generated at container startup so each container instance gets a
+# unique token (not shared across images, not in Docker layer history).
+#
+# Token delivery depends on startup mode:
+#
+#   Root mode:
+#     1. inject_gateway_token: generate token, write into openclaw.json
+#        before chattr +i — openclaw tui reads this via config natively.
+#     2. export_gateway_token: export OPENCLAW_GATEWAY_TOKEN env var +
+#        persist to rc files + /tmp token file (belt-and-suspenders).
+#
+#   Non-root mode:
+#     1. export_gateway_token: generate token, export env var, persist
+#        to rc files + /tmp token file. Cannot write openclaw.json
+#        (root:root 444). Gateway and TUI both read from env var.
+#
+# OpenClaw 2026.4.9 resolution order:
+#   OPENCLAW_GATEWAY_TOKEN env var → --token flag → gateway.auth.token
+#   in config → secret provider.
+#
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/2480
+_GATEWAY_TOKEN_ENV_FILE="/tmp/nemoclaw-gateway-token.env"
+
 _read_gateway_token() {
-  python3 - <<'PYTOKEN'
+  # Read the gateway token from openclaw.json, falling back to env var.
+  # Returns the token on stdout; empty output means no token.
+  local token
+  token="$(
+    python3 - <<'PYTOKEN'
 import json
 try:
     with open('/sandbox/.openclaw/openclaw.json') as f:
@@ -610,17 +639,81 @@ try:
 except Exception:
     print('')
 PYTOKEN
+  )"
+  if [ -n "$token" ]; then
+    printf '%s' "$token"
+  else
+    printf '%s' "${OPENCLAW_GATEWAY_TOKEN:-}"
+  fi
 }
 
+# Inject a runtime-generated token into openclaw.json so openclaw tui
+# and other OpenClaw tools read it from the config natively.
+# Root-only: non-root cannot write to openclaw.json (root:root 444).
+# Must run AFTER verify_config_integrity and BEFORE chattr +i.
+inject_gateway_token() {
+  [ "$(id -u)" -eq 0 ] || {
+    printf '[token] inject_gateway_token requires root — non-root uses env var path\n' >&2
+    return 0
+  }
+
+  local config_file="/sandbox/.openclaw/openclaw.json"
+  local hash_file="/sandbox/.openclaw/.config-hash"
+
+  # SECURITY: Refuse to write through symlinks.
+  if [ -L "$config_file" ] || [ -L "$hash_file" ]; then
+    printf '[SECURITY] Refusing token injection — config or hash path is a symlink\n' >&2
+    return 1
+  fi
+
+  local token
+  token="$(python3 -c "import secrets; print(secrets.token_hex(32), end='')")"
+  if [ -z "$token" ]; then
+    printf '[SECURITY] Failed to generate gateway token\n' >&2
+    return 1
+  fi
+
+  python3 - "$config_file" "$token" <<'PYINJECT'
+import json, sys
+
+config_file, token = sys.argv[1], sys.argv[2]
+
+with open(config_file) as f:
+    cfg = json.load(f)
+
+cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = token
+
+with open(config_file, "w") as f:
+    json.dump(cfg, f, indent=2)
+PYINJECT
+
+  # Recompute config hash after injection.
+  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
+  printf '[token] Gateway auth token injected into openclaw.json (hash recomputed)\n' >&2
+}
+
+# Export the gateway token to the process env, rc files, and a /tmp
+# sourced file so interactive sessions (openclaw tui via openshell sandbox
+# connect) inherit it. In non-root mode when openclaw.json has no token,
+# generates a fresh one for env-var-only delivery.
 export_gateway_token() {
   local token
   token="$(_read_gateway_token)"
+
+  # Non-root fallback: openclaw.json has empty token (root-only injection
+  # could not write). Generate one for env-var delivery (OpenClaw reads
+  # OPENCLAW_GATEWAY_TOKEN env var first).
+  if [ -z "$token" ] && [ "$(id -u)" -ne 0 ]; then
+    token="$(python3 -c "import secrets; print(secrets.token_hex(32), end='')")"
+    if [ -n "$token" ]; then
+      printf '[token] Non-root: generated gateway token for env-var delivery\n' >&2
+    fi
+  fi
+
   local marker_begin="# nemoclaw-gateway-token begin"
   local marker_end="# nemoclaw-gateway-token end"
 
   if [ -z "$token" ]; then
-    # Remove any stale marker blocks from rc files so revoked/old tokens
-    # are not re-exported in later interactive sessions.
     unset OPENCLAW_GATEWAY_TOKEN
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
       if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
@@ -639,10 +732,7 @@ export_gateway_token() {
   fi
   export OPENCLAW_GATEWAY_TOKEN="$token"
 
-  # Persist to .bashrc/.profile so interactive sessions (openshell sandbox
-  # connect) also see the token — same pattern as the proxy config above.
-  # Shell-escape the token so quotes/dollars/backticks cannot break the
-  # sourced snippet or allow code injection.
+  # Shell-escape the token to prevent code injection.
   local escaped_token
   escaped_token="$(printf '%s' "$token" | sed "s/'/'\\\\''/g")"
   local snippet
@@ -650,6 +740,7 @@ export_gateway_token() {
 export OPENCLAW_GATEWAY_TOKEN='${escaped_token}'
 ${marker_end}"
 
+  # Persist to rc files (best-effort — Landlock may block writes).
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
     [ -f "$rc_file" ] || continue
     # All writes use || true because Landlock may block writes even though
@@ -669,6 +760,15 @@ ${marker_end}"
       printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
     fi
   done
+
+  # Belt-and-suspenders: write to /tmp file sourced by proxy-env.sh.
+  # This survives Landlock-blocked rc-file writes in non-root mode.
+  printf 'export OPENCLAW_GATEWAY_TOKEN='\''%s'\''\n' "$escaped_token" \
+    | emit_sandbox_sourced_file "$_GATEWAY_TOKEN_ENV_FILE"
+  printf '[token] Gateway token exported to env, rc files, and %s\n' "$_GATEWAY_TOKEN_ENV_FILE" >&2
+
+  # Best-effort lock — Landlock may already enforce read-only.
+  lock_rc_files "$_SANDBOX_HOME"
 }
 
 install_configure_guard() {
@@ -1389,6 +1489,11 @@ PROXYEOF
   for _redir in "${_TOOL_REDIRECTS[@]}"; do
     echo "export ${_redir?}"
   done
+  # Gateway auth token for connect sessions. The token file is written later
+  # by export_gateway_token() — conditional source ensures no failure if the
+  # file doesn't exist yet (e.g., first boot before export_gateway_token runs).
+  echo "# Gateway auth token for openclaw tui in connect sessions (#2480)"
+  echo "[ -f \"$_GATEWAY_TOKEN_ENV_FILE\" ] && . \"$_GATEWAY_TOKEN_ENV_FILE\""
 } | emit_sandbox_sourced_file "$_PROXY_ENV_FILE"
 
 # cleanup_on_signal is provided by sandbox-init.sh. It reads
@@ -1508,7 +1613,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT" "$_GATEWAY_TOKEN_ENV_FILE"
 
   # Start gateway in background, auto-pair, then wait
   nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
@@ -1536,6 +1641,7 @@ verify_config_integrity /sandbox/.openclaw
 apply_model_override
 apply_cors_override
 apply_slack_token_override
+inject_gateway_token
 export_gateway_token
 install_configure_guard
 
@@ -1646,7 +1752,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT" "$_GATEWAY_TOKEN_ENV_FILE"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs

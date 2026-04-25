@@ -6791,6 +6791,21 @@ function ensureDashboardForward(
   }
 }
 
+function findFileRecursive(dir: string, filename: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      const found = findFileRecursive(p, filename);
+      if (found) return found;
+    } else if (e.name === filename) {
+      return p;
+    }
+  }
+  return null;
+}
+
 function findOpenclawJsonPath(dir: string): string | null {
   if (!fs.existsSync(dir)) return null;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -6807,23 +6822,51 @@ function findOpenclawJsonPath(dir: string): string | null {
 }
 
 /**
- * Pull gateway.auth.token from the sandbox image via openshell sandbox download
- * so onboard can print copy-paste Control UI URLs with #token= (same idea as nemoclaw-start.sh).
+ * Pull gateway auth token from the sandbox.
+ *
+ * Tries two retrieval paths in order:
+ *  1. sandbox download openclaw.json → gateway.auth.token  (root mode — injected at startup)
+ *  2. sandbox download /tmp/nemoclaw-gateway-token.env  (non-root mode — env file)
+ *
+ * Path 1 works for root mode where inject_gateway_token writes the token
+ * into openclaw.json before chattr +i locks the config.
+ * Path 2 works for non-root mode where export_gateway_token writes the
+ * token to a /tmp file sourced by proxy-env.sh.
  */
 function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-token-"));
   try {
     const destDir = `${tmpDir}${path.sep}`;
+
+    // 1. openclaw.json (root mode: token injected at startup)
     const result = runOpenshell(
       ["sandbox", "download", sandboxName, "/sandbox/.openclaw/openclaw.json", destDir],
       { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
     );
-    if (result.status !== 0) return null;
-    const jsonPath = findOpenclawJsonPath(tmpDir);
-    if (!jsonPath) return null;
-    const cfg = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
-    const token = cfg && cfg.gateway && cfg.gateway.auth && cfg.gateway.auth.token;
-    return typeof token === "string" && token.length > 0 ? token : null;
+    if (result.status === 0) {
+      const jsonPath = findOpenclawJsonPath(tmpDir);
+      if (jsonPath) {
+        const cfg = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+        const token = cfg && cfg.gateway && cfg.gateway.auth && cfg.gateway.auth.token;
+        if (typeof token === "string" && token.length > 0) return token;
+      }
+    }
+
+    // 2. /tmp env file (non-root mode: env-var delivery)
+    const envResult = runOpenshell(
+      ["sandbox", "download", sandboxName, "/tmp/nemoclaw-gateway-token.env", destDir],
+      { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
+    );
+    if (envResult.status === 0) {
+      const envPath = findFileRecursive(tmpDir, "nemoclaw-gateway-token.env");
+      if (envPath) {
+        const content = fs.readFileSync(envPath, "utf-8");
+        const match = content.match(/OPENCLAW_GATEWAY_TOKEN='([^']+)'/);
+        if (match && match[1].length > 0) return match[1];
+      }
+    }
+
+    return null;
   } catch {
     return null;
   } finally {
@@ -7080,7 +7123,7 @@ function printDashboard(
       console.log(`  ${entry.label}: ${entry.url}`);
     }
     console.log(
-      `  Token:       nemoclaw ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
+      `  Token:       see /tmp/gateway.log inside the sandbox, or re-run onboard.`,
     );
     console.log(
       `               append  #token=<token>  to the URL, or see /tmp/gateway.log inside the sandbox.`,
