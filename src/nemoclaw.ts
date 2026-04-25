@@ -24,14 +24,10 @@ const YW = _useColor ? "\x1b[1;33m" : "";
 const { ROOT, run, runInteractive, shellQuote, validateName } = require("./lib/runner");
 
 // ---------------------------------------------------------------------------
-// NemoHermes alias detection — when launched via bin/nemohermes.js the env var
-// is set before this module loads and argv[1] contains the launcher path.
+// Agent branding — derived from NEMOCLAW_AGENT env var set by the alias
+// launchers (bin/nemoclaw.js, bin/nemohermes.js).
 // ---------------------------------------------------------------------------
-const IS_HERMES_ALIAS =
-  process.env.NEMOCLAW_AGENT === "hermes" &&
-  (process.argv[1]?.includes("nemohermes") ?? false);
-const CLI_NAME = IS_HERMES_ALIAS ? "nemohermes" : "nemoclaw";
-const CLI_DISPLAY_NAME = IS_HERMES_ALIAS ? "NemoHermes" : "NemoClaw";
+const { CLI_NAME, CLI_DISPLAY_NAME, AGENT_PRODUCT_NAME } = require("./lib/branding");
 
 const {
   dockerCapture,
@@ -801,11 +797,11 @@ function printWrongGatewayActiveGuidance(
 ) {
   const other = activeGateway && activeGateway !== "nemoclaw" ? activeGateway : "another gateway";
   writer(
-    `  Sandbox '${sandboxName}' is registered against the NemoClaw gateway, but the currently active OpenShell gateway is '${other}'. Your sandbox has NOT been removed.`,
+    `  Sandbox '${sandboxName}' is registered against the ${CLI_DISPLAY_NAME} gateway, but the currently active OpenShell gateway is '${other}'. Your sandbox has NOT been removed.`,
   );
   writer("  Switch gateways and retry:");
   writer("      openshell gateway select nemoclaw");
-  writer(`  Then re-run: nemoclaw ${sandboxName} connect`);
+  writer(`  Then re-run: ${CLI_NAME} ${sandboxName} connect`);
 }
 
 /** Print troubleshooting hints based on gateway lifecycle state in the output. */
@@ -813,7 +809,7 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
   const cleanOutput = stripAnsi(output);
   if (/No gateway configured/i.test(cleanOutput)) {
     writer(
-      "  The selected NemoClaw gateway is no longer configured or its metadata/runtime has been lost.",
+      "  The selected ${CLI_DISPLAY_NAME} gateway is no longer configured or its metadata/runtime has been lost.",
     );
     writer(
       "  Start the gateway again with `openshell gateway start --name nemoclaw` before expecting existing sandboxes to reconnect.",
@@ -842,7 +838,7 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
       "  Existing sandboxes may still be recorded locally, but the current gateway no longer trusts their prior connection state.",
     );
     writer(
-      "  Try re-establishing the NemoClaw gateway/runtime first. If the sandbox is still unreachable, recreate just that sandbox with `nemoclaw onboard`.",
+      "  Try re-establishing the ${CLI_DISPLAY_NAME} gateway/runtime first. If the sandbox is still unreachable, recreate just that sandbox with `nemoclaw onboard`.",
     );
     return;
   }
@@ -934,7 +930,7 @@ async function ensureLiveSandboxOrExit(
       );
       console.error("");
       console.error(
-        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
+        `  Run \`${CLI_NAME} ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
       );
       process.exit(1);
     }
@@ -1009,7 +1005,7 @@ async function ensureLiveSandboxOrExit(
   }
   if (lookup.state === "gateway_unreachable_after_restart") {
     console.error(
-      `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
+      `  Sandbox '${sandboxName}' may still exist, but the selected ${CLI_DISPLAY_NAME} gateway is still refusing connections after restart.`,
     );
     if (lookup.output) {
       console.error(lookup.output);
@@ -1024,7 +1020,7 @@ async function ensureLiveSandboxOrExit(
   }
   if (lookup.state === "gateway_missing_after_restart") {
     console.error(
-      `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
+      `  Sandbox '${sandboxName}' may still exist locally, but the ${CLI_DISPLAY_NAME} gateway is no longer configured after restart/rebuild.`,
     );
     if (lookup.output) {
       console.error(lookup.output);
@@ -1052,7 +1048,7 @@ function printOldLogsCompatibilityGuidance(installedVersion = null) {
   console.error(
     `  Installed OpenShell${versionText} is too old or incompatible with \`nemoclaw logs\`.`,
   );
-  console.error(`  NemoClaw expects \`openshell logs <name>\` and live streaming via \`--tail\`.`);
+  console.error(`  ${CLI_DISPLAY_NAME} expects \`openshell logs <name>\` and live streaming via \`--tail\`.`);
   console.error(
     "  Upgrade OpenShell by rerunning `nemoclaw onboard`, or reinstall the OpenShell CLI and try again.",
   );
@@ -1159,7 +1155,7 @@ async function tunnel(args: string[]): Promise<void> {
       stop();
       return;
     default:
-      console.error(`  Usage: nemoclaw tunnel <start|stop>`);
+      console.error(`  Usage: ${CLI_NAME} tunnel <start|stop>`);
       process.exit(1);
   }
 }
@@ -1174,7 +1170,7 @@ function debug(args: string[]) {
         `${_RD}Warning:${R} default sandbox '${defaultSandbox}' is no longer in the registry.`,
       );
       console.error(
-        `  Use ${B}--sandbox NAME${R} to target a specific sandbox, or run ${B}nemoclaw onboard${R} again.\n`,
+        `  Use ${B}--sandbox NAME${R} to target a specific sandbox, or run ${B}${CLI_NAME} onboard${R} again.\n`,
       );
       return undefined;
     }
@@ -1187,7 +1183,7 @@ function debug(args: string[]) {
         `${_RD}Warning:${R} default sandbox '${defaultSandbox}' exists in the local registry but not in OpenShell.`,
       );
       console.error(
-        `  Use ${B}--sandbox NAME${R} to target a specific sandbox, or run ${B}nemoclaw onboard${R} again.\n`,
+        `  Use ${B}--sandbox NAME${R} to target a specific sandbox, or run ${B}${CLI_NAME} onboard${R} again.\n`,
       );
       return undefined;
     }
@@ -1243,7 +1239,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
   const sub = args[0];
   if (!sub || sub === "help" || sub === "--help" || sub === "-h") {
     console.log("");
-    console.log("  Usage: nemoclaw credentials <subcommand>");
+    console.log(`  Usage: ${CLI_NAME} credentials <subcommand>`);
     console.log("");
     console.log("  Subcommands:");
     console.log("    list                  List provider credentials registered with the OpenShell gateway");
@@ -1297,7 +1293,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
         `  ${String(bridgeNames.length)} per-sandbox messaging bridge(s) are also registered.`,
       );
       console.log(
-        "  Manage those with `nemoclaw <sandbox> channels list/remove/stop` — not this command.",
+        `  Manage those with \`${CLI_NAME} <sandbox> channels list/remove/stop\` — not this command.`,
       );
     }
     return;
@@ -1308,15 +1304,17 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // Validate that <PROVIDER> is a real positional argument, not a flag like
     // `--yes` that the user passed without a key.
     if (!key || key.startsWith("-")) {
-      console.error("  Usage: nemoclaw credentials reset <PROVIDER> [--yes]");
-      console.error("  KEY is an OpenShell provider name. Run 'nemoclaw credentials list' first.");
+      console.error(`  Usage: ${CLI_NAME} credentials reset <PROVIDER> [--yes]`);
+      console.error(
+        `  PROVIDER is an OpenShell provider name. Run '${CLI_NAME} credentials list' first.`,
+      );
       process.exit(1);
     }
     // Reject unknown trailing arguments to keep scripted use predictable.
     const extraArgs = args.slice(2).filter((arg) => arg !== "--yes" && arg !== "-y");
     if (extraArgs.length > 0) {
       console.error(`  Unknown argument(s) for credentials reset: ${extraArgs.join(", ")}`);
-      console.error("  Usage: nemoclaw credentials reset <PROVIDER> [--yes]");
+      console.error(`  Usage: ${CLI_NAME} credentials reset <PROVIDER> [--yes]`);
       process.exit(1);
     }
     // Refuse to delete a per-sandbox messaging bridge — those are live
@@ -1329,13 +1327,13 @@ async function credentialsCommand(args: string[]): Promise<void> {
         `  '${key}' is a per-sandbox messaging bridge, not a credential.`,
       );
       console.error(
-        "  Use `nemoclaw <sandbox> channels remove <telegram|discord|slack>` to retire",
+        `  Use \`${CLI_NAME} <sandbox> channels remove <telegram|discord|slack>\` to retire`,
       );
       console.error(
         "  the integration (it tears down the bridge provider and rebuilds the sandbox),",
       );
       console.error(
-        "  or `nemoclaw <sandbox> channels stop <…>` to pause it without clearing tokens.",
+        `  or \`${CLI_NAME} <sandbox> channels stop <…>\` to pause it without clearing tokens.`,
       );
       process.exit(1);
     }
@@ -1357,8 +1355,10 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // a credential env variable.
     const recovery = await recoverNamedGatewayRuntime();
     if (!recovery.recovered) {
-      console.error("  Could not reach the NemoClaw OpenShell gateway. Is it running?");
-      console.error("  Run 'openshell gateway start --name nemoclaw' or 'nemoclaw onboard' first.");
+      console.error(`  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway. Is it running?`);
+      console.error(
+        `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
+      );
       process.exit(1);
     }
     const result = runOpenshell(["provider", "delete", key], {
@@ -1367,7 +1367,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
     });
     if (result.status === 0) {
       console.log(`  Removed provider '${key}' from the OpenShell gateway.`);
-      console.log("  Re-run 'nemoclaw onboard' to enter a new value.");
+      console.log(`  Re-run '${CLI_NAME} onboard' to enter a new value.`);
     } else {
       console.error(`  Could not remove provider '${key}'.`);
       // Earlier releases accepted a credential env-var name (e.g.
@@ -1378,7 +1378,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
         console.error("");
         console.error(`  '${key}' looks like a credential env variable name.`);
         console.error("  As of this release, 'credentials reset' takes an OpenShell");
-        console.error("  provider name. Run 'nemoclaw credentials list' to see the");
+        console.error(`  provider name. Run '${CLI_NAME} credentials list' to see the`);
         console.error("  registered providers, then retry with one of those names.");
       }
       const stderr = String(result.stderr || "").trim();
@@ -1389,7 +1389,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
   }
 
   console.error(`  Unknown credentials subcommand: ${sub}`);
-  console.error("  Run 'nemoclaw credentials help' for usage.");
+  console.error(`  Run '${CLI_NAME} credentials help' for usage.`);
   process.exit(1);
 }
 
@@ -1653,8 +1653,8 @@ async function sandboxConnect(sandboxName: string) {
     if (status && TERMINAL.has(status)) {
       console.error("");
       console.error(`  Sandbox '${sandboxName}' is in '${status}' state.`);
-      console.error(`  Run:  nemoclaw ${sandboxName} logs --follow`);
-      console.error(`  Run:  nemoclaw ${sandboxName} status`);
+      console.error(`  Run:  ${CLI_NAME} ${sandboxName} logs --follow`);
+      console.error(`  Run:  ${CLI_NAME} ${sandboxName} status`);
       process.exit(1);
     }
 
@@ -1676,8 +1676,8 @@ async function sandboxConnect(sandboxName: string) {
       if (TERMINAL.has(cur)) {
         console.error("");
         console.error(`  Sandbox '${sandboxName}' entered '${cur}' state.`);
-        console.error(`  Run:  nemoclaw ${sandboxName} logs --follow`);
-        console.error(`  Run:  nemoclaw ${sandboxName} status`);
+        console.error(`  Run:  ${CLI_NAME} ${sandboxName} logs --follow`);
+        console.error(`  Run:  ${CLI_NAME} ${sandboxName} status`);
         process.exit(1);
       }
       if (!everSeen && elapsed >= 30) {
@@ -1694,7 +1694,7 @@ async function sandboxConnect(sandboxName: string) {
       console.error(`  Timed out after ${timeout}s waiting for sandbox '${sandboxName}'.`);
       console.error(`  Check: openshell sandbox list`);
       console.error(
-        `  Override timeout: NEMOCLAW_CONNECT_TIMEOUT=300 nemoclaw ${sandboxName} connect`,
+        `  Override timeout: NEMOCLAW_CONNECT_TIMEOUT=300 ${CLI_NAME} ${sandboxName} connect`,
       );
       process.exit(1);
     }
@@ -1795,7 +1795,7 @@ async function sandboxStatus(sandboxName: string) {
       }
       if (versionCheck.isStale) {
         console.log(`    ${YW}Update:   v${versionCheck.expectedVersion} available${R}`);
-        console.log(`              Run \`nemoclaw ${sandboxName} rebuild\` to upgrade`);
+        console.log(`              Run \`${CLI_NAME} ${sandboxName} rebuild\` to upgrade`);
       }
     } catch {
       /* non-fatal */
@@ -1807,7 +1807,7 @@ async function sandboxStatus(sandboxName: string) {
     console.log("");
     if ("recoveredGateway" in lookup && lookup.recoveredGateway) {
       console.log(
-        `  Recovered NemoClaw gateway runtime via ${("recoveryVia" in lookup ? lookup.recoveryVia : null) || "gateway reattach"}.`,
+        `  Recovered ${CLI_DISPLAY_NAME} gateway runtime via ${("recoveryVia" in lookup ? lookup.recoveryVia : null) || "gateway reattach"}.`,
       );
       console.log("");
     }
@@ -1821,7 +1821,7 @@ async function sandboxStatus(sandboxName: string) {
       );
       console.log("");
       console.log(
-        `  Run \`nemoclaw ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
+        `  Run \`${CLI_NAME} ${sandboxName} rebuild --yes\` to recreate the sandbox (--yes skips the confirmation prompt; workspace state will be preserved).`,
       );
     }
   } else if (lookup.state === "wrong_gateway_active") {
@@ -1873,7 +1873,7 @@ async function sandboxStatus(sandboxName: string) {
   } else if (lookup.state === "gateway_unreachable_after_restart") {
     console.log("");
     console.log(
-      `  Sandbox '${sandboxName}' may still exist, but the selected NemoClaw gateway is still refusing connections after restart.`,
+      `  Sandbox '${sandboxName}' may still exist, but the selected ${CLI_DISPLAY_NAME} gateway is still refusing connections after restart.`,
     );
     if (lookup.output) {
       console.log(lookup.output);
@@ -1887,7 +1887,7 @@ async function sandboxStatus(sandboxName: string) {
   } else if (lookup.state === "gateway_missing_after_restart") {
     console.log("");
     console.log(
-      `  Sandbox '${sandboxName}' may still exist locally, but the NemoClaw gateway is no longer configured after restart/rebuild.`,
+      `  Sandbox '${sandboxName}' may still exist locally, but the ${CLI_DISPLAY_NAME} gateway is no longer configured after restart/rebuild.`,
     );
     if (lookup.output) {
       console.log(lookup.output);
@@ -1924,7 +1924,7 @@ async function sandboxStatus(sandboxName: string) {
         console.log("  This typically happens after a gateway restart (e.g., laptop close/open).");
         console.log("");
         console.log("  To recover, run:");
-        console.log(`    ${D}nemoclaw ${sandboxName} connect${R}  (auto-recovers on connect)`);
+        console.log(`    ${D}${CLI_NAME} ${sandboxName} connect${R}  (auto-recovers on connect)`);
         console.log("  Or manually inside the sandbox:");
         console.log(`    ${D}${agentRuntime.getGatewayCommand(_sa)}${R}`);
       }
@@ -2240,7 +2240,7 @@ async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promi
   } else {
     if (process.env.NEMOCLAW_NON_INTERACTIVE === "1") {
       console.error("  Non-interactive mode requires a preset name.");
-      console.error("  Usage: nemoclaw <sandbox> policy-add <preset> [--yes] [--dry-run]");
+      console.error(`  Usage: ${CLI_NAME} <sandbox> policy-add <preset> [--yes] [--dry-run]`);
       process.exit(1);
     }
     answer = await policies.selectFromList(allPresets, { applied });
@@ -2482,7 +2482,7 @@ async function applyChannelRemoveToGatewayAndRegistry(
 async function promptAndRebuild(sandboxName: string, actionDesc: string): Promise<void> {
   if (isNonInteractive()) {
     console.log("");
-    console.log(`  Change queued. Run 'nemoclaw ${sandboxName} rebuild' to apply (${actionDesc}).`);
+    console.log(`  Change queued. Run '${CLI_NAME} ${sandboxName} rebuild' to apply (${actionDesc}).`);
     return;
   }
   const answer = (await askPrompt(`  Rebuild '${sandboxName}' now to apply? [Y/n]: `))
@@ -2490,7 +2490,7 @@ async function promptAndRebuild(sandboxName: string, actionDesc: string): Promis
     .toLowerCase();
   if (answer === "n" || answer === "no") {
     console.log(
-      `  Run 'nemoclaw ${sandboxName} rebuild' when you are ready to apply (${actionDesc}).`,
+      `  Run '${CLI_NAME} ${sandboxName} rebuild' when you are ready to apply (${actionDesc}).`,
     );
     return;
   }
@@ -2501,7 +2501,7 @@ async function sandboxChannelsAdd(sandboxName: string, args: string[] = []): Pro
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
   if (!channelArg) {
-    console.error("  Usage: nemoclaw <sandbox> channels add <channel> [--dry-run]");
+    console.error(`  Usage: ${CLI_NAME} <sandbox> channels add <channel> [--dry-run]`);
     console.error(`  Valid channels: ${knownChannelNames().join(", ")}`);
     process.exit(1);
   }
@@ -2561,7 +2561,7 @@ async function sandboxChannelsRemove(sandboxName: string, args: string[] = []): 
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
   if (!channelArg) {
-    console.error("  Usage: nemoclaw <sandbox> channels remove <channel> [--dry-run]");
+    console.error(`  Usage: ${CLI_NAME} <sandbox> channels remove <channel> [--dry-run]`);
     console.error(`  Valid channels: ${knownChannelNames().join(", ")}`);
     process.exit(1);
   }
@@ -2601,7 +2601,7 @@ async function sandboxChannelsSetEnabled(
   const dryRun = args.includes("--dry-run");
   const channelArg = args.find((arg) => !arg.startsWith("-"));
   if (!channelArg) {
-    console.error(`  Usage: nemoclaw <sandbox> channels ${verb} <channel> [--dry-run]`);
+    console.error(`  Usage: ${CLI_NAME} <sandbox> channels ${verb} <channel> [--dry-run]`);
     console.error(`  Valid channels: ${knownChannelNames().join(", ")}`);
     process.exit(1);
   }
@@ -2646,7 +2646,7 @@ async function sandboxChannelsStart(sandboxName: string, args: string[] = []): P
 
 function printSkillInstallUsage(): void {
   console.log("");
-  console.log("  Usage: nemoclaw <sandbox> skill install <path>");
+  console.log(`  Usage: ${CLI_NAME} <sandbox> skill install <path>`);
   console.log("");
   console.log("  Deploy a skill directory to a running sandbox.");
   console.log(
@@ -2719,11 +2719,11 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
   }
   if (extraArgs.length > 0) {
     console.error(`  Unknown argument(s) for skill install: ${extraArgs.join(", ")}`);
-    console.error("  Usage: nemoclaw <sandbox> skill install <path>");
+    console.error(`  Usage: ${CLI_NAME} <sandbox> skill install <path>`);
     process.exit(1);
   }
   if (!skillPath) {
-    console.error("  Usage: nemoclaw <sandbox> skill install <path>");
+    console.error(`  Usage: ${CLI_NAME} <sandbox> skill install <path>`);
     console.error("  <path> must be a directory containing a SKILL.md file.");
     process.exit(1);
   }
@@ -2884,7 +2884,7 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
   } else {
     if (process.env.NEMOCLAW_NON_INTERACTIVE === "1") {
       console.error("  Non-interactive mode requires a preset name.");
-      console.error("  Usage: nemoclaw <sandbox> policy-remove <preset> [--yes] [--dry-run]");
+      console.error(`  Usage: ${CLI_NAME} <sandbox> policy-remove <preset> [--yes] [--dry-run]`);
       process.exit(1);
     }
     answer = await policies.selectForRemoval(allPresets, { applied });
@@ -2962,7 +2962,7 @@ function removeSandboxImage(sandboxName: string) {
     console.log(`  Removed Docker image ${sb.imageTag}`);
   } else {
     console.warn(
-      `  ${YW}⚠${R} Failed to remove Docker image ${sb.imageTag}; run 'nemoclaw gc' to clean up.`,
+      `  ${YW}⚠${R} Failed to remove Docker image ${sb.imageTag}; run '${CLI_NAME} gc' to clean up.`,
     );
   }
 }
@@ -3109,7 +3109,7 @@ async function sandboxRebuild(
   // Multi-agent guard (temporary — until swarm lands)
   if (sb.agents && sb.agents.length > 1) {
     console.error("  Multi-agent sandbox rebuild is not yet supported.");
-    console.error("  Back up state manually and recreate with `nemoclaw onboard`.");
+    console.error(`  Back up state manually and recreate with \`${CLI_NAME} onboard\`.`);
     bail("Multi-agent sandbox rebuild is not yet supported.");
     return;
   }
@@ -3210,7 +3210,7 @@ async function sandboxRebuild(
       console.error("");
       console.error("  To fix, do one of:");
       console.error(`    export ${rebuildCredentialEnv}=<your-key>`);
-      console.error("    nemoclaw onboard          # re-enter the key interactively");
+      console.error(`    ${CLI_NAME} onboard          # re-enter the key interactively`);
       console.error("");
       console.error("  Sandbox is untouched — no data was lost.");
       bail(`Missing credential: ${rebuildCredentialEnv}`);
@@ -3414,10 +3414,10 @@ async function sandboxRebuild(
     console.error("");
     console.error("  To recover manually:");
     console.error(`    1. Fix the issue above (missing credential, Docker problem, etc.)`);
-    console.error(`    2. Run: nemoclaw onboard --resume`);
+    console.error(`    2. Run: ${CLI_NAME} onboard --resume`);
     console.error(`       This will recreate sandbox '${sandboxName}'.`);
     console.error(`    3. Then restore your workspace state:`);
-    console.error(`       nemoclaw ${sandboxName} snapshot restore "${backup.manifest.timestamp}"`);
+    console.error(`       ${CLI_NAME} ${sandboxName} snapshot restore "${backup.manifest.timestamp}"`);
     console.error("");
     bail(
       `Recreate failed (sandbox destroyed). Backup: ${backup.manifest.backupPath}`,
@@ -3473,7 +3473,7 @@ async function sandboxRebuild(
     }
     if (failedPresets.length > 0) {
       console.error(`  ${YW}\u26a0${R} Failed to restore presets: ${failedPresets.join(", ")}`);
-      console.error(`    Re-apply manually with: nemoclaw ${sandboxName} policy-add`);
+      console.error(`    Re-apply manually with: ${CLI_NAME} ${sandboxName} policy-add`);
     }
   }
 
@@ -3596,7 +3596,7 @@ async function upgradeSandboxes(args: string[] = []): Promise<void> {
         `  ${unknown.length} sandbox(es) could not be version-checked; start them and rerun, or rebuild manually.`,
       );
     }
-    console.log("  Run `nemoclaw upgrade-sandboxes` to rebuild them.");
+    console.log("  Run `${CLI_NAME} upgrade-sandboxes` to rebuild them.");
     return;
   }
 
@@ -3737,7 +3737,7 @@ async function autoCreateSandboxFromSource(
   const fromImage = resolveSrcPodImage(srcName);
   if (!fromImage) {
     console.error(`  Cannot auto-create '${dstName}': could not resolve '${srcName}' pod image.`);
-    console.error(`  Create '${dstName}' manually with 'nemoclaw onboard'.`);
+    console.error(`  Create '${dstName}' manually with '${CLI_NAME} onboard'.`);
     process.exit(1);
   }
 
@@ -3859,7 +3859,7 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
       renderSnapshotTable(backups);
       console.log("");
       console.log(`  ${backups.length} snapshot(s). Restore with:`);
-      console.log(`    nemoclaw ${sandboxName} snapshot restore [version|name|timestamp]`);
+      console.log(`    ${CLI_NAME} ${sandboxName} snapshot restore [version|name|timestamp]`);
       break;
     }
     case "restore": {
@@ -3896,7 +3896,7 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
           console.error(
             `  Cannot auto-create '${targetSandbox}': source '${sandboxName}' not found.`,
           );
-          console.error(`  Create '${targetSandbox}' manually with 'nemoclaw onboard'.`);
+          console.error(`  Create '${targetSandbox}' manually with '${CLI_NAME} onboard'.`);
           process.exit(1);
         }
         const srcEntry = registry.getSandbox(sandboxName) || { name: sandboxName };
@@ -3910,7 +3910,7 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
         if (!match) {
           console.error(`  No snapshot matching '${selector}' found for '${sandboxName}'.`);
           console.error("  Selector must be an exact version (v<N>), name, or timestamp.");
-          console.error("  Run: nemoclaw " + sandboxName + " snapshot list");
+          console.error(`  Run: ${CLI_NAME} ${sandboxName} snapshot list`);
           process.exit(1);
         }
         backupPath = match.backupPath;
@@ -3998,12 +3998,12 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
     }
     default:
       console.log(`  Usage:`);
-      console.log(`    nemoclaw ${sandboxName} snapshot create [--name <name>]`);
+      console.log(`    ${CLI_NAME} ${sandboxName} snapshot create [--name <name>]`);
       console.log(
         `                                             Create a snapshot (auto-versioned v1, v2, ...)`,
       );
-      console.log(`    nemoclaw ${sandboxName} snapshot list            List available snapshots`);
-      console.log(`    nemoclaw ${sandboxName} snapshot restore [selector] [--to <dst>]`);
+      console.log(`    ${CLI_NAME} ${sandboxName} snapshot list            List available snapshots`);
+      console.log(`    ${CLI_NAME} ${sandboxName} snapshot restore [selector] [--to <dst>]`);
       console.log(
         `                                             Restore by version (v1), name, or timestamp.`,
       );
@@ -4208,7 +4208,7 @@ function help() {
   lines.push(`  ${G}Uninstall flags:${R}`);
   lines.push(`    --yes${" ".repeat(29)}Skip the confirmation prompt`);
   lines.push(`    --keep-openshell${" ".repeat(18)}Leave the openshell binary installed`);
-  lines.push(`    --delete-models${" ".repeat(19)}Remove NemoClaw-pulled Ollama models`);
+  lines.push(`    --delete-models${" ".repeat(19)}Remove ${CLI_DISPLAY_NAME}-pulled Ollama models`);
 
   // ── Reconfiguration (no nemoclaw-prefixed lines to avoid parser phantoms) ──
   lines.push("");
@@ -4218,8 +4218,8 @@ function help() {
   );
   lines.push(`    ${D}• Add network presets:     use the policy-add command on your sandbox${R}`);
   lines.push(`    ${D}• Change credentials:      credentials reset <PROVIDER>, then re-run onboard${R}`);
-  lines.push(`    ${D}• openclaw.json is read-only inside the sandbox (Landlock enforced).${R}`);
-  lines.push(`    ${D}  To change OpenClaw settings, re-run onboard to rebuild the sandbox.${R}`);
+  lines.push(`    ${D}• Agent config is read-only inside the sandbox (Landlock enforced).${R}`);
+  lines.push(`    ${D}  To change ${AGENT_PRODUCT_NAME} settings, re-run onboard to rebuild the sandbox.${R}`);
 
   // ── Footer ──
   lines.push("");
@@ -4266,13 +4266,13 @@ const [cmd, ...args] = process.argv.slice(2);
         break;
       case "start":
         console.error(
-          `  ${YW}Deprecated:${R} 'nemoclaw start' is now 'nemoclaw tunnel start'. See 'nemoclaw help'.`,
+          `  ${YW}Deprecated:${R} '${CLI_NAME} start' is now '${CLI_NAME} tunnel start'. See '${CLI_NAME} help'.`,
         );
         await start();
         break;
       case "stop":
         console.error(
-          `  ${YW}Deprecated:${R} 'nemoclaw stop' is now 'nemoclaw tunnel stop'. See 'nemoclaw help'.`,
+          `  ${YW}Deprecated:${R} '${CLI_NAME} stop' is now '${CLI_NAME} tunnel stop'. See '${CLI_NAME} help'.`,
         );
         stop();
         break;
@@ -4305,11 +4305,7 @@ const [cmd, ...args] = process.argv.slice(2);
         break;
       case "--version":
       case "-v": {
-        if (IS_HERMES_ALIAS) {
-          console.log(`nemohermes v${getVersion()} (nemoclaw)`);
-        } else {
-          console.log(`nemoclaw v${getVersion()}`);
-        }
+        console.log(`${CLI_NAME} v${getVersion()}`);
         break;
       }
       default:
@@ -4450,7 +4446,7 @@ const [cmd, ...args] = process.argv.slice(2);
             shields.shieldsStatus(cmd);
             break;
           default:
-            console.error("  Usage: nemoclaw <name> shields <down|up|status>");
+            console.error(`  Usage: ${CLI_NAME} <name> shields <down|up|status>`);
             console.error("    down  [--timeout 5m] [--reason 'text'] [--policy permissive]");
             console.error("    up    Restore policy from snapshot");
             console.error("    status  Show current shields state");
@@ -4481,7 +4477,7 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           default:
             console.error(`  Unknown channels subcommand: ${channelsSub}`);
-            console.error("  Usage: nemoclaw <name> channels <list|add|remove|stop|start> [args]");
+            console.error(`  Usage: ${CLI_NAME} <name> channels <list|add|remove|stop|start> [args]`);
             console.error("    list                  List supported messaging channels");
             console.error("    add <channel>         Store credentials and rebuild the sandbox");
             console.error("    remove <channel>      Clear credentials and rebuild the sandbox");
@@ -4531,7 +4527,7 @@ const [cmd, ...args] = process.argv.slice(2);
           }
           default:
             console.error(
-              "  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]",
+              `  Usage: ${CLI_NAME} <name> config get [--key dotpath] [--format json|yaml]`,
             );
             process.exit(1);
         }

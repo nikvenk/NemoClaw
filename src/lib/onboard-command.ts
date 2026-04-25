@@ -4,6 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { CLI_NAME } from "./branding";
+
 export interface OnboardCommandOptions {
   nonInteractive: boolean;
   resume: boolean;
@@ -39,16 +41,8 @@ const ONBOARD_BASE_ARGS = [
   "--recreate-sandbox",
 ];
 
-/** CLI binary name — respects the NemoHermes alias when NEMOCLAW_AGENT is set. */
-function cliName(): string {
-  return process.env.NEMOCLAW_AGENT === "hermes" &&
-    (process.argv[1]?.includes("nemohermes") ?? false)
-    ? "nemohermes"
-    : "nemoclaw";
-}
-
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
-  const name = cliName();
+  const name = CLI_NAME;
   return [
     `  Usage: ${name} onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [${noticeAcceptFlag}]`,
     "",
@@ -195,14 +189,15 @@ export async function runOnboardCommand(deps: RunOnboardCommandDeps): Promise<vo
 export async function runDeprecatedOnboardAliasCommand(
   deps: RunDeprecatedOnboardAliasCommandDeps,
 ): Promise<void> {
+  const cliName = CLI_NAME;
   const log = deps.log ?? console.log;
   log("");
   if (deps.kind === "setup") {
-    log(`  ⚠  \`${cliName()} setup\` is deprecated. Use \`${cliName()} onboard\` instead.`);
+    log(`  ⚠  \`${cliName} setup\` is deprecated. Use \`${cliName} onboard\` instead.`);
   } else {
-    log(`  ⚠  \`${cliName()} setup-spark\` is deprecated.`);
+    log(`  ⚠  \`${cliName} setup-spark\` is deprecated.`);
     log("  Current OpenShell releases handle the old DGX Spark cgroup issue themselves.");
-    log(`  Use \`${cliName()} onboard\` instead.`);
+    log(`  Use \`${cliName} onboard\` instead.`);
   }
   log("");
   await runOnboardCommand(deps);
