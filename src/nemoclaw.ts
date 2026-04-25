@@ -55,7 +55,6 @@ const onboardSession = require("./lib/onboard-session");
 import type { Session } from "./lib/onboard-session";
 const { parseLiveSandboxNames } = require("./lib/runtime-recovery");
 const { NOTICE_ACCEPT_ENV, NOTICE_ACCEPT_FLAG } = require("./lib/usage-notice");
-const { sleepSeconds } = require("./lib/wait");
 const { runDebugCommand } = require("./lib/debug-command");
 const { runDeprecatedOnboardAliasCommand, runOnboardCommand } = require("./lib/onboard-command");
 const {
@@ -1594,7 +1593,7 @@ async function sandboxConnect(
     while (Date.now() < deadline) {
       const sleepFor = Math.min(interval, remainingMs() / 1000);
       if (sleepFor <= 0) break;
-      sleepSeconds(sleepFor);
+      await new Promise((resolve) => setTimeout(resolve, sleepFor * 1000));
       const poll = runSandboxList();
       const elapsed = elapsedSec();
       if (isSandboxReady(poll, sandboxName)) {
