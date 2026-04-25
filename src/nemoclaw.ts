@@ -1636,19 +1636,24 @@ async function sandboxConnect(
 }
 
 // eslint-disable-next-line complexity
+function _diag(msg: string) {
+  const line = `${new Date().toISOString()} [nemoclaw-diag] ${msg}\n`;
+  try { fs.appendFileSync("/tmp/nemoclaw-status-diag.log", line); } catch {}
+}
+
 async function sandboxStatus(sandboxName: string) {
-  console.error("[diag] sandboxStatus: start");
+  _diag("sandboxStatus: start");
   const sb = registry.getSandbox(sandboxName);
-  console.error("[diag] sandboxStatus: registry lookup done");
+  _diag("sandboxStatus: registry lookup done");
   const live = parseGatewayInference(
     captureOpenshell(["inference", "get"], { ignoreError: true }).output,
   );
-  console.error("[diag] sandboxStatus: inference get done");
+  _diag("sandboxStatus: inference get done");
   const currentModel = (live && live.model) || (sb && sb.model) || "unknown";
   const currentProvider = (live && live.provider) || (sb && sb.provider) || "unknown";
   const inferenceHealth =
     typeof currentProvider === "string" ? probeProviderHealth(currentProvider) : null;
-  console.error("[diag] sandboxStatus: provider health done");
+  _diag("sandboxStatus: provider health done");
   if (sb) {
     console.log("");
     console.log(`  Sandbox: ${sb.name}`);
@@ -1693,7 +1698,7 @@ async function sandboxStatus(sandboxName: string) {
     }
 
     // Agent version check
-    console.error("[diag] sandboxStatus: before checkAgentVersion");
+    _diag("sandboxStatus: before checkAgentVersion");
     try {
       const versionCheck = sandboxVersion.checkAgentVersion(sandboxName);
       const agent = agentRuntime.getSessionAgent(sandboxName);
@@ -1708,10 +1713,10 @@ async function sandboxStatus(sandboxName: string) {
     } catch {
       /* non-fatal */
     }
-    console.error("[diag] sandboxStatus: after checkAgentVersion");
+    _diag("sandboxStatus: after checkAgentVersion");
   }
 
-  console.error("[diag] sandboxStatus: before getReconciledSandboxGatewayState");
+  _diag("sandboxStatus: before getReconciledSandboxGatewayState");
   const lookup = await getReconciledSandboxGatewayState(sandboxName);
   if (lookup.state === "present") {
     console.log("");
@@ -1817,10 +1822,10 @@ async function sandboxStatus(sandboxName: string) {
     printGatewayLifecycleHint(lookup.output, sandboxName, console.log);
   }
 
-  console.error("[diag] sandboxStatus: after getReconciledSandboxGatewayState, state=" + lookup.state);
+  _diag("sandboxStatus: after getReconciledSandboxGatewayState, state=" + lookup.state);
   // OpenClaw process health inside the sandbox
   if (lookup.state === "present") {
-    console.error("[diag] sandboxStatus: before checkAndRecoverSandboxProcesses");
+    _diag("sandboxStatus: before checkAndRecoverSandboxProcesses");
     const processCheck = checkAndRecoverSandboxProcesses(sandboxName, { quiet: true });
     if (processCheck.checked) {
       const _sa = agentRuntime.getSessionAgent(sandboxName);

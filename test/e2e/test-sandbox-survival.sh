@@ -282,9 +282,14 @@ else
 fi
 
 # 3d: nemoclaw status works
-if status_output=$(nemoclaw "$SANDBOX_NAME" status 2>&1); then
+rm -f /tmp/nemoclaw-status-diag.log
+if status_output=$(timeout 60 nemoclaw "$SANDBOX_NAME" status 2>&1); then
   pass "nemoclaw $SANDBOX_NAME status exits 0"
 else
+  echo "[diag] nemoclaw status exit code: $?"
+  echo "[diag] status output: ${status_output:0:500}"
+  echo "[diag] diag log:"
+  cat /tmp/nemoclaw-status-diag.log 2>/dev/null || echo "(no diag log)"
   fail "nemoclaw $SANDBOX_NAME status failed: ${status_output:0:200}"
 fi
 
