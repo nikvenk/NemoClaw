@@ -11,6 +11,7 @@ const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const pRetry = require("p-retry");
+const { CLI_NAME, CLI_DISPLAY_NAME } = require("./branding");
 
 /** Parse a numeric env var, returning `fallback` when unset or non-finite. */
 function envInt(name: string, fallback: number): number {
@@ -2810,7 +2811,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   const requiredPorts = [
     { port: GATEWAY_PORT, label: "OpenShell gateway" },
     ...(dashboardPortToCheck !== null
-      ? [{ port: dashboardPortToCheck, label: "NemoClaw dashboard" }]
+      ? [{ port: dashboardPortToCheck, label: `${CLI_DISPLAY_NAME} dashboard` }]
       : []),
   ];
   for (const { port, label } of requiredPorts) {
@@ -4150,10 +4151,10 @@ async function createSandbox(
     process.exit(1);
   }
 
-  // Wait for NemoClaw dashboard to become fully ready (web server live)
+  // Wait for the CLI dashboard to become fully ready (web server live)
   // This prevents port forwards from connecting to a non-existent port
   // or seeing 502/503 errors during initial load.
-  console.log("  Waiting for NemoClaw dashboard to become ready...");
+  console.log(`  Waiting for ${CLI_DISPLAY_NAME} dashboard to become ready...`);
   const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCaptureOpenshell(
@@ -7594,7 +7595,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
       console.log("  Web search and messaging channels will be prompted next.");
       if (!isNonInteractive()) {
         if (!(await promptYesNoOrDefault("  Apply this configuration?", null, true))) {
-          console.log("  Aborted. Re-run `nemoclaw onboard` to start over.");
+          console.log(`  Aborted. Re-run \`${CLI_NAME} onboard\` to start over.`);
           console.log("  Credentials entered so far were only staged in memory for this run.");
           console.log(
             "  No new gateway credential was registered because onboarding stopped here.",

@@ -816,7 +816,7 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
   const cleanOutput = stripAnsi(output);
   if (/No gateway configured/i.test(cleanOutput)) {
     writer(
-      "  The selected ${CLI_DISPLAY_NAME} gateway is no longer configured or its metadata/runtime has been lost.",
+      `  The selected ${CLI_DISPLAY_NAME} gateway is no longer configured or its metadata/runtime has been lost.`,
     );
     writer(
       "  Start the gateway again with `openshell gateway start --name nemoclaw` before expecting existing sandboxes to reconnect.",
@@ -845,7 +845,7 @@ function printGatewayLifecycleHint(output = "", sandboxName = "", writer = conso
       "  Existing sandboxes may still be recorded locally, but the current gateway no longer trusts their prior connection state.",
     );
     writer(
-      "  Try re-establishing the ${CLI_DISPLAY_NAME} gateway/runtime first. If the sandbox is still unreachable, recreate just that sandbox with `nemoclaw onboard`.",
+      `  Try re-establishing the ${CLI_DISPLAY_NAME} gateway/runtime first. If the sandbox is still unreachable, recreate just that sandbox with \`${CLI_NAME} onboard\`.`,
     );
     return;
   }
@@ -968,7 +968,7 @@ async function ensureLiveSandboxOrExit(
     console.error(`  Sandbox '${sandboxName}' is not present in the live OpenShell gateway.`);
     console.error("  Removed stale local registry entry.");
     console.error(
-      "  Run `nemoclaw list` to confirm the remaining sandboxes, or `nemoclaw onboard` to create a new one.",
+      `  Run \`${CLI_NAME} list\` to confirm the remaining sandboxes, or \`${CLI_NAME} onboard\` to create a new one.`,
     );
     process.exit(1);
   }
@@ -1006,7 +1006,7 @@ async function ensureLiveSandboxOrExit(
       console.error(retry.output);
     }
     console.error(
-      "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
+      `  Recreate this sandbox with \`${CLI_NAME} onboard\` once the gateway runtime is stable.`,
     );
     process.exit(1);
   }
@@ -1057,7 +1057,7 @@ function printOldLogsCompatibilityGuidance(installedVersion = null) {
   );
   console.error(`  ${CLI_DISPLAY_NAME} expects \`openshell logs <name>\` and live streaming via \`--tail\`.`);
   console.error(
-    "  Upgrade OpenShell by rerunning `nemoclaw onboard`, or reinstall the OpenShell CLI and try again.",
+    `  Upgrade OpenShell by rerunning \`${CLI_NAME} onboard\`, or reinstall the OpenShell CLI and try again.`,
   );
 }
 
@@ -1875,7 +1875,7 @@ async function sandboxStatus(sandboxName: string) {
       "  Existing sandbox connections cannot be reattached safely after this gateway identity change.",
     );
     console.log(
-      "  Recreate this sandbox with `nemoclaw onboard` once the gateway runtime is stable.",
+      `  Recreate this sandbox with \`${CLI_NAME} onboard\` once the gateway runtime is stable.`,
     );
   } else if (lookup.state === "gateway_unreachable_after_restart") {
     console.log("");
@@ -3242,7 +3242,7 @@ async function sandboxRebuild(
   log(`Live sandboxes: ${Array.from(liveNames).join(", ") || "(none)"}`);
   if (!liveNames.has(sandboxName)) {
     console.error(`  Sandbox '${sandboxName}' is not running. Cannot back up state.`);
-    console.error("  Start it first or recreate with `nemoclaw onboard --recreate-sandbox`.");
+    console.error(`  Start it first or recreate with \`${CLI_NAME} onboard --recreate-sandbox\`.`);
     bail(`Sandbox '${sandboxName}' is not running.`);
     return;
   }
@@ -3603,7 +3603,7 @@ async function upgradeSandboxes(args: string[] = []): Promise<void> {
         `  ${unknown.length} sandbox(es) could not be version-checked; start them and rerun, or rebuild manually.`,
       );
     }
-    console.log("  Run `${CLI_NAME} upgrade-sandboxes` to rebuild them.");
+    console.log(`  Run \`${CLI_NAME} upgrade-sandboxes\` to rebuild them.`);
     return;
   }
 
