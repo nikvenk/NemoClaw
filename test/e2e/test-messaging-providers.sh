@@ -671,9 +671,15 @@ print('yes' if 'slack' in d else 'no')
     # Check if openclaw.json contains "slack" (same grep the guard uses)
     slack_in_config=$(openshell sandbox exec --name "$SANDBOX_NAME" -- grep -c '"slack"' /sandbox/.openclaw/openclaw.json 2>/dev/null || echo "EXEC_FAILED")
     info "  grep '\"slack\"' in openclaw.json: $slack_in_config matches"
-    # Check container logs for guard skip/install messages
-    container_log=$(nemoclaw "$SANDBOX_NAME" logs 2>&1 | grep -i "channel guard\|slack.*guard\|guard.*skip\|guard.*install" | head -5 || echo "no guard messages")
-    info "  Container guard log: $container_log"
+    # Check container logs for guard skip/install messages (entrypoint stderr → docker logs)
+    container_log=$(openshell sandbox logs --name "$SANDBOX_NAME" 2>&1 | grep -i "channel guard\|slack.*guard\|guard.*skip\|guard.*install\|\[channels\].*slack\|\[channels\].*guard" | head -10 || echo "no guard messages in openshell logs")
+    info "  Container log (guard): $container_log"
+    # Fallback: try reading via docker logs directly
+    container_id=$(openshell sandbox exec --name "$SANDBOX_NAME" -- cat /proc/1/cgroup 2>/dev/null | grep -oP '[a-f0-9]{64}' | head -1 || echo "")
+    if [ -n "$container_id" ]; then
+      docker_log=$(docker logs "$container_id" 2>&1 | grep -i "channel guard\|slack.*guard\|\[channels\]" | head -10 || echo "no guard messages in docker logs")
+      info "  Docker log (guard): $docker_log"
+    fi
     # Check what processes are running
     procs=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ps aux 2>/dev/null | head -10 || echo "EXEC_FAILED")
     info "  Processes:"
