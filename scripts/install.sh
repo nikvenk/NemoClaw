@@ -450,8 +450,16 @@ MIN_NPM_MAJOR=10
 
 # ── Agent branding — adapt user-visible names to the active agent ──
 case "${NEMOCLAW_AGENT:-openclaw}" in
-  hermes)  _CLI_DISPLAY="NemoHermes"; _AGENT_PRODUCT="Hermes"; _CLI_BIN="nemohermes" ;;
-  *)       _CLI_DISPLAY="NemoClaw";   _AGENT_PRODUCT="OpenClaw"; _CLI_BIN="nemoclaw" ;;
+  hermes)
+    _CLI_DISPLAY="NemoHermes"
+    _AGENT_PRODUCT="Hermes"
+    _CLI_BIN="nemohermes"
+    ;;
+  *)
+    _CLI_DISPLAY="NemoClaw"
+    _AGENT_PRODUCT="OpenClaw"
+    _CLI_BIN="nemoclaw"
+    ;;
 esac
 
 RUNTIME_REQUIREMENT_MSG="${_CLI_DISPLAY} requires Node.js >=${MIN_NODE_VERSION} and npm >=${MIN_NPM_MAJOR}."
