@@ -70,7 +70,30 @@ function resultStdoutBuffer(result: { stdout?: string | Buffer | null }): Buffer
   return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout || ""), "utf-8");
 }
 
+function isSafeManifestStateDir(dir: string, backupRoot: string, writableDir: string): boolean {
+  if (!dir || dir.includes("\\0") || path.isAbsolute(dir) || path.posix.isAbsolute(dir)) {
+    return false;
+  }
+  const segments = dir.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return false;
+  }
+
+  const hostPath = path.resolve(backupRoot, dir);
+  if (!isWithinRoot(hostPath, backupRoot)) {
+    return false;
+  }
+
+  const remoteRoot = writableDir.replace(/\/+$/, "");
+  const remotePath = path.posix.normalize(path.posix.join(remoteRoot, dir));
+  return remotePath !== remoteRoot && remotePath.startsWith(`${remoteRoot}/`);
+}
+
 function buildRemoveDirsCommand(baseDir: string, dirs: string[]): string {
+  const invalidDirs = dirs.filter((dir) => !isSafeManifestStateDir(dir, REBUILD_BACKUPS_DIR, baseDir));
+  if (invalidDirs.length > 0) {
+    throw new Error(`Invalid state dirs: ${invalidDirs.join(", ")}`);
+  }
   return dirs.map((dir) => `rm -rf ${formatShellToken(`${baseDir}/${dir}`)}`).join(" && ");
 }
 
@@ -779,6 +802,14 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
   const writableDir = manifest.writableDir;
   const restoredDirs: string[] = [];
   const failedDirs: string[] = [];
+
+  const invalidDirs = manifest.stateDirs.filter(
+    (dir) => !isSafeManifestStateDir(dir, backupPath, writableDir),
+  );
+  if (invalidDirs.length > 0) {
+    _log(`FAILED: invalid snapshot paths in manifest: [${invalidDirs.join(",")}]`);
+    return { success: false, restoredDirs, failedDirs: [...manifest.stateDirs] };
+  }
 
   // Find which backed-up directories actually exist locally
   const localDirs = manifest.stateDirs.filter((d) => existsSync(path.join(backupPath, d)));

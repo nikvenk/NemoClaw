@@ -189,6 +189,19 @@ describe("listBackups computes virtual versions", () => {
   });
 });
 
+describe("restoreSandboxState", () => {
+  it("rejects manifest state dirs that escape the backup or writable roots", () => {
+    const backup = writeBackup("test-sandbox", "2026-04-21T14-00-00-000Z", {
+      stateDirs: ["../escape"],
+    });
+
+    const result = sandboxState.restoreSandboxState("test-sandbox", String(backup.backupPath));
+    expect(result.success).toBe(false);
+    expect(result.restoredDirs).toEqual([]);
+    expect(result.failedDirs).toContain("../escape");
+  });
+});
+
 describe("findBackup", () => {
   it("matches v<N> against the computed version", () => {
     writeBackup("test-sandbox", "2026-04-21T14-00-00-000Z"); // v1 (oldest)
