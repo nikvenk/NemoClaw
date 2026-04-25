@@ -3305,6 +3305,7 @@ runner.runCapture = (command) => {
 };
 runner.run = (command, opts) => {
   runCommands.push(typeof command === "string" ? command : command.join(" "));
+  return { status: 0, stdout: "", stderr: "", error: null };
 };
 registry.updateSandbox = (_name, update) => updates.push(update);
 

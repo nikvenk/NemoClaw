@@ -2281,8 +2281,33 @@ function installOllamaViaOfficialScript(): void {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-ollama-install-"));
   const installerPath = path.join(tempDir, "install.sh");
   try {
-    run(["curl", "-fsSL", "-o", installerPath, "https://ollama.com/install.sh"]);
-    run(["sh", installerPath]);
+    const download = run(["curl", "-fsSL", "-o", installerPath, "https://ollama.com/install.sh"], {
+      ignoreError: true,
+    });
+    if (download.error) {
+      throw download.error;
+    }
+    if (download.status !== 0) {
+      const detail = String(download.stderr || "").trim();
+      throw new Error(
+        detail
+          ? `Failed to download Ollama installer: ${detail}`
+          : `Failed to download Ollama installer (exit ${download.status ?? 1})`,
+      );
+    }
+
+    const install = run(["sh", installerPath], { ignoreError: true });
+    if (install.error) {
+      throw install.error;
+    }
+    if (install.status !== 0) {
+      const detail = String(install.stderr || "").trim();
+      throw new Error(
+        detail
+          ? `Ollama installer failed: ${detail}`
+          : `Ollama installer failed (exit ${install.status ?? 1})`,
+      );
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -5308,6 +5333,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
         break;
       } else if (selected.key === "install-ollama") {
         if (!checkOllamaPortsOrWarn()) continue selectionLoop;
+        const wsl = isWsl();
         if (process.platform === "darwin") {
           console.log("  Installing Ollama via Homebrew...");
           run(["brew", "install", "ollama"], { ignoreError: true });
@@ -5316,14 +5342,21 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           installOllamaViaOfficialScript();
         }
         console.log("  Starting Ollama...");
-        startDetachedOllamaServe(`0.0.0.0:${OLLAMA_PORT}`);
+        startDetachedOllamaServe(wsl ? undefined : `0.0.0.0:${OLLAMA_PORT}`);
         sleep(2);
-        if (!startOllamaAuthProxy()) {
-          process.exit(1);
+        if (!wsl) {
+          printOllamaExposureWarning();
         }
-        console.log(
-          `  ✓ Using Ollama on localhost:${OLLAMA_PORT} (proxy on :${OLLAMA_PROXY_PORT})`,
-        );
+        if (wsl) {
+          console.log(`  ✓ Using Ollama on localhost:${OLLAMA_PORT}`);
+        } else {
+          if (!startOllamaAuthProxy()) {
+            process.exit(1);
+          }
+          console.log(
+            `  ✓ Using Ollama on localhost:${OLLAMA_PORT} (proxy on :${OLLAMA_PROXY_PORT})`,
+          );
+        }
         provider = "ollama-local";
         credentialEnv = "OPENAI_API_KEY";
         endpointUrl = getLocalProviderBaseUrl(provider);
@@ -7176,12 +7209,7 @@ function printDashboard(
 
   const token = fetchGatewayAuthTokenFromSandbox(sandboxName);
   const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
-  const wslAddr =
-    isWsl()
-      ? (String(runCapture(["hostname", "-I"], { ignoreError: true }) || "")
-          .trim()
-          .split(/\s+/)[0] || null)
-      : null;
+  const wslAddr = getWslHostAddress();
   const chain = buildChain({ chatUiUrl, isWsl: isWsl(), wslHostAddress: wslAddr });
 
   // Build access info inline — uses chain instead of re-deriving from env
