@@ -125,8 +125,8 @@ validate_tmp_permissions() {
     local perms expected_perms
     perms="$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f" 2>/dev/null || echo "unknown")"
     case "$f" in
-      */gateway.log) expected_perms="644" ;;
-      *) expected_perms="600" ;;
+    */gateway.log) expected_perms="644" ;;
+    *) expected_perms="600" ;;
     esac
     if [ "$perms" != "$expected_perms" ]; then
       echo "[SECURITY] $f has unexpected permissions: mode=$perms (expected $expected_perms)" >&2
