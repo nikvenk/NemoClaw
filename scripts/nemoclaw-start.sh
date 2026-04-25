@@ -1159,6 +1159,72 @@ emit_sandbox_sourced_file "$_NEMOTRON_FIX_SCRIPT" <<'NEMOTRON_FIX_EOF'
 NEMOTRON_FIX_EOF
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT"
 
+# mDNS / ciao network interface guard.
+# The @homebridge/ciao mDNS library calls os.networkInterfaces() which
+# throws a SystemError (uv_interface_addresses) inside sandboxes with
+# restricted network namespaces (seccomp/Landlock). This crashes the
+# gateway even though mDNS is not needed. The guard monkey-patches
+# os.networkInterfaces to return an empty object on failure instead
+# of throwing, and catches the uncaughtException as a fallback.
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/2340
+_CIAO_GUARD_SCRIPT="/tmp/nemoclaw-ciao-network-guard.js"
+emit_sandbox_sourced_file "$_CIAO_GUARD_SCRIPT" <<'CIAO_GUARD_EOF'
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// ciao-network-guard.js — prevents @homebridge/ciao mDNS library from
+// crashing the gateway when os.networkInterfaces() fails in restricted
+// sandbox network namespaces.
+
+(function () {
+  'use strict';
+
+  // Monkey-patch os.networkInterfaces to return empty on failure.
+  var os = require('os');
+  var _origNetworkInterfaces = os.networkInterfaces;
+  os.networkInterfaces = function () {
+    try {
+      return _origNetworkInterfaces.call(os);
+    } catch (err) {
+      process.stderr.write(
+        '[guard] os.networkInterfaces() failed: ' + (err.message || err) +
+        ' — returning empty (mDNS disabled)\n'
+      );
+      return {};
+    }
+  };
+
+  // Fallback: catch uncaughtException from ciao if the monkey-patch
+  // doesn't cover all call sites.
+  process.on('uncaughtException', function (err, origin) {
+    if (
+      err && err.code === 'ERR_SYSTEM_ERROR' &&
+      String(err.message || '').indexOf('uv_interface_addresses') !== -1
+    ) {
+      process.stderr.write(
+        '[guard] ciao/networkInterfaces crash caught: ' + (err.message || err) +
+        ' — gateway continues\n'
+      );
+      return;
+    }
+    // Check stack for ciao/NetworkManager
+    if (err && err.stack && err.stack.indexOf('ciao') !== -1 &&
+        String(err.message || '').indexOf('networkInterfaces') !== -1) {
+      process.stderr.write(
+        '[guard] ciao network error caught: ' + (err.message || err) +
+        ' — gateway continues\n'
+      );
+      return;
+    }
+    // Not a ciao error — re-throw to preserve normal crash behavior.
+    process.stderr.write((err && err.stack) || String(err));
+    process.stderr.write('\n');
+    process.exit(1);
+  });
+})();
+CIAO_GUARD_EOF
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_CIAO_GUARD_SCRIPT"
+
 # WebSocket CONNECT tunnel fix (NemoClaw#1570).
 # The `ws` library calls https.request() for wss:// WebSocket upgrades.
 # EnvHttpProxyAgent (NODE_USE_ENV_PROXY=1) sends a forward proxy request
@@ -1213,6 +1279,8 @@ PROXYEOF
   fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
+  # ciao network guard for connect sessions.
+  echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_CIAO_GUARD_SCRIPT\""
   # Slack channel guard for connect sessions. The guard file is installed later
   # by install_slack_channel_guard() — conditional on the file existing at
   # source-time so connect sessions started before Slack is configured are safe.
@@ -1368,7 +1436,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT"
+  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
 
   # Start gateway in background, auto-pair, then wait.
   # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
@@ -1522,7 +1590,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT"
+validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs
