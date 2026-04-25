@@ -251,7 +251,7 @@ print_done() {
 
   info "=== Installation complete ==="
   printf "\n"
-  printf "  ${C_GREEN}${C_BOLD}NemoClaw${C_RESET}  ${C_DIM}(%ss)${C_RESET}\n" "$elapsed"
+  printf "  ${C_GREEN}${C_BOLD}%s${C_RESET}  ${C_DIM}(%ss)${C_RESET}\n" "$_CLI_DISPLAY" "$elapsed"
   printf "\n"
   if [[ "$ONBOARD_RAN" == true ]]; then
     local sandbox_name agent_name
@@ -268,7 +268,7 @@ print_done() {
     if [[ "$_needs_reload" == true ]]; then
       printf "  %s$%s source %s\n" "$C_GREEN" "$C_RESET" "$(detect_shell_profile)"
     fi
-    printf "  %s$%s nemoclaw %s connect\n" "$C_GREEN" "$C_RESET" "$sandbox_name"
+    printf "  %s$%s %s %s connect\n" "$C_GREEN" "$C_RESET" "$_CLI_BIN" "$sandbox_name"
     local agent_cmd
     case "$agent_name" in
       hermes)
@@ -283,17 +283,17 @@ print_done() {
     esac
     printf "  %ssandbox@%s$%s %s\n" "$C_GREEN" "$sandbox_name" "$C_RESET" "$agent_cmd"
   elif [[ "$NEMOCLAW_READY_NOW" == true ]]; then
-    printf "  ${C_GREEN}NemoClaw CLI is installed.${C_RESET}\n"
+    printf "  ${C_GREEN}%s CLI is installed.${C_RESET}\n" "$_CLI_DISPLAY"
     printf "  ${C_DIM}Onboarding has not run yet.${C_RESET}\n"
     printf "\n"
     printf "  ${C_GREEN}Next:${C_RESET}\n"
     if [[ "$_needs_reload" == true ]]; then
       printf "  %s$%s source %s\n" "$C_GREEN" "$C_RESET" "$(detect_shell_profile)"
     fi
-    printf "  %s$%s nemoclaw onboard\n" "$C_GREEN" "$C_RESET"
+    printf "  %s$%s %s onboard\n" "$C_GREEN" "$C_RESET" "$_CLI_BIN"
   else
-    printf "  ${C_GREEN}NemoClaw CLI is installed.${C_RESET}\n"
-    printf "  ${C_DIM}Onboarding did not run because this shell cannot resolve 'nemoclaw' yet.${C_RESET}\n"
+    printf "  ${C_GREEN}%s CLI is installed.${C_RESET}\n" "$_CLI_DISPLAY"
+    printf "  ${C_DIM}Onboarding did not run because this shell cannot resolve '%s' yet.${C_RESET}\n" "$_CLI_BIN"
     printf "\n"
     printf "  ${C_GREEN}Next:${C_RESET}\n"
     if [[ -n "$NEMOCLAW_RECOVERY_EXPORT_DIR" ]]; then
@@ -302,7 +302,7 @@ print_done() {
     if [[ -n "$NEMOCLAW_RECOVERY_PROFILE" ]]; then
       printf "  %s$%s source %s\n" "$C_GREEN" "$C_RESET" "$NEMOCLAW_RECOVERY_PROFILE"
     fi
-    printf "  %s$%s nemoclaw onboard\n" "$C_GREEN" "$C_RESET"
+    printf "  %s$%s %s onboard\n" "$C_GREEN" "$C_RESET" "$_CLI_BIN"
   fi
   printf "\n"
   printf "  ${C_BOLD}GitHub${C_RESET}  ${C_DIM}https://github.com/nvidia/nemoclaw${C_RESET}\n"
@@ -314,7 +314,7 @@ usage() {
   local version_suffix
   version_suffix="$(installer_version_for_display)"
   printf "\n"
-  printf "  ${C_BOLD}NemoClaw Installer${C_RESET}${C_DIM}%s${C_RESET}\n\n" "$version_suffix"
+  printf "  ${C_BOLD}%s Installer${C_RESET}${C_DIM}%s${C_RESET}\n\n" "$_CLI_DISPLAY" "$version_suffix"
   printf "  ${C_DIM}Usage:${C_RESET}\n"
   printf "    curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash\n"
   printf "    curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- [options]\n\n"
@@ -436,7 +436,14 @@ command_exists() { command -v "$1" &>/dev/null; }
 
 MIN_NODE_VERSION="22.16.0"
 MIN_NPM_MAJOR=10
-RUNTIME_REQUIREMENT_MSG="NemoClaw requires Node.js >=${MIN_NODE_VERSION} and npm >=${MIN_NPM_MAJOR}."
+
+# ── Agent branding — adapt user-visible names to the active agent ──
+case "${NEMOCLAW_AGENT:-openclaw}" in
+  hermes)  _CLI_DISPLAY="NemoHermes"; _AGENT_PRODUCT="Hermes"; _CLI_BIN="nemohermes" ;;
+  *)       _CLI_DISPLAY="NemoClaw";   _AGENT_PRODUCT="OpenClaw"; _CLI_BIN="nemoclaw" ;;
+esac
+
+RUNTIME_REQUIREMENT_MSG="${_CLI_DISPLAY} requires Node.js >=${MIN_NODE_VERSION} and npm >=${MIN_NPM_MAJOR}."
 NEMOCLAW_SHIM_DIR="${HOME}/.local/bin"
 NEMOCLAW_READY_NOW=false
 NEMOCLAW_RECOVERY_PROFILE=""
@@ -707,7 +714,7 @@ install_nodejs() {
       info "Node.js found: ${current_version}"
       return
     fi
-    warn "Node.js ${current_version}, npm major ${current_npm_major:-unknown} found but NemoClaw requires Node.js >=${MIN_NODE_VERSION} and npm >=${MIN_NPM_MAJOR} — upgrading via nvm…"
+    warn "Node.js ${current_version}, npm major ${current_npm_major:-unknown} found but ${_CLI_DISPLAY} requires Node.js >=${MIN_NODE_VERSION} and npm >=${MIN_NPM_MAJOR} — upgrading via nvm…"
   else
     info "Node.js not found — installing via nvm…"
   fi
@@ -989,21 +996,21 @@ install_nemoclaw() {
   export NEMOCLAW_INSTALLING=1
 
   if is_source_checkout "$repo_root"; then
-    info "NemoClaw package.json found in the selected source checkout — installing from source…"
+    info "${_CLI_DISPLAY} package.json found in the selected source checkout — installing from source…"
     NEMOCLAW_SOURCE_ROOT="$repo_root"
     if [[ -z "${NEMOCLAW_AGENT:-}" || "${NEMOCLAW_AGENT}" == "openclaw" ]]; then
       spin "Preparing OpenClaw package" bash -c "$(declare -f info warn resolve_openclaw_version pre_extract_openclaw); pre_extract_openclaw \"\$1\"" _ "$NEMOCLAW_SOURCE_ROOT" \
         || warn "Pre-extraction failed — npm install may fail if openclaw tarball is broken"
     fi
-    spin "Installing NemoClaw dependencies" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm install --ignore-scripts"
-    spin "Building NemoClaw CLI modules" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm run --if-present build:cli"
-    spin "Building NemoClaw plugin" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\"/nemoclaw && npm install --ignore-scripts && npm run build"
-    spin "Linking NemoClaw CLI" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm link"
+    spin "Installing ${_CLI_DISPLAY} dependencies" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm install --ignore-scripts"
+    spin "Building ${_CLI_DISPLAY} CLI modules" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm run --if-present build:cli"
+    spin "Building ${_CLI_DISPLAY} plugin" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\"/nemoclaw && npm install --ignore-scripts && npm run build"
+    spin "Linking ${_CLI_DISPLAY} CLI" bash -c "cd \"$NEMOCLAW_SOURCE_ROOT\" && npm link"
   else
     if [[ -f "$package_json" ]]; then
       info "Installer payload is not a persistent source checkout — installing from GitHub…"
     fi
-    info "Installing NemoClaw from GitHub…"
+    info "Installing ${_CLI_DISPLAY} from GitHub…"
     # Resolve the latest release tag so we never install raw main.
     local release_ref
     release_ref="$(resolve_release_tag)"
@@ -1015,7 +1022,7 @@ install_nemoclaw() {
     rm -rf "$nemoclaw_src"
     mkdir -p "$(dirname "$nemoclaw_src")"
     NEMOCLAW_SOURCE_ROOT="$nemoclaw_src"
-    spin "Cloning NemoClaw source" git clone --depth 1 --branch "$release_ref" https://github.com/NVIDIA/NemoClaw.git "$nemoclaw_src"
+    spin "Cloning ${_CLI_DISPLAY} source" git clone --depth 1 --branch "$release_ref" https://github.com/NVIDIA/NemoClaw.git "$nemoclaw_src"
     # Fetch version tags into the shallow clone so `git describe --tags
     # --match "v*"` works at runtime (the shallow clone only has the
     # single ref we asked for).
@@ -1028,10 +1035,10 @@ install_nemoclaw() {
       spin "Preparing OpenClaw package" bash -c "$(declare -f info warn resolve_openclaw_version pre_extract_openclaw); pre_extract_openclaw \"\$1\"" _ "$nemoclaw_src" \
         || warn "Pre-extraction failed — npm install may fail if openclaw tarball is broken"
     fi
-    spin "Installing NemoClaw dependencies" bash -c "cd \"$nemoclaw_src\" && npm install --ignore-scripts"
-    spin "Building NemoClaw CLI modules" bash -c "cd \"$nemoclaw_src\" && npm run --if-present build:cli"
-    spin "Building NemoClaw plugin" bash -c "cd \"$nemoclaw_src\"/nemoclaw && npm install --ignore-scripts && npm run build"
-    spin "Linking NemoClaw CLI" bash -c "cd \"$nemoclaw_src\" && npm link"
+    spin "Installing ${_CLI_DISPLAY} dependencies" bash -c "cd \"$nemoclaw_src\" && npm install --ignore-scripts"
+    spin "Building ${_CLI_DISPLAY} CLI modules" bash -c "cd \"$nemoclaw_src\" && npm run --if-present build:cli"
+    spin "Building ${_CLI_DISPLAY} plugin" bash -c "cd \"$nemoclaw_src\"/nemoclaw && npm install --ignore-scripts && npm run build"
+    spin "Linking ${_CLI_DISPLAY} CLI" bash -c "cd \"$nemoclaw_src\" && npm link"
 
     # Install/upgrade the OpenShell CLI on the GitHub-clone path (curl|bash).
     # Without this, install.sh defers the openshell version gate entirely to
@@ -1072,7 +1079,7 @@ verify_nemoclaw() {
       info "Verified: nemoclaw is available at $(command -v nemoclaw)"
       return 0
     else
-      warn "Found nemoclaw at $(command -v nemoclaw) but it is not the real NemoClaw CLI."
+      warn "Found nemoclaw at $(command -v nemoclaw) but it is not the real ${_CLI_DISPLAY} CLI."
       warn "This is likely the broken placeholder npm package."
       npm uninstall -g nemoclaw 2>/dev/null || true
     fi
@@ -1100,7 +1107,7 @@ verify_nemoclaw() {
       warn "Onboarding will be skipped until PATH is updated."
       return 0
     else
-      warn "Found nemoclaw at $npm_bin/nemoclaw but it is not the real NemoClaw CLI."
+      warn "Found nemoclaw at $npm_bin/nemoclaw but it is not the real ${_CLI_DISPLAY} CLI."
       npm uninstall -g nemoclaw 2>/dev/null || true
     fi
   fi
@@ -1190,7 +1197,7 @@ run_installer_host_preflight() {
 
 run_onboard() {
   show_usage_notice
-  info "Running nemoclaw onboard…"
+  info "Running ${_CLI_BIN} onboard…"
   local -a onboard_cmd=(onboard)
   if command_exists node && [[ -f "${HOME}/.nemoclaw/onboard-session.json" ]]; then
     if node -e '
@@ -1302,7 +1309,7 @@ main() {
   install_nodejs
   ensure_supported_runtime
 
-  step 2 "NemoClaw CLI"
+  step 2 "${_CLI_DISPLAY} CLI"
   # install_or_upgrade_ollama
   fix_npm_permissions
   install_nemoclaw
