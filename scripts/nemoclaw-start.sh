@@ -1357,7 +1357,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # stream so openshell sandbox create can return once the container is ready.
   # TODO(#2277-P2): migrate to shared emit_restricted_log() helper
   touch /tmp/gateway.log
-  chmod 600 /tmp/gateway.log
+  chmod 644 /tmp/gateway.log
 
   # Separate log for auto-pair in non-root mode as well.
   # TODO(#2277-P2): migrate to shared emit_restricted_log() helper
@@ -1373,9 +1373,22 @@ if [ "$(id -u)" -ne 0 ]; then
   # Start gateway in background, auto-pair, then wait.
   # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
   # in the gateway process env — not exported to the sandbox shell.
+  # DIAG: capture gateway startup output to trace file
+  echo "$(date -Iseconds) TRACE: launching gateway with NODE_OPTIONS=$NODE_OPTIONS" | tee -a "$_DIAG" >&2
+  echo "$(date -Iseconds) TRACE: OPENCLAW=$OPENCLAW PORT=${_DASHBOARD_PORT}" | tee -a "$_DIAG" >&2
   OPENCLAW_GATEWAY_TOKEN="$_NONROOT_GATEWAY_TOKEN" \
     nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
   GATEWAY_PID=$!
+  # DIAG: give gateway a moment to crash, then dump log
+  sleep 3
+  echo "$(date -Iseconds) TRACE: gateway PID=$GATEWAY_PID alive=$(kill -0 $GATEWAY_PID 2>/dev/null && echo yes || echo no)" | tee -a "$_DIAG" >&2
+  echo "$(date -Iseconds) TRACE: gateway.log size=$(wc -c < /tmp/gateway.log 2>/dev/null || echo unknown)" | tee -a "$_DIAG" >&2
+  if [ -s /tmp/gateway.log ]; then
+    echo "$(date -Iseconds) TRACE: gateway.log first 20 lines:" | tee -a "$_DIAG" >&2
+    head -20 /tmp/gateway.log | tee -a "$_DIAG" >&2
+  else
+    echo "$(date -Iseconds) TRACE: gateway.log is empty — gateway may have crashed silently" | tee -a "$_DIAG" >&2
+  fi
   echo "[gateway] openclaw gateway launched (pid $GATEWAY_PID)" >&2
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
