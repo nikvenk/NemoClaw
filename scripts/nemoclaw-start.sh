@@ -1254,13 +1254,18 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "$(date -Iseconds) TRACE: non-root path entered" | tee -a "$_DIAG" >&2
   echo "[gateway] Running as non-root (uid=$(id -u)) — privilege separation disabled" >&2
   export HOME=/sandbox
+  echo "$(date -Iseconds) TRACE: before verify_config_integrity" | tee -a "$_DIAG" >&2
   if ! verify_config_integrity /sandbox/.openclaw; then
     echo "[SECURITY] Config integrity check failed — refusing to start (non-root mode)" >&2
     exit 1
   fi
+  echo "$(date -Iseconds) TRACE: before apply_model_override" | tee -a "$_DIAG" >&2
   apply_model_override
+  echo "$(date -Iseconds) TRACE: before apply_cors_override" | tee -a "$_DIAG" >&2
   apply_cors_override
+  echo "$(date -Iseconds) TRACE: before apply_slack_token_override" | tee -a "$_DIAG" >&2
   apply_slack_token_override
+  echo "$(date -Iseconds) TRACE: before token generation" | tee -a "$_DIAG" >&2
   # Non-root: no privilege separation — uid separation is unavailable, so the
   # sandbox user can read the token file. This is no worse than the pre-PR
   # state where the token lived in openclaw.json (also sandbox-readable).
