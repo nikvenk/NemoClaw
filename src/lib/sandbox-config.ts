@@ -169,6 +169,16 @@ function validateConfigDotpath(dotpath: string): DotpathValidation {
     if (UNSAFE_KEY_SEGMENTS.has(key)) {
       return { ok: false, reason: `segment '${key}' is reserved` };
     }
+    // Numeric segments would target array indices. extractDotpath reads
+    // them, but setDotpath always materialises plain objects, so allowing
+    // them here would silently overwrite array elements. Refuse until
+    // array editing is designed in as a feature of its own.
+    if (/^\d+$/.test(key)) {
+      return {
+        ok: false,
+        reason: `segment '${key}' targets an array index, which 'config set' does not support`,
+      };
+    }
   }
   return { ok: true };
 }
@@ -386,7 +396,8 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     const accepted =
       opts.acceptNewPath === true || process.env.NEMOCLAW_CONFIG_ACCEPT_NEW_PATH === "1";
     if (!accepted) {
-      const interactive = !!process.stdin.isTTY && !process.env.NEMOCLAW_NON_INTERACTIVE;
+      const interactive =
+        !!process.stdin.isTTY && process.env.NEMOCLAW_NON_INTERACTIVE !== "1";
       if (!interactive) {
         console.error(
           `  Key '${opts.key}' does not currently exist in the ${target.agentName} config.`,

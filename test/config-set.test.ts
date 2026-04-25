@@ -126,6 +126,14 @@ describe("config set helpers", () => {
       expect(validateConfigDotpath("toString").ok).toBe(false);
     });
 
+    it("rejects numeric segments because array editing is unsupported", () => {
+      const result = validateConfigDotpath("tools.0.name");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/array index/);
+      expect(validateConfigDotpath("0").ok).toBe(false);
+      expect(validateConfigDotpath("policies.42").ok).toBe(false);
+    });
+
     it("returns a reason describing the failure", () => {
       const result = validateConfigDotpath("agents..defaults");
       expect(result.ok).toBe(false);

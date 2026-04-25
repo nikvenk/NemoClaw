@@ -512,6 +512,8 @@ In an interactive terminal, accept the prompt to proceed.
 In non-interactive mode (CI or `NEMOCLAW_NON_INTERACTIVE=1`), pass `--config-accept-new-path` or set `NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1`.
 Modifying a key that already exists in the config never triggers this gate.
 
+Numeric path segments are also refused because `config set` only writes plain objects and would silently overwrite array elements; replace the array as a whole with `--value '[...]'` instead.
+
 ### `openclaw config set` or `unset` is blocked inside the sandbox
 
 This is expected.
