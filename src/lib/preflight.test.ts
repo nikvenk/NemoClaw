@@ -15,6 +15,10 @@ import {
   probeContainerDns,
 } from "../../dist/lib/preflight";
 
+function renderCommand(command: string | readonly string[]): string {
+  return Array.isArray(command) ? command.join(" ") : command;
+}
+
 function requireMemoryInfo(result: ReturnType<typeof getMemoryInfo>) {
   expect(result).not.toBeNull();
   if (!result) {
@@ -313,7 +317,7 @@ describe("assessHost", () => {
       commandExistsImpl: (name: string) =>
         name === "docker" || name === "apt-get" || name === "systemctl",
       runCaptureImpl: (command: string | readonly string[]) => {
-        const rendered = String(command);
+        const rendered = renderCommand(command);
         if (rendered === "command -v apt-get") return "/usr/bin/apt-get";
         if (rendered === "command -v systemctl") return "/usr/bin/systemctl";
         if (rendered === "systemctl is-active docker") return "active";
@@ -668,7 +672,7 @@ describe("probeContainerDns", () => {
     const captured: string[] = [];
     const result = probeContainerDns({
       runCaptureImpl: (command) => {
-        captured.push(String(command));
+        captured.push(renderCommand(command));
         return BUSYBOX_SUCCESS;
       },
     });
@@ -684,7 +688,7 @@ describe("probeContainerDns", () => {
     probeContainerDns({
       command: "echo OVERRIDDEN",
       runCaptureImpl: (command) => {
-        seen = String(command);
+        seen = renderCommand(command);
         return "Name:\tregistry.npmjs.org\nAddress: 1.2.3.4\n";
       },
     });
@@ -730,7 +734,7 @@ describe("probeContainerDns", () => {
     let captured = "";
     probeContainerDns({
       runCaptureImpl: (command) => {
-        captured = String(command);
+        captured = renderCommand(command);
         return BUSYBOX_SUCCESS;
       },
     });
@@ -790,7 +794,7 @@ describe("getDockerBridgeGatewayIp", () => {
   it("uses the expected docker network inspect command shape", () => {
     let captured = "";
     getDockerBridgeGatewayIp((cmd) => {
-      captured = String(cmd);
+      captured = renderCommand(cmd);
       return "172.17.0.1";
     });
     expect(captured).toContain("docker network inspect bridge");

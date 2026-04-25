@@ -745,10 +745,13 @@ function createSwapfile(mem: MemoryInfo): SwapResult {
     runCapture(["sudo", "chmod", "600", "/swapfile"], { ignoreError: false });
     runCapture(["sudo", "mkswap", "/swapfile"], { ignoreError: false });
     runCapture(["sudo", "swapon", "/swapfile"], { ignoreError: false });
-    const fstabHasSwapfile = run(["sudo", "grep", "-q", "/swapfile", "/etc/fstab"], {
-      ignoreError: true,
-      suppressOutput: true,
-    });
+    const fstabHasSwapfile = run(
+      ["sudo", "grep", "-Eq", "^[[:space:]]*/swapfile([[:space:]]|$)", "/etc/fstab"],
+      {
+        ignoreError: true,
+        suppressOutput: true,
+      },
+    );
     if (fstabHasSwapfile.status !== 0) {
       run(["sudo", "tee", "-a", "/etc/fstab"], {
         input: "/swapfile none swap sw 0 0\n",
