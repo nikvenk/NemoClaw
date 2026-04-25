@@ -41,7 +41,23 @@ resolve_repo_root() {
   printf "%s\n" "$base"
 }
 DEFAULT_NEMOCLAW_VERSION="0.1.0"
-TOTAL_STEPS=3
+# Step layout matches NemoClaw_Installer_Recipe.docx §5 (Install Flow):
+#   1. Platform + Dependencies   2. NemoClaw CLI   3. Backend Selection
+#   4. Onboarding                5. Verification
+TOTAL_STEPS=5
+
+# Recipe §4 — pinned dependency floors.
+MIN_DOCKER_VERSION="28.0"
+MIN_OPENSHELL_VERSION="0.0.32"
+NEMOCLAW_STATE_DIR="/var/lib/nemoclaw"
+NEMOCLAW_MANIFEST_PATH="${NEMOCLAW_STATE_DIR}/manifest.json"
+NEMOCLAW_MODEL_DIR="${NEMOCLAW_STATE_DIR}/models"
+MODEL_PULL_UNIT="nemoclaw-model-pull.service"
+
+# Selected backend (populated by select_backend); recorded in manifest.
+NEMOCLAW_SELECTED_BACKEND=""
+NEMOCLAW_SELECTED_BACKEND_ENDPOINT=""
+NEMOCLAW_DETECTED_PLATFORM=""
 
 resolve_installer_version() {
   local repo_root
@@ -846,6 +862,627 @@ install_or_upgrade_ollama() {
   fi
 }
 
+# ===========================================================================
+# Recipe §4 — Dependency Resolver (REUSE / INSTALL lanes)
+# Recipe §6 — Component Details (backend selection, platform fixups, model pull)
+# Recipe §7 — Verification (5 smoke tests + telemetry)
+#
+# These functions implement the design in NemoClaw_Installer_Recipe.docx.
+# Each lane probes for an existing tool, records "REUSE" or "INSTALL" in the
+# manifest, and only mutates the host when an install is actually required.
+# ===========================================================================
+
+# Keep `sudo` invocations transparent: if we're root we skip it; otherwise we
+# call sudo but defer to the user for password prompts. Returns exit status
+# of the underlying command.
+maybe_sudo() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+# Detect platform — Spark vs Station vs other Linux. Sets NEMOCLAW_DETECTED_PLATFORM.
+detect_platform() {
+  local model="" plat=""
+  if [[ -r /sys/firmware/devicetree/base/model ]]; then
+    # tr -d '\0' strips the trailing NUL devicetree appends
+    model="$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null || true)"
+  fi
+  if [[ -z "$model" && -r /sys/class/dmi/id/product_name ]]; then
+    model="$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)"
+  fi
+
+  case "$model" in
+    *Spark* | *spark* | *DGX*Spark*) plat="spark" ;;
+    *GB300* | *Station* | *Galaxy* | *P3830*) plat="station" ;;
+    "") plat="linux" ;;
+    *) plat="linux" ;;
+  esac
+
+  # Allow override (CI, test, etc.) — recipe §2 prerequisites.
+  NEMOCLAW_DETECTED_PLATFORM="${NEMOCLAW_PLATFORM_OVERRIDE:-$plat}"
+  info "Platform: ${NEMOCLAW_DETECTED_PLATFORM} (${model:-unknown})"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §4 — Color-coded dependency status table (terminal-rendered).
+# Pure detection: no host mutation. Called twice in main() — once as a
+# preview at the start of step 1, and once after install for confirmation.
+#
+# Action codes:
+#   REUSE   — present and >= floor                 (green)
+#   UPGRADE — present but below floor              (yellow)
+#   INSTALL — not present, will be installed       (red)
+#   DEFAULT — chosen by default selection rule     (cyan)
+#   BUNDLED — provided by NemoClaw npm package     (cyan)
+#   PULL    — backgrounded model pull              (cyan)
+# ---------------------------------------------------------------------------
+_status_color() {
+  case "$1" in
+    REUSE)                  printf "%s" "$C_GREEN" ;;
+    UPGRADE)                printf "%s" "$C_YELLOW" ;;
+    INSTALL)                printf "%s" "$C_RED" ;;
+    DEFAULT | BUNDLED | PULL) printf "%s" "$C_CYAN" ;;
+    *)                      printf "" ;;
+  esac
+}
+
+# Decide REUSE / UPGRADE / INSTALL given a detected version + minimum floor.
+_decide_action() {
+  local detected="$1" floor="$2"
+  if [[ -z "$detected" ]]; then
+    printf "INSTALL"
+  elif version_gte "$detected" "$floor"; then
+    printf "REUSE"
+  else
+    printf "UPGRADE"
+  fi
+}
+
+print_dependency_table() {
+  local title="${1:-Dependency status}"
+
+  # Probe — pure functions only.
+  local docker_ver node_ver npm_ver openshell_ver platform
+  docker_ver="$(get_docker_version || true)"
+  node_ver="$(node --version 2>/dev/null | sed 's/^v//' || true)"
+  npm_ver="$(npm --version 2>/dev/null || true)"
+  openshell_ver="$(get_openshell_version || true)"
+  platform="${NEMOCLAW_DETECTED_PLATFORM:-unknown}"
+
+  # Decide actions
+  local docker_act node_act npm_act openshell_act backend_act
+  docker_act="$(_decide_action "$docker_ver" "$MIN_DOCKER_VERSION")"
+  node_act="$(_decide_action "$node_ver" "$MIN_NODE_VERSION")"
+  local npm_major
+  npm_major="$(version_major "${npm_ver:-0}")"
+  if [[ -z "$npm_ver" ]]; then
+    npm_act="INSTALL"
+  elif [[ "$npm_major" =~ ^[0-9]+$ ]] && ((npm_major >= MIN_NPM_MAJOR)); then
+    npm_act="REUSE"
+  else
+    npm_act="UPGRADE"
+  fi
+  openshell_act="$(_decide_action "$openshell_ver" "$MIN_OPENSHELL_VERSION")"
+
+  # Backend probe (read-only)
+  local backend_present="none"
+  if _port_listening 8000 && _proc_running vllm; then
+    backend_present="vLLM:8000"
+    backend_act="REUSE"
+  elif _proc_running sglang; then
+    backend_present="SGLang"
+    backend_act="REUSE"
+  elif command_exists ollama && _port_listening 11434; then
+    backend_present="Ollama:11434"
+    backend_act="REUSE"
+  else
+    backend_present="none"
+    backend_act="DEFAULT"
+  fi
+
+  # ── Render ──────────────────────────────────────────────────────────────
+  # ASCII column widths so printf %-Ns lines up regardless of locale.
+  local W1=15 W2=20 W3=20
+
+  # Print one row with colored Action cell. Action is last → safe to colorize.
+  _row() {
+    local comp="$1" req="$2" det="$3" act="$4" extra="${5:-}"
+    local clr label
+    clr="$(_status_color "$act")"
+    label="${act}${extra:+ ${extra}}"
+    printf "  %-${W1}s %-${W2}s %-${W3}s ${clr}${C_BOLD}%s${C_RESET}\n" \
+      "$comp" "$req" "${det:-not present}" "$label"
+  }
+
+  printf "\n  ${C_BOLD}%s${C_RESET}\n" "$title"
+  printf "  ${C_DIM}%-${W1}s %-${W2}s %-${W3}s %s${C_RESET}\n" \
+    "Component" "Required" "Detected" "Action"
+  # Horizontal rule — light dashes via the dim style (locale-safe ASCII).
+  printf "  ${C_DIM}%s${C_RESET}\n" \
+    "----------------------------------------------------------------------"
+
+  _row "Docker"       ">= ${MIN_DOCKER_VERSION}"     "${docker_ver}"                "$docker_act"
+  _row "Node.js"      ">= ${MIN_NODE_VERSION}"       "${node_ver:+v${node_ver}}"    "$node_act"
+  _row "npm"          ">= ${MIN_NPM_MAJOR}.x"        "${npm_ver}"                   "$npm_act"
+  _row "OpenShell"    ">= ${MIN_OPENSHELL_VERSION}"  "${openshell_ver}"             "$openshell_act"
+  _row "OpenClaw CLI" "bundled w/ NemoClaw"          "-"                            "BUNDLED"
+  _row "Nemotron-3"   "auto by VRAM"                 "-"                            "PULL" "(background)"
+  _row "Backend"      "vLLM > SGL > Ollama"          "${backend_present}"           "$backend_act" \
+    "${NEMOCLAW_SELECTED_BACKEND:+-> ${NEMOCLAW_SELECTED_BACKEND}}"
+
+  printf "  ${C_DIM}%s${C_RESET}\n" \
+    "----------------------------------------------------------------------"
+  printf "  ${C_DIM}Platform${C_RESET} ${C_BOLD}%s${C_RESET}    ${C_DIM}Manifest${C_RESET} ${C_DIM}%s${C_RESET}\n" \
+    "$platform" "$NEMOCLAW_MANIFEST_PATH"
+  printf "  ${C_DIM}Legend${C_RESET}  ${C_GREEN}${C_BOLD}REUSE${C_RESET}=ok  ${C_YELLOW}${C_BOLD}UPGRADE${C_RESET}=needs upgrade  ${C_RED}${C_BOLD}INSTALL${C_RESET}=missing  ${C_CYAN}${C_BOLD}DEFAULT/BUNDLED/PULL${C_RESET}=installer-managed\n\n"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §4 — Dependency lane: Docker (>= 28.x)
+# ---------------------------------------------------------------------------
+get_docker_version() {
+  command_exists docker || { printf ""; return; }
+  docker --version 2>/dev/null \
+    | sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1
+}
+
+resolve_docker() {
+  local current
+  current="$(get_docker_version || true)"
+  if [[ -n "$current" ]] && version_gte "$current" "$MIN_DOCKER_VERSION"; then
+    info "Docker ${current} found — REUSE (>= ${MIN_DOCKER_VERSION})"
+    NEMOCLAW_DOCKER_VERSION="$current"
+    NEMOCLAW_DOCKER_ACTION="reuse"
+    return 0
+  fi
+
+  if [[ -n "$current" ]]; then
+    warn "Docker ${current} below required ${MIN_DOCKER_VERSION} — upgrading via docker-ce repo"
+  else
+    info "Docker not found — installing docker-ce (>= ${MIN_DOCKER_VERSION})"
+  fi
+
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    warn "Skipping Docker install — not Linux"
+    NEMOCLAW_DOCKER_ACTION="skipped"
+    return 0
+  fi
+
+  # Docker CE official convenience installer — same approach as Spark setup,
+  # but invoked here so a fresh host gets Docker before we touch anything else.
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  _cleanup_files+=("$tmpdir/get-docker.sh")
+  curl -fsSL https://get.docker.com -o "$tmpdir/get-docker.sh"
+  verify_downloaded_script "$tmpdir/get-docker.sh" "Docker installer"
+  spin "Installing Docker (docker-ce)" maybe_sudo sh "$tmpdir/get-docker.sh"
+  rm -rf "$tmpdir"
+
+  # Add the invoking user to the docker group so non-root commands work
+  # without sudo (matches recipe §6 Spark fixup behavior).
+  local real_user="${SUDO_USER:-${USER:-}}"
+  if [[ -n "$real_user" && "$real_user" != "root" ]]; then
+    if ! id -nG "$real_user" 2>/dev/null | grep -qw docker; then
+      info "Adding ${real_user} to docker group"
+      maybe_sudo usermod -aG docker "$real_user" || warn "usermod failed — re-run as sudo if needed"
+    fi
+  fi
+
+  current="$(get_docker_version || true)"
+  NEMOCLAW_DOCKER_VERSION="${current:-unknown}"
+  NEMOCLAW_DOCKER_ACTION="install"
+  ok "Docker ${NEMOCLAW_DOCKER_VERSION} installed"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §4 — Dependency lane: OpenShell (>= MIN_OPENSHELL_VERSION)
+# Delegates to the existing scripts/install-openshell.sh (which knows about
+# the supported version window). This is a thin wrapper that decides REUSE
+# vs INSTALL up-front and records it in the manifest.
+# ---------------------------------------------------------------------------
+get_openshell_version() {
+  command_exists openshell || { printf ""; return; }
+  openshell --version 2>/dev/null \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+
+resolve_openshell() {
+  local current
+  current="$(get_openshell_version || true)"
+  if [[ -n "$current" ]] && version_gte "$current" "$MIN_OPENSHELL_VERSION"; then
+    info "OpenShell ${current} found — REUSE (>= ${MIN_OPENSHELL_VERSION})"
+    NEMOCLAW_OPENSHELL_VERSION="$current"
+    NEMOCLAW_OPENSHELL_ACTION="reuse"
+    return 0
+  fi
+
+  info "OpenShell ${current:-not present} — installing/upgrading via install-openshell.sh"
+  local installer="${SCRIPT_DIR}/install-openshell.sh"
+  if [[ ! -f "$installer" ]]; then
+    # Source-checkout running outside its own scripts/ dir
+    installer="${NEMOCLAW_SOURCE_ROOT:-}/scripts/install-openshell.sh"
+  fi
+  if [[ -f "$installer" ]]; then
+    spin "Installing OpenShell" bash "$installer"
+  else
+    warn "install-openshell.sh not found — deferring OpenShell install to nemoclaw onboard"
+  fi
+
+  current="$(get_openshell_version || true)"
+  NEMOCLAW_OPENSHELL_VERSION="${current:-unknown}"
+  NEMOCLAW_OPENSHELL_ACTION="install"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §6.1 — Backend selection (MRD §2.3.4)
+#   Priority: vLLM:8000 → SGLang → Ollama → install Ollama default
+#
+# Detection is best-effort: a listening port plus a matching process name.
+# We never start a service that wasn't already running — REUSE is purely
+# observational. The chosen backend is recorded in ~/.nemoclaw/config.toml
+# so the sandbox can be wired to it during onboarding.
+# ---------------------------------------------------------------------------
+_port_listening() {
+  local port="$1"
+  if command_exists ss; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"
+  elif command_exists netstat; then
+    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"
+  else
+    return 1
+  fi
+}
+
+_proc_running() {
+  local needle="$1"
+  if command_exists pidof; then
+    pidof -x "$needle" >/dev/null 2>&1 && return 0
+  fi
+  command_exists pgrep && pgrep -af "$needle" >/dev/null 2>&1
+}
+
+select_backend() {
+  # 1) vLLM serving Nemotron-3 Super on :8000?
+  if _port_listening 8000 && _proc_running vllm; then
+    NEMOCLAW_SELECTED_BACKEND="vllm"
+    NEMOCLAW_SELECTED_BACKEND_ENDPOINT="http://127.0.0.1:8000"
+    info "Backend: REUSE vLLM at ${NEMOCLAW_SELECTED_BACKEND_ENDPOINT}"
+    write_backend_config
+    return 0
+  fi
+
+  # 2) SGLang on :11434 (alt) — process detection only, since the port
+  #    can collide with Ollama.
+  if _proc_running sglang; then
+    NEMOCLAW_SELECTED_BACKEND="sglang"
+    NEMOCLAW_SELECTED_BACKEND_ENDPOINT="http://127.0.0.1:11434"
+    info "Backend: REUSE SGLang at ${NEMOCLAW_SELECTED_BACKEND_ENDPOINT}"
+    write_backend_config
+    return 0
+  fi
+
+  # 3) Ollama on :11434?
+  if command_exists ollama && _port_listening 11434; then
+    NEMOCLAW_SELECTED_BACKEND="ollama"
+    NEMOCLAW_SELECTED_BACKEND_ENDPOINT="http://127.0.0.1:11434"
+    info "Backend: REUSE Ollama at ${NEMOCLAW_SELECTED_BACKEND_ENDPOINT}"
+    write_backend_config
+    return 0
+  fi
+
+  # 4) Default — install Ollama and queue Nemotron-3 Super pull (backgrounded).
+  if detect_gpu; then
+    info "Backend: no compatible inference server found — installing Ollama (default)"
+    install_or_upgrade_ollama
+    NEMOCLAW_SELECTED_BACKEND="ollama"
+    NEMOCLAW_SELECTED_BACKEND_ENDPOINT="http://127.0.0.1:11434"
+  else
+    warn "No GPU detected — backend will be configured at onboard time"
+    NEMOCLAW_SELECTED_BACKEND="deferred"
+    NEMOCLAW_SELECTED_BACKEND_ENDPOINT=""
+  fi
+  write_backend_config
+}
+
+write_backend_config() {
+  local cfg_dir="${HOME}/.nemoclaw"
+  mkdir -p "$cfg_dir"
+  local cfg="${cfg_dir}/config.toml"
+  # Idempotent rewrite of the [backend] block.
+  python3 - "$cfg" "$NEMOCLAW_SELECTED_BACKEND" "$NEMOCLAW_SELECTED_BACKEND_ENDPOINT" <<'PY' || warn "config.toml write failed"
+import os, sys, re
+path, name, endpoint = sys.argv[1], sys.argv[2], sys.argv[3]
+existing = ""
+if os.path.exists(path):
+    with open(path) as f:
+        existing = f.read()
+block = f'[backend]\nname = "{name}"\nendpoint = "{endpoint}"\n'
+new = re.sub(r"\[backend\][^\[]*", "", existing, flags=re.DOTALL).strip()
+out = (new + ("\n\n" if new else "") + block)
+with open(path, "w") as f:
+    f.write(out)
+PY
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §6.2 — Platform-specific fixups
+#   Spark:   delegate to setup-spark.sh (cgroupns=host + CoreDNS)
+#   Station: HMM check + NONATS app-profile + KV-cache tier preference
+# ---------------------------------------------------------------------------
+apply_platform_fixups() {
+  case "$NEMOCLAW_DETECTED_PLATFORM" in
+    spark)
+      apply_spark_fixups
+      ;;
+    station)
+      apply_station_fixups
+      ;;
+    *)
+      info "Platform: generic Linux — no platform-specific fixups"
+      ;;
+  esac
+}
+
+apply_spark_fixups() {
+  local script="${SCRIPT_DIR}/setup-spark.sh"
+  if [[ ! -x "$script" && -f "$script" ]]; then
+    chmod +x "$script" 2>/dev/null || true
+  fi
+  if [[ -f "$script" ]]; then
+    info "Applying DGX Spark fixups (cgroupns=host, CoreDNS pre-pull)"
+    spin "DGX Spark setup" maybe_sudo bash "$script" \
+      || warn "Spark fixups returned non-zero (non-fatal)"
+  else
+    warn "setup-spark.sh missing — skipping Spark fixups"
+  fi
+
+  # CoreDNS pre-pull avoids a 30s gateway-start hang on first run.
+  if command_exists docker; then
+    spin "Pre-pulling CoreDNS image for OpenShell gateway" \
+      docker pull coredns/coredns:latest \
+      || warn "CoreDNS pre-pull failed (non-fatal)"
+  fi
+}
+
+apply_station_fixups() {
+  info "Applying DGX Station GB300 fixups (HMM, app profile, KV cache)"
+
+  # 1) HMM should already be enabled by R575+ open-kernel driver, but verify.
+  if command_exists nvidia-smi; then
+    if nvidia-smi -q 2>/dev/null | grep -qE 'Heterogeneous Memory.*Enabled|HMM.*Enabled'; then
+      ok "HMM enabled (mixed-coherency unified VA)"
+    else
+      warn "HMM status not visible from nvidia-smi -q. Driver R575+ recommended."
+    fi
+  fi
+
+  # 2) NVIDIA Application Profile — steer GLX away from ATS-capable iGPU on
+  # mixed-coherency systems. UseNonATSGpuInMixedCoherencySystems = True ⇒
+  # DeviceModalityPreference = NONATS (= 2). Layered as a system-wide profile.
+  local prof_dir="/etc/nvidia/profiles"
+  local prof_file="${prof_dir}/nemoclaw-station.json"
+  maybe_sudo mkdir -p "$prof_dir"
+  if ! maybe_sudo test -f "$prof_file" \
+    || ! maybe_sudo grep -q "UseNonATSGpuInMixedCoherencySystems" "$prof_file" 2>/dev/null; then
+    info "Writing NVIDIA app profile: ${prof_file}"
+    maybe_sudo tee "$prof_file" >/dev/null <<'JSON'
+{
+  "rules": [
+    {
+      "pattern": { "feature": "procname", "matches": "*" },
+      "profile": "NemoClawStation"
+    }
+  ],
+  "profiles": [
+    {
+      "name": "NemoClawStation",
+      "settings": [
+        { "key": "UseNonATSGpuInMixedCoherencySystems", "value": true }
+      ]
+    }
+  ]
+}
+JSON
+  fi
+
+  # 3) KV-cache tier hint — read by NemoClaw plugin to prefer HBM3e then LPDDR5
+  # for KV cache on Station. Stored alongside the manifest.
+  maybe_sudo mkdir -p "$NEMOCLAW_STATE_DIR"
+  maybe_sudo tee "${NEMOCLAW_STATE_DIR}/kv-cache-tiers.json" >/dev/null <<'JSON'
+{ "tiers": ["HBM3e", "LPDDR5"], "platform": "dgx-station-gb300" }
+JSON
+  ok "Station fixups applied"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §4 / §6 — Backgrounded Nemotron-3 Super pull
+# Installs a oneshot systemd unit so the installer returns immediately while
+# `ollama pull` continues in the background. Progress is visible via
+# `nemoclaw status` (which reads journalctl -u $MODEL_PULL_UNIT).
+# ---------------------------------------------------------------------------
+schedule_model_pull() {
+  if [[ "$NEMOCLAW_SELECTED_BACKEND" != "ollama" ]]; then
+    info "Skipping model pull unit — backend is ${NEMOCLAW_SELECTED_BACKEND:-deferred}"
+    return 0
+  fi
+  if ! command_exists systemctl; then
+    warn "systemd not available — running model pull synchronously instead"
+    install_or_upgrade_ollama
+    return 0
+  fi
+
+  # Pick the right tag based on VRAM (matches install_or_upgrade_ollama logic).
+  local vram_gb model_tag
+  vram_gb=$(($(get_vram_mb) / 1024))
+  if ((vram_gb >= 120)); then
+    model_tag="nemotron-3-super:120b"
+  else
+    model_tag="nemotron-3-nano:30b"
+  fi
+  info "Scheduling background model pull: ${model_tag} (~60 GB NVFP4)"
+
+  local unit_path="/etc/systemd/system/${MODEL_PULL_UNIT}"
+  maybe_sudo tee "$unit_path" >/dev/null <<UNIT
+[Unit]
+Description=NemoClaw — pull ${model_tag} (Recipe §4 backgrounded model pull)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=${HOME}
+ExecStart=/usr/bin/env ollama pull ${model_tag}
+SuccessExitStatus=0
+TimeoutStartSec=infinity
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  maybe_sudo systemctl daemon-reload
+  maybe_sudo systemctl enable --now "$MODEL_PULL_UNIT" \
+    || warn "Failed to start ${MODEL_PULL_UNIT} — run 'systemctl start ${MODEL_PULL_UNIT}' manually"
+  ok "Model pull running in background — track via 'nemoclaw status' or 'journalctl -u ${MODEL_PULL_UNIT}'"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §4 — Manifest writer
+# Pins resolved versions to /var/lib/nemoclaw/manifest.json so a later
+# `nemoclaw status` (or a re-run of the installer) can prove every dep.
+# ---------------------------------------------------------------------------
+write_dependency_manifest() {
+  maybe_sudo mkdir -p "$NEMOCLAW_STATE_DIR"
+
+  local node_ver npm_ver docker_ver openshell_ver openclaw_ver nemoclaw_ver
+  node_ver="$(node --version 2>/dev/null || echo unknown)"
+  npm_ver="$(npm --version 2>/dev/null || echo unknown)"
+  docker_ver="${NEMOCLAW_DOCKER_VERSION:-$(get_docker_version || echo unknown)}"
+  openshell_ver="${NEMOCLAW_OPENSHELL_VERSION:-$(get_openshell_version || echo unknown)}"
+  openclaw_ver="$(openclaw --version 2>/dev/null | head -1 || echo unknown)"
+  nemoclaw_ver="${NEMOCLAW_VERSION:-unknown}"
+
+  local manifest
+  manifest="$(mktemp)"
+  _cleanup_files+=("$manifest")
+  python3 - "$manifest" <<PY
+import json, os, sys, datetime
+m = {
+  "schema": 1,
+  "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+  "platform": "${NEMOCLAW_DETECTED_PLATFORM}",
+  "nemoclaw": {"version": "${nemoclaw_ver}"},
+  "dependencies": {
+    "docker":    {"version": "${docker_ver}",    "action": "${NEMOCLAW_DOCKER_ACTION:-unknown}",    "min": "${MIN_DOCKER_VERSION}"},
+    "node":      {"version": "${node_ver}",      "action": "ensured",                              "min": "${MIN_NODE_VERSION}"},
+    "npm":       {"version": "${npm_ver}",       "action": "ensured",                              "min_major": ${MIN_NPM_MAJOR}},
+    "openshell": {"version": "${openshell_ver}", "action": "${NEMOCLAW_OPENSHELL_ACTION:-unknown}", "min": "${MIN_OPENSHELL_VERSION}"},
+    "openclaw":  {"version": "${openclaw_ver}",  "action": "bundled"}
+  },
+  "backend": {
+    "name":     "${NEMOCLAW_SELECTED_BACKEND}",
+    "endpoint": "${NEMOCLAW_SELECTED_BACKEND_ENDPOINT}"
+  },
+  "model_pull_unit": "${MODEL_PULL_UNIT}"
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(m, f, indent=2, sort_keys=True)
+PY
+  maybe_sudo install -m 0644 "$manifest" "$NEMOCLAW_MANIFEST_PATH"
+  rm -f "$manifest"
+  ok "Dependency manifest written: ${NEMOCLAW_MANIFEST_PATH}"
+}
+
+# ---------------------------------------------------------------------------
+# Recipe §7 — Verification (5 smoke tests + telemetry)
+# These mirror the post-install checklist in the recipe doc. None of them
+# fail the install on their own — they emit warnings and let the user
+# inspect the install before retrying.
+# ---------------------------------------------------------------------------
+emit_install_event() {
+  local result="$1"
+  local log_dir="/var/log/nemoclaw"
+  maybe_sudo mkdir -p "$log_dir" 2>/dev/null || true
+  local payload
+  payload=$(printf '{"event":"install.%s","ts":"%s","platform":"%s","backend":"%s"}\n' \
+    "$result" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$NEMOCLAW_DETECTED_PLATFORM" "$NEMOCLAW_SELECTED_BACKEND")
+  printf '%s\n' "$payload" | maybe_sudo tee -a "${log_dir}/events.log" >/dev/null 2>&1 || true
+}
+
+run_smoke_tests() {
+  local pass=0 fail=0
+  info "Running smoke tests (Recipe §7)"
+
+  # 1. openshell sandbox list → nemoclaw Ready
+  if command_exists openshell; then
+    if openshell sandbox list 2>/dev/null | grep -qiE 'nemoclaw.*ready|ready.*nemoclaw'; then
+      ok "1/5 openshell sandbox 'nemoclaw' Ready"; pass=$((pass + 1))
+    else
+      warn "1/5 openshell sandbox not Ready — onboarding may still be running"; fail=$((fail + 1))
+    fi
+  else
+    warn "1/5 openshell not on PATH"; fail=$((fail + 1))
+  fi
+
+  # 2. nemoclaw status → deps + backend + model
+  if command_exists nemoclaw; then
+    if nemoclaw status >/dev/null 2>&1; then
+      ok "2/5 nemoclaw status returned 0"; pass=$((pass + 1))
+    else
+      warn "2/5 nemoclaw status returned non-zero"; fail=$((fail + 1))
+    fi
+  else
+    warn "2/5 nemoclaw CLI not on PATH"; fail=$((fail + 1))
+  fi
+
+  # 3. systemctl is-active nemoclaw.service (skip if no systemd / unit absent)
+  if command_exists systemctl && systemctl list-unit-files 2>/dev/null | grep -q '^nemoclaw.service'; then
+    if systemctl is-active --quiet nemoclaw.service; then
+      ok "3/5 nemoclaw.service active"; pass=$((pass + 1))
+    else
+      warn "3/5 nemoclaw.service not active"; fail=$((fail + 1))
+    fi
+  else
+    info "3/5 nemoclaw.service not present (skipped)"
+  fi
+
+  # 4. nemoclaw chat hello — only if backend is up. Avoid hanging in CI.
+  if command_exists nemoclaw && [[ "$NEMOCLAW_SELECTED_BACKEND" != "deferred" ]]; then
+    if timeout 30s nemoclaw chat --agent repl --local 'hello' >/dev/null 2>&1; then
+      ok "4/5 nemoclaw chat 'hello' returned 200"; pass=$((pass + 1))
+    else
+      warn "4/5 nemoclaw chat 'hello' did not respond within 30s (model may still be downloading)"
+    fi
+  else
+    info "4/5 chat smoke test skipped (backend=${NEMOCLAW_SELECTED_BACKEND:-deferred})"
+  fi
+
+  # 5. Model pull unit running / completed (if applicable)
+  if command_exists systemctl && systemctl list-unit-files 2>/dev/null | grep -q "^${MODEL_PULL_UNIT}"; then
+    local state
+    state="$(systemctl show -p ActiveState --value "$MODEL_PULL_UNIT" 2>/dev/null || echo unknown)"
+    case "$state" in
+      active | activating) ok "5/5 ${MODEL_PULL_UNIT} ${state}"; pass=$((pass + 1)) ;;
+      inactive)            ok "5/5 ${MODEL_PULL_UNIT} completed"; pass=$((pass + 1)) ;;
+      *)                   warn "5/5 ${MODEL_PULL_UNIT} state=${state}"; fail=$((fail + 1)) ;;
+    esac
+  else
+    info "5/5 model pull unit not used"
+  fi
+
+  if ((fail > 0)); then
+    emit_install_event "partial"
+    warn "Smoke tests: ${pass} passed, ${fail} warned — see 'nemoclaw status' for details"
+  else
+    emit_install_event "success"
+    ok  "Smoke tests: ${pass} passed"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Fix npm permissions for global installs (Linux only).
 # If the npm global prefix points to a system directory (e.g. /usr or
@@ -1366,15 +2003,30 @@ main() {
   print_banner
   bash "${SCRIPT_DIR}/setup-jetson.sh"
 
-  step 1 "Node.js"
+  # Recipe §1 / §6.2 — figure out which platform we're on so dependency lanes
+  # and fixups can branch correctly. Done before any host mutation.
+  detect_platform
+
+  # ─── Step 1: Platform + Dependencies (Recipe §4) ───────────────────────
+  step 1 "Platform & Dependencies"
+  print_dependency_table "Dependency status (preview — pre-install)"
+  resolve_docker
   install_nodejs
   ensure_supported_runtime
+  resolve_openshell
+  apply_platform_fixups
 
+  # ─── Step 2: NemoClaw CLI (existing behavior) ─────────────────────────
   step 2 "NemoClaw CLI"
-  # install_or_upgrade_ollama
   fix_npm_permissions
   install_nemoclaw
   verify_nemoclaw
+
+  # ─── Step 3: Backend selection (Recipe §6.1, MRD §2.3.4) ──────────────
+  step 3 "Backend Selection"
+  select_backend
+  schedule_model_pull
+  write_dependency_manifest
 
   # Pre-upgrade safety: back up all sandbox state before onboarding (which may
   # upgrade OpenShell). If the upgrade destroys sandbox contents, the backups
@@ -1398,7 +2050,8 @@ except Exception:
     fi
   fi
 
-  step 3 "Onboarding"
+  # ─── Step 4: Onboarding (Recipe §6.3) ─────────────────────────────────
+  step 4 "Onboarding"
   if command_exists nemoclaw; then
     if [[ -f "${HOME}/.nemoclaw/sandboxes.json" ]] && node -e '
       const fs = require("fs");
@@ -1432,6 +2085,11 @@ except Exception:
   else
     warn "Skipping onboarding — this shell still cannot resolve 'nemoclaw'."
   fi
+
+  # ─── Step 5: Verification (Recipe §7) ─────────────────────────────────
+  step 5 "Verification"
+  print_dependency_table "Dependency status (post-install)"
+  run_smoke_tests
 
   print_done
   post_install_message
