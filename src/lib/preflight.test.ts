@@ -16,7 +16,7 @@ import {
 } from "../../dist/lib/preflight";
 
 function renderCommand(command: string | readonly string[]): string {
-  return Array.isArray(command) ? command.join(" ") : command;
+  return typeof command === "string" ? command : command.join(" ");
 }
 
 function requireMemoryInfo(result: ReturnType<typeof getMemoryInfo>) {
