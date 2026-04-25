@@ -174,4 +174,10 @@ describe("sandbox-create-stream", () => {
       sawProgress: false,
     });
   });
+
+  it("rejects empty argv commands up front", () => {
+    expect(() => streamSandboxCreate([], process.env, { logLine: vi.fn() })).toThrow(
+      /command must not be empty/,
+    );
+  });
 });

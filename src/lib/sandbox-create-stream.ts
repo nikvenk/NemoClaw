@@ -54,6 +54,10 @@ export function streamSandboxCreate(
   env: NodeJS.ProcessEnv = process.env,
   options: StreamSandboxCreateOptions = {},
 ): Promise<StreamSandboxCreateResult> {
+  if (Array.isArray(command) && command.length === 0) {
+    throw new Error("command must not be empty");
+  }
+
   const spawnImpl = options.spawnImpl ?? spawnChild;
   const child: StreamableChildProcess = Array.isArray(command)
     ? spawnImpl(command[0], [...command.slice(1)], {

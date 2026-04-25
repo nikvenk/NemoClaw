@@ -813,7 +813,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
     });
 
     if (sshResult.status === 0) {
-      restoredDirs.push(...localDirs);
+      let ownershipOk = true;
 
       // Fix ownership — treat failure as restore failure since wrong
       // ownership means the agent can't read its own state files.
@@ -826,10 +826,17 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
           { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },
         );
         if (chownResult.status !== 0) {
+          ownershipOk = false;
           _log(
             `WARNING: chown failed (exit ${chownResult.status}) — agent may not be able to read restored state`,
           );
         }
+      }
+
+      if (ownershipOk) {
+        restoredDirs.push(...localDirs);
+      } else {
+        failedDirs.push(...localDirs);
       }
     } else {
       failedDirs.push(...localDirs);
