@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=8883b710"></script>
+    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.24';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -661,9 +661,28 @@ If you entered a key incorrectly, refer to <a class="reference internal" href="#
 <p class="sd-card-text">For setup, refer to <a class="reference internal" href="../inference/use-local-inference.html"><span class="std std-doc">Use a Local Inference Server</span></a>.</p>
 </div>
 </details></div>
+</section>
+<section id="review-the-configuration-before-the-sandbox-build">
+<h3>Review the Configuration Before the Sandbox Build<a class="headerlink" href="#review-the-configuration-before-the-sandbox-build" title="Link to this heading">#</a></h3>
+<p>After you enter the sandbox name, the wizard prints a review summary and asks for final confirmation before starting the destructive sandbox image build. For example, if you picked NVIDIA Endpoints, the summary looks like the following:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>  ──────────────────────────────────────────────────
+  Review configuration
+  ──────────────────────────────────────────────────
+  Provider:      nvidia-api
+  Model:         nvidia/nemotron-3-super-120b-a12b
+  API key:       NVIDIA_API_KEY (stored in ~/.nemoclaw/credentials.json)
+  Web search:    disabled
+  Messaging:     none
+  Sandbox name:  my-assistant
+  ──────────────────────────────────────────────────
+  Apply this configuration? [Y/n]:
+</pre></div>
+</div>
+<p>The default is <code class="docutils literal notranslate"><span class="pre">Y</span></code>, so you can press Enter once to continue. Answer <code class="docutils literal notranslate"><span class="pre">n</span></code> to abort cleanly, fix the entries, and re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+<p>Non-interactive runs (<code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>) print the summary for log clarity but skip the prompt.</p>
 <p>When the install completes, a summary confirms the running environment.
-The <code class="docutils literal notranslate"><span class="pre">Model</span></code> and provider line reflects whichever inference option you picked in the wizard.
-The example below shows the result if you accept the NVIDIA Endpoints default.</p>
+The <code class="docutils literal notranslate"><span class="pre">Model</span></code> and provider line reflects the inference option you picked during onboarding.
+The example below shows the result if you picked NVIDIA Endpoints during onboarding.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>──────────────────────────────────────────────────
 Sandbox      my-assistant (Landlock + seccomp + netns)
 Model        nvidia/nemotron-3-super-120b-a12b (NVIDIA Endpoints)
@@ -868,6 +887,7 @@ Dashboard: http://127.0.0.1:18789/#token=&lt;auth-token&gt;
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install-nemoclaw-and-onboard-openclaw-agent">Install NemoClaw and Onboard OpenClaw Agent</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#respond-to-the-onboard-wizard">Respond to the Onboard Wizard</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#review-the-configuration-before-the-sandbox-build">Review the Configuration Before the Sandbox Build</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#open-the-openclaw-ui-in-a-browser">Open the OpenClaw UI in a Browser</a><ul class="nav section-nav flex-column">

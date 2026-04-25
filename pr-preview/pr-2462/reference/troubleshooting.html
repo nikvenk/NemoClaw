@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=8883b710"></script>
+    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.24';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -590,8 +590,25 @@ Instead, configure npm to use a directory you own:</p>
 If the Jetson setup step fails, verify that you have <code class="docutils literal notranslate"><span class="pre">sudo</span></code> access and that Docker is installed and running.</p>
 <p>For JetPack 6 (L4T 36.x), the setup switches iptables to legacy mode and adjusts the Docker daemon configuration.
 For JetPack 7 (L4T 38.x / Thor), only bridge netfilter and sysctl settings are applied.
-BSP R39 and later do not require host customization and are handled automatically.</p>
+For JetPack 7 (L4T 39.x), bridge netfilter is loaded only when the host is missing it. Some R39 images already ship with <code class="docutils literal notranslate"><span class="pre">br_netfilter</span></code> configured and are left untouched. On affected R39 hosts, the installer prints <code class="docutils literal notranslate"><span class="pre">loading</span> <span class="pre">br_netfilter</span> <span class="pre">(required</span> <span class="pre">by</span> <span class="pre">k3s</span> <span class="pre">inside</span> <span class="pre">the</span> <span class="pre">OpenShell</span> <span class="pre">gateway)</span></code>. Without this fix, sandbox pods fail DNS resolution against the in-cluster service and the onboard <code class="docutils literal notranslate"><span class="pre">Setting</span> <span class="pre">up</span> <span class="pre">OpenClaw</span> <span class="pre">inside</span> <span class="pre">sandbox</span></code> step times out.</p>
 <p>If the L4T version is not recognized, the setup step is skipped and the installer continues normally.</p>
+</section>
+<section id="dns-resolution-from-inside-docker-fails-corporate-firewall">
+<h3>DNS resolution from inside docker fails (corporate firewall)<a class="headerlink" href="#dns-resolution-from-inside-docker-fails-corporate-firewall" title="Link to this heading">#</a></h3>
+<p>Some corporate networks block outbound UDP port 53 to public DNS servers and force all host name resolution through DNS over TLS on TCP port 853. Containers do not inherit the host’s DNS-over-TLS configuration, so the sandbox build’s <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">ci</span></code> step times out trying to resolve <code class="docutils literal notranslate"><span class="pre">registry.npmjs.org</span></code> against <code class="docutils literal notranslate"><span class="pre">1.1.1.1</span></code> or <code class="docutils literal notranslate"><span class="pre">8.8.8.8</span></code>.</p>
+<p>NemoClaw’s preflight runs a short <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">run</span> <span class="pre">--rm</span> <span class="pre">busybox</span> <span class="pre">nslookup</span> <span class="pre">registry.npmjs.org</span></code> probe before starting the sandbox build. When the probe confirms a DNS failure, onboarding stops with platform-specific remediation instead of hanging for ~15 minutes and printing a cryptic <code class="docutils literal notranslate"><span class="pre">Exit</span> <span class="pre">handler</span> <span class="pre">never</span> <span class="pre">called</span></code>.</p>
+<p>The fix depends on your platform and runtime. Pick the matching path from the preflight output, apply it, then re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+<ul class="simple">
+<li><p><strong>Linux with systemd-resolved.</strong> Add a <code class="docutils literal notranslate"><span class="pre">DNSStubListenerExtra</span></code> drop-in pointing at the docker bridge gateway IP (the preflight prints the detected IP), then add the same IP to <code class="docutils literal notranslate"><span class="pre">/etc/docker/daemon.json</span></code> under <code class="docutils literal notranslate"><span class="pre">dns</span></code>. Restart <code class="docutils literal notranslate"><span class="pre">systemd-resolved</span></code> and <code class="docutils literal notranslate"><span class="pre">docker</span></code>.</p></li>
+<li><p><strong>macOS with Colima.</strong> Restart Colima with the corporate DNS address, for example <code class="docutils literal notranslate"><span class="pre">colima</span> <span class="pre">stop</span> <span class="pre">&amp;&amp;</span> <span class="pre">colima</span> <span class="pre">start</span> <span class="pre">--dns</span> <span class="pre">&lt;corp-dns-ip&gt;</span></code>.</p></li>
+<li><p><strong>macOS with Docker Desktop.</strong> Add the corporate DNS address to <code class="docutils literal notranslate"><span class="pre">~/.docker/daemon.json</span></code> under <code class="docutils literal notranslate"><span class="pre">dns</span></code>, then restart Docker Desktop.</p></li>
+<li><p><strong>Windows or WSL.</strong> Configure DNS in the Docker Desktop settings GUI, or apply the Linux fix above when running native docker inside WSL.</p></li>
+</ul>
+<p>Verify the fix worked:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>busybox<span class="w"> </span>nslookup<span class="w"> </span>registry.npmjs.org
+</pre></div>
+</div>
+<p>When the lookup returns an answer, retry onboarding.</p>
 </section>
 <section id="port-already-in-use">
 <h3>Port already in use<a class="headerlink" href="#port-already-in-use" title="Link to this heading">#</a></h3>
@@ -1197,6 +1214,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#permission-errors-during-installation">Permission errors during installation</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#npm-install-fails-with-permission-errors">npm install fails with permission errors</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#installer-fails-on-nvidia-jetson">Installer fails on NVIDIA Jetson</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#dns-resolution-from-inside-docker-fails-corporate-firewall">DNS resolution from inside docker fails (corporate firewall)</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#port-already-in-use">Port already in use</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running-multiple-sandboxes-simultaneously">Running multiple sandboxes simultaneously</a></li>
 </ul>
