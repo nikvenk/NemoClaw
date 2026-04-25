@@ -183,15 +183,15 @@ For setup, refer to Use a Local Inference Server (use the `nemoclaw-user-configu
 
 ### Review the Configuration Before the Sandbox Build
 
-After you enter the sandbox name, the wizard prints a review summary and asks for final confirmation before starting the destructive sandbox image build.
+After you enter the sandbox name, the wizard prints a review summary and asks for final confirmation before starting the destructive sandbox image build. For example, if you picked NVIDIA Endpoints, the summary looks like the following:
 
 ```text
   ──────────────────────────────────────────────────
   Review configuration
   ──────────────────────────────────────────────────
-  Provider:      gemini-api
-  Model:         gemini-2.5-flash
-  API key:       GEMINI_API_KEY (stored in ~/.nemoclaw/credentials.json)
+  Provider:      nvidia-api
+  Model:         nvidia/nemotron-3-super-120b-a12b
+  API key:       NVIDIA_API_KEY (stored in ~/.nemoclaw/credentials.json)
   Web search:    disabled
   Messaging:     none
   Sandbox name:  my-assistant
@@ -204,8 +204,8 @@ The default is `Y`, so you can press Enter once to continue. Answer `n` to abort
 Non-interactive runs (`NEMOCLAW_NON_INTERACTIVE=1`) print the summary for log clarity but skip the prompt.
 
 When the install completes, a summary confirms the running environment.
-The `Model` and provider line reflects whichever inference option you picked in the wizard.
-The example below shows the result if you accept the NVIDIA Endpoints default.
+The `Model` and provider line reflects the inference option you picked during onboarding.
+The example below shows the result if you picked NVIDIA Endpoints during onboarding.
 
 ```text
 ──────────────────────────────────────────────────
