@@ -262,6 +262,22 @@ describe("onboard command", () => {
     expect(errors.join("\n")).toContain("1024-65535");
   });
 
+  it("--control-ui-port takes precedence over CHAT_UI_URL env", () => {
+    const result = parseOnboardArgs(
+      ["--control-ui-port", "19000"],
+      "--yes-i-accept-third-party-software",
+      "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+      {
+        env: { CHAT_UI_URL: "http://127.0.0.1:18790" },
+        error: () => {},
+        exit: ((code: number) => {
+          throw new Error(String(code));
+        }) as never,
+      },
+    );
+    expect(result.controlUiPort).toBe(19000);
+  });
+
   it("--help includes --control-ui-port in usage", async () => {
     const lines: string[] = [];
     await runOnboardCommand({

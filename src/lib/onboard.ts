@@ -3831,16 +3831,35 @@ async function createSandbox(
   // Pre-resolve port availability so CHAT_UI_URL baked into the Dockerfile,
   // the sandbox env, and the readiness probe all use the final forwarded port.
   const persistedPort = registry.getSandbox(sandboxName)?.dashboardPort ?? null;
-  const preferredPort = controlUiPort ?? persistedPort ?? (agent ? agent.forwardPort : CONTROL_UI_PORT);
+  // When CHAT_UI_URL is set, extract its port so the allocator and the URL stay in sync.
+  let envPort: number | null = null;
+  if (process.env.CHAT_UI_URL) {
+    try {
+      const u = new URL(
+        process.env.CHAT_UI_URL.includes("://") ? process.env.CHAT_UI_URL : `http://${process.env.CHAT_UI_URL}`,
+      );
+      const p = Number(u.port);
+      if (p > 0) envPort = p;
+    } catch { /* malformed URL — ignore */ }
+  }
+  const preferredPort = controlUiPort ?? envPort ?? persistedPort ?? (agent ? agent.forwardPort : CONTROL_UI_PORT);
   const earlyForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
   const effectivePort = findAvailableDashboardPort(sandboxName, preferredPort, earlyForwards);
   if (effectivePort !== preferredPort) {
     console.warn(`  ! Port ${preferredPort} is taken. Using port ${effectivePort} instead.`);
   }
-  let chatUiUrl =
-    controlUiPort != null
-      ? `http://127.0.0.1:${effectivePort}`
-      : process.env.CHAT_UI_URL || `http://127.0.0.1:${effectivePort}`;
+  // Build chatUiUrl: preserve the hostname from CHAT_UI_URL when set, but
+  // always use effectivePort so the Dockerfile, env, and readiness probe agree.
+  let chatUiUrl: string;
+  if (process.env.CHAT_UI_URL && controlUiPort == null) {
+    const parsed = new URL(
+      process.env.CHAT_UI_URL.includes("://") ? process.env.CHAT_UI_URL : `http://${process.env.CHAT_UI_URL}`,
+    );
+    parsed.port = String(effectivePort);
+    chatUiUrl = parsed.toString().replace(/\/$/, "");
+  } else {
+    chatUiUrl = `http://127.0.0.1:${effectivePort}`;
+  }
 
   // Check whether messaging providers will be needed — this must happen before
   // the sandbox reuse decision so we can detect stale sandboxes that were created
@@ -3993,6 +4012,7 @@ async function createSandbox(
               );
             }
             const reusedPort = ensureDashboardForward(sandboxName, chatUiUrl);
+            process.env.CHAT_UI_URL = `http://127.0.0.1:${reusedPort}`;
             registry.updateSandbox(sandboxName, { dashboardPort: reusedPort });
             return sandboxName;
           }
@@ -4023,6 +4043,7 @@ async function createSandbox(
           if (normalizedAnswer !== "n" && normalizedAnswer !== "no") {
             upsertMessagingProviders(messagingTokenDefs);
             const reusedPort2 = ensureDashboardForward(sandboxName, chatUiUrl);
+            process.env.CHAT_UI_URL = `http://127.0.0.1:${reusedPort2}`;
             registry.updateSandbox(sandboxName, { dashboardPort: reusedPort2 });
             return sandboxName;
           }
@@ -4068,6 +4089,7 @@ async function createSandbox(
             registry.updateSandbox(sandboxName, { providerCredentialHashes: abortHashes });
           }
           const reusedPort3 = ensureDashboardForward(sandboxName, chatUiUrl);
+          process.env.CHAT_UI_URL = `http://127.0.0.1:${reusedPort3}`;
           registry.updateSandbox(sandboxName, { dashboardPort: reusedPort3 });
           return sandboxName;
         }
@@ -4085,6 +4107,7 @@ async function createSandbox(
           registry.updateSandbox(sandboxName, { providerCredentialHashes: abortHashes });
         }
         const reusedPort4 = ensureDashboardForward(sandboxName, chatUiUrl);
+        process.env.CHAT_UI_URL = `http://127.0.0.1:${reusedPort4}`;
         registry.updateSandbox(sandboxName, { dashboardPort: reusedPort4 });
         return sandboxName;
       }
@@ -6800,28 +6823,51 @@ function getOccupiedPorts(forwardListOutput: string | null): Map<string, string>
     // parts: [sandbox, bind, port, pid, status...]
     if (parts.length < 3 || !/^\d+$/.test(parts[2])) continue;
     const status = (parts[4] || "").toLowerCase();
-    if (status === "stopped") continue;
+    if (status !== "running") continue;
     occupied.set(parts[2], parts[0]);
   }
   return occupied;
 }
 
 /**
+ * Quick synchronous check whether a TCP port has an active listener on the host.
+ * Uses lsof when available; returns false (optimistic) if lsof is missing.
+ */
+function isPortBoundOnHost(port: number): boolean {
+  try {
+    const out = runCapture(
+      ["lsof", "-i", `:${port}`, "-sTCP:LISTEN", "-P", "-n"],
+      { ignoreError: true },
+    );
+    return !!out && out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Find the next available dashboard port for the given sandbox.
  * Returns the preferred port if free or already owned by this sandbox,
  * otherwise scans DASHBOARD_PORT_RANGE_START..END for a free port.
+ * Validates host-port availability (via lsof) so ports bound by
+ * non-OpenShell processes are skipped.
  * Throws if the entire range is exhausted.
  */
 function findAvailableDashboardPort(sandboxName: string, preferredPort: number, forwardListOutput: string | null): number {
   const occupied = getOccupiedPorts(forwardListOutput);
   const preferredStr = String(preferredPort);
   const owner = occupied.get(preferredStr) ?? null;
-  if (owner === null || owner === sandboxName) return preferredPort;
+  // If this sandbox already owns the forward, keep it.
+  if (owner === sandboxName) return preferredPort;
+  // If no forward claims the port, also check the host so we don't collide
+  // with non-OpenShell processes.
+  if (owner === null && !isPortBoundOnHost(preferredPort)) return preferredPort;
 
   for (let p = DASHBOARD_PORT_RANGE_START; p <= DASHBOARD_PORT_RANGE_END; p++) {
     const pStr = String(p);
     const pOwner = occupied.get(pStr) ?? null;
-    if (pOwner === null || pOwner === sandboxName) return p;
+    if (pOwner === sandboxName) return p;
+    if (pOwner === null && !isPortBoundOnHost(p)) return p;
   }
 
   const owners = [...occupied.entries()]
