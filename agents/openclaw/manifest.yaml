@@ -27,7 +27,7 @@ gateway_argv:
 
 # ── Health probe ────────────────────────────────────────────────
 health_probe:
-  url: "http://localhost:18789/"
+  url: "http://localhost:18789/health"
   port: 18789
   timeout_seconds: 30
 

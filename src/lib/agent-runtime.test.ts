@@ -67,6 +67,7 @@ describe("buildRecoveryScript", () => {
   it("launches the default gateway command through the validated agent binary", () => {
     const script = buildRecoveryScript(minimalAgent, 19000);
     expect(script).toContain("command -v test-agent");
+    expect(script).toContain("%{http_code}");
     expect(script).toContain('nohup "$AGENT_BIN" gateway run --port 19000');
   });
 

@@ -39,6 +39,7 @@ describe("agent definitions", () => {
 
     expect(openclaw.name).toBe("openclaw");
     expect(openclaw.displayName).toBe("OpenClaw");
+    expect(openclaw.healthProbe.url).toBe("http://localhost:18789/health");
     expect(openclaw.healthProbe.port).toBe(18789);
     expect(openclaw.forwardPort).toBe(18789);
     expect(openclaw.gatewayArgv).toEqual(["openclaw", "gateway", "run"]);

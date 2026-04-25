@@ -44,8 +44,8 @@ export function getSessionAgent(sandboxName?: string): AgentDefinition | null {
  * Returns the agent's configured probe URL, or the OpenClaw default.
  */
 export function getHealthProbeUrl(agent: AgentDefinition | null): string {
-  if (!agent) return `http://127.0.0.1:${DASHBOARD_PORT}/`;
-  return agent.healthProbe?.url || `http://127.0.0.1:${DASHBOARD_PORT}/`;
+  if (!agent) return `http://127.0.0.1:${DASHBOARD_PORT}/health`;
+  return agent.healthProbe?.url || `http://127.0.0.1:${DASHBOARD_PORT}/health`;
 }
 
 /**
@@ -83,7 +83,7 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   return [
     "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
     hermesHome,
-    `if curl -sf --max-time 3 ${formatShellToken(probeUrl)} > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
+    `HEALTH_CODE="$(curl -so /dev/null -w '%{http_code}' --max-time 3 ${formatShellToken(probeUrl)} 2>/dev/null || echo 000)"; if [ "$HEALTH_CODE" = "200" ] || [ "$HEALTH_CODE" = "401" ]; then echo ALREADY_RUNNING; exit 0; fi;`,
     "rm -f /tmp/gateway.log;",
     "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
     ...validationSteps,

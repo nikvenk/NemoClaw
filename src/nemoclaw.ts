@@ -288,12 +288,14 @@ function isSandboxGatewayRunning(sandboxName: string): boolean | null {
   const probeUrl = agentRuntime.getHealthProbeUrl(agent);
   const result = executeSandboxCommand(
     sandboxName,
-    `curl -sf --max-time 3 ${formatShellToken(probeUrl)} > /dev/null 2>&1 && echo RUNNING || echo STOPPED`,
+    `curl -so /dev/null -w '%{http_code}' --max-time 3 ${formatShellToken(probeUrl)} 2>/dev/null || echo 000`,
   );
   if (!result) return null;
-  if (result.stdout === "RUNNING") return true;
-  if (result.stdout === "STOPPED") return false;
-  return null;
+  const status = result.stdout.trim();
+  if (status === "200" || status === "401") return true;
+  if (status === "000") return false;
+  if (status === "") return null;
+  return false;
 }
 
 /**
@@ -308,7 +310,7 @@ function recoverSandboxProcesses(sandboxName: string): boolean {
     agentScript ||
     [
       "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
-      `if curl -sf --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
+      `HEALTH_CODE="$(curl -so /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/health 2>/dev/null || echo 000)"; if [ "$HEALTH_CODE" = "200" ] || [ "$HEALTH_CODE" = "401" ]; then echo ALREADY_RUNNING; exit 0; fi;`,
       "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
       "rm -f /tmp/gateway.log /tmp/auto-pair.log;",
       "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
