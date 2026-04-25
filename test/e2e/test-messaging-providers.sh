@@ -661,31 +661,11 @@ print('yes' if 'slack' in d else 'no')
     pass "M11e: Slack channel configured with placeholder tokens (guard needed)"
 
     # Diagnostics: check if the guard was installed and what NODE_OPTIONS looks like
-    info "Checking guard installation diagnostics (via openshell exec as root):"
-    # Dump all nemoclaw-* files in /tmp to see what the entrypoint created
-    # Quote the glob so it expands INSIDE the sandbox, not on the host
-    tmp_files=$(openshell sandbox exec --name "$SANDBOX_NAME" -- bash -c 'ls -la /tmp/nemoclaw-* /tmp/gateway.log /tmp/dns-proxy.py 2>&1 || true' 2>&1 || echo "exec failed")
-    info "  /tmp files in sandbox:"
-    echo "$tmp_files" | while IFS= read -r line; do info "    $line"; done
+    info "Checking guard installation diagnostics:"
     guard_exists=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ls -la /tmp/nemoclaw-slack-channel-guard.js 2>/dev/null || echo "EXEC_FAILED")
     info "  Guard file: $guard_exists"
     node_opts=$(openshell sandbox exec --name "$SANDBOX_NAME" -- bash -c 'echo "$NODE_OPTIONS"' 2>/dev/null || echo "EXEC_FAILED")
     info "  NODE_OPTIONS: $node_opts"
-    proxy_fix=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ls -la /tmp/nemoclaw-http-proxy-fix.js 2>/dev/null || echo "EXEC_FAILED")
-    info "  Proxy fix file: $proxy_fix"
-    # Check if openclaw.json contains "slack" (same grep the guard uses)
-    slack_in_config=$(openshell sandbox exec --name "$SANDBOX_NAME" -- grep -c '"slack"' /sandbox/.openclaw/openclaw.json 2>/dev/null || echo "EXEC_FAILED")
-    info "  grep '\"slack\"' in openclaw.json: $slack_in_config matches"
-    # Read entrypoint execution trace from /tmp
-    trace_log=$(openshell sandbox exec --name "$SANDBOX_NAME" -- cat /tmp/nemoclaw-entrypoint-trace.log 2>&1 || echo "no trace file")
-    info "  Entrypoint trace:"
-    echo "$trace_log" | while IFS= read -r line; do info "    $line"; done
-    # Check what processes are running
-    procs=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ps aux 2>/dev/null | head -10 || echo "EXEC_FAILED")
-    info "  Processes:"
-    echo "$procs" | while IFS= read -r line; do
-      info "    $line"
-    done
   else
     skip "M11e: No Slack channel in config"
   fi

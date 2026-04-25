@@ -523,10 +523,6 @@ install_slack_channel_guard() {
 
   # Only install if a Slack channel is configured
   if ! grep -q '"slack"' "$config_file" 2>/dev/null; then
-    printf '[channels] Slack channel guard skipped — "slack" not found in %s (exists=%s, readable=%s)\n' \
-      "$config_file" \
-      "$([ -f "$config_file" ] && echo yes || echo no)" \
-      "$([ -r "$config_file" ] && echo yes || echo no)" >&2
     return 0
   fi
 
@@ -1365,10 +1361,6 @@ PROXYEOF
   done
 } | emit_sandbox_sourced_file "$_PROXY_ENV_FILE"
 
-# DIAG: trace entrypoint execution to /tmp (readable by openshell exec)
-_DIAG="/tmp/nemoclaw-entrypoint-trace.log"
-echo "$(date -Iseconds) TRACE: proxy-env done, entering main" | tee -a "$_DIAG" >&2
-
 # cleanup_on_signal is provided by sandbox-init.sh. It reads
 # SANDBOX_CHILD_PIDS (array of all PIDs) and SANDBOX_WAIT_PID (the
 # primary process whose exit status is returned).
@@ -1388,23 +1380,16 @@ fi
 # blocks gosu's setuid syscall. When we're not root, skip privilege
 # separation and run everything as the current user (sandbox).
 # Gateway process isolation is not available in this mode.
-echo "$(date -Iseconds) TRACE: uid=$(id -u), about to enter root/non-root branch" | tee -a "$_DIAG" >&2
 if [ "$(id -u)" -ne 0 ]; then
-  echo "$(date -Iseconds) TRACE: non-root path entered" | tee -a "$_DIAG" >&2
   echo "[gateway] Running as non-root (uid=$(id -u)) — privilege separation disabled" >&2
   export HOME=/sandbox
-  echo "$(date -Iseconds) TRACE: before verify_config_integrity" | tee -a "$_DIAG" >&2
   if ! verify_config_integrity /sandbox/.openclaw; then
     echo "[SECURITY] Config integrity check failed — refusing to start (non-root mode)" >&2
     exit 1
   fi
-  echo "$(date -Iseconds) TRACE: before apply_model_override" | tee -a "$_DIAG" >&2
   apply_model_override
-  echo "$(date -Iseconds) TRACE: before apply_cors_override" | tee -a "$_DIAG" >&2
   apply_cors_override
-  echo "$(date -Iseconds) TRACE: before apply_slack_token_override" | tee -a "$_DIAG" >&2
   apply_slack_token_override
-  echo "$(date -Iseconds) TRACE: before token generation" | tee -a "$_DIAG" >&2
   # Non-root: no privilege separation — uid separation is unavailable, so the
   # sandbox user can read the token file. This is no worse than the pre-PR
   # state where the token lived in openclaw.json (also sandbox-readable).
@@ -1418,13 +1403,9 @@ if [ "$(id -u)" -ne 0 ]; then
   printf '%s' "$_NONROOT_GATEWAY_TOKEN" >"$_NONROOT_TOKEN_FILE"
   chmod 0400 "$_NONROOT_TOKEN_FILE"
   printf '[SECURITY] Non-root mode — gateway token at %s (no uid isolation)\n' "$_NONROOT_TOKEN_FILE" >&2
-  echo "$(date -Iseconds) TRACE: about to install_configure_guard" | tee -a "$_DIAG" >&2
   install_configure_guard
-  echo "$(date -Iseconds) TRACE: about to configure_messaging_channels" | tee -a "$_DIAG" >&2
   configure_messaging_channels
-  echo "$(date -Iseconds) TRACE: about to install_slack_channel_guard" | tee -a "$_DIAG" >&2
   install_slack_channel_guard
-  echo "$(date -Iseconds) TRACE: guard done, about to validate_openclaw_symlinks" | tee -a "$_DIAG" >&2
   validate_openclaw_symlinks
 
   # Ensure writable state directories exist and are owned by the current user.
@@ -1514,22 +1495,9 @@ if [ "$(id -u)" -ne 0 ]; then
   # Start gateway in background, auto-pair, then wait.
   # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
   # in the gateway process env — not exported to the sandbox shell.
-  # DIAG: capture gateway startup output to trace file
-  echo "$(date -Iseconds) TRACE: launching gateway with NODE_OPTIONS=$NODE_OPTIONS" | tee -a "$_DIAG" >&2
-  echo "$(date -Iseconds) TRACE: OPENCLAW=$OPENCLAW PORT=${_DASHBOARD_PORT}" | tee -a "$_DIAG" >&2
   OPENCLAW_GATEWAY_TOKEN="$_NONROOT_GATEWAY_TOKEN" \
     nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
   GATEWAY_PID=$!
-  # DIAG: give gateway a moment to crash, then dump log
-  sleep 3
-  echo "$(date -Iseconds) TRACE: gateway PID=$GATEWAY_PID alive=$(kill -0 $GATEWAY_PID 2>/dev/null && echo yes || echo no)" | tee -a "$_DIAG" >&2
-  echo "$(date -Iseconds) TRACE: gateway.log size=$(wc -c < /tmp/gateway.log 2>/dev/null || echo unknown)" | tee -a "$_DIAG" >&2
-  if [ -s /tmp/gateway.log ]; then
-    echo "$(date -Iseconds) TRACE: gateway.log first 20 lines:" | tee -a "$_DIAG" >&2
-    head -20 /tmp/gateway.log | tee -a "$_DIAG" >&2
-  else
-    echo "$(date -Iseconds) TRACE: gateway.log is empty — gateway may have crashed silently" | tee -a "$_DIAG" >&2
-  fi
   echo "[gateway] openclaw gateway launched (pid $GATEWAY_PID)" >&2
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
