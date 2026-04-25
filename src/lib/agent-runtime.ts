@@ -11,7 +11,7 @@ import * as registry from "./registry";
 import { DASHBOARD_PORT } from "./ports";
 import * as onboardSession from "./onboard-session";
 import { loadAgent, type AgentDefinition } from "./agent-defs";
-import { buildShellAssignment, formatShellToken } from "./shell-quote";
+import { buildShellAssignment, formatShellToken, joinShellWords } from "./shell-quote";
 
 /**
  * Resolve the agent for a sandbox. Checks the per-sandbox registry first
@@ -59,10 +59,12 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   const probeUrl = getHealthProbeUrl(agent);
   const binaryPath = agent.binary_path || "/usr/local/bin/openclaw";
   const binaryName = binaryPath.split("/").pop() ?? "openclaw";
-  const defaultGatewayCommand = `${binaryName} gateway run`;
-  const configuredGatewayCommand = agent.gateway_command?.trim() || defaultGatewayCommand;
-  const usesValidatedBinary = configuredGatewayCommand === defaultGatewayCommand;
-  const customGatewayExecutable = configuredGatewayCommand.split(/\s+/)[0] ?? binaryName;
+  const defaultGatewayArgv = [binaryName, "gateway", "run"];
+  const configuredGatewayArgv = agent.gatewayArgv;
+  const usesValidatedBinary =
+    configuredGatewayArgv.length === defaultGatewayArgv.length &&
+    configuredGatewayArgv.every((value, index) => value === defaultGatewayArgv[index]);
+  const customGatewayExecutable = configuredGatewayArgv[0] ?? binaryName;
   const validationSteps = usesValidatedBinary
     ? [
         `${buildShellAssignment("AGENT_BIN", binaryPath)}; if [ ! -x "$AGENT_BIN" ]; then AGENT_BIN="$(command -v ${formatShellToken(binaryName)})"; fi;`,
@@ -73,8 +75,8 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
         'case "$GATEWAY_CMD_BIN" in */*) [ -x "$GATEWAY_CMD_BIN" ] || { echo AGENT_MISSING; exit 1; } ;; *) command -v "$GATEWAY_CMD_BIN" >/dev/null 2>&1 || { echo AGENT_MISSING; exit 1; } ;; esac;',
       ];
   const launchCommand = usesValidatedBinary
-    ? `nohup "$AGENT_BIN" gateway run --port ${port} > /tmp/gateway.log 2>&1 &`
-    : `nohup ${configuredGatewayCommand} --port ${port} > /tmp/gateway.log 2>&1 &`;
+    ? `nohup "$AGENT_BIN" ${joinShellWords(configuredGatewayArgv.slice(1))} --port ${port} > /tmp/gateway.log 2>&1 &`
+    : `nohup ${joinShellWords(configuredGatewayArgv)} --port ${port} > /tmp/gateway.log 2>&1 &`;
   const isHermes = agent.name === "hermes";
   const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes-data; " : "";
 
@@ -102,5 +104,5 @@ export function getAgentDisplayName(agent: AgentDefinition | null): string {
  * Get the gateway command for the current agent.
  */
 export function getGatewayCommand(agent: AgentDefinition | null): string {
-  return agent?.gateway_command || "openclaw gateway run";
+  return agent ? joinShellWords(agent.gatewayArgv) : "openclaw gateway run";
 }

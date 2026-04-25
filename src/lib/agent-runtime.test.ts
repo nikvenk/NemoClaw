@@ -7,11 +7,17 @@ import { buildRecoveryScript } from "../../dist/lib/agent-runtime";
 import type { AgentDefinition } from "./agent-defs";
 
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
+  const gatewayArgv =
+    overrides.gatewayArgv ?? overrides.gateway_argv ?? ["test-agent", "gateway", "run"];
+  const gatewayCommand = overrides.gateway_command ?? gatewayArgv.join(" ");
+
   return {
     name: "test-agent",
     displayName: "Test Agent",
     binary_path: "/usr/local/bin/test-agent",
-    gateway_command: "test-agent gateway run",
+    gateway_command: gatewayCommand,
+    gateway_argv: gatewayArgv,
+    gatewayArgv,
     healthProbe: { url: "http://127.0.0.1:19000/", port: 19000, timeout_seconds: 5 },
     forwardPort: 19000,
     dashboard: { kind: "ui", label: "UI", path: "/" },
@@ -64,14 +70,18 @@ describe("buildRecoveryScript", () => {
     expect(script).toContain('nohup "$AGENT_BIN" gateway run --port 19000');
   });
 
-  it("falls back to openclaw gateway run when gateway_command is absent", () => {
-    const agent = makeAgent({ gateway_command: undefined });
+  it("launches the default gateway argv when no raw gateway_command is present", () => {
+    const agent = makeAgent({ gateway_command: undefined, gateway_argv: undefined, gatewayArgv: ["test-agent", "gateway", "run"] });
     const script = buildRecoveryScript(agent, 19000);
     expect(script).toContain('nohup "$AGENT_BIN" gateway run --port 19000');
   });
 
-  it("validates and launches custom gateway commands explicitly", () => {
-    const agent = makeAgent({ gateway_command: "custom-launch --mode recovery" });
+  it("validates and launches custom gateway argv explicitly", () => {
+    const agent = makeAgent({
+      gateway_command: undefined,
+      gateway_argv: ["custom-launch", "--mode", "recovery"],
+      gatewayArgv: ["custom-launch", "--mode", "recovery"],
+    });
     const script = buildRecoveryScript(agent, 19000);
     expect(script).toContain("GATEWAY_CMD_BIN=custom-launch");
     expect(script).toContain('command -v "$GATEWAY_CMD_BIN" >/dev/null 2>&1');

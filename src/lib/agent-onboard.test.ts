@@ -7,9 +7,13 @@ import { printDashboardUi } from "../../dist/lib/agent-onboard";
 import type { AgentDefinition } from "./agent-defs";
 
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
+  const gatewayArgv = overrides.gatewayArgv ?? overrides.gateway_argv ?? ["agent", "gateway", "run"];
+
   return {
     name: "agent",
     displayName: "Agent",
+    gateway_argv: gatewayArgv,
+    gatewayArgv,
     healthProbe: { url: "http://127.0.0.1:19000/", port: 19000, timeout_seconds: 5 },
     forwardPort: 19000,
     dashboard: { kind: "ui", label: "UI", path: "/" },

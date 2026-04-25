@@ -17,7 +17,10 @@ install_method: curl  # curl install.sh | bash
 binary_path: /usr/local/bin/hermes
 version_command: "hermes --version"
 expected_version: "2026.4.8"
-gateway_command: "hermes gateway run"
+gateway_argv:
+  - hermes
+  - gateway
+  - run
 
 # ── Health probe ────────────────────────────────────────────────
 # The API server adapter listens on 8642 by default and exposes

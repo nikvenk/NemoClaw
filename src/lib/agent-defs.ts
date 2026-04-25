@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { ROOT } from "./runner";
 import { DASHBOARD_PORT } from "./ports";
+import { joinShellWords } from "./shell-quote";
 
 export const AGENTS_DIR = path.join(ROOT, "agents");
 
@@ -58,6 +59,7 @@ export interface AgentDefinition {
   version_command?: string;
   expected_version?: string;
   gateway_command?: string;
+  gateway_argv?: string[];
   device_pairing?: boolean;
   phone_home_hosts?: string[];
   forward_ports?: number[];
@@ -71,6 +73,7 @@ export interface AgentDefinition {
   readonly displayName: string;
   readonly healthProbe: AgentHealthProbe;
   readonly forwardPort: number;
+  readonly gatewayArgv: string[];
   readonly dashboard: AgentDashboard;
   readonly configPaths: AgentConfigPaths;
   readonly stateDirs: string[];
@@ -139,6 +142,25 @@ function readStringArray(record: ManifestRecord, key: string): string[] | undefi
   const value = record[key];
   if (!Array.isArray(value)) return undefined;
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function readCommandArray(record: ManifestRecord, key: string): string[] | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`Agent manifest field '${key}' must be an array of command arguments`);
+  }
+
+  const args = value.map((entry, index) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      throw new Error(
+        `Agent manifest field '${key}[${String(index)}]' must be a non-empty string command argument`,
+      );
+    }
+    return entry;
+  });
+
+  return args.length > 0 ? args : undefined;
 }
 
 function isValidPort(value: unknown): value is number {
@@ -215,6 +237,25 @@ function readMessagingPlatforms(record: ManifestRecord): { supported?: string[] 
   return supported ? { supported } : {};
 }
 
+const SAFE_GATEWAY_COMMAND_TOKEN_RE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+function parseLegacyGatewayCommand(gatewayCommand: string): string[] {
+  const trimmed = gatewayCommand.trim();
+  if (!trimmed) {
+    throw new Error("Agent manifest field 'gateway_command' must not be empty");
+  }
+
+  const args = trimmed.split(/\s+/).filter(Boolean);
+  if (args.length === 0 || args.some((arg) => !SAFE_GATEWAY_COMMAND_TOKEN_RE.test(arg))) {
+    throw new Error(
+      "Agent manifest field 'gateway_command' only supports simple shell-free tokens. " +
+        "Use 'gateway_argv' for quoted or complex commands.",
+    );
+  }
+
+  return args;
+}
+
 function loadManifestRecord(manifestPath: string): ManifestRecord {
   const parsed = yaml.load(fs.readFileSync(manifestPath, "utf8"));
   if (!isManifestRecord(parsed)) {
@@ -258,6 +299,8 @@ export function loadAgent(name: string): AgentDefinition {
   const versionCommand = readString(raw, "version_command");
   const expectedVersion = readString(raw, "expected_version");
   const gatewayCommand = readString(raw, "gateway_command");
+  const gatewayArgv = readCommandArray(raw, "gateway_argv") ??
+    (gatewayCommand ? parseLegacyGatewayCommand(gatewayCommand) : undefined);
   const forwardPorts = readPortArray(raw, "forward_ports");
   const healthProbe = readHealthProbe(raw);
   const config = readObject(raw, "config");
@@ -274,7 +317,8 @@ export function loadAgent(name: string): AgentDefinition {
     binary_path: binaryPath,
     version_command: versionCommand,
     expected_version: expectedVersion,
-    gateway_command: gatewayCommand,
+    gateway_command: gatewayCommand ?? (gatewayArgv ? joinShellWords(gatewayArgv) : undefined),
+    gateway_argv: gatewayArgv,
     device_pairing: readBoolean(raw, "device_pairing"),
     phone_home_hosts: phoneHomeHosts,
     forward_ports: forwardPorts,
@@ -302,6 +346,10 @@ export function loadAgent(name: string): AgentDefinition {
 
     get forwardPort(): number {
       return forwardPorts?.[0] ?? DASHBOARD_PORT;
+    },
+
+    get gatewayArgv(): string[] {
+      return gatewayArgv ?? [binaryPath ?? "openclaw", "gateway", "run"];
     },
 
     get dashboard(): AgentDashboard {

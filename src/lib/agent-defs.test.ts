@@ -41,6 +41,7 @@ describe("agent definitions", () => {
     expect(openclaw.displayName).toBe("OpenClaw");
     expect(openclaw.healthProbe.port).toBe(18789);
     expect(openclaw.forwardPort).toBe(18789);
+    expect(openclaw.gatewayArgv).toEqual(["openclaw", "gateway", "run"]);
     expect(openclaw.configPaths).toEqual({
       immutableDir: "/sandbox/.openclaw",
       writableDir: "/sandbox/.openclaw-data",
@@ -66,6 +67,7 @@ describe("agent definitions", () => {
       format: "yaml",
     });
     expect(hermes.healthProbe.url).toBe("http://localhost:8642/health");
+    expect(hermes.gatewayArgv).toEqual(["hermes", "gateway", "run"]);
     expect(hermes.messagingPlatforms).toEqual(["telegram", "discord", "slack"]);
   });
 
@@ -118,5 +120,19 @@ describe("agent definitions", () => {
     );
 
     expect(() => loadAgent(agentName)).toThrow(/health_probe\.port/);
+  });
+
+  it("rejects shell-style gateway_command values and requires gateway_argv", () => {
+    const agentName = `invalid-gateway-command-${String(Date.now())}`;
+    writeTempAgentManifest(
+      agentName,
+      [
+        `name: ${agentName}`,
+        "display_name: Broken Gateway Command",
+        'gateway_command: "python -m agent-launcher; echo pwned"',
+      ].join("\n"),
+    );
+
+    expect(() => loadAgent(agentName)).toThrow(/Use 'gateway_argv'/);
   });
 });
