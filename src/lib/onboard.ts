@@ -2610,7 +2610,6 @@ function installOpenshell(): {
     timeout: 300_000,
     ignoreError: true,
     suppressOutput: true,
-    inheritFullEnv: true,
   });
   if (result.status !== 0) {
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim();

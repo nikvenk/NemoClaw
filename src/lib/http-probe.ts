@@ -12,7 +12,7 @@ import {
 
 import type { ProbeResult } from "./onboard-types";
 import { ROOT } from "./paths";
-import { buildSubprocessEnv } from "./subprocess-env";
+import { buildEnvForSubprocess } from "./subprocess-env";
 import { compactText } from "./url-utils";
 
 import { isErrnoException } from "./errno";
@@ -78,17 +78,7 @@ function buildProbeEnv(
   extraEnv: NodeJS.ProcessEnv | undefined,
   inheritFullEnv = false,
 ): NodeJS.ProcessEnv {
-  if (inheritFullEnv) {
-    return { ...process.env, ...extraEnv };
-  }
-
-  const normalizedExtraEnv: Record<string, string> = {};
-  for (const [key, value] of Object.entries(extraEnv || {})) {
-    if (value !== undefined) {
-      normalizedExtraEnv[key] = value;
-    }
-  }
-  return buildSubprocessEnv(normalizedExtraEnv);
+  return buildEnvForSubprocess(extraEnv, inheritFullEnv);
 }
 
 function formatProbeErrorDetail(detail: ProbeErrorDetail): string {

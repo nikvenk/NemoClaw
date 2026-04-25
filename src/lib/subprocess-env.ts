@@ -32,7 +32,17 @@ const TLS = ["SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS"];
 
 const TOOLCHAIN = ["DOCKER_HOST", "KUBECONFIG", "SSH_AUTH_SOCK", "RUST_LOG", "RUST_BACKTRACE"];
 
-const ALLOWED_ENV_NAMES = new Set([...SYSTEM, ...TEMP, ...LOCALE, ...PROXY, ...TLS, ...TOOLCHAIN]);
+const NEMOCLAW = ["NEMOCLAW_NON_INTERACTIVE"];
+
+const ALLOWED_ENV_NAMES = new Set([
+  ...SYSTEM,
+  ...TEMP,
+  ...LOCALE,
+  ...PROXY,
+  ...TLS,
+  ...TOOLCHAIN,
+  ...NEMOCLAW,
+]);
 
 // ── Allowed prefixes ───────────────────────────────────────────
 
@@ -52,4 +62,21 @@ export function buildSubprocessEnv(extra?: Record<string, string>): Record<strin
     Object.assign(env, extra);
   }
   return env;
+}
+
+export function buildEnvForSubprocess(
+  extraEnv: NodeJS.ProcessEnv | undefined,
+  inheritFullEnv = false,
+): NodeJS.ProcessEnv {
+  if (inheritFullEnv) {
+    return { ...process.env, ...extraEnv };
+  }
+
+  const normalizedExtraEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(extraEnv ?? {})) {
+    if (value !== undefined) {
+      normalizedExtraEnv[key] = value;
+    }
+  }
+  return buildSubprocessEnv(normalizedExtraEnv);
 }

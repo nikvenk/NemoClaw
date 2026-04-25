@@ -8,7 +8,7 @@ import {
   type SpawnSyncReturns,
 } from "node:child_process";
 
-import { buildSubprocessEnv } from "./subprocess-env";
+import { buildEnvForSubprocess } from "./subprocess-env";
 
 export type OpenshellSpawnSync = (
   command: string,
@@ -72,17 +72,7 @@ function buildOpenshellEnv(
   extraEnv: NodeJS.ProcessEnv | undefined,
   inheritFullEnv = false,
 ): NodeJS.ProcessEnv {
-  if (inheritFullEnv) {
-    return { ...process.env, ...extraEnv };
-  }
-
-  const normalizedExtraEnv: Record<string, string> = {};
-  for (const [key, value] of Object.entries(extraEnv || {})) {
-    if (value !== undefined) {
-      normalizedExtraEnv[key] = value;
-    }
-  }
-  return buildSubprocessEnv(normalizedExtraEnv);
+  return buildEnvForSubprocess(extraEnv, inheritFullEnv);
 }
 
 function handleSpawnError(

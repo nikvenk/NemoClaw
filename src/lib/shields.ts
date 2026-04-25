@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { run, runCapture, runFile, validateName } = require("./runner");
 const { spawnChild } = require("./process-primitives");
+const { buildSubprocessEnv } = require("./subprocess-env");
 const {
   buildPolicyGetCommand,
   buildPolicySetCommand,
@@ -484,7 +485,7 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
       {
         detached: true,
         stdio: "ignore",
-        env: process.env,
+        env: buildSubprocessEnv(),
       },
     );
     child.unref?.();
