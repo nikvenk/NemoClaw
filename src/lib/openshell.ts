@@ -17,6 +17,7 @@ export type OpenshellSpawnSync = (
 interface OpenshellSpawnOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  timeout?: number;
   spawnSyncImpl?: OpenshellSpawnSync;
   errorLine?: (message: string) => void;
   exit?: (code: number) => never;
@@ -87,6 +88,7 @@ export function runOpenshellCommand(
     env: { ...process.env, ...opts.env },
     encoding: "utf-8",
     stdio: opts.stdio ?? "inherit",
+    ...(opts.timeout != null && { timeout: opts.timeout }),
   });
   if (result.error) {
     return handleSpawnError(binary, args, result.error, opts);
@@ -111,6 +113,7 @@ export function captureOpenshellCommand(
     env: { ...process.env, ...opts.env },
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
+    ...(opts.timeout != null && { timeout: opts.timeout }),
   });
   if (result.error) {
     return handleSpawnError(binary, args, result.error, opts);
