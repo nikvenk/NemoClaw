@@ -89,8 +89,8 @@ function isSafeManifestStateDir(dir: string, backupRoot: string, writableDir: st
   return remotePath !== remoteRoot && remotePath.startsWith(`${remoteRoot}/`);
 }
 
-function buildRemoveDirsCommand(baseDir: string, dirs: string[]): string {
-  const invalidDirs = dirs.filter((dir) => !isSafeManifestStateDir(dir, REBUILD_BACKUPS_DIR, baseDir));
+function buildRemoveDirsCommand(baseDir: string, dirs: string[], backupRoot: string): string {
+  const invalidDirs = dirs.filter((dir) => !isSafeManifestStateDir(dir, backupRoot, baseDir));
   if (invalidDirs.length > 0) {
     throw new Error(`Invalid state dirs: ${invalidDirs.join(", ")}`);
   }
@@ -682,13 +682,13 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const existCheckCmd = stateDirs
       .map((d) => {
         const dirPath = `${writableDir}/${d}`;
-        return `[ -d ${formatShellToken(dirPath)} ] && printf '%s\\n' ${formatShellToken(d)}`;
+        return `if [ -d ${formatShellToken(dirPath)} ]; then printf '%s\\n' ${formatShellToken(d)}; fi`;
       })
       .join("; ");
     const workspaceGlobCmd =
-      `cd ${formatShellToken(writableDir)} && ` +
-      `for d in workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
-    const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null`;
+      `cd ${formatShellToken(writableDir)}; ` +
+      `for d in workspace-*/; do [ -d "$d" ] && basename "$d"; done`;
+    const fullCheckCmd = `set -e; ${existCheckCmd}; ${workspaceGlobCmd}`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
     const existResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
       encoding: "utf-8",
@@ -844,7 +844,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
 
     // Remove existing state dirs before extracting so stale files from
     // later snapshots don't persist after restoring an earlier one.
-    const rmCmd = buildRemoveDirsCommand(writableDir, localDirs);
+    const rmCmd = buildRemoveDirsCommand(writableDir, localDirs, backupPath);
     _log(`Cleaning target dirs before restore: ${rmCmd}`);
     const rmResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -887,7 +887,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       if (ownershipOk) {
         restoredDirs.push(...localDirs);
       } else {
-        const rollbackCmd = buildRemoveDirsCommand(writableDir, localDirs);
+        const rollbackCmd = buildRemoveDirsCommand(writableDir, localDirs, backupPath);
         _log(`Rolling back extracted dirs after chown failure: ${rollbackCmd}`);
         const rollbackResult = runStateCommand(
           "ssh",
