@@ -935,6 +935,60 @@ export no_proxy="$_NO_PROXY_VAL"
 # Dockerfile layer and hangs npm ci in k3s Docker-in-Docker. See
 # src/lib/sandbox-build-context.ts. A sync test enforces that the
 # embedded copy is byte-identical to the canonical file.
+# ── Global sandbox safety net ──────────────────────────────────
+# Catch-all handler for uncaught exceptions and unhandled rejections
+# that would otherwise crash the gateway. In a sandbox environment,
+# a crashed gateway means total loss of inference, chat, and TUI —
+# worse than degraded service from a swallowed error.
+#
+# This MUST be the first --require preload so its handlers register
+# before any library code runs. Specific guards (Slack, ciao) provide
+# targeted handling; this catches everything else.
+#
+# Only active when OPENSHELL_SANDBOX=1 (set by OpenShell at runtime).
+# Outside a sandbox, normal Node.js crash behavior is preserved.
+_SANDBOX_SAFETY_NET="/tmp/nemoclaw-sandbox-safety-net.js"
+emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// sandbox-safety-net.js — last-resort handler that keeps the gateway alive
+// when any library throws an uncaught exception or unhandled rejection.
+// Only active inside OpenShell sandboxes (OPENSHELL_SANDBOX=1).
+
+(function () {
+  'use strict';
+  if (process.env.OPENSHELL_SANDBOX !== '1') return;
+
+  process.on('uncaughtException', function (err, origin) {
+    try {
+      process.stderr.write(
+        '[sandbox-safety-net] uncaughtException: ' +
+        (err && err.stack ? err.stack : String(err)) +
+        ' (origin: ' + origin + ') — swallowed, gateway continues\n'
+      );
+    } catch (_) {
+      // stderr write failed, nothing we can do
+    }
+    // Do NOT re-throw or call process.exit — the whole point is to survive.
+  });
+
+  process.on('unhandledRejection', function (reason, promise) {
+    try {
+      process.stderr.write(
+        '[sandbox-safety-net] unhandledRejection: ' +
+        (reason && reason.stack ? reason.stack : String(reason)) +
+        ' — swallowed, gateway continues\n'
+      );
+    } catch (_) {
+      // stderr write failed
+    }
+    // Do NOT re-throw — let the gateway continue.
+  });
+})();
+SAFETY_NET_EOF
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_SANDBOX_SAFETY_NET"
+
 _PROXY_FIX_SCRIPT="/tmp/nemoclaw-http-proxy-fix.js"
 if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
   emit_sandbox_sourced_file "$_PROXY_FIX_SCRIPT" <<'HTTP_PROXY_FIX_EOF'
@@ -1267,6 +1321,8 @@ export http_proxy="$_PROXY_URL"
 export https_proxy="$_PROXY_URL"
 export no_proxy="$_NO_PROXY_VAL"
 PROXYEOF
+  # Global sandbox safety net for connect sessions — must be first.
+  echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_SANDBOX_SAFETY_NET\""
   # HTTP library double-proxy fix: also expose NODE_OPTIONS in connect
   # sessions so interactive shells and user commands started via
   # `openshell sandbox connect` benefit from the preload. (NemoClaw#2109)
@@ -1436,7 +1492,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
+  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
 
   # Start gateway in background, auto-pair, then wait.
   # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
@@ -1590,7 +1646,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
+validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs
