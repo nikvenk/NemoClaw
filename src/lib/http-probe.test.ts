@@ -68,11 +68,15 @@ describe("http-probe helpers", () => {
   it("scrubs unrelated process env by default", () => {
     const originalPath = process.env.PATH;
     const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    const originalAllProxy = process.env.ALL_PROXY;
+    const originalLowerAllProxy = process.env.all_proxy;
     let seenEnv: NodeJS.ProcessEnv | undefined;
 
     try {
       process.env.PATH = "/usr/local/bin:/usr/bin";
       process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      process.env.ALL_PROXY = "socks5://proxy.example:1080";
+      process.env.all_proxy = "http://proxy.example:8080";
       runCurlProbe(["-sS", "https://example.test/models"], {
         spawnSyncImpl: (_command, _args, options) => {
           seenEnv = options.env;
@@ -97,9 +101,21 @@ describe("http-probe helpers", () => {
       } else {
         process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
       }
+      if (originalAllProxy === undefined) {
+        delete process.env.ALL_PROXY;
+      } else {
+        process.env.ALL_PROXY = originalAllProxy;
+      }
+      if (originalLowerAllProxy === undefined) {
+        delete process.env.all_proxy;
+      } else {
+        process.env.all_proxy = originalLowerAllProxy;
+      }
     }
 
     expect(seenEnv?.PATH).toBe("/usr/local/bin:/usr/bin");
+    expect(seenEnv?.ALL_PROXY).toBe("socks5://proxy.example:1080");
+    expect(seenEnv?.all_proxy).toBe("http://proxy.example:8080");
     expect(seenEnv?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
   });
 
