@@ -625,6 +625,10 @@ runner.run = (command, opts = {}) => {
   commands.push(renderCommand(command));
   return { status: 0 };
 };
+runner.runDetachedFile = (file, args = []) => {
+  commands.push(renderCommand([file, ...args]));
+  return 12345;
+};
 runner.runCapture = (command) => {
   // Normalize: onboard.ts still sends strings, local-inference.ts sends arrays.
   // Once onboard.ts is migrated to argv (#1889), these mocks can assert Array.isArray.
@@ -3317,6 +3321,10 @@ runner.runCapture = (command) => {
 runner.run = (command, opts) => {
   runCommands.push(renderCommand(command));
   return { status: 0, stdout: "", stderr: "", error: null };
+};
+runner.runDetachedFile = (file, args = []) => {
+  runCommands.push(renderCommand([file, ...args]));
+  return 12345;
 };
 registry.updateSandbox = (_name, update) => updates.push(update);
 

@@ -23,6 +23,7 @@ import {
   getOllamaProbeCommand,
   getOllamaWarmupCommand,
   parseOllamaList,
+  startOllamaWarmup,
   parseOllamaTags,
   probeLocalProviderHealth,
   validateOllamaModel,
@@ -310,22 +311,38 @@ describe("local inference helpers", () => {
     expect(getDefaultOllamaModel({ totalMemoryMB: 16384 }, () => "")).toBe("qwen2.5:7b");
   });
 
-  it("builds a background warmup command for ollama models", () => {
+  it("builds a direct curl warmup command for ollama models", () => {
     const command = getOllamaWarmupCommand("nemotron-3-nano:30b");
-    expect(command).toEqual(expect.arrayContaining(["bash", "-c"]));
-    expect(command[2]).toMatch(/^nohup curl -s http:\/\/127.0.0.1:11434\/api\/generate /);
-    expect(command[2]).toMatch(/"model":"nemotron-3-nano:30b"/);
-    expect(command[2]).toMatch(/"keep_alive":"15m"/);
+    expect(command[0]).toBe("curl");
+    expect(command).toContain("-s");
+    expect(command).toContain("http://127.0.0.1:11434/api/generate");
+    const payload = command[command.length - 1];
+    expect(payload).toMatch(/"model":"nemotron-3-nano:30b"/);
+    expect(payload).toMatch(/"keep_alive":"15m"/);
   });
 
   it("supports custom probe and warmup tuning", () => {
     const warmup = getOllamaWarmupCommand("qwen2.5:7b", "30m");
-    expect(warmup[2]).toMatch(/"keep_alive":"30m"/);
+    expect(warmup[warmup.length - 1]).toMatch(/"keep_alive":"30m"/);
     const probe1 = getOllamaProbeCommand("qwen2.5:7b", 30, "5m");
     expect(probe1).toContain("--max-time");
     expect(probe1).toContain("30");
     const payload1 = probe1[probe1.length - 1];
     expect(payload1).toMatch(/"keep_alive":"5m"/);
+  });
+
+  it("launches Ollama warmup via the detached runner", () => {
+    const calls: Array<{ file: string; args: readonly string[] }> = [];
+    const pid = startOllamaWarmup("qwen2.5:7b", "30m", (file, args) => {
+      calls.push({ file, args });
+      return 4242;
+    });
+
+    expect(pid).toBe(4242);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.file).toBe("curl");
+    expect(calls[0]?.args).toContain("http://127.0.0.1:11434/api/generate");
+    expect(calls[0]?.args[calls[0].args.length - 1]).toMatch(/"keep_alive":"30m"/);
   });
 
   it("builds a foreground probe command as an argv array", () => {

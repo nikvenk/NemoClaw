@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  SpawnOptions,
   SpawnSyncOptions,
   SpawnSyncOptionsWithStringEncoding,
   SpawnSyncReturns,
 } from "node:child_process";
 const path = require("path");
 const { detectDockerHost } = require("./platform.js");
-const { spawnResult } = require("./process-primitives.js");
+const { spawnChild, spawnResult } = require("./process-primitives.js");
 const { joinShellWords } = require("./shell-quote");
 const { buildSubprocessEnv } = require("./subprocess-env.js");
 
@@ -32,6 +33,11 @@ type ArrayCaptureOptions = Omit<SpawnSyncOptionsWithStringEncoding, "encoding"> 
 };
 
 type SpawnResult = SpawnSyncReturns<string | Buffer>;
+
+type DetachedRunnerOptions = Omit<SpawnOptions, "detached" | "env"> & {
+  env?: NodeJS.ProcessEnv;
+  inheritFullEnv?: boolean;
+};
 
 const dockerHost = detectDockerHost();
 if (dockerHost) {
@@ -194,6 +200,28 @@ function runInteractiveShell(cmd: string, opts: RunnerOptions = {}): SpawnResult
   const stdio = opts.stdio ?? ["inherit", "pipe", "pipe"];
   const shellCmd = String(cmd);
   return spawnAndHandle("bash", ["-c", shellCmd], opts, stdio, shellCmd);
+}
+
+function runDetachedFile(
+  file: string,
+  args: readonly (string | number | boolean)[] = [],
+  opts: DetachedRunnerOptions = {},
+): number | null {
+  if (opts.shell) {
+    throw new Error("runDetachedFile does not allow opts.shell=true");
+  }
+  const normalizedArgs = args.map((arg) => String(arg));
+  const child = spawnChild(file, normalizedArgs, {
+    ...opts,
+    cwd: opts.cwd ?? ROOT,
+    env: buildRunnerEnv(opts.env, opts.inheritFullEnv),
+    detached: true,
+    stdio: opts.stdio ?? "ignore",
+    shell: false,
+  });
+  child.on?.("error", () => {});
+  child.unref?.();
+  return child.pid ?? null;
 }
 
 /**
@@ -361,6 +389,7 @@ export {
   runCapture,
   runCaptureShell,
   runFile,
+  runDetachedFile,
   runInteractive,
   runInteractiveShell,
   validateName,

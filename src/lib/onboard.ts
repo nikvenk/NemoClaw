@@ -67,7 +67,7 @@ const {
   getLocalProviderBaseUrl,
   getLocalProviderValidationBaseUrl,
   getOllamaModelOptions,
-  getOllamaWarmupCommand,
+  startOllamaWarmup,
   validateOllamaPortConfiguration,
   validateOllamaModel,
   validateLocalProvider,
@@ -2506,7 +2506,7 @@ function prepareOllamaModel(
   }
 
   console.log(`  Loading Ollama model: ${model}`);
-  run(getOllamaWarmupCommand(model), { ignoreError: true });
+  startOllamaWarmup(model);
   return validateOllamaModel(model);
 }
 
@@ -5703,7 +5703,7 @@ async function setupInference(
       String(LOCAL_INFERENCE_TIMEOUT_SECS),
     ]);
     console.log(`  Priming Ollama model: ${model}`);
-    run(getOllamaWarmupCommand(model), { ignoreError: true });
+    startOllamaWarmup(model);
     const probe = validateOllamaModel(model);
     if (!probe.ok) {
       console.error(`  ${probe.message}`);

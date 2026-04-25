@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { createRequire } from "module";
 
@@ -66,6 +69,30 @@ describe("run with argv array", () => {
     // spawnSync sets result.error for missing executables
     expect(result.error).toBeDefined();
     expect(result.error.code).toBe("ENOENT");
+  });
+});
+
+describe("runDetachedFile with argv array", () => {
+  it("launches a detached child without using a shell", async () => {
+    const outputFile = path.join(os.tmpdir(), `runner-detached-${process.pid}-${Date.now()}.txt`);
+    const pid = runner.runDetachedFile(process.execPath, [
+      "-e",
+      `require("fs").writeFileSync(${JSON.stringify(outputFile)}, "ok")`,
+    ]);
+
+    expect(typeof pid).toBe("number");
+    for (let attempt = 0; attempt < 50 && !fs.existsSync(outputFile); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(fs.readFileSync(outputFile, "utf-8")).toBe("ok");
+    fs.rmSync(outputFile, { force: true });
+  });
+
+  it("rejects shell: true on detached argv execution", () => {
+    expect(() => runner.runDetachedFile("echo", ["hello"], { shell: true })).toThrow(
+      /does not allow opts\.shell=true/,
+    );
   });
 });
 

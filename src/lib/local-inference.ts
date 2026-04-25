@@ -10,8 +10,7 @@ import type { CurlProbeResult } from "./http-probe";
 import { runCurlProbe } from "./http-probe";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { runCapture } = require("./runner");
-import { formatShellToken } from "./shell-quote";
+const { runCapture, runDetachedFile } = require("./runner");
 
 import { VLLM_PORT, OLLAMA_PORT, OLLAMA_PROXY_PORT } from "./ports";
 
@@ -28,6 +27,11 @@ export const SMALL_OLLAMA_MODEL = "qwen2.5:7b";
 export const LARGE_OLLAMA_MIN_MEMORY_MB = 32768;
 
 export type RunCaptureFn = (cmd: string | string[], opts?: { ignoreError?: boolean }) => string;
+export type RunDetachedFn = (
+  file: string,
+  args: readonly string[],
+  opts?: { stdio?: import("node:child_process").StdioOptions },
+) => number | null;
 
 export interface GpuInfo {
   totalMemoryMB: number;
@@ -325,15 +329,25 @@ export function getOllamaWarmupCommand(model: string, keepAlive = "15m"): string
     stream: false,
     keep_alive: keepAlive,
   });
-  // backgrounding (nohup ... &) and output redirection require a shell wrapper.
-  // The payload is safe: model name is JSON-serialized (escaping all special
-  // chars) then shellQuote'd (single-quoted), so injection through model
-  // names is not feasible. This is the one intentional bash -c exception.
   return [
-    "bash",
-    "-c",
-    `nohup curl -s http://127.0.0.1:${OLLAMA_PORT}/api/generate -H 'Content-Type: application/json' -d ${formatShellToken(payload)} >/dev/null 2>&1 &`,
+    "curl",
+    "-s",
+    `http://127.0.0.1:${OLLAMA_PORT}/api/generate`,
+    "-H",
+    "Content-Type: application/json",
+    "-d",
+    payload,
   ];
+}
+
+export function startOllamaWarmup(
+  model: string,
+  keepAlive = "15m",
+  runDetachedImpl?: RunDetachedFn,
+): number | null {
+  const command = getOllamaWarmupCommand(model, keepAlive);
+  const runDetached = runDetachedImpl ?? runDetachedFile;
+  return runDetached(command[0], command.slice(1));
 }
 
 export function getOllamaProbeCommand(
