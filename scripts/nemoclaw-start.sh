@@ -523,6 +523,10 @@ install_slack_channel_guard() {
 
   # Only install if a Slack channel is configured
   if ! grep -q '"slack"' "$config_file" 2>/dev/null; then
+    printf '[channels] Slack channel guard skipped — "slack" not found in %s (exists=%s, readable=%s)\n' \
+      "$config_file" \
+      "$([ -f "$config_file" ] && echo yes || echo no)" \
+      "$([ -r "$config_file" ] && echo yes || echo no)" >&2
     return 0
   fi
 
