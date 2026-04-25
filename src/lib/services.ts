@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execSync, spawn } from "node:child_process";
-const { CLI_DISPLAY_NAME, AGENT_PRODUCT_NAME } = require("./branding");
+import { CLI_DISPLAY_NAME, AGENT_PRODUCT_NAME } from "./branding";
 import {
   closeSync,
   existsSync,
