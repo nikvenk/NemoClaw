@@ -625,10 +625,13 @@ export_gateway_token() {
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
       if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
         local tmp
-        tmp="$(mktemp)"
+        tmp="$(mktemp)" || continue
         awk -v b="$marker_begin" -v e="$marker_end" \
-          '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
-        cat "$tmp" >"$rc_file"
+          '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+          rm -f "$tmp"
+          continue
+        }
+        cat "$tmp" >"$rc_file" 2>/dev/null || true
         rm -f "$tmp"
       fi
     done
@@ -648,16 +651,22 @@ export OPENCLAW_GATEWAY_TOKEN='${escaped_token}'
 ${marker_end}"
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
-    if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+    [ -f "$rc_file" ] || continue
+    # All writes use || true because Landlock may block writes even though
+    # DAC (-w) says writable (#804) — same pattern as install_configure_guard.
+    if grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
       local tmp
-      tmp="$(mktemp)"
+      tmp="$(mktemp)" || continue
       awk -v b="$marker_begin" -v e="$marker_end" \
-        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
+        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+        rm -f "$tmp"
+        continue
+      }
       printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file"
+      cat "$tmp" >"$rc_file" 2>/dev/null || true
       rm -f "$tmp"
-    elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
-      printf '\n%s\n' "$snippet" >>"$rc_file"
+    else
+      printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
     fi
   done
 }
