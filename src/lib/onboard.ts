@@ -2664,14 +2664,17 @@ function sleep(seconds: number): void {
 }
 
 function listGatewayDockerVolumes(): string[] {
-  const output = runCapture(
+  const result = run(
     ["docker", "volume", "ls", "-q", "--filter", `name=openshell-cluster-${GATEWAY_NAME}`],
-    { ignoreError: true },
+    { ignoreError: true, suppressOutput: true },
   );
-  return output
+  if (result.status !== 0) {
+    return [];
+  }
+  return String(result.stdout || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => line.startsWith(`openshell-cluster-${GATEWAY_NAME}`));
 }
 
 function removeGatewayDockerVolumes(opts: { suppressOutput?: boolean } = {}): void {
@@ -4708,9 +4711,13 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
   let credentialEnv: string | null = REMOTE_PROVIDER_CONFIG.build.credentialEnv;
   let preferredInferenceApi: string | null = null;
 
-  // Detect local inference options
-  // "command -v" is a shell builtin — must go through bash.
-  const hasOllama = !!runCapture(["ollama", "--version"], { ignoreError: true });
+  // Detect local inference options.
+  // Probe via the shell so a missing binary yields an empty success sentinel
+  // rather than relying on captured stderr text.
+  const hasOllama =
+    runCapture(["sh", "-lc", "command -v ollama >/dev/null 2>&1 && printf yes"], {
+      ignoreError: true,
+    }) === "yes";
   const ollamaRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${OLLAMA_PORT}/api/tags`], {
     ignoreError: true,
   });
