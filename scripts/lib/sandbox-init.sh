@@ -26,7 +26,7 @@ _SANDBOX_INIT_LOADED=1
 #
 # File                         Owner      Mode  Writer   Reader    Sourced?
 # /tmp/nemoclaw-proxy-env.sh   root       444   root     sandbox   YES (.bashrc/.profile)
-# /tmp/gateway.log             gateway    600   gateway  gateway   no
+# /tmp/gateway.log             gateway    644   gateway  all       no (world-readable for diagnostics)
 # /tmp/auto-pair.log           sandbox    600   sandbox  sandbox   no
 # /tmp/.npm-cache/             sandbox    755   sandbox  sandbox   no (tool data)
 # /tmp/.cache/                 sandbox    755   sandbox  sandbox   no (tool data)
@@ -211,7 +211,9 @@ lock_rc_files() {
 
   for rc_file in "${home_dir}/.bashrc" "${home_dir}/.profile"; do
     if [ -f "$rc_file" ]; then
-      chmod 444 "$rc_file" 2>/dev/null || true
+      if ! chmod 444 "$rc_file" 2>/dev/null; then
+        echo "[SECURITY] Could not lock ${rc_file} to 444 — continuing (best-effort, Landlock may enforce)" >&2
+      fi
     fi
   done
 }
