@@ -2272,9 +2272,28 @@ function spawnOllamaAuthProxy(token: string): number | null {
   return pid;
 }
 
-function startDetachedOllamaServe(hostBinding?: string): void {
-  const env = hostBinding ? { OLLAMA_HOST: hostBinding } : undefined;
-  spawnDetachedProcess("ollama", ["serve"], { env });
+function getOllamaProcessEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith("OLLAMA_") && value !== undefined) {
+      env[key] = value;
+    }
+  }
+  return { ...env, ...extra };
+}
+
+function getOllamaClientHost(): string {
+  return `127.0.0.1:${OLLAMA_PORT}`;
+}
+
+function getOllamaServeHostBinding(exposeToDocker: boolean): string {
+  return `${exposeToDocker ? "0.0.0.0" : "127.0.0.1"}:${OLLAMA_PORT}`;
+}
+
+function startDetachedOllamaServe(hostBinding: string): void {
+  spawnDetachedProcess("ollama", ["serve"], {
+    env: getOllamaProcessEnv({ OLLAMA_HOST: hostBinding }),
+  });
 }
 
 function installOllamaViaOfficialScript(): void {
@@ -2427,6 +2446,7 @@ function printOllamaExposureWarning() {
 function pullOllamaModel(model: string): boolean {
   const result = runFile("ollama", ["pull", model], {
     cwd: ROOT,
+    env: getOllamaProcessEnv({ OLLAMA_HOST: getOllamaClientHost() }),
     encoding: "utf8",
     stdio: "inherit",
     timeout: 600_000,
@@ -5261,7 +5281,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           // On WSL2, binding to 0.0.0.0 creates a dual-stack socket that Docker
           // cannot reach via host-gateway. The default 127.0.0.1 binding works
           // because WSL2 relays IPv4-only sockets to the Windows host.
-          startDetachedOllamaServe(isWsl() ? undefined : `0.0.0.0:${OLLAMA_PORT}`);
+          startDetachedOllamaServe(getOllamaServeHostBinding(!isWsl()));
           sleep(2);
           if (!isWsl()) printOllamaExposureWarning();
         }
@@ -5346,7 +5366,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           installOllamaViaOfficialScript();
         }
         console.log("  Starting Ollama...");
-        startDetachedOllamaServe(wsl ? undefined : `0.0.0.0:${OLLAMA_PORT}`);
+        startDetachedOllamaServe(getOllamaServeHostBinding(!wsl));
         sleep(2);
         if (!wsl) {
           printOllamaExposureWarning();
