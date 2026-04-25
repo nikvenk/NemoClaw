@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { GatewayInference } from "./inference-config";
-const { CLI_NAME } = require("./branding");
+import { CLI_NAME } from "./branding";
 
 export interface SandboxEntry {
   name: string;
