@@ -70,6 +70,10 @@ function resultStdoutBuffer(result: { stdout?: string | Buffer | null }): Buffer
   return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout || ""), "utf-8");
 }
 
+function buildRemoveDirsCommand(baseDir: string, dirs: string[]): string {
+  return dirs.map((dir) => `rm -rf ${formatShellToken(`${baseDir}/${dir}`)}`).join(" && ");
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface RebuildManifest {
@@ -805,9 +809,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
 
     // Remove existing state dirs before extracting so stale files from
     // later snapshots don't persist after restoring an earlier one.
-    const rmCmd = localDirs
-      .map((d) => `rm -rf ${formatShellToken(`${writableDir}/${d}`)}`)
-      .join(" && ");
+    const rmCmd = buildRemoveDirsCommand(writableDir, localDirs);
     _log(`Cleaning target dirs before restore: ${rmCmd}`);
     const rmResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -850,6 +852,21 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       if (ownershipOk) {
         restoredDirs.push(...localDirs);
       } else {
+        const rollbackCmd = buildRemoveDirsCommand(writableDir, localDirs);
+        _log(`Rolling back extracted dirs after chown failure: ${rollbackCmd}`);
+        const rollbackResult = runStateCommand(
+          "ssh",
+          [...sshArgs(configFile, sandboxName), rollbackCmd],
+          {
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 30000,
+          },
+        );
+        if (rollbackResult.status !== 0) {
+          _log(
+            `WARNING: rollback failed (exit ${rollbackResult.status}): ${resultStderrText(rollbackResult).substring(0, 200)}`,
+          );
+        }
         failedDirs.push(...localDirs);
       }
     } else {
