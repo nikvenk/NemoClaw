@@ -67,10 +67,10 @@ export interface DeployExecutionOptions {
   getCredential: (key: string) => string | null;
   validateName: (value: string, label: string) => string;
   run: (
-    command: string | readonly string[],
+    command: readonly string[],
     opts?: ExecLikeOptions & { ignoreError?: boolean; suppressOutput?: boolean },
   ) => ExecResultLike;
-  runInteractive: (command: string | readonly string[]) => void;
+  runInteractive: (command: readonly string[]) => void;
   log: (message?: string) => void;
   error: (message?: string) => void;
   stdoutWrite: (message: string) => void;

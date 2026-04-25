@@ -10,6 +10,10 @@ export function buildShellCommand(opts: {
   cwd?: string;
   sourceEnv?: boolean;
 }): string {
+  if (opts.command && opts.commandArgs && opts.commandArgs.length > 0) {
+    throw new Error("buildShellCommand accepts either command or commandArgs, not both");
+  }
+
   const steps: string[] = [];
   if (opts.cwd) {
     steps.push(`cd ${formatShellToken(opts.cwd)}`);
@@ -28,7 +32,7 @@ export function buildShellCommand(opts: {
     steps.push(opts.command);
   }
   if (!opts.command && (!opts.commandArgs || opts.commandArgs.length === 0)) {
-    throw new Error("buildShellCommand requires command or commandArgs");
+    throw new Error("buildShellCommand requires either command or commandArgs");
   }
   return steps.join(" && ");
 }

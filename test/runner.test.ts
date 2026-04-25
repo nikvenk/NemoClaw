@@ -135,10 +135,16 @@ describe("runner helpers", () => {
     expect(firstCall[2]?.stdio).toEqual(["ignore", "pipe", "pipe"]);
   });
 
-  it("rejects opts.shell for argv-style commands", () => {
-    const { runFile } = require(runnerPath);
+  it("rejects opts.shell when the runner already controls shell usage", () => {
+    const { runFile, runShell, runInteractiveShell } = require(runnerPath);
     expect(() => runFile("bash", ["/tmp/setup.sh"], { shell: true })).toThrow(
       /runFile does not allow opts\.shell=true/,
+    );
+    expect(() => runShell("echo hi", { shell: true })).toThrow(
+      /runShell does not allow opts\.shell=true/,
+    );
+    expect(() => runInteractiveShell("echo hi", { shell: true })).toThrow(
+      /runInteractiveShell does not allow opts\.shell=true/,
     );
   });
 

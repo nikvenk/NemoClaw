@@ -120,6 +120,9 @@ function run(cmd: readonly string[], opts: RunnerOptions = {}): SpawnResult {
  * Exits the process on failure unless opts.ignoreError is true.
  */
 function runShell(cmd: string, opts: RunnerOptions = {}): SpawnResult {
+  if (opts.shell) {
+    throw new Error("runShell does not allow opts.shell=true");
+  }
   const shellCmd = String(cmd);
   const stdio = opts.stdio ?? ["ignore", "pipe", "pipe"];
   return spawnAndHandle("bash", ["-c", shellCmd], opts, stdio, shellCmd);
@@ -152,7 +155,7 @@ function runArrayCmd(cmd: readonly string[], opts: RunnerOptions = {}): SpawnRes
 
   const stdio = stdioCfg ?? ["ignore", "pipe", "pipe"];
 
-  const cmdStr = cmd.join(" ");
+  const cmdStr = joinShellWords(cmd);
   return spawnAndHandle(
     exe,
     args,
@@ -185,6 +188,9 @@ function runInteractive(cmd: readonly string[], opts: RunnerOptions = {}): Spawn
  * Exits the process on failure unless opts.ignoreError is true.
  */
 function runInteractiveShell(cmd: string, opts: RunnerOptions = {}): SpawnResult {
+  if (opts.shell) {
+    throw new Error("runInteractiveShell does not allow opts.shell=true");
+  }
   const stdio = opts.stdio ?? ["inherit", "pipe", "pipe"];
   const shellCmd = String(cmd);
   return spawnAndHandle("bash", ["-c", shellCmd], opts, stdio, shellCmd);
@@ -298,7 +304,7 @@ function runArrayCapture(cmd: readonly string[], opts: ArrayCaptureOptions = {})
         encoding: "utf-8",
       },
       ["pipe", "pipe", "pipe"],
-      cmd.join(" "),
+      joinShellWords(cmd),
     );
 
     // Check result.error first — spawnSync sets this (with status === null) when

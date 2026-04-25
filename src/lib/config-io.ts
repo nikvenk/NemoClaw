@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { buildShellCommand } from "./remote-script";
-import { buildShellAssignment, formatShellToken } from "./shell-quote";
+import { buildShellAssignment, formatShellToken, joinShellWords } from "./shell-quote";
 import { isErrnoException, isPermissionError } from "./errno";
 
 // Strict JSON types for file serialization — unlike json-types.ts,
@@ -49,15 +49,15 @@ function buildRemediation(): string {
     "    # If you can use sudo, repair the existing config directory:",
     `    ${buildShellCommand({ command: `sudo chown -R $(whoami) ${formatShellToken(nemoclawDir)}` })}`,
     "    # or recreate it if it was created by another user:",
-    `    ${buildShellCommand({ commandArgs: ["sudo", "rm", "-rf", nemoclawDir], command: "nemoclaw onboard" })}`,
+    `    ${buildShellCommand({ command: `${joinShellWords(["sudo", "rm", "-rf", nemoclawDir])} && nemoclaw onboard` })}`,
     "",
     "    # If sudo is unavailable, move the bad config aside from a writable HOME:",
-    `    ${buildShellCommand({ commandArgs: ["mv", nemoclawDir, backupDir], command: "nemoclaw onboard" })}`,
+    `    ${buildShellCommand({ command: `${joinShellWords(["mv", nemoclawDir, backupDir])} && nemoclaw onboard` })}`,
     "    # or, if you already own the directory, remove it without sudo:",
-    `    ${buildShellCommand({ commandArgs: ["rm", "-rf", nemoclawDir], command: "nemoclaw onboard" })}`,
+    `    ${buildShellCommand({ command: `${joinShellWords(["rm", "-rf", nemoclawDir])} && nemoclaw onboard` })}`,
     "",
     "    # If HOME itself is not writable, start NemoClaw with a writable HOME:",
-    `    ${buildShellCommand({ commandArgs: ["mkdir", "-p", recoveryHome], command: `${buildShellAssignment("HOME", recoveryHome)} nemoclaw onboard` })}`,
+    `    ${buildShellCommand({ command: `${joinShellWords(["mkdir", "-p", recoveryHome])} && ${buildShellAssignment("HOME", recoveryHome)} nemoclaw onboard` })}`,
     "",
     "  This usually happens when NemoClaw was first run with sudo",
     "  or the config directory was created by a different user.",
