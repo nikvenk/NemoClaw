@@ -283,7 +283,7 @@ USER sandbox
 # the OpenShell proxy. Mirror of the Telegram treatment immediately below.
 # Remove once OpenClaw lands an env-var-honouring fix for the Discord
 # gateway equivalent to openclaw/openclaw#62878 (Slack Socket Mode).
-RUN python3 -c "\
+RUN NEMOCLAW_BUILD_ID="${NEMOCLAW_BUILD_ID}" python3 -c "\
 import base64, json, os, secrets; \
 from urllib.parse import urlparse; \
 proxy_url = f\"http://{os.environ['NEMOCLAW_PROXY_HOST']}:{os.environ['NEMOCLAW_PROXY_PORT']}\"; \
