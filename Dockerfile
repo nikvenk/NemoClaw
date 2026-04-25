@@ -341,7 +341,8 @@ config = { \
             'allowedOrigins': origins, \
         }, \
         'trustedProxies': ['127.0.0.1', '::1'], \
-        'auth': {'token': ''} \
+        'auth': {'token': ''}, \
+        'channelHealthCheckMinutes': 0 \
     } \
 }; \
 config.update({ \
