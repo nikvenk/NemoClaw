@@ -960,6 +960,24 @@ emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
   'use strict';
   if (process.env.OPENSHELL_SANDBOX !== '1') return;
 
+  // Track whether we're inside an unhandledRejection we chose to swallow.
+  // OpenClaw's own handler calls process.exit(1) for non-transient rejections.
+  // We intercept process.exit during swallowed rejections to prevent that.
+  var _swallowing = false;
+  var _origExit = process.exit;
+  process.exit = function (code) {
+    if (_swallowing) {
+      try {
+        process.stderr.write(
+          '[sandbox-safety-net] blocked process.exit(' + code +
+          ') during swallowed rejection — gateway continues\n'
+        );
+      } catch (_) {}
+      return;
+    }
+    return _origExit.call(process, code);
+  };
+
   process.on('uncaughtException', function (err, origin) {
     try {
       process.stderr.write(
@@ -967,23 +985,22 @@ emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
         (err && err.stack ? err.stack : String(err)) +
         ' (origin: ' + origin + ') — swallowed, gateway continues\n'
       );
-    } catch (_) {
-      // stderr write failed, nothing we can do
-    }
-    // Do NOT re-throw or call process.exit — the whole point is to survive.
+    } catch (_) {}
   });
 
   process.on('unhandledRejection', function (reason, promise) {
+    _swallowing = true;
     try {
       process.stderr.write(
         '[sandbox-safety-net] unhandledRejection: ' +
         (reason && reason.stack ? reason.stack : String(reason)) +
         ' — swallowed, gateway continues\n'
       );
-    } catch (_) {
-      // stderr write failed
-    }
-    // Do NOT re-throw — let the gateway continue.
+    } catch (_) {}
+    // Keep _swallowing=true through this tick so OpenClaw's handler
+    // (which runs in the same microtask delivery) hits our process.exit
+    // intercept. Reset on next tick.
+    Promise.resolve().then(function () { _swallowing = false; });
   });
 })();
 SAFETY_NET_EOF
