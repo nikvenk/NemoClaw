@@ -431,6 +431,9 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
       return fail([`  Could not determine remote home for ${name}`], error, exit);
     }
     const remoteHome = readCommandOutput(remoteHomeResult, "stdout").trim();
+    if (!remoteHome) {
+      return fail([`  Could not determine remote home for ${name}`], error, exit);
+    }
     const remoteDir = `${remoteHome}/nemoclaw`;
 
     log("  Syncing NemoClaw to VM...");
