@@ -9,6 +9,10 @@ export default defineConfig({
       {
         test: {
           name: "cli",
+          // Root integration tests shell out to built CLI artifacts and child
+          // processes; under coverage on slower hosts they can exceed Vitest's
+          // 5s default even when healthy.
+          testTimeout: 15_000,
           include: ["test/**/*.test.{js,ts}", "src/**/*.test.ts"],
           exclude: [
             "**/node_modules/**",

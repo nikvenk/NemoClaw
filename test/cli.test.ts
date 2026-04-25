@@ -309,9 +309,8 @@ describe("CLI dispatch", () => {
     );
     const r = runWithEnv("debug --quick 2>&1", { HOME: home });
     expect(r.code).toBe(0);
-    expect(r.out).toContain("Warning");
-    expect(r.out).toContain("ghost");
-    expect(r.out).toContain("--sandbox NAME");
+    expect(r.out).toContain("default sandbox 'ghost' is no longer in the registry");
+    expect(r.out).toContain("Use --sandbox NAME to target a specific sandbox");
   });
 
   it("debug --sandbox skips stale default warning", { timeout: 15000 }, () => {
@@ -324,7 +323,8 @@ describe("CLI dispatch", () => {
     );
     const r = runWithEnv("debug --quick --sandbox mybox 2>&1", { HOME: home });
     expect(r.code).toBe(0);
-    expect(r.out).not.toContain("Warning");
+    expect(r.out).not.toContain("default sandbox 'ghost' is no longer in the registry");
+    expect(r.out).not.toContain("default sandbox 'ghost' exists in the local registry but not in OpenShell");
     expect(r.out).toContain("Collecting diagnostics for sandbox 'mybox'");
   });
 
