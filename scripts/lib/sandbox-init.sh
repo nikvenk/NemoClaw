@@ -206,7 +206,7 @@ lock_rc_files() {
 
   for rc_file in "${home_dir}/.bashrc" "${home_dir}/.profile"; do
     if [ -f "$rc_file" ]; then
-      chmod 444 "$rc_file"
+      chmod 444 "$rc_file" 2>/dev/null || true
     fi
   done
 }
