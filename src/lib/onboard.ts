@@ -211,6 +211,9 @@ function verifyGatewayContainerRunning() {
 }
 const OPENCLAW_LAUNCH_AGENT_PLIST = "~/Library/LaunchAgents/ai.openclaw.gateway.plist";
 
+const OLLAMA_INSTALLER_DOWNLOAD_TIMEOUT_MS = 130_000;
+const OLLAMA_INSTALLER_RUN_TIMEOUT_MS = 600_000;
+
 const BUILD_ENDPOINT_URL = "https://integrate.api.nvidia.com/v1";
 const OPENAI_ENDPOINT_URL = "https://api.openai.com/v1";
 const ANTHROPIC_ENDPOINT_URL = "https://api.anthropic.com";
@@ -2300,14 +2303,31 @@ function installOllamaViaOfficialScript(): void {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-ollama-install-"));
   const installerPath = path.join(tempDir, "install.sh");
   try {
-    const download = run(["curl", "-fsSL", "-o", installerPath, "https://ollama.com/install.sh"], {
-      ignoreError: true,
-    });
+    const download = run(
+      [
+        "curl",
+        "-fsSL",
+        "--connect-timeout",
+        "20",
+        "--max-time",
+        "120",
+        "-o",
+        installerPath,
+        "https://ollama.com/install.sh",
+      ],
+      {
+        ignoreError: true,
+        timeout: OLLAMA_INSTALLER_DOWNLOAD_TIMEOUT_MS,
+      },
+    );
     if (download.error) {
-      throw download.error;
+      throw new Error(`Failed to download Ollama installer: ${download.error.message}`);
     }
     if (download.status !== 0) {
       const detail = String(download.stderr || "").trim();
+      if (download.status === 28 || download.signal === "SIGTERM") {
+        throw new Error("Timed out while downloading Ollama installer.");
+      }
       throw new Error(
         detail
           ? `Failed to download Ollama installer: ${detail}`
@@ -2315,12 +2335,18 @@ function installOllamaViaOfficialScript(): void {
       );
     }
 
-    const install = run(["sh", installerPath], { ignoreError: true });
+    const install = run(["sh", installerPath], {
+      ignoreError: true,
+      timeout: OLLAMA_INSTALLER_RUN_TIMEOUT_MS,
+    });
     if (install.error) {
-      throw install.error;
+      throw new Error(`Failed to run Ollama installer: ${install.error.message}`);
     }
     if (install.status !== 0) {
       const detail = String(install.stderr || "").trim();
+      if (install.signal === "SIGTERM") {
+        throw new Error("Timed out while running Ollama installer.");
+      }
       throw new Error(
         detail
           ? `Ollama installer failed: ${detail}`
