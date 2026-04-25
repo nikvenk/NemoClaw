@@ -75,7 +75,12 @@ function isSafeManifestStateDir(dir: string, backupRoot: string, writableDir: st
     return false;
   }
   const segments = dir.split("/");
-  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+  if (
+    segments.some(
+      (segment) =>
+        segment === "" || segment === "." || segment === ".." || segment.startsWith("-"),
+    )
+  ) {
     return false;
   }
 
@@ -94,7 +99,7 @@ function buildRemoveDirsCommand(baseDir: string, dirs: string[], backupRoot: str
   if (invalidDirs.length > 0) {
     throw new Error(`Invalid state dirs: ${invalidDirs.join(", ")}`);
   }
-  return dirs.map((dir) => `rm -rf ${formatShellToken(`${baseDir}/${dir}`)}`).join(" && ");
+  return dirs.map((dir) => `rm -rf -- ${formatShellToken(`${baseDir}/${dir}`)}`).join(" && ");
 }
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -621,6 +626,18 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
   }
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = path.join(REBUILD_BACKUPS_DIR, sandboxName, timestamp);
+  const invalidManifestStateDirs = stateDirs.filter(
+    (dir) => !isSafeManifestStateDir(dir, backupPath, writableDir),
+  );
+  if (invalidManifestStateDirs.length > 0) {
+    _log(`FAILED: agent manifest declares invalid state dirs: [${invalidManifestStateDirs.join(",")}]`);
+    return {
+      success: false,
+      backedUpDirs: [],
+      failedDirs: [...stateDirs],
+      error: `Agent manifest contains invalid state dirs: ${invalidManifestStateDirs.join(", ")}`,
+    };
+  }
 
   // SECURITY: Verify backup destination ancestors are not symlinks.
   // Without this check, an attacker who plants ~/.nemoclaw/rebuild-backups
@@ -706,6 +723,9 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
           .filter((d: string) => d.length > 0),
       ),
     );
+    const invalidExistingDirs = existingDirs.filter(
+      (dir) => !isSafeManifestStateDir(dir, backupPath, writableDir),
+    );
     _log(
       `Existing dirs in sandbox: [${existingDirs.join(",")}] (${existingDirs.length}/${stateDirs.length})`,
     );
@@ -717,6 +737,16 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs] };
     }
 
+    if (invalidExistingDirs.length > 0) {
+      _log(`FAILED: sandbox reported invalid state dirs: [${invalidExistingDirs.join(",")}]`);
+      return {
+        success: false,
+        manifest,
+        backedUpDirs,
+        failedDirs: [...stateDirs, ...invalidExistingDirs.filter((dir) => !stateDirs.includes(dir))],
+      };
+    }
+
     if (existingDirs.length === 0) {
       _log("No state dirs found in sandbox (all empty)");
       writeManifest(backupPath, manifest);
@@ -725,7 +755,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
 
     // Download via SSH+tar
     const tarCmd =
-      `tar -cf - -C ${formatShellToken(writableDir)} ` +
+      `tar -cf - -C ${formatShellToken(writableDir)} -- ` +
       existingDirs.map((dir) => formatShellToken(dir)).join(" ");
     _log(`Downloading via SSH+tar: ${tarCmd}`);
     const result = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
@@ -832,7 +862,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
   const configFile = writeTempSshConfig(sshConfig);
   try {
     // Upload via tar pipe
-    const tarResult = runStateCommand("tar", ["-cf", "-", "-C", backupPath, ...localDirs], {
+    const tarResult = runStateCommand("tar", ["-cf", "-", "-C", backupPath, "--", ...localDirs], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 60000,
       maxBuffer: 256 * 1024 * 1024,

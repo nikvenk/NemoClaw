@@ -200,6 +200,17 @@ describe("restoreSandboxState", () => {
     expect(result.restoredDirs).toEqual([]);
     expect(result.failedDirs).toContain("../escape");
   });
+
+  it("rejects manifest state dirs that look like tar options", () => {
+    const backup = writeBackup("test-sandbox", "2026-04-21T14-01-00-000Z", {
+      stateDirs: ["--checkpoint=1"],
+    });
+
+    const result = sandboxState.restoreSandboxState("test-sandbox", String(backup.backupPath));
+    expect(result.success).toBe(false);
+    expect(result.restoredDirs).toEqual([]);
+    expect(result.failedDirs).toContain("--checkpoint=1");
+  });
 });
 
 describe("findBackup", () => {
