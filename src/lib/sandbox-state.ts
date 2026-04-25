@@ -31,7 +31,9 @@ import * as registry from "./registry.js";
 import { loadAgent } from "./agent-defs.js";
 import { resolveOpenshell } from "./resolve-openshell.js";
 import { captureOpenshellCommand } from "./openshell.js";
+import { buildEnvForSubprocess } from "./subprocess-env.js";
 import { sanitizeConfigFile, isSensitiveFile } from "./credential-filter.js";
+import { formatShellToken } from "./shell-quote.js";
 
 const HOME_DIR = path.resolve(process.env.HOME || os.homedir());
 const REBUILD_BACKUPS_DIR = path.join(HOME_DIR, ".nemoclaw", "rebuild-backups");
@@ -47,7 +49,10 @@ function runStateCommand(
   args: string[],
   opts: SpawnSyncOptions | SpawnSyncOptionsWithStringEncoding = {},
 ) {
-  return spawnResult(file, args, opts);
+  return spawnResult(file, args, {
+    ...opts,
+    env: buildEnvForSubprocess(opts.env),
+  });
 }
 
 function resultStdoutText(result: { stdout?: string | Buffer | null }): string {
@@ -648,9 +653,14 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // snapshotted alongside the manifest-declared dirs. `awk '!seen[$0]++'`
     // dedupes while preserving order.
     const existCheckCmd = stateDirs
-      .map((d) => `[ -d "${writableDir}/${d}" ] && echo "${d}"`)
+      .map((d) => {
+        const dirPath = `${writableDir}/${d}`;
+        return `[ -d ${formatShellToken(dirPath)} ] && printf '%s\\n' ${formatShellToken(d)}`;
+      })
       .join("; ");
-    const workspaceGlobCmd = `for d in ${writableDir}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
+    const workspaceGlobCmd =
+      `cd ${formatShellToken(writableDir)} && ` +
+      `for d in workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
     const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
     const existResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
@@ -683,7 +693,9 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     }
 
     // Download via SSH+tar
-    const tarCmd = `tar -cf - -C ${writableDir} ${existingDirs.join(" ")}`;
+    const tarCmd =
+      `tar -cf - -C ${formatShellToken(writableDir)} ` +
+      existingDirs.map((dir) => formatShellToken(dir)).join(" ");
     _log(`Downloading via SSH+tar: ${tarCmd}`);
     const result = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -793,7 +805,9 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
 
     // Remove existing state dirs before extracting so stale files from
     // later snapshots don't persist after restoring an earlier one.
-    const rmCmd = localDirs.map((d) => `rm -rf "${writableDir}/${d}"`).join(" && ");
+    const rmCmd = localDirs
+      .map((d) => `rm -rf ${formatShellToken(`${writableDir}/${d}`)}`)
+      .join(" && ");
     _log(`Cleaning target dirs before restore: ${rmCmd}`);
     const rmResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -805,7 +819,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       );
     }
 
-    const extractCmd = `tar -xf - -C ${writableDir}`;
+    const extractCmd = `tar -xf - -C ${formatShellToken(writableDir)}`;
     const sshResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), extractCmd], {
       input: resultStdoutBuffer(tarResult),
       stdio: ["pipe", "pipe", "pipe"],
