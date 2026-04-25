@@ -33,9 +33,9 @@ const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
   startGatewayForRecovery,
   pruneKnownHostsEntries,
-  ensureOllamaAuthProxy,
   isNonInteractive,
 } = require("./lib/onboard");
+const { ensureOllamaAuthProxy } = require("./lib/ollama-proxy");
 const {
   getCredential,
   deleteCredential,
