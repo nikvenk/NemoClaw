@@ -723,13 +723,17 @@ openclaw() {
 GUARD
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    # Skip if the file isn't writable (Landlock read-only /sandbox in non-root mode, #804)
+    if [ ! -w "$rc_file" ] && [ ! -w "$(dirname "$rc_file")" ]; then
+      continue
+    fi
     if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
       local tmp
       tmp="$(mktemp)"
       awk -v b="$marker_begin" -v e="$marker_end" \
         '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
       printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file"
+      cat "$tmp" >"$rc_file" 2>/dev/null || true
       rm -f "$tmp"
     elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
       printf '\n%s\n' "$snippet" >>"$rc_file"
@@ -1224,7 +1228,7 @@ PROXYEOF
 
 # DIAG: trace entrypoint execution to /tmp (readable by openshell exec)
 _DIAG="/tmp/nemoclaw-entrypoint-trace.log"
-echo "$(date -Iseconds) TRACE: proxy-env done, entering main" >> "$_DIAG"
+echo "$(date -Iseconds) TRACE: proxy-env done, entering main" | tee -a "$_DIAG" >&2
 
 # cleanup_on_signal is provided by sandbox-init.sh. It reads
 # SANDBOX_CHILD_PIDS (array of all PIDs) and SANDBOX_WAIT_PID (the
@@ -1245,9 +1249,9 @@ fi
 # blocks gosu's setuid syscall. When we're not root, skip privilege
 # separation and run everything as the current user (sandbox).
 # Gateway process isolation is not available in this mode.
-echo "$(date -Iseconds) TRACE: uid=$(id -u), about to enter root/non-root branch" >> "$_DIAG"
+echo "$(date -Iseconds) TRACE: uid=$(id -u), about to enter root/non-root branch" | tee -a "$_DIAG" >&2
 if [ "$(id -u)" -ne 0 ]; then
-  echo "$(date -Iseconds) TRACE: non-root path entered" >> "$_DIAG"
+  echo "$(date -Iseconds) TRACE: non-root path entered" | tee -a "$_DIAG" >&2
   echo "[gateway] Running as non-root (uid=$(id -u)) — privilege separation disabled" >&2
   export HOME=/sandbox
   if ! verify_config_integrity /sandbox/.openclaw; then
@@ -1270,13 +1274,13 @@ if [ "$(id -u)" -ne 0 ]; then
   printf '%s' "$_NONROOT_GATEWAY_TOKEN" >"$_NONROOT_TOKEN_FILE"
   chmod 0400 "$_NONROOT_TOKEN_FILE"
   printf '[SECURITY] Non-root mode — gateway token at %s (no uid isolation)\n' "$_NONROOT_TOKEN_FILE" >&2
-  echo "$(date -Iseconds) TRACE: about to install_configure_guard" >> "$_DIAG"
+  echo "$(date -Iseconds) TRACE: about to install_configure_guard" | tee -a "$_DIAG" >&2
   install_configure_guard
-  echo "$(date -Iseconds) TRACE: about to configure_messaging_channels" >> "$_DIAG"
+  echo "$(date -Iseconds) TRACE: about to configure_messaging_channels" | tee -a "$_DIAG" >&2
   configure_messaging_channels
-  echo "$(date -Iseconds) TRACE: about to install_slack_channel_guard" >> "$_DIAG"
+  echo "$(date -Iseconds) TRACE: about to install_slack_channel_guard" | tee -a "$_DIAG" >&2
   install_slack_channel_guard
-  echo "$(date -Iseconds) TRACE: guard done, about to validate_openclaw_symlinks" >> "$_DIAG"
+  echo "$(date -Iseconds) TRACE: guard done, about to validate_openclaw_symlinks" | tee -a "$_DIAG" >&2
   validate_openclaw_symlinks
 
   # Ensure writable state directories exist and are owned by the current user.
