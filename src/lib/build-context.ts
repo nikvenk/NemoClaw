@@ -6,8 +6,7 @@
  * creation failures.
  */
 
-const { CLI_NAME } = require("./branding");
-
+import { CLI_NAME } from "./branding";
 import fs from "node:fs";
 import path from "node:path";
 

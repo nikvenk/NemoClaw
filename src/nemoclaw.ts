@@ -1004,7 +1004,7 @@ async function ensureLiveSandboxOrExit(
 function printOldLogsCompatibilityGuidance(installedVersion = null) {
   const versionText = installedVersion ? ` (${installedVersion})` : "";
   console.error(
-    `  Installed OpenShell${versionText} is too old or incompatible with \`nemoclaw logs\`.`,
+    `  Installed OpenShell${versionText} is too old or incompatible with \`${CLI_NAME} logs\`.`,
   );
   console.error(`  ${CLI_DISPLAY_NAME} expects \`openshell logs <name>\` and live streaming via \`--tail\`.`);
   console.error(
