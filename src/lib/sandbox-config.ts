@@ -12,6 +12,8 @@
 // config set:          Host-initiated config mutation with validation.
 // config rotate-token: Credential rotation via stdin or env var.
 
+import * as readline from "readline";
+
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -137,21 +139,38 @@ function setDotpath(obj: ConfigObject, dotpath: string, value: ConfigValue): voi
 }
 
 /**
- * Return true when every segment in a dotpath is an own property on the
- * current config object, which keeps config set constrained to recognized keys.
+ * Key segments that must never appear in a dotpath — blocking these prevents
+ * prototype-pollution and accidental traversal into inherited members.
  */
-function isRecognizedConfigPath(obj: ConfigValue, dotpath: string): boolean {
-  if (!dotpath || typeof dotpath !== "string") return false;
-  const keys = dotpath.split(".");
-  if (keys.some((key) => !key)) return false;
+const UNSAFE_KEY_SEGMENTS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+  "toString",
+  "hasOwnProperty",
+]);
 
-  let current: ConfigValue = obj;
-  for (const key of keys) {
-    if (!isConfigObject(current)) return false;
-    if (!Object.prototype.hasOwnProperty.call(current, key)) return false;
-    current = current[key];
+type DotpathValidation = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Validate the syntax of a config dotpath: non-empty, no empty segments, no
+ * prototype-pollution / inherited-member segments. Schema validity is not
+ * checked here — `configSet` handles unknown paths via an interactive
+ * confirm or a `--config-accept-new-path` opt-in so first-time writes
+ * under unset namespaces stay possible (see #2400).
+ */
+function validateConfigDotpath(dotpath: string): DotpathValidation {
+  if (!dotpath || typeof dotpath !== "string") {
+    return { ok: false, reason: "key is empty" };
   }
-  return true;
+  const keys = dotpath.split(".");
+  for (const key of keys) {
+    if (!key) return { ok: false, reason: "key contains an empty segment" };
+    if (UNSAFE_KEY_SEGMENTS.has(key)) {
+      return { ok: false, reason: `segment '${key}' is reserved` };
+    }
+  }
+  return { ok: true };
 }
 
 /**
@@ -299,9 +318,10 @@ interface ConfigSetOpts {
   key?: string | null;
   value?: string | null;
   restart?: boolean;
+  acceptNewPath?: boolean;
 }
 
-function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
+async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise<void> {
   validateName(sandboxName, "sandbox name");
 
   if (!opts.key) {
@@ -313,6 +333,12 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   if (opts.value === undefined || opts.value === null) {
     console.error("  --value is required.");
     console.error("  Usage: nemoclaw <name> config set --key <dotpath> --value <value>");
+    process.exit(1);
+  }
+
+  const dotpathCheck = validateConfigDotpath(opts.key);
+  if (!dotpathCheck.ok) {
+    console.error(`  Invalid config key '${opts.key}': ${dotpathCheck.reason}.`);
     process.exit(1);
   }
 
@@ -345,13 +371,6 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
     process.exit(1);
   }
 
-  if (!isRecognizedConfigPath(config, opts.key)) {
-    console.error(
-      `  Key validation failed: "${opts.key}" is not a recognized ${target.agentName} config path.`,
-    );
-    process.exit(1);
-  }
-
   // 5. Show what will change
   const oldValue = extractDotpath(config, opts.key);
   console.log(`  Agent:     ${target.agentName}`);
@@ -359,15 +378,41 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   console.log(`  Old value: ${oldValue !== undefined ? JSON.stringify(oldValue) : "(not set)"}`);
   console.log(`  New value: ${JSON.stringify(parsedValue)}`);
 
-  // 6. Apply change
+  // 6. First-time writes go through a confirmation gate so users get a
+  // signal when they are creating a brand-new key (which may be a typo)
+  // without coupling the validator to OpenClaw's evolving config schema
+  // (see #2400).
+  if (oldValue === undefined) {
+    const accepted =
+      opts.acceptNewPath === true || process.env.NEMOCLAW_CONFIG_ACCEPT_NEW_PATH === "1";
+    if (!accepted) {
+      const interactive = !!process.stdin.isTTY && !process.env.NEMOCLAW_NON_INTERACTIVE;
+      if (!interactive) {
+        console.error(
+          `  Key '${opts.key}' does not currently exist in the ${target.agentName} config.`,
+        );
+        console.error(
+          "  Re-run interactively, pass --config-accept-new-path, or set NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1.",
+        );
+        process.exit(1);
+      }
+      const confirmed = await confirmYesNo("  Write this new key? [y/N] ");
+      if (!confirmed) {
+        console.error("  Aborted.");
+        process.exit(1);
+      }
+    }
+  }
+
+  // 7. Apply change
   setDotpath(config, opts.key, parsedValue);
 
-  // 7. Write to temp file in the agent's native format
+  // 8. Write to temp file in the agent's native format
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-config-"));
   const tmpFile = path.join(tmpDir, target.configFile);
   fs.writeFileSync(tmpFile, serializeConfig(config, target.format), { mode: 0o600 });
 
-  // 8. Write config to sandbox via kubectl exec (bypasses Landlock)
+  // 9. Write config to sandbox via kubectl exec (bypasses Landlock)
   console.log(`  Writing config to sandbox (${target.configPath})...`);
   const content = fs.readFileSync(tmpFile, "utf-8");
   execFileSync(
@@ -392,7 +437,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
     { input: content, stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
   );
 
-  // 9. Fix ownership via kubectl exec (bypasses Landlock)
+  // 10. Fix ownership via kubectl exec (bypasses Landlock)
   try {
     execFileSync(
       "docker",
@@ -417,7 +462,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
     // Best effort — chown failure is non-fatal
   }
 
-  // 10. Cleanup temp
+  // 11. Cleanup temp
   try {
     fs.unlinkSync(tmpFile);
     fs.rmdirSync(tmpDir);
@@ -425,7 +470,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
     // Best effort
   }
 
-  // 11. Audit log
+  // 12. Audit log
   appendAuditEntry({
     action: "shields_down",
     sandbox: sandboxName,
@@ -435,7 +480,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
 
   console.log(`  ${target.agentName} config updated.`);
 
-  // 12. Restart if requested
+  // 13. Restart if requested
   if (opts.restart) {
     console.log("  Restarting sandbox agent process...");
     const restartBinary = getOpenshellBinary();
@@ -601,6 +646,24 @@ function readStdin(): Promise<string> {
   });
 }
 
+/**
+ * Ask a yes/no question on stderr. Returns true only when the answer matches
+ * /^y(es)?$/i — empty, "no", or unparseable input is treated as no.
+ */
+function confirmYesNo(prompt: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question(prompt, (answer: string) => {
+      rl.close();
+      if (!process.stdin.isTTY) {
+        if (typeof process.stdin.pause === "function") process.stdin.pause();
+        if (typeof process.stdin.unref === "function") process.stdin.unref();
+      }
+      resolve(/^y(es)?$/i.test(answer.trim()));
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
@@ -612,7 +675,7 @@ export {
   resolveAgentConfig,
   extractDotpath,
   setDotpath,
-  isRecognizedConfigPath,
+  validateConfigDotpath,
   validateUrlValue,
   readStdin,
 };

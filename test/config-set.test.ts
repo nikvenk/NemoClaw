@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 const require = createRequire(import.meta.url);
 const {
   extractDotpath,
-  isRecognizedConfigPath,
+  validateConfigDotpath,
   setDotpath,
   validateUrlValue,
   resolveAgentConfig,
@@ -93,46 +93,43 @@ describe("config set helpers", () => {
     });
   });
 
-  describe("isRecognizedConfigPath", () => {
-    it("accepts an existing top-level key", () => {
-      expect(isRecognizedConfigPath({ version: 1 }, "version")).toBe(true);
+  describe("validateConfigDotpath", () => {
+    it("accepts a top-level key", () => {
+      expect(validateConfigDotpath("version")).toEqual({ ok: true });
     });
 
-    it("accepts an existing nested key path", () => {
-      expect(
-        isRecognizedConfigPath(
-          { agents: { defaults: { model: { primary: "gpt-5.4" } } } },
-          "agents.defaults.model.primary",
-        ),
-      ).toBe(true);
+    it("accepts a deeply nested path", () => {
+      expect(validateConfigDotpath("provider.compatible-endpoint.timeoutSeconds")).toEqual({
+        ok: true,
+      });
     });
 
-    it("accepts existing keys whose value is null", () => {
-      expect(isRecognizedConfigPath({ provider: { endpoint: null } }, "provider.endpoint")).toBe(
-        true,
-      );
+    it("rejects empty input", () => {
+      expect(validateConfigDotpath("").ok).toBe(false);
     });
 
-    it("rejects an unknown top-level key", () => {
-      expect(isRecognizedConfigPath({ version: 1 }, "inference.endpoint")).toBe(false);
+    it("rejects an empty segment in the middle", () => {
+      expect(validateConfigDotpath("agents..defaults").ok).toBe(false);
     });
 
-    it("rejects an unknown nested key", () => {
-      expect(
-        isRecognizedConfigPath(
-          { agents: { defaults: { model: { primary: "gpt-5.4" } } } },
-          "agents.defaults.model.secondary",
-        ),
-      ).toBe(false);
+    it("rejects a leading or trailing dot", () => {
+      expect(validateConfigDotpath(".agents").ok).toBe(false);
+      expect(validateConfigDotpath("agents.").ok).toBe(false);
     });
 
-    it("rejects malformed dotpaths", () => {
-      expect(isRecognizedConfigPath({ version: 1 }, "agents..defaults")).toBe(false);
+    it("rejects prototype-pollution segments anywhere in the path", () => {
+      expect(validateConfigDotpath("__proto__").ok).toBe(false);
+      expect(validateConfigDotpath("agents.constructor").ok).toBe(false);
+      expect(validateConfigDotpath("agents.prototype.config").ok).toBe(false);
+      expect(validateConfigDotpath("provider.__proto__.polluted").ok).toBe(false);
+      expect(validateConfigDotpath("tools.hasOwnProperty").ok).toBe(false);
+      expect(validateConfigDotpath("toString").ok).toBe(false);
     });
 
-    it("rejects prototype-inherited keys", () => {
-      expect(isRecognizedConfigPath({}, "toString")).toBe(false);
-      expect(isRecognizedConfigPath({ safe: {} }, "safe.constructor")).toBe(false);
+    it("returns a reason describing the failure", () => {
+      const result = validateConfigDotpath("agents..defaults");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/empty segment/);
     });
   });
 
