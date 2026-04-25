@@ -4,6 +4,7 @@
 export interface OnboardCommandOptions {
   nonInteractive: boolean;
   resume: boolean;
+  fresh: boolean;
   recreateSandbox: boolean;
   fromDockerfile: string | null;
   acceptThirdPartySoftware: boolean;
@@ -29,12 +30,13 @@ export interface RunDeprecatedOnboardAliasCommandDeps extends RunOnboardCommandD
 const ONBOARD_BASE_ARGS = [
   "--non-interactive",
   "--resume",
+  "--fresh",
   "--recreate-sandbox",
 ];
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [${noticeAcceptFlag}]`,
+    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [${noticeAcceptFlag}]`,
     "",
   ];
 }
@@ -94,9 +96,18 @@ export function parseOnboardArgs(
     exit(1);
   }
 
+  const resume = parsedArgs.includes("--resume");
+  const fresh = parsedArgs.includes("--fresh");
+  if (resume && fresh) {
+    error("  --resume and --fresh are mutually exclusive.");
+    printOnboardUsage(error, noticeAcceptFlag);
+    exit(1);
+  }
+
   return {
     nonInteractive: parsedArgs.includes("--non-interactive"),
-    resume: parsedArgs.includes("--resume"),
+    resume,
+    fresh,
     recreateSandbox: parsedArgs.includes("--recreate-sandbox"),
     fromDockerfile,
     acceptThirdPartySoftware:

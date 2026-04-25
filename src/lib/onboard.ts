@@ -243,6 +243,7 @@ type OnboardOptions = {
   nonInteractive?: boolean;
   recreateSandbox?: boolean;
   resume?: boolean;
+  fresh?: boolean;
   fromDockerfile?: string | null;
   acceptThirdPartySoftware?: boolean;
   agent?: string | null;
@@ -4322,13 +4323,13 @@ async function createSandbox(
   // subprocesses (gateway start, openshell CLI) but the sandbox should
   // never have access to the host's Kubernetes cluster or SSH agent.
   const envArgs = [formatEnvAssignment("CHAT_UI_URL", chatUiUrl)];
-  // Pass the configured dashboard port into the sandbox so nemoclaw-start.sh
-  // can unconditionally override CHAT_UI_URL even when the Docker image was
-  // built with a different default. Without this, the baked-in Docker ENV
-  // value takes precedence and the gateway starts on the wrong port. (#1925)
-  if (process.env.NEMOCLAW_DASHBOARD_PORT) {
-    envArgs.push(formatEnvAssignment("NEMOCLAW_DASHBOARD_PORT", String(DASHBOARD_PORT)));
-  }
+  // Always pass the effective dashboard port into the sandbox so
+  // nemoclaw-start.sh starts the gateway on the correct port. When the
+  // user sets CHAT_UI_URL with a custom port (e.g. :18790), the port
+  // must reach the container — otherwise _DASHBOARD_PORT defaults to
+  // 18789 and the gateway listens on the wrong port. (#2267, #1925)
+  const effectiveDashboardPort = getDashboardForwardPort(chatUiUrl);
+  envArgs.push(formatEnvAssignment("NEMOCLAW_DASHBOARD_PORT", effectiveDashboardPort));
   if (webSearchConfig?.fetchEnabled) {
     const braveKey =
       getCredential(webSearch.BRAVE_API_KEY_ENV) || process.env[webSearch.BRAVE_API_KEY_ENV];
@@ -4442,7 +4443,7 @@ async function createSandbox(
   const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCaptureOpenshell(
-      ["sandbox", "exec", sandboxName, "curl", "-sf", `http://localhost:${effectivePort}/`],
+      ["sandbox", "exec", sandboxName, "curl", "-sf", `http://localhost:${effectiveDashboardPort}/`],
       { ignoreError: true },
     );
     if (readyMatch) {
@@ -7234,6 +7235,11 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   RECREATE_SANDBOX = opts.recreateSandbox || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
   delete process.env.OPENSHELL_GATEWAY;
   const resume = opts.resume === true;
+  const fresh = opts.fresh === true;
+  if (resume && fresh) {
+    console.error("  --resume and --fresh cannot both be set.");
+    process.exit(1);
+  }
   // In non-interactive mode also accept the env var so CI pipelines can set it.
   // This is the explicitly requested value; on resume it may be absent and the
   // session-recorded path is used instead (see below).
@@ -7254,7 +7260,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   // problem: an unsupported provider value.
   getRequestedProviderHint();
   const lockResult = onboardSession.acquireOnboardLock(
-    `nemoclaw onboard${resume ? " --resume" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
+    `nemoclaw onboard${resume ? " --resume" : ""}${fresh ? " --fresh" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
   );
   if (!lockResult.acquired) {
     console.error("  Another NemoClaw onboarding run is already in progress.");
@@ -7346,6 +7352,13 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
       });
       session = onboardSession.loadSession();
     } else {
+      // --fresh asks for an explicit fresh start. createSession + saveSession
+      // already overwrites any existing file, but clearing first removes the
+      // old file outright so an interrupted createSession cannot leave the
+      // previous session readable on disk.
+      if (fresh) {
+        onboardSession.clearSession();
+      }
       fromDockerfile = requestedFromDockerfile ? path.resolve(requestedFromDockerfile) : null;
       session = onboardSession.saveSession(
         onboardSession.createSession({
