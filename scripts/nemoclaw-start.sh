@@ -1222,6 +1222,10 @@ PROXYEOF
   done
 } | emit_sandbox_sourced_file "$_PROXY_ENV_FILE"
 
+# DIAG: trace entrypoint execution to /tmp (readable by openshell exec)
+_DIAG="/tmp/nemoclaw-entrypoint-trace.log"
+echo "$(date -Iseconds) TRACE: proxy-env done, entering main" >> "$_DIAG"
+
 # cleanup_on_signal is provided by sandbox-init.sh. It reads
 # SANDBOX_CHILD_PIDS (array of all PIDs) and SANDBOX_WAIT_PID (the
 # primary process whose exit status is returned).
@@ -1241,7 +1245,9 @@ fi
 # blocks gosu's setuid syscall. When we're not root, skip privilege
 # separation and run everything as the current user (sandbox).
 # Gateway process isolation is not available in this mode.
+echo "$(date -Iseconds) TRACE: uid=$(id -u), about to enter root/non-root branch" >> "$_DIAG"
 if [ "$(id -u)" -ne 0 ]; then
+  echo "$(date -Iseconds) TRACE: non-root path entered" >> "$_DIAG"
   echo "[gateway] Running as non-root (uid=$(id -u)) — privilege separation disabled" >&2
   export HOME=/sandbox
   if ! verify_config_integrity /sandbox/.openclaw; then
@@ -1264,9 +1270,13 @@ if [ "$(id -u)" -ne 0 ]; then
   printf '%s' "$_NONROOT_GATEWAY_TOKEN" >"$_NONROOT_TOKEN_FILE"
   chmod 0400 "$_NONROOT_TOKEN_FILE"
   printf '[SECURITY] Non-root mode — gateway token at %s (no uid isolation)\n' "$_NONROOT_TOKEN_FILE" >&2
+  echo "$(date -Iseconds) TRACE: about to install_configure_guard" >> "$_DIAG"
   install_configure_guard
+  echo "$(date -Iseconds) TRACE: about to configure_messaging_channels" >> "$_DIAG"
   configure_messaging_channels
+  echo "$(date -Iseconds) TRACE: about to install_slack_channel_guard" >> "$_DIAG"
   install_slack_channel_guard
+  echo "$(date -Iseconds) TRACE: guard done, about to validate_openclaw_symlinks" >> "$_DIAG"
   validate_openclaw_symlinks
 
   # Ensure writable state directories exist and are owned by the current user.
