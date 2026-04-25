@@ -148,7 +148,6 @@ describe("onboard command", () => {
       fromDockerfile: null,
       acceptThirdPartySoftware: false,
       agent: null,
-      dangerouslySkipPermissions: false,
     });
   });
 
