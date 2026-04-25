@@ -1195,12 +1195,12 @@ run_onboard() {
   info "Running nemoclaw onboard…"
   local -a onboard_cmd=(onboard)
   local session_file="${HOME}/.nemoclaw/onboard-session.json"
-  # --fresh takes precedence over any session state: we simply skip the
-  # auto-resume check. `nemoclaw onboard` without --resume overwrites the
-  # session file on its own (createSession + saveSession), so no cleanup
-  # is needed here.
+  # --fresh takes precedence over any session state. We forward --fresh to
+  # `nemoclaw onboard` so the CLI clears the existing session file before
+  # creating a new one — the install.sh classifier is bypassed entirely.
   if [ "${FRESH:-}" = "1" ]; then
     info "Starting a fresh onboarding session (--fresh)."
+    onboard_cmd+=(--fresh)
   elif command_exists node && [[ -f "$session_file" ]]; then
     # Classify the session: "resume" (auto-attach --resume), "failed"
     # (last run reported a step failure — user must choose), "skip"
@@ -1260,7 +1260,10 @@ run_onboard() {
               onboard_cmd+=(--resume)
               break
               ;;
-            f | fresh) break ;;
+            f | fresh)
+              onboard_cmd+=(--fresh)
+              break
+              ;;
             *) printf "  Please answer 'r' or 'f'.\n" >&2 ;;
           esac
         done

@@ -272,12 +272,12 @@ $ nemoclaw onboard
 
 ### Previous onboarding session failed
 
-If a previous `nemoclaw onboard` attempt failed partway through — for example, a provider or inference-setup step reporting an error — NemoClaw records the failure in `~/.nemoclaw/onboard-session.json`.
+If a previous `nemoclaw onboard` attempt fails partway through (for example, a provider or inference-setup step reporting an error), NemoClaw records the failure in `~/.nemoclaw/onboard-session.json`.
 
-When you re-run the installer, it detects the failed session and will not silently retry it (that would loop on the same failure if your original choice, like an unreachable provider, was the cause).
+When you re-run the installer, it detects the failed session and does not silently retry it. Silent retry would loop on the same failure if your original choice, such as an unreachable provider, was the cause.
 
-- **Interactive terminal:** the installer prompts whether to resume the failed session or start fresh. Press `R` (or Enter) to retry the same session, or `f` to discard it and make fresh choices.
-- **Non-interactive (piped `curl | bash` with `NEMOCLAW_NON_INTERACTIVE=1`, CI, scripts):** the installer refuses and exits with a non-zero status so a scripted re-run cannot loop. You must opt in to one of two paths explicitly:
+- Interactive terminal: the installer prompts whether to resume the failed session or start fresh. Press `R` (or Enter) to retry the same session, or `f` to discard it and make fresh choices.
+- Non-interactive (piped `curl | bash` with `NEMOCLAW_NON_INTERACTIVE=1`, CI, scripts): the installer refuses and exits with a non-zero status so a scripted re-run cannot loop. You must opt in to one of two paths explicitly:
 
   Start over with new choices (discards the recorded session and provider/model selection):
 
@@ -285,13 +285,13 @@ When you re-run the installer, it detects the failed session and will not silent
   $ curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- --fresh
   ```
 
-  Or equivalently, via env var (note: the variable must be set on the `bash` side of the pipe, not on `curl` — only the right-hand process inherits it):
+  Or equivalently, via env var. The variable must be set on the `bash` side of the pipe, not on `curl`, since only the right-hand process inherits it:
 
   ```console
   $ curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_FRESH=1 bash
   ```
 
-  Retry the same session without re-prompting (only useful if the original failure was transient — a network blip, a stopped Docker daemon, and so on — not a wrong provider choice):
+  Retry the same session without re-prompting. This is only useful if the original failure was transient, for example a network blip or a stopped Docker daemon, and not a wrong provider choice:
 
   ```console
   $ nemoclaw onboard --resume

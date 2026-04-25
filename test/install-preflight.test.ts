@@ -823,10 +823,11 @@ fi`,
     expect(`${result.stdout}${result.stderr}`).not.toMatch(
       /Found an interrupted onboarding session/,
     );
-    // onboard was called without --resume.
+    // onboard was called with --fresh (forwarded so the CLI clears the
+    // existing session file) and without --resume.
     const log = fs.readFileSync(onboardLog, "utf-8");
     expect(log).toMatch(
-      /^onboard --non-interactive --yes-i-accept-third-party-software$/m,
+      /^onboard --fresh --non-interactive --yes-i-accept-third-party-software$/m,
     );
     expect(log).not.toMatch(/--resume/);
   });
