@@ -3275,7 +3275,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   // Required ports — gateway and the dashboard port
   const requiredPorts = [
     { port: GATEWAY_PORT, label: "OpenShell gateway" },
-    { port: DASHBOARD_PORT, label: "${CLI_DISPLAY_NAME} dashboard" },
+    { port: DASHBOARD_PORT, label: `${CLI_DISPLAY_NAME} dashboard` },
   ];
   for (const { port, label } of requiredPorts) {
     let portCheck = await checkPortAvailable(port);
@@ -4455,7 +4455,7 @@ async function createSandbox(
   // Wait for ${CLI_DISPLAY_NAME} dashboard to become fully ready (web server live)
   // This prevents port forwards from connecting to a non-existent port
   // or seeing 502/503 errors during initial load.
-  console.log("  Waiting for ${CLI_DISPLAY_NAME} dashboard to become ready...");
+  console.log(`  Waiting for ${CLI_DISPLAY_NAME} dashboard to become ready...`);
   const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCaptureOpenshell(
@@ -7560,7 +7560,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
           console.log(`  Aborted. Re-run \`${CLI_NAME} onboard\` to start over.`);
           console.log("  Credentials entered so far are stored in ~/.nemoclaw/credentials.json —");
           console.log(
-            "  clear them with `${CLI_NAME} credentials reset <KEY>` if you no longer want them.",
+            `  clear them with \`${CLI_NAME} credentials reset <KEY>\` if you no longer want them.`,
           );
           process.exit(0);
         }
