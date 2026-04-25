@@ -3,15 +3,43 @@
 
 import { formatShellToken, joinShellWords } from "./shell-quote";
 
+export interface ShellCommandStep {
+  command?: string;
+  commandArgs?: string[];
+  stdoutRedirect?: string;
+}
+
+function renderShellCommandStep(step: ShellCommandStep): string {
+  if (step.command && step.commandArgs && step.commandArgs.length > 0) {
+    throw new Error("shell steps accept either command or commandArgs, not both");
+  }
+  if (step.command && step.stdoutRedirect) {
+    throw new Error("shell steps with raw command strings cannot use stdoutRedirect");
+  }
+  if (step.commandArgs && step.commandArgs.length > 0) {
+    let command = joinShellWords(step.commandArgs);
+    if (step.stdoutRedirect) {
+      command += ` > ${formatShellToken(step.stdoutRedirect)}`;
+    }
+    return command;
+  }
+  if (step.command) {
+    return step.command;
+  }
+  throw new Error("shell steps require either command or commandArgs");
+}
+
 export function buildShellCommand(opts: {
   command?: string;
   commandArgs?: string[];
   stdoutRedirect?: string;
   cwd?: string;
   sourceEnv?: boolean;
+  steps?: ShellCommandStep[];
 }): string {
-  if (opts.command && opts.commandArgs && opts.commandArgs.length > 0) {
-    throw new Error("buildShellCommand accepts either command or commandArgs, not both");
+  const hasLegacyCommand = Boolean(opts.command) || Boolean(opts.commandArgs?.length);
+  if (opts.steps && opts.steps.length > 0 && hasLegacyCommand) {
+    throw new Error("buildShellCommand accepts either steps or a single command definition, not both");
   }
 
   const steps: string[] = [];
@@ -21,18 +49,18 @@ export function buildShellCommand(opts: {
   if (opts.sourceEnv) {
     steps.push("set -a", ". .env", "set +a");
   }
-  if (opts.commandArgs && opts.commandArgs.length > 0) {
-    let command = joinShellWords(opts.commandArgs);
-    if (opts.stdoutRedirect) {
-      command += ` > ${formatShellToken(opts.stdoutRedirect)}`;
-    }
-    steps.push(command);
-  }
-  if (opts.command) {
-    steps.push(opts.command);
-  }
-  if (!opts.command && (!opts.commandArgs || opts.commandArgs.length === 0)) {
-    throw new Error("buildShellCommand requires either command or commandArgs");
+  if (opts.steps && opts.steps.length > 0) {
+    steps.push(...opts.steps.map((step) => renderShellCommandStep(step)));
+  } else if (hasLegacyCommand) {
+    steps.push(
+      renderShellCommandStep({
+        command: opts.command,
+        commandArgs: opts.commandArgs,
+        stdoutRedirect: opts.stdoutRedirect,
+      }),
+    );
+  } else {
+    throw new Error("buildShellCommand requires either steps or a single command definition");
   }
   return steps.join(" && ");
 }
@@ -61,6 +89,7 @@ export function buildSshScriptCommand(opts: {
   stdoutRedirect?: string;
   cwd?: string;
   sourceEnv?: boolean;
+  steps?: ShellCommandStep[];
   tty?: boolean;
   quiet?: boolean;
 }): string[] {
@@ -73,6 +102,7 @@ export function buildSshScriptCommand(opts: {
       stdoutRedirect: opts.stdoutRedirect,
       cwd: opts.cwd,
       sourceEnv: opts.sourceEnv,
+      steps: opts.steps,
     }),
     { tty: opts.tty, quiet: opts.quiet },
   );
@@ -89,6 +119,7 @@ export function buildDockerExecScriptCommand(opts: {
   stdoutRedirect?: string;
   cwd?: string;
   sourceEnv?: boolean;
+  steps?: ShellCommandStep[];
 }): string[] {
   return buildDockerExecScriptArgs(
     opts.containerName,
@@ -98,6 +129,7 @@ export function buildDockerExecScriptCommand(opts: {
       stdoutRedirect: opts.stdoutRedirect,
       cwd: opts.cwd,
       sourceEnv: opts.sourceEnv,
+      steps: opts.steps,
     }),
   );
 }
