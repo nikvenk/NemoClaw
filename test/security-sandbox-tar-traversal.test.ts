@@ -475,9 +475,9 @@ describe("Regression: sandbox-state.ts uses validated tar extraction", () => {
 
   it("no raw tar -xf extraction without validation exists", () => {
     const src = getSourceCode();
-    // Find all tar extraction calls: spawnSync("tar", ["-xf", ...])
+    // Find all tar extraction calls: runStateCommand("tar", ["-xf", ...])
     // The only tar -xf should be inside safeTarExtract itself (after validation)
-    const tarExtractions = src.match(/spawnSync\(\s*"tar"[\s\S]*?"-xf"/g) || [];
+    const tarExtractions = src.match(/runStateCommand\(\s*"tar"[\s\S]*?"-xf"/g) || [];
 
     // There should be exactly one: inside safeTarExtract
     expect(tarExtractions.length).toBe(1);

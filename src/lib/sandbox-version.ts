@@ -8,8 +8,8 @@
 //   Fast: registry lookup (no SSH, used when agentVersion is already cached)
 //   Slow: SSH exec into sandbox, run version_command, cache result in registry
 
-import { spawnSync } from "child_process";
 import fs from "fs";
+import { spawnResult } from "./process-primitives.js";
 import os from "os";
 import path from "path";
 
@@ -56,7 +56,7 @@ export function probeAgentVersion(sandboxName: string): string | null {
   const tmpFile = path.join(os.tmpdir(), `nemoclaw-ver-${process.pid}-${Date.now()}.conf`);
   fs.writeFileSync(tmpFile, sshConfigResult.output, { mode: 0o600 });
   try {
-    const result = spawnSync(
+    const result = spawnResult(
       "ssh",
       [
         "-F", tmpFile,
@@ -70,7 +70,7 @@ export function probeAgentVersion(sandboxName: string): string | null {
       { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
     );
     if (result.status !== 0) return null;
-    return parseVersionFromText(result.stdout);
+    return parseVersionFromText(String(result.stdout || ""));
   } catch {
     return null;
   } finally {

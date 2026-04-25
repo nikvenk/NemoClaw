@@ -49,9 +49,13 @@ describe("run with argv array", () => {
     expect(result).toContain("rm");
   });
 
-  it("still works with string commands (legacy path)", () => {
-    const result = runner.run("echo hello", { suppressOutput: true });
+  it("uses runShell for explicit shell commands", () => {
+    const result = runner.runShell("echo hello", { suppressOutput: true });
     expect(result.status).toBe(0);
+  });
+
+  it("rejects string commands on run()", () => {
+    expect(() => runner.run("echo hello")).toThrow(/Use runShell/);
   });
 
   it("surfaces ENOENT error for missing executables", () => {
@@ -128,9 +132,13 @@ describe("runCapture with argv array", () => {
     expect(output).toContain("TEST_ARGV_ENV=captured");
   });
 
-  it("still works with string commands (legacy path)", () => {
-    const output = runner.runCapture("echo hello");
+  it("uses runCaptureShell for explicit shell commands", () => {
+    const output = runner.runCaptureShell("echo hello");
     expect(output).toBe("hello");
+  });
+
+  it("rejects string commands on runCapture()", () => {
+    expect(() => runner.runCapture("echo hello")).toThrow(/Use runCaptureShell/);
   });
 
   it("throws ENOENT for missing executables", () => {

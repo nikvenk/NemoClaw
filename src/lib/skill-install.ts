@@ -9,7 +9,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+
+// runner.ts still uses CommonJS-style exports — use require here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runFile } = require("./runner");
+import { buildShellCommand } from "./remote-script.js";
+import { shellQuote } from "./shell-quote";
 
 // yaml is a production dependency (used by policies.ts, onboard.ts)
 import YAML from "yaml";
@@ -120,10 +125,8 @@ export function resolveSkillPaths(
 
 // ── Shell safety ─────────────────────────────────────────────────
 
-// Re-export shellQuote from runner.ts — a repo-wide test enforces
-// a single definition lives in runner.ts.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { shellQuote } = require("./runner");
+// Re-export shellQuote from the shared helper so skill-install callers can
+// use the same quoting function as the rest of the CLI.
 export { shellQuote };
 
 const SAFE_PATH_RE = /^[A-Za-z0-9._\-/]+$/;
@@ -162,7 +165,7 @@ export function sshExec(
   opts: { input?: string | Buffer; timeout?: number } = {},
 ): SshResult | null {
   try {
-    const result = spawnSync(
+    const result = runFile(
       "ssh",
       [
         "-F",
@@ -183,6 +186,8 @@ export function sshExec(
         stdio: [opts.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
         input: opts.input,
         timeout: opts.timeout ?? 30_000,
+        ignoreError: true,
+        suppressOutput: true,
       },
     );
     return {
@@ -207,7 +212,13 @@ export function uploadFile(
 ): SshResult | null {
   const content = fs.readFileSync(localPath);
   const remotePath = `${remoteDir}/${remoteFilename}`;
-  const script = `mkdir -p ${shellQuote(remoteDir)} && cat > ${shellQuote(remotePath)}`;
+  const script = buildShellCommand({
+    command: buildShellCommand({
+      commandArgs: ["cat"],
+      stdoutRedirect: remotePath,
+    }),
+    commandArgs: ["mkdir", "-p", remoteDir],
+  });
   return sshExec(ctx, script, { input: content });
 }
 
@@ -324,7 +335,13 @@ export function postInstall(
     // Clear sessions.json so OpenClaw re-discovers skills on the next
     // session even after an in-place skill update.
     if (paths.sessionFile && !opts.skipRefresh) {
-      const refreshResult = runSsh(ctx, `printf '{}' > ${shellQuote(paths.sessionFile)}`);
+      const refreshResult = runSsh(
+        ctx,
+        buildShellCommand({
+          commandArgs: ["printf", "{}"],
+          stdoutRedirect: paths.sessionFile,
+        }),
+      );
       if (!refreshResult || refreshResult.status !== 0) {
         messages.push("Warning: failed to clear sessions (agent may need manual restart)");
       }
@@ -340,8 +357,13 @@ export function postInstall(
  * Check whether a skill already exists on the sandbox at the upload path.
  */
 export function checkExisting(ctx: SshContext, paths: SkillPaths): boolean {
-  const target = shellQuote(`${paths.uploadDir}/SKILL.md`);
-  const result = sshExec(ctx, `test -f ${target} && echo EXISTS`);
+  const result = sshExec(
+    ctx,
+    buildShellCommand({
+      commandArgs: ["test", "-f", `${paths.uploadDir}/SKILL.md`],
+      command: "echo EXISTS",
+    }),
+  );
   return result !== null && result.stdout === "EXISTS";
 }
 
@@ -349,7 +371,12 @@ export function checkExisting(ctx: SshContext, paths: SkillPaths): boolean {
  * Verify the SKILL.md file exists on the sandbox at the expected path.
  */
 export function verifyInstall(ctx: SshContext, paths: SkillPaths): boolean {
-  const target = shellQuote(`${paths.uploadDir}/SKILL.md`);
-  const result = sshExec(ctx, `test -f ${target} && echo EXISTS`);
+  const result = sshExec(
+    ctx,
+    buildShellCommand({
+      commandArgs: ["test", "-f", `${paths.uploadDir}/SKILL.md`],
+      command: "echo EXISTS",
+    }),
+  );
   return result !== null && result.stdout === "EXISTS";
 }

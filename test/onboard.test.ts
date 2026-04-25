@@ -2525,7 +2525,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2633,7 +2633,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2727,7 +2727,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2856,7 +2856,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3297,7 +3297,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3411,7 +3411,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3668,7 +3668,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3791,7 +3791,7 @@ const fakeSpawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -4278,7 +4278,7 @@ childProcess.spawn = (...args) => {
     process.nextTick(() => child.emit("close", signal === "SIGTERM" ? 0 : 1));
     return true;
   };
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null, child });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null, child });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
   });
@@ -4652,7 +4652,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -4782,7 +4782,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(args[1][1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -5058,7 +5058,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  const cmd = _n(args[1][1]);
+  const cmd = _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]);
   commands.push({ command: cmd, env: args[2]?.env || null });
   // Observe the staged build context state while the sandbox create is in
   // flight — onboard deletes it once streamSandboxCreate resolves.

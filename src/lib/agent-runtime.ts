@@ -11,7 +11,7 @@ import * as registry from "./registry";
 import { DASHBOARD_PORT } from "./ports";
 import * as onboardSession from "./onboard-session";
 import { loadAgent, type AgentDefinition } from "./agent-defs";
-import { shellQuote } from "./runner";
+import { buildShellAssignment, formatShellToken } from "./shell-quote";
 
 /**
  * Resolve the agent for a sandbox. Checks the per-sandbox registry first
@@ -65,11 +65,11 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   const customGatewayExecutable = configuredGatewayCommand.split(/\s+/)[0] ?? binaryName;
   const validationSteps = usesValidatedBinary
     ? [
-        `AGENT_BIN=${shellQuote(binaryPath)}; if [ ! -x "$AGENT_BIN" ]; then AGENT_BIN="$(command -v ${shellQuote(binaryName)})"; fi;`,
+        `${buildShellAssignment("AGENT_BIN", binaryPath)}; if [ ! -x "$AGENT_BIN" ]; then AGENT_BIN="$(command -v ${formatShellToken(binaryName)})"; fi;`,
         'if [ -z "$AGENT_BIN" ]; then echo AGENT_MISSING; exit 1; fi;',
       ]
     : [
-        `GATEWAY_CMD_BIN=${shellQuote(customGatewayExecutable)};`,
+        `${buildShellAssignment("GATEWAY_CMD_BIN", customGatewayExecutable)};`,
         'case "$GATEWAY_CMD_BIN" in */*) [ -x "$GATEWAY_CMD_BIN" ] || { echo AGENT_MISSING; exit 1; } ;; *) command -v "$GATEWAY_CMD_BIN" >/dev/null 2>&1 || { echo AGENT_MISSING; exit 1; } ;; esac;',
       ];
   const launchCommand = usesValidatedBinary
@@ -81,7 +81,7 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   return [
     "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
     hermesHome,
-    `if curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
+    `if curl -sf --max-time 3 ${formatShellToken(probeUrl)} > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
     "rm -f /tmp/gateway.log;",
     "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
     ...validationSteps,

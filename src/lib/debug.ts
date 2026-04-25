@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { spawnResult } from "./process-primitives.js";
 import { platform, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import { DASHBOARD_PORT } from "./ports";
+import { hasExecutable } from "./find-executable";
 import { listSandboxes } from "./registry";
 
 // ---------------------------------------------------------------------------
@@ -64,64 +65,100 @@ const isMacOS = platform() === "darwin";
 const TIMEOUT_MS = 30_000;
 
 function commandExists(cmd: string): boolean {
-  try {
-    // Use sh -c with the command as a separate argument to avoid shell injection.
-    // While cmd values are hardcoded internally, this is defensive.
-    execFileSync("sh", ["-c", `command -v "$1"`, "--", cmd], {
-      stdio: ["ignore", "ignore", "ignore"],
-    });
-    return true;
-  } catch {
-    return false;
+  return hasExecutable(cmd);
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  opts: {
+    timeout?: number;
+    stdio?: import("node:child_process").StdioOptions;
+    encoding?: BufferEncoding;
+    input?: string | Buffer;
+  } = {},
+) {
+  return spawnResult(command, args, {
+    timeout: opts.timeout ?? TIMEOUT_MS,
+    stdio: opts.stdio ?? ["ignore", "pipe", "pipe"],
+    encoding: opts.encoding ?? "utf-8",
+    input: opts.input,
+  });
+}
+
+function writeCollectedOutput(collectDir: string, label: string, raw: string, status: number): void {
+  const filename = label.replace(/[ /]/g, (c) => (c === " " ? "_" : "-"));
+  const outfile = join(collectDir, `${filename}.txt`);
+  const redacted = redact(raw);
+  writeFileSync(outfile, redacted);
+  console.log(redacted.trimEnd());
+
+  if (status !== 0) {
+    console.log("  (command exited with non-zero status)");
   }
 }
 
 function collect(collectDir: string, label: string, command: string, args: string[]): void {
-  const filename = label.replace(/[ /]/g, (c) => (c === " " ? "_" : "-"));
-  const outfile = join(collectDir, `${filename}.txt`);
-
   if (!commandExists(command)) {
     const msg = `  (${command} not found, skipping)`;
     console.log(msg);
-    writeFileSync(outfile, msg + "\n");
+    writeCollectedOutput(collectDir, label, msg + "\n", 0);
     return;
   }
 
-  const result = spawnSync(command, args, {
+  const result = runCommand(command, args, {
     timeout: TIMEOUT_MS,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
   });
 
-  const raw = (result.stdout ?? "") + "\n" + (result.stderr ?? "");
-  const redacted = redact(raw);
-  writeFileSync(outfile, redacted);
-  console.log(redacted.trimEnd());
-
-  if (result.status !== 0) {
-    console.log("  (command exited with non-zero status)");
-  }
+  writeCollectedOutput(
+    collectDir,
+    label,
+    `${String(result.stdout ?? "")}\n${String(result.stderr ?? "")}`,
+    result.status ?? 1,
+  );
 }
 
-/** Run a shell one-liner via `sh -c`. */
-function collectShell(collectDir: string, label: string, shellCmd: string): void {
-  const filename = label.replace(/[ /]/g, (c) => (c === " " ? "_" : "-"));
-  const outfile = join(collectDir, `${filename}.txt`);
+function collectTransformed(
+  collectDir: string,
+  label: string,
+  command: string,
+  args: string[],
+  transform: (result: { stdout: string; stderr: string; status: number }) => string,
+): void {
+  if (!commandExists(command)) {
+    const msg = `  (${command} not found, skipping)`;
+    console.log(msg);
+    writeCollectedOutput(collectDir, label, msg + "\n", 0);
+    return;
+  }
 
-  const result = spawnSync("sh", ["-c", shellCmd], {
+  const result = runCommand(command, args, {
     timeout: TIMEOUT_MS,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
   });
 
-  const raw = (result.stdout ?? "") + "\n" + (result.stderr ?? "");
-  const redacted = redact(raw);
-  writeFileSync(outfile, redacted);
-  console.log(redacted.trimEnd());
+  writeCollectedOutput(
+    collectDir,
+    label,
+    transform({
+      stdout: String(result.stdout ?? ""),
+      stderr: String(result.stderr ?? ""),
+      status: result.status ?? 1,
+    }),
+    result.status ?? 1,
+  );
+}
 
-  if (result.status !== 0) {
-    console.log("  (command exited with non-zero status)");
-  }
+function takeFirstLines(text: string, count: number): string {
+  return text.split("\n").slice(0, count).join("\n");
+}
+
+function takeLastLines(text: string, count: number): string {
+  const lines = text.split("\n");
+  return lines.slice(Math.max(0, lines.length - count)).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -147,12 +184,14 @@ function detectSandboxName(): string {
   // Fallback: ask the live gateway directly
   if (!commandExists("openshell")) return "default";
   try {
-    const output = execFileSync("openshell", ["sandbox", "list"], {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const lines = output.split("\n").filter((l) => l.trim().length > 0);
+    const output = String(
+      runCommand("openshell", ["sandbox", "list"], {
+        timeout: 10_000,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf-8",
+      }).stdout ?? "",
+    );
+    const lines = output.split("\n").filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
       const first = line.trim().split(/\s+/)[0];
       if (first && first.toLowerCase() !== "name") return first;
@@ -174,11 +213,15 @@ function collectSystem(collectDir: string, quick: boolean): void {
   collect(collectDir, "uptime", "uptime", []);
 
   if (isMacOS) {
-    collectShell(
-      collectDir,
-      "memory",
-      'echo "Physical: $(($(sysctl -n hw.memsize) / 1048576)) MB"; vm_stat',
-    );
+    collectTransformed(collectDir, "memory", "sysctl", ["-n", "hw.memsize"], ({ stdout }) => {
+      const memBytes = Number.parseInt(stdout.trim(), 10) || 0;
+      const physicalMb = Math.floor(memBytes / 1048576);
+      const vmStat = String(
+        runCommand("vm_stat", [], { timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] })
+          .stdout ?? "",
+      );
+      return `Physical: ${physicalMb} MB\n${vmStat}`;
+    });
   } else {
     collect(collectDir, "free", "free", ["-m"]);
   }
@@ -191,34 +234,42 @@ function collectSystem(collectDir: string, quick: boolean): void {
 function collectProcesses(collectDir: string, quick: boolean): void {
   section("Processes");
   if (isMacOS) {
-    collectShell(
+    collectTransformed(
       collectDir,
       "ps-cpu",
-      "ps -eo pid,ppid,comm,%mem,%cpu | sort -k5 -rn | head -30",
+      "ps",
+      ["-r", "-A", "-o", "pid,ppid,comm,%mem,%cpu"],
+      ({ stdout }) => takeFirstLines(stdout, 30),
     );
   } else {
-    collectShell(
+    collectTransformed(
       collectDir,
       "ps-cpu",
-      "ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -30",
+      "ps",
+      ["-eo", "pid,ppid,cmd,%mem,%cpu", "--sort=-%cpu"],
+      ({ stdout }) => takeFirstLines(stdout, 30),
     );
   }
 
   if (!quick) {
     if (isMacOS) {
-      collectShell(
+      collectTransformed(
         collectDir,
         "ps-mem",
-        "ps -eo pid,ppid,comm,%mem,%cpu | sort -k4 -rn | head -30",
+        "ps",
+        ["-m", "-A", "-o", "pid,ppid,comm,%mem,%cpu"],
+        ({ stdout }) => takeFirstLines(stdout, 30),
       );
-      collectShell(collectDir, "top", "top -l 1 | head -50");
+      collectTransformed(collectDir, "top", "top", ["-l", "1"], ({ stdout }) => takeFirstLines(stdout, 50));
     } else {
-      collectShell(
+      collectTransformed(
         collectDir,
         "ps-mem",
-        "ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -30",
+        "ps",
+        ["-eo", "pid,ppid,cmd,%mem,%cpu", "--sort=-%mem"],
+        ({ stdout }) => takeFirstLines(stdout, 30),
       );
-      collectShell(collectDir, "top", "top -b -n 1 | head -50");
+      collectTransformed(collectDir, "top", "top", ["-b", "-n", "1"], ({ stdout }) => takeFirstLines(stdout, 50));
     }
   }
 }
@@ -255,12 +306,14 @@ function collectDocker(collectDir: string, quick: boolean): void {
   // NemoClaw-labelled containers
   if (commandExists("docker")) {
     try {
-      const output = execFileSync(
-        "docker",
-        ["ps", "-a", "--filter", "label=com.nvidia.nemoclaw", "--format", "{{.Names}}"],
-        { encoding: "utf-8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] },
+      const output = String(
+        runCommand(
+          "docker",
+          ["ps", "-a", "--filter", "label=com.nvidia.nemoclaw", "--format", "{{.Names}}"],
+          { timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"], encoding: "utf-8" },
+        ).stdout ?? "",
       );
-      const containers = output.split("\n").filter((c) => c.trim().length > 0);
+      const containers = output.split("\n").filter((c: string) => c.trim().length > 0);
       for (const cid of containers) {
         collect(collectDir, `docker-logs-${cid}`, "docker", ["logs", "--tail", "200", cid]);
         if (!quick) {
@@ -298,15 +351,17 @@ function collectSandboxInternals(
 
   // Check if sandbox exists
   try {
-    const output = execFileSync("openshell", ["sandbox", "list"], {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const output = String(
+      runCommand("openshell", ["sandbox", "list"], {
+        timeout: 10_000,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf-8",
+      }).stdout ?? "",
+    );
     const names = output
       .split("\n")
-      .map((l) => l.trim().split(/\s+/)[0])
-      .filter((n) => n && n.toLowerCase() !== "name");
+      .map((l: string) => l.trim().split(/\s+/)[0])
+      .filter((n: string) => n && n.toLowerCase() !== "name");
     if (!names.includes(sandboxName)) return;
   } catch {
     return;
@@ -317,7 +372,7 @@ function collectSandboxInternals(
   // Generate temporary SSH config
   const sshConfigPath = join(tmpdir(), `nemoclaw-ssh-${String(Date.now())}`);
   try {
-    const sshResult = spawnSync("openshell", ["sandbox", "ssh-config", sandboxName], {
+    const sshResult = runCommand("openshell", ["sandbox", "ssh-config", sandboxName], {
       timeout: TIMEOUT_MS,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf-8",
@@ -367,7 +422,12 @@ function collectSandboxInternals(
 function collectNetwork(collectDir: string): void {
   section("Network");
   if (isMacOS) {
-    collectShell(collectDir, "listening", "netstat -anp tcp | grep LISTEN");
+    collectTransformed(collectDir, "listening", "netstat", ["-anp", "tcp"], ({ stdout }) =>
+      stdout
+        .split("\n")
+        .filter((line: string) => line.includes("LISTEN"))
+        .join("\n"),
+    );
     collect(collectDir, "ifconfig", "ifconfig", []);
     collect(collectDir, "routes", "netstat", ["-rn"]);
     collect(collectDir, "dns-config", "scutil", ["--dns"]);
@@ -375,15 +435,22 @@ function collectNetwork(collectDir: string): void {
     collect(collectDir, "ss", "ss", ["-ltnp"]);
     collect(collectDir, "ip-addr", "ip", ["addr"]);
     collect(collectDir, "ip-route", "ip", ["route"]);
-    collectShell(collectDir, "resolv-conf", "cat /etc/resolv.conf");
+    collect(collectDir, "resolv-conf", "cat", ["/etc/resolv.conf"]);
   }
   collect(collectDir, "nslookup", "nslookup", ["integrate.api.nvidia.com"]);
-  collectShell(
+  collectTransformed(
     collectDir,
     "curl-models",
-    'code=$(curl -s -o /dev/null -w "%{http_code}" https://integrate.api.nvidia.com/v1/models); echo "HTTP $code"; if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then echo "NIM API reachable"; else echo "NIM API unreachable"; exit 1; fi',
+    "curl",
+    ["-s", "-o", "/dev/null", "-w", "%{http_code}", "https://integrate.api.nvidia.com/v1/models"],
+    ({ stdout }) => {
+      const code = Number.parseInt(stdout.trim(), 10) || 0;
+      return `HTTP ${code || 0}\n${code >= 200 && code < 500 ? "NIM API reachable" : "NIM API unreachable"}`;
+    },
   );
-  collectShell(collectDir, "lsof-net", "lsof -i -P -n 2>/dev/null | head -50");
+  collectTransformed(collectDir, "lsof-net", "lsof", ["-i", "-P", "-n"], ({ stdout }) =>
+    takeFirstLines(stdout, 50),
+  );
   collect(collectDir, "lsof-18789", "lsof", ["-i", `:${DASHBOARD_PORT}`]);
 }
 
@@ -419,13 +486,15 @@ function collectKernel(collectDir: string): void {
 function collectKernelMessages(collectDir: string): void {
   section("Kernel Messages");
   if (isMacOS) {
-    collectShell(
+    collectTransformed(
       collectDir,
       "system-log",
-      'log show --last 5m --predicate "eventType == logEvent" --style compact 2>/dev/null | tail -100',
+      "log",
+      ["show", "--last", "5m", "--predicate", "eventType == logEvent", "--style", "compact"],
+      ({ stdout }) => takeLastLines(stdout, 100),
     );
   } else {
-    collectShell(collectDir, "dmesg", "dmesg | tail -100");
+    collectTransformed(collectDir, "dmesg", "dmesg", [], ({ stdout }) => takeLastLines(stdout, 100));
   }
 }
 
@@ -438,7 +507,7 @@ function collectKernelMessages(collectDir: string): void {
  * guidance that goes with the generated file.
  */
 export function createTarball(collectDir: string, output: string): boolean {
-  const result = spawnSync("tar", ["czf", output, "-C", dirname(collectDir), basename(collectDir)], {
+  const result = runCommand("tar", ["czf", output, "-C", dirname(collectDir), basename(collectDir)], {
     stdio: "inherit",
     timeout: 60_000,
   });

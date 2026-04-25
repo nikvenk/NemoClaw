@@ -9,7 +9,6 @@ const crypto = require("node:crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync, spawn, spawnSync } = require("child_process");
 const pRetry = require("p-retry");
 
 /** Parse a numeric env var, returning `fallback` when unset or non-finite. */
@@ -26,7 +25,10 @@ const LOCAL_INFERENCE_TIMEOUT_SECS = envInt("NEMOCLAW_LOCAL_INFERENCE_TIMEOUT", 
  *  Covers CSI (color, erase, cursor), OSC, and C1 two-byte escapes per ECMA-48. */
 const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|[@-_])/g;
 const runner: typeof import("./runner") = require("./runner");
-const { ROOT, SCRIPTS, redact, run, runCapture, runFile, shellQuote, validateName } = runner;
+const { ROOT, SCRIPTS, redact, run, runCapture, runFile, validateName } = runner;
+const { spawnChild } = require("./process-primitives");
+const { buildDockerExecScriptCommand } = require("./remote-script");
+const { joinShellWords } = require("./shell-quote");
 
 type RunnerOptions = {
   env?: NodeJS.ProcessEnv;
@@ -193,7 +195,7 @@ const BACK_TO_SELECTION = "__NEMOCLAW_BACK_TO_SELECTION__";
 function verifyGatewayContainerRunning() {
   const containerName = `openshell-cluster-${GATEWAY_NAME}`;
   const result = run(
-    `docker inspect --type container --format '{{.State.Running}}' ${containerName}`,
+    ["docker", "inspect", "--type", "container", "--format", "{{.State.Running}}", containerName],
     { ignoreError: true, suppressOutput: true },
   );
   if (result.status === 0 && String(result.stdout || "").trim() === "true") {
@@ -400,13 +402,34 @@ function repairRecordedSandbox(sandboxName: string | null): void {
 const { streamSandboxCreate } = sandboxCreateStream;
 
 /** Spawn `openshell gateway start` and stream its output with progress heartbeats. */
-function streamGatewayStart(
+function spawnProcess(
   command: string,
-  env: NodeJS.ProcessEnv = process.env,
+  args: string[],
+  opts: {
+    cwd?: string;
+    env?: Record<string, string>;
+    stdio?: import("node:child_process").StdioOptions;
+    detached?: boolean;
+  } = {},
+) {
+  return spawnChild(command, args, {
+    cwd: opts.cwd ?? ROOT,
+    env: buildSubprocessEnv(opts.env),
+    stdio: opts.stdio ?? ["ignore", "pipe", "pipe"],
+    detached: opts.detached ?? false,
+  });
+}
+
+function streamGatewayStart(
+  command: readonly string[],
+  extraEnv: Record<string, string> = {},
 ): Promise<{ status: number; output: string }> {
-  const child = spawn("bash", ["-lc", command], {
-    cwd: ROOT,
-    env,
+  if (command.length === 0) {
+    throw new Error("streamGatewayStart requires a non-empty argv array");
+  }
+
+  const child = spawnProcess(command[0], [...command.slice(1)], {
+    env: extraEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -691,7 +714,7 @@ function getOpenshellBinary(): string {
 
 function openshellShellCommand(args: string[], options: { openshellBinary?: string } = {}): string {
   const openshellBinary = options.openshellBinary || getOpenshellBinary();
-  return [shellQuote(openshellBinary), ...args.map((arg) => shellQuote(arg))].join(" ");
+  return joinShellWords([openshellBinary, ...args]);
 }
 
 function openshellArgv(args: string[], options: { openshellBinary?: string } = {}): string[] {
@@ -2223,20 +2246,48 @@ function isOllamaProxyProcess(pid: number | null | undefined): boolean {
   return Boolean(cmdline && cmdline.includes("ollama-auth-proxy.js"));
 }
 
-function spawnOllamaAuthProxy(token: string): number | null {
-  const child = spawn(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
+function spawnDetachedProcess(
+  command: string,
+  args: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): number | null {
+  const child = spawnProcess(command, args, {
     detached: true,
     stdio: "ignore",
+    cwd: opts.cwd,
+    env: opts.env,
+  });
+  child.on?.("error", () => {});
+  child.unref?.();
+  return child.pid ?? null;
+}
+
+function spawnOllamaAuthProxy(token: string): number | null {
+  const pid = spawnDetachedProcess(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
     env: {
-      ...process.env,
       OLLAMA_PROXY_TOKEN: token,
       OLLAMA_PROXY_PORT: String(OLLAMA_PROXY_PORT),
       OLLAMA_BACKEND_PORT: String(OLLAMA_PORT),
     },
   });
-  child.unref();
-  persistProxyPid(child.pid);
-  return child.pid ?? null;
+  persistProxyPid(pid);
+  return pid;
+}
+
+function startDetachedOllamaServe(hostBinding?: string): void {
+  const env = hostBinding ? { OLLAMA_HOST: hostBinding } : undefined;
+  spawnDetachedProcess("ollama", ["serve"], { env });
+}
+
+function installOllamaViaOfficialScript(): void {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-ollama-install-"));
+  const installerPath = path.join(tempDir, "install.sh");
+  try {
+    run(["curl", "-fsSL", "-o", installerPath, "https://ollama.com/install.sh"]);
+    run(["sh", installerPath]);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function killStaleProxy(): void {
@@ -2351,12 +2402,13 @@ function printOllamaExposureWarning() {
 }
 
 function pullOllamaModel(model: string): boolean {
-  const result = spawnSync("ollama", ["pull", model], {
+  const result = runFile("ollama", ["pull", model], {
     cwd: ROOT,
     encoding: "utf8",
     stdio: "inherit",
     timeout: 600_000,
-    env: { ...process.env },
+    ignoreError: true,
+    suppressOutput: true,
   });
   if (result.signal === "SIGTERM") {
     console.error(
@@ -2553,12 +2605,14 @@ function installOpenshell(): {
   localBin: string | null;
   futureShellPathHint: string | null;
 } {
-  const result = spawnSync("bash", [path.join(SCRIPTS, "install-openshell.sh")], {
+  const result = runFile("bash", [path.join(SCRIPTS, "install-openshell.sh")], {
     cwd: ROOT,
-    env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     timeout: 300_000,
+    ignoreError: true,
+    suppressOutput: true,
+    inheritFullEnv: true,
   });
   if (result.status !== 0) {
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
@@ -2587,6 +2641,28 @@ function sleep(seconds: number): void {
   sleepSeconds(seconds);
 }
 
+function listGatewayDockerVolumes(): string[] {
+  const output = runCapture(
+    ["docker", "volume", "ls", "-q", "--filter", `name=openshell-cluster-${GATEWAY_NAME}`],
+    { ignoreError: true },
+  );
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function removeGatewayDockerVolumes(opts: { suppressOutput?: boolean } = {}): void {
+  const volumes = listGatewayDockerVolumes();
+  if (volumes.length === 0) {
+    return;
+  }
+  run(["docker", "volume", "rm", ...volumes], {
+    ignoreError: true,
+    suppressOutput: opts.suppressOutput,
+  });
+}
+
 function destroyGateway() {
   const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
     ignoreError: true,
@@ -2596,18 +2672,22 @@ function destroyGateway() {
     registry.clearAll();
   }
   // openshell gateway destroy doesn't remove Docker volumes, which leaves
-  // corrupted cluster state that breaks the next gateway start. Clean them up.
-  // Shell required: pipe (|), && chaining, || fallback.
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+  // corrupted cluster state that breaks the next gateway start.
+  removeGatewayDockerVolumes();
 }
 
 function getGatewayClusterContainerState(): string {
   const containerName = getGatewayClusterContainerName();
   const state = runCapture(
-    `docker inspect --type container --format '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' ${shellQuote(containerName)} 2>/dev/null`,
+    [
+      "docker",
+      "inspect",
+      "--type",
+      "container",
+      "--format",
+      "{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}",
+      containerName,
+    ],
     { ignoreError: true },
   )
     .trim()
@@ -2702,12 +2782,24 @@ fi
 
 function runGatewayClusterCapture(script: string, opts: RunnerOptions = {}) {
   const containerName = getGatewayClusterContainerName();
-  return runCapture(`docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`, opts);
+  return runCapture(
+    buildDockerExecScriptCommand({
+      containerName,
+      command: script,
+    }),
+    opts,
+  );
 }
 
 function runGatewayCluster(script: string, opts: RunnerOptions = {}) {
   const containerName = getGatewayClusterContainerName();
-  return run(`docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`, opts);
+  return run(
+    buildDockerExecScriptCommand({
+      containerName,
+      command: script,
+    }),
+    opts,
+  );
 }
 
 function listMissingGatewayBootstrapSecrets() {
@@ -2717,7 +2809,7 @@ set -eu
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 kubectl get namespace openshell >/dev/null 2>&1 || exit 0
 kubectl -n openshell get statefulset/openshell >/dev/null 2>&1 || exit 0
-for name in ${GATEWAY_BOOTSTRAP_SECRET_NAMES.map((name) => shellQuote(name)).join(" ")}; do
+for name in ${joinShellWords(GATEWAY_BOOTSTRAP_SECRET_NAMES)}; do
   kubectl -n openshell get secret "$name" >/dev/null 2>&1 || printf '%s\\n' "$name"
 done
 `,
@@ -3261,10 +3353,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
         suppressOutput: true,
       });
       if (postInspectResult.status !== 0) {
-        run(
-          `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm 2>/dev/null || true`,
-          { ignoreError: true, suppressOutput: true },
-        );
+        removeGatewayDockerVolumes({ suppressOutput: true });
         registry.clearAll();
         console.log("  ✓ Orphaned gateway container removed");
       } else {
@@ -3291,14 +3380,14 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
       // tunnels the user may have set up on the same port. (#1950)
       if (port === DASHBOARD_PORT && portCheck.process === "ssh" && portCheck.pid) {
         // Use `ps` to get the command line — works on Linux, macOS, and WSL.
-        const cmdline = runCapture(`ps -p ${portCheck.pid} -o args= 2>/dev/null`, {
+        const cmdline = runCapture(["ps", "-p", String(portCheck.pid), "-o", "args="], {
           ignoreError: true,
         }).trim();
         if (cmdline.includes("openshell")) {
           console.log(
             `  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`,
           );
-          run(`kill ${portCheck.pid} 2>/dev/null || true`, { ignoreError: true });
+          run(["kill", String(portCheck.pid)], { ignoreError: true });
           sleep(1);
           portCheck = await checkPortAvailable(port);
           if (portCheck.ok) {
@@ -3430,8 +3519,11 @@ async function startGatewayWithOptions(
 
   // Clear stale SSH host keys from previous gateway (fixes #768)
   try {
-    const { execFileSync } = require("child_process");
-    execFileSync("ssh-keygen", ["-R", `openshell-${GATEWAY_NAME}`], { stdio: "ignore" });
+    runFile("ssh-keygen", ["-R", `openshell-${GATEWAY_NAME}`], {
+      stdio: "ignore",
+      ignoreError: true,
+      suppressOutput: true,
+    });
   } catch {
     /* ssh-keygen -R may fail if entry doesn't exist — safe to ignore */
   }
@@ -3467,13 +3559,7 @@ async function startGatewayWithOptions(
   try {
     await pRetry(
       async () => {
-        const startResult = await streamGatewayStart(
-          openshellShellCommand(["gateway", "start", ...gwArgs]),
-          {
-            ...process.env,
-            ...gatewayEnv,
-          },
-        );
+        const startResult = await streamGatewayStart(openshellArgv(["gateway", "start", ...gwArgs]), gatewayEnv);
         if (startResult.status !== 0) {
           const lines = String(redact(startResult.output || ""))
             .split("\n")
@@ -4373,7 +4459,8 @@ async function createSandbox(
   // from openshell because bash returns the status of the last pipeline
   // command (awk, always 0) unless pipefail is set. Removing the pipe
   // lets the real exit code flow through to run().
-  const createCommand = `${openshellShellCommand([
+  const createCommand = [
+    getOpenshellBinary(),
     "sandbox",
     "create",
     ...createArgs,
@@ -4381,7 +4468,7 @@ async function createSandbox(
     "env",
     ...envArgs,
     "nemoclaw-start",
-  ])} 2>&1`;
+  ];
   const createResult = await streamSandboxCreate(createCommand, sandboxEnv, {
     readyCheck: () => {
       const list = runCaptureOpenshell(["sandbox", "list"], { ignoreError: true });
@@ -4601,7 +4688,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
 
   // Detect local inference options
   // "command -v" is a shell builtin — must go through bash.
-  const hasOllama = !!runCapture("command -v ollama", { ignoreError: true });
+  const hasOllama = !!runCapture(["ollama", "--version"], { ignoreError: true });
   const ollamaRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${OLLAMA_PORT}/api/tags`], {
     ignoreError: true,
   });
@@ -5148,9 +5235,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           // On WSL2, binding to 0.0.0.0 creates a dual-stack socket that Docker
           // cannot reach via host-gateway. The default 127.0.0.1 binding works
           // because WSL2 relays IPv4-only sockets to the Windows host.
-          // Shell required: backgrounding (&), env var prefix, output redirection.
-          const ollamaEnv = isWsl() ? "" : `OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} `;
-          run(`${ollamaEnv}ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
+          startDetachedOllamaServe(isWsl() ? undefined : `0.0.0.0:${OLLAMA_PORT}`);
           sleep(2);
           if (!isWsl()) printOllamaExposureWarning();
         }
@@ -5231,13 +5316,10 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           run(["brew", "install", "ollama"], { ignoreError: true });
         } else {
           console.log("  Installing Ollama via official installer...");
-          run("set -o pipefail; curl -fsSL https://ollama.com/install.sh | sh");
+          installOllamaViaOfficialScript();
         }
         console.log("  Starting Ollama...");
-        // Shell required: backgrounding (&), env var prefix, output redirection.
-        run(`OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
-          ignoreError: true,
-        });
+        startDetachedOllamaServe(`0.0.0.0:${OLLAMA_PORT}`);
         sleep(2);
         if (!startOllamaAuthProxy()) {
           process.exit(1);
@@ -6825,7 +6907,7 @@ function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
   // 1. Root mode: kubectl exec reads gateway:gateway 0400 file (same as shields.ts)
   try {
     const k3sContainer = "openshell-cluster-nemoclaw";
-    const result = execFileSync(
+    const result = runFile(
       "docker",
       [
         "exec",
@@ -6841,9 +6923,14 @@ function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
         "cat",
         "/run/nemoclaw/gateway-token",
       ],
-      { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15000,
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
-    const token = result.toString().trim();
+    const token = String(result.stdout || "").trim();
     if (token.length > 0) return token;
   } catch {
     // kubectl exec not available or file absent — fall through
@@ -6983,7 +7070,7 @@ function getWslHostAddress(
     return null;
   }
   const runCaptureFn = options.runCapture || runCapture;
-  const output = runCaptureFn("hostname -I 2>/dev/null", { ignoreError: true });
+  const output = runCaptureFn(["hostname", "-I"], { ignoreError: true });
   const candidates = String(output || "")
     .trim()
     .split(/\s+/)
@@ -7078,7 +7165,12 @@ function printDashboard(
 
   const token = fetchGatewayAuthTokenFromSandbox(sandboxName);
   const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${CONTROL_UI_PORT}`;
-  const wslAddr = isWsl() ? (String(runCapture("hostname -I 2>/dev/null", { ignoreError: true }) || "").trim().split(/\s+/)[0] || null) : null;
+  const wslAddr =
+    isWsl()
+      ? (String(runCapture(["hostname", "-I"], { ignoreError: true }) || "")
+          .trim()
+          .split(/\s+/)[0] || null)
+      : null;
   const chain = buildChain({ chatUiUrl, isWsl: isWsl(), wslHostAddress: wslAddr });
 
   // Build access info inline — uses chain instead of re-deriving from env

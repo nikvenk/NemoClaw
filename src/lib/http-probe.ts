@@ -12,6 +12,7 @@ import {
 
 import type { ProbeResult } from "./onboard-types";
 import { ROOT } from "./paths";
+import { buildSubprocessEnv } from "./subprocess-env";
 import { compactText } from "./url-utils";
 
 export type CurlProbeResult = ProbeResult;
@@ -25,6 +26,7 @@ function isErrnoException(error: ErrnoLike): error is NodeJS.ErrnoException {
 export interface CurlProbeOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  inheritFullEnv?: boolean;
   spawnSyncImpl?: (
     command: string,
     args: readonly string[],
@@ -75,6 +77,23 @@ type ProbeErrorBody = {
   detail?: ProbeErrorDetail;
   details?: ProbeErrorDetail;
 };
+
+function buildProbeEnv(
+  extraEnv: NodeJS.ProcessEnv | undefined,
+  inheritFullEnv = false,
+): NodeJS.ProcessEnv {
+  if (inheritFullEnv) {
+    return { ...process.env, ...extraEnv };
+  }
+
+  const normalizedExtraEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(extraEnv || {})) {
+    if (value !== undefined) {
+      normalizedExtraEnv[key] = value;
+    }
+  }
+  return buildSubprocessEnv(normalizedExtraEnv);
+}
 
 function formatProbeErrorDetail(detail: ProbeErrorDetail): string {
   if (typeof detail === "string") {
@@ -129,10 +148,7 @@ export function runCurlProbe(argv: string[], opts: CurlProbeOptions = {}): CurlP
         cwd: opts.cwd ?? ROOT,
         encoding: "utf8",
         timeout: 30_000,
-        env: {
-          ...process.env,
-          ...opts.env,
-        },
+        env: buildProbeEnv(opts.env, opts.inheritFullEnv),
       },
     );
     const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8") : "";
@@ -216,10 +232,7 @@ export function runStreamingEventProbe(
       cwd: opts.cwd ?? ROOT,
       encoding: "utf8",
       timeout: 30_000,
-      env: {
-        ...process.env,
-        ...opts.env,
-      },
+      env: buildProbeEnv(opts.env, opts.inheritFullEnv),
     });
 
     const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8") : "";

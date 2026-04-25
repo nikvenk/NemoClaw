@@ -272,7 +272,7 @@ describe("postInstall", () => {
         true,
       );
       expect(commands).toContain(
-        "printf '{}' > '/sandbox/.openclaw-data/agents/main/sessions/sessions.json'",
+        "printf '{}' > /sandbox/.openclaw-data/agents/main/sessions/sessions.json",
       );
     } finally {
       rmSync(skillDir, { recursive: true, force: true });

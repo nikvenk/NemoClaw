@@ -4,8 +4,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { OpenClawPluginApi } from "./index.js";
 
-vi.mock("node:child_process", () => ({
-  execFileSync: vi.fn(),
+vi.mock("execa", () => ({
+  execaSync: vi.fn(),
 }));
 
 vi.mock("./onboard/config.js", () => ({
@@ -14,11 +14,11 @@ vi.mock("./onboard/config.js", () => ({
   describeOnboardProvider: vi.fn(() => "NVIDIA Endpoint API"),
 }));
 
-import { execFileSync } from "node:child_process";
+import { execaSync } from "execa";
 import register, { getPluginConfig } from "./index.js";
 import { loadOnboardConfig } from "./onboard/config.js";
 
-const mockedExecFileSync = vi.mocked(execFileSync);
+const mockedExecaSync = vi.mocked(execaSync);
 const mockedLoadOnboardConfig = vi.mocked(loadOnboardConfig);
 
 function createMockApi(): OpenClawPluginApi {
@@ -45,7 +45,7 @@ function createMockApi(): OpenClawPluginApi {
 describe("plugin registration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedExecFileSync.mockReset();
+    mockedExecaSync.mockReset();
     mockedLoadOnboardConfig.mockReturnValue(null);
   });
 
@@ -86,13 +86,21 @@ describe("plugin registration", () => {
   });
 
   it("uses probed OpenShell provider and model when onboard config is unavailable", () => {
-    mockedExecFileSync.mockReturnValue(
-      JSON.stringify({
+    mockedExecaSync.mockReturnValue({
+      command: "openshell inference get --json",
+      escapedCommand: "openshell inference get --json",
+      exitCode: 0,
+      stdout: JSON.stringify({
         provider: "Ollama",
         endpoint: "http://host.docker.internal:11434/v1",
         model: "llama3.2:latest",
       }),
-    );
+      stderr: "",
+      failed: false,
+      timedOut: false,
+      isCanceled: false,
+      killed: false,
+    } as ReturnType<typeof execaSync>);
 
     const api = createMockApi();
     register(api);
@@ -114,12 +122,20 @@ describe("plugin registration", () => {
   });
 
   it("does not treat the provider name as a fallback endpoint", () => {
-    mockedExecFileSync.mockReturnValue(
-      JSON.stringify({
+    mockedExecaSync.mockReturnValue({
+      command: "openshell inference get --json",
+      escapedCommand: "openshell inference get --json",
+      exitCode: 0,
+      stdout: JSON.stringify({
         provider: "Ollama",
         model: "llama3.2:latest",
       }),
-    );
+      stderr: "",
+      failed: false,
+      timedOut: false,
+      isCanceled: false,
+      killed: false,
+    } as ReturnType<typeof execaSync>);
 
     const api = createMockApi();
     register(api);

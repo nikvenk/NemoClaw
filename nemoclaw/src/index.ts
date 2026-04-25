@@ -11,7 +11,7 @@
  * time.
  */
 
-import { execFileSync } from "node:child_process";
+import { execaSync } from "execa";
 import { handleSlashCommand } from "./commands/slash.js";
 import {
   describeOnboardEndpoint,
@@ -59,12 +59,11 @@ function readBeforeToolCallEvent(
 // sandbox). Returns empty strings if the probe fails.
 function probeOpenShellInference(): { endpoint: string; provider: string; model: string } {
   try {
-    const raw = execFileSync("openshell", ["inference", "get", "--json"], {
-      encoding: "utf-8",
+    const result = execaSync("openshell", ["inference", "get", "--json"], {
       timeout: 3000,
-      stdio: ["pipe", "pipe", "pipe"],
+      reject: true,
     });
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(result.stdout);
     const parsedObject = typeof parsed === "object" && parsed !== null ? parsed : null;
     const endpoint = readStringProperty(parsedObject, "endpoint");
     const provider = readStringProperty(parsedObject, "provider");

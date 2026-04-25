@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
+
+import { findExecutable } from "./find-executable";
 
 export interface ResolveOpenshellOptions {
   /** Mock result for `command -v` (undefined = run real command). */
@@ -21,20 +22,6 @@ export interface ResolveOpenshellOptions {
  */
 export function resolveOpenshell(opts: ResolveOpenshellOptions = {}): string | null {
   const home = opts.home ?? process.env.HOME;
-
-  // Step 1: command -v
-  if (opts.commandVResult === undefined) {
-    try {
-      const found = execSync("command -v openshell", { encoding: "utf-8" }).trim();
-      if (found.startsWith("/")) return found;
-    } catch {
-      /* ignored */
-    }
-  } else if (opts.commandVResult?.startsWith("/")) {
-    return opts.commandVResult;
-  }
-
-  // Step 2: fallback candidates
   const checkExecutable =
     opts.checkExecutable ??
     ((p: string): boolean => {
@@ -46,6 +33,15 @@ export function resolveOpenshell(opts: ResolveOpenshellOptions = {}): string | n
       }
     });
 
+  // Step 1: resolve from PATH without shelling out
+  if (opts.commandVResult === undefined) {
+    const found = findExecutable("openshell", { checkExecutable });
+    if (found?.startsWith("/")) return found;
+  } else if (opts.commandVResult?.startsWith("/")) {
+    return opts.commandVResult;
+  }
+
+  // Step 2: fallback candidates
   const candidates = [
     ...(home?.startsWith("/") ? [`${home}/.local/bin/openshell`] : []),
     "/usr/local/bin/openshell",

@@ -12,6 +12,7 @@ import os from "node:os";
 vi.mock("../../src/lib/runner", () => ({
   run: vi.fn(() => ({ status: 0 })),
   runCapture: vi.fn(() => "version: 1\nnetwork_policies:\n  test: {}"),
+  runFile: vi.fn(() => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") })),
   validateName: vi.fn((name) => name),
   shellQuote: vi.fn((s) => `'${s}'`),
   redact: vi.fn((s) => s),
@@ -47,9 +48,8 @@ vi.mock("../../src/lib/shields-audit", () => ({
   appendAuditEntry: vi.fn(),
 }));
 
-vi.mock("child_process", () => ({
-  fork: vi.fn(() => ({ pid: 12345, disconnect: vi.fn(), unref: vi.fn() })),
-  execFileSync: vi.fn(),
+vi.mock("../../src/lib/process-primitives", () => ({
+  spawnChild: vi.fn(() => ({ pid: 12345, unref: vi.fn() })),
 }));
 
 let tmpDir: string;

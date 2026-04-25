@@ -13,11 +13,21 @@
  * CLI output are separated from the I/O layer that invokes those commands.
  */
 
-import { spawnSync } from "node:child_process";
+import type { SpawnSyncOptionsWithStringEncoding } from "node:child_process";
+
+import { spawnResult } from "./process-primitives.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+function runSessionCommand(
+  command: string,
+  args: string[],
+  options: SpawnSyncOptionsWithStringEncoding,
+) {
+  return spawnResult(command, args, options);
+}
 
 /** A single detected SSH session to a sandbox. */
 export interface SandboxSession {
@@ -255,16 +265,16 @@ export function getActiveSandboxSessions(
  */
 function querySshProcesses(): string | null {
   try {
-    const result = spawnSync("ps", ["-axo", "pid,command"], {
+    const result = runSessionCommand("ps", ["-axo", "pid,command"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 5000,
     });
     if (result.status !== 0) return null;
     // Filter to only SSH lines to reduce noise and match pgrep -a output format
-    const lines = (result.stdout || "")
+    const lines = String(result.stdout || "")
       .split("\n")
-      .filter((line) => /\bssh\b/.test(line))
+      .filter((line: string) => /\bssh\b/.test(line))
       .join("\n");
     return lines;
   } catch {
@@ -280,13 +290,13 @@ export function createSystemDeps(openshellBinary: string): SessionDetectionDeps 
   return {
     getForwardList: (): string | null => {
       try {
-        const result = spawnSync(openshellBinary, ["forward", "list"], {
+        const result = runSessionCommand(openshellBinary, ["forward", "list"], {
           encoding: "utf-8",
           stdio: ["ignore", "pipe", "pipe"],
           timeout: 5000,
         });
         if (result.status !== 0) return null;
-        return result.stdout || "";
+        return String(result.stdout || "");
       } catch {
         return null;
       }

@@ -9,7 +9,9 @@
 //
 // Credentials are stripped from backups using shared credential-filter.ts.
 
-import { spawnSync } from "child_process";
+import type { SpawnSyncOptions, SpawnSyncOptionsWithStringEncoding } from "child_process";
+
+import { spawnResult } from "./process-primitives.js";
 import {
   chmodSync,
   existsSync,
@@ -37,6 +39,29 @@ const MANIFEST_VERSION = 1;
 
 function parseJson<T>(text: string): T {
   return JSON.parse(text);
+}
+
+function runStateCommand(
+  file: string,
+  args: string[],
+  opts: SpawnSyncOptions | SpawnSyncOptionsWithStringEncoding = {},
+) {
+  return spawnResult(file, args, opts);
+}
+
+function resultStdoutText(result: { stdout?: string | Buffer | null }): string {
+  const stdout = result.stdout;
+  return typeof stdout === "string" ? stdout : stdout?.toString("utf-8") || "";
+}
+
+function resultStderrText(result: { stderr?: string | Buffer | null }): string {
+  const stderr = result.stderr;
+  return typeof stderr === "string" ? stderr : stderr?.toString("utf-8") || "";
+}
+
+function resultStdoutBuffer(result: { stdout?: string | Buffer | null }): Buffer {
+  const stdout = result.stdout;
+  return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout || ""), "utf-8");
 }
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -175,7 +200,7 @@ function isWithinRoot(candidatePath: string, rootPath: string): boolean {
  * Rejects absolute paths, path traversal (..), and null bytes.
  */
 export function validateTarEntries(tarBuffer: Buffer, targetDir: string): TarValidationResult {
-  const result = spawnSync("tar", ["-tf", "-"], {
+  const result = runStateCommand("tar", ["-tf", "-"], {
     input: tarBuffer,
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -187,15 +212,15 @@ export function validateTarEntries(tarBuffer: Buffer, targetDir: string): TarVal
       safe: false,
       entries: [],
       violations: [
-        `tar listing failed (exit ${result.status}): ${(result.stderr || "").substring(0, 200)}`,
+        `tar listing failed (exit ${result.status}): ${resultStderrText(result).substring(0, 200)}`,
       ],
     };
   }
 
-  const entries = (result.stdout || "")
+  const entries = resultStdoutText(result)
     .trim()
     .split("\n")
-    .filter((e) => e.length > 0);
+    .filter((e: string) => e.length > 0);
   const violations: string[] = [];
 
   for (const entry of entries) {
@@ -269,7 +294,7 @@ function auditExtractedSymlinks(dirPath: string, allowedRoots: string[]): string
  * files outside the extraction root.
  */
 export function rejectHardLinks(tarBuffer: Buffer): string[] {
-  const result = spawnSync("tar", ["-tvf", "-"], {
+  const result = runStateCommand("tar", ["-tvf", "-"], {
     input: tarBuffer,
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -281,10 +306,10 @@ export function rejectHardLinks(tarBuffer: Buffer): string[] {
   }
 
   const violations: string[] = [];
-  const lines = (result.stdout || "")
+  const lines = resultStdoutText(result)
     .trim()
     .split("\n")
-    .filter((l) => l.length > 0);
+    .filter((l: string) => l.length > 0);
 
   for (const line of lines) {
     // Both GNU tar and bsdtar prefix hard-link entries with 'h' in verbose mode
@@ -321,7 +346,7 @@ export function safeTarExtract(tarBuffer: Buffer, targetDir: string): SafeExtrac
   }
 
   // Phase 2: Extract with --no-same-owner to prevent ownership manipulation
-  const extractResult = spawnSync("tar", ["-xf", "-", "--no-same-owner", "-C", targetDir], {
+  const extractResult = runStateCommand("tar", ["-xf", "-", "--no-same-owner", "-C", targetDir], {
     input: tarBuffer,
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 60000,
@@ -583,18 +608,18 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const workspaceGlobCmd = `for d in ${writableDir}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
     const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
-    const existResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
+    const existResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30000,
     });
     _log(
-      `Dir check: exit=${existResult.status}, stdout=${(existResult.stdout || "").trim().substring(0, 200)}, stderr=${(existResult.stderr || "").trim().substring(0, 200)}`,
+      `Dir check: exit=${existResult.status}, stdout=${resultStdoutText(existResult).trim().substring(0, 200)}, stderr=${resultStderrText(existResult).trim().substring(0, 200)}`,
     );
-    const existingDirs = (existResult.stdout || "")
+    const existingDirs = resultStdoutText(existResult)
       .trim()
       .split("\n")
-      .filter((d) => d.length > 0);
+      .filter((d: string) => d.length > 0);
     _log(
       `Existing dirs in sandbox: [${existingDirs.join(",")}] (${existingDirs.length}/${stateDirs.length})`,
     );
@@ -615,18 +640,18 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // Download via SSH+tar
     const tarCmd = `tar -cf - -C ${writableDir} ${existingDirs.join(" ")}`;
     _log(`Downloading via SSH+tar: ${tarCmd}`);
-    const result = spawnSync("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
+    const result = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 120000,
       maxBuffer: 256 * 1024 * 1024,
     });
     _log(
-      `SSH+tar download: exit=${result.status}, stdout=${result.stdout ? result.stdout.length + " bytes" : "null"}, stderr=${(result.stderr?.toString() || "").substring(0, 200)}`,
+      `SSH+tar download: exit=${result.status}, stdout=${result.stdout ? resultStdoutBuffer(result).length + " bytes" : "null"}, stderr=${resultStderrText(result).substring(0, 200)}`,
     );
 
-    if (result.status === 0 && result.stdout && result.stdout.length > 0) {
+    if (result.status === 0 && result.stdout && resultStdoutBuffer(result).length > 0) {
       // SECURITY: Validate tar entries, extract safely, audit symlinks
-      const extractResult = safeTarExtract(result.stdout, backupPath);
+      const extractResult = safeTarExtract(resultStdoutBuffer(result), backupPath);
       if (extractResult.success) {
         backedUpDirs.push(...existingDirs);
       } else {
@@ -711,7 +736,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
   const configFile = writeTempSshConfig(sshConfig);
   try {
     // Upload via tar pipe
-    const tarResult = spawnSync("tar", ["-cf", "-", "-C", backupPath, ...localDirs], {
+    const tarResult = runStateCommand("tar", ["-cf", "-", "-C", backupPath, ...localDirs], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 60000,
       maxBuffer: 256 * 1024 * 1024,
@@ -725,19 +750,19 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
     // later snapshots don't persist after restoring an earlier one.
     const rmCmd = localDirs.map((d) => `rm -rf "${writableDir}/${d}"`).join(" && ");
     _log(`Cleaning target dirs before restore: ${rmCmd}`);
-    const rmResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
+    const rmResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30000,
     });
     if (rmResult.status !== 0) {
       _log(
-        `WARNING: pre-restore cleanup failed (exit ${rmResult.status}): ${(rmResult.stderr?.toString() || "").substring(0, 200)}`,
+        `WARNING: pre-restore cleanup failed (exit ${rmResult.status}): ${resultStderrText(rmResult).substring(0, 200)}`,
       );
     }
 
     const extractCmd = `tar -xf - -C ${writableDir}`;
-    const sshResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), extractCmd], {
-      input: tarResult.stdout,
+    const sshResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), extractCmd], {
+      input: resultStdoutBuffer(tarResult),
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 120000,
     });
@@ -750,7 +775,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       const openshellBinary = resolveOpenshell();
       if (openshellBinary) {
         _log(`Fixing ownership: chown -R sandbox:sandbox ${writableDir}`);
-        const chownResult = spawnSync(
+        const chownResult = runStateCommand(
           openshellBinary,
           ["sandbox", "exec", sandboxName, "--", "chown", "-R", "sandbox:sandbox", writableDir],
           { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },

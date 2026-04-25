@@ -1,13 +1,16 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
 import { readConfigFile, writeConfigFile } from "./config-io";
+
+// runner.ts still uses CommonJS-style exports — use require here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runCapture } = require("./runner.js");
 
 const UNSAFE_HOME_PATHS = new Set(["/tmp", "/var/tmp", "/dev/shm", "/"]);
 
@@ -298,15 +301,10 @@ export async function ensureApiKey(): Promise<void> {
 }
 
 export function isRepoPrivate(repo: string): boolean {
-  try {
-    const json = execFileSync("gh", ["api", `repos/${repo}`, "--jq", ".private"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return json === "true";
-  } catch {
-    return false;
-  }
+  const json = runCapture(["gh", "api", `repos/${repo}`, "--jq", ".private"], {
+    ignoreError: true,
+  }).trim();
+  return json === "true";
 }
 
 export async function ensureGithubToken(): Promise<void> {
@@ -316,17 +314,10 @@ export async function ensureGithubToken(): Promise<void> {
     return;
   }
 
-  try {
-    token = execFileSync("gh", ["auth", "token"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (token) {
-      process.env.GITHUB_TOKEN = token;
-      return;
-    }
-  } catch {
-    /* ignored */
+  token = runCapture(["gh", "auth", "token"], { ignoreError: true }).trim();
+  if (token) {
+    process.env.GITHUB_TOKEN = token;
+    return;
   }
 
   console.log("");

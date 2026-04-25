@@ -94,6 +94,69 @@ describe("openshell helpers", () => {
     expect(result.status).toBe(0);
   });
 
+  it("scrubs unrelated process env by default", () => {
+    const originalPath = process.env.PATH;
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    let seenEnv: NodeJS.ProcessEnv | undefined;
+
+    try {
+      process.env.PATH = "/usr/local/bin:/usr/bin";
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runOpenshellCommand("openshell", ["status"], {
+        spawnSyncImpl: (_command, _args, options) => {
+          seenEnv = options.env;
+          return makeSpawnResult({
+            status: 0,
+            stdout: "ok\n",
+            stderr: "",
+          });
+        },
+      });
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+    }
+
+    expect(seenEnv?.PATH).toBe("/usr/local/bin:/usr/bin");
+    expect(seenEnv?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it("can opt into full parent env inheritance", () => {
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    let seenEnv: NodeJS.ProcessEnv | undefined;
+
+    try {
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runOpenshellCommand("openshell", ["status"], {
+        inheritFullEnv: true,
+        spawnSyncImpl: (_command, _args, options) => {
+          seenEnv = options.env;
+          return makeSpawnResult({
+            status: 0,
+            stdout: "ok\n",
+            stderr: "",
+          });
+        },
+      });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+    }
+
+    expect(seenEnv?.AWS_SECRET_ACCESS_KEY).toBe("secret-from-parent-env");
+  });
+
   it("uses the injected exit handler on failure", () => {
     expect(() =>
       runOpenshellCommand("openshell", ["status"], {

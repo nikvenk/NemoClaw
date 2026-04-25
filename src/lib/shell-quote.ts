@@ -5,6 +5,26 @@
  * Shell-quote a value for safe interpolation into bash -c strings.
  * Wraps in single quotes and escapes embedded single quotes.
  */
-export function shellQuote(value: string): string {
+export type ShellQuotable = string | number | boolean | null | undefined;
+
+const SAFE_SHELL_TOKEN_RE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+function quoteShellValue(value: ShellQuotable): string {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+export function shellQuote(value: ShellQuotable): string {
+  return quoteShellValue(value);
+}
+
+export function formatShellToken(value: string): string {
+  return SAFE_SHELL_TOKEN_RE.test(value) ? value : quoteShellValue(value);
+}
+
+export function joinShellWords(values: readonly string[]): string {
+  return values.map((value) => formatShellToken(value)).join(" ");
+}
+
+export function buildShellAssignment(name: string, value: string): string {
+  return `${name}=${formatShellToken(value)}`;
 }

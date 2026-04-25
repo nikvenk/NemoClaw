@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
 
 import { ROOT } from "./paths";
+import { spawnChild } from "./process-primitives.js";
 
 export interface StreamSandboxCreateResult {
   status: number;
@@ -49,15 +50,25 @@ export interface StreamableChildProcess {
 }
 
 export function streamSandboxCreate(
-  command: string,
+  command: string | readonly string[],
   env: NodeJS.ProcessEnv = process.env,
   options: StreamSandboxCreateOptions = {},
 ): Promise<StreamSandboxCreateResult> {
-  const child: StreamableChildProcess = (options.spawnImpl ?? spawn)("bash", ["-lc", command], {
-    cwd: ROOT,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const spawnImpl = options.spawnImpl ?? spawnChild;
+  const child: StreamableChildProcess = Array.isArray(command)
+    ? spawnImpl(command[0], [...command.slice(1)], {
+        cwd: ROOT,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    : (() => {
+        const shellCommand = String(command);
+        return spawnImpl("bash", ["-lc", shellCommand], {
+          cwd: ROOT,
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      })();
 
   const logLine = options.logLine ?? console.log;
   const lines: string[] = [];

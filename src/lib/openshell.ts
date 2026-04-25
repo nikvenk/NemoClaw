@@ -8,6 +8,8 @@ import {
   type SpawnSyncReturns,
 } from "node:child_process";
 
+import { buildSubprocessEnv } from "./subprocess-env";
+
 export type OpenshellSpawnSync = (
   command: string,
   args: readonly string[],
@@ -17,6 +19,7 @@ export type OpenshellSpawnSync = (
 interface OpenshellSpawnOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  inheritFullEnv?: boolean;
   spawnSyncImpl?: OpenshellSpawnSync;
   errorLine?: (message: string) => void;
   exit?: (code: number) => never;
@@ -65,6 +68,23 @@ export function versionGte(left = "0.0.0", right = "0.0.0"): boolean {
   return true;
 }
 
+function buildOpenshellEnv(
+  extraEnv: NodeJS.ProcessEnv | undefined,
+  inheritFullEnv = false,
+): NodeJS.ProcessEnv {
+  if (inheritFullEnv) {
+    return { ...process.env, ...extraEnv };
+  }
+
+  const normalizedExtraEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(extraEnv || {})) {
+    if (value !== undefined) {
+      normalizedExtraEnv[key] = value;
+    }
+  }
+  return buildSubprocessEnv(normalizedExtraEnv);
+}
+
 function handleSpawnError(
   binary: string,
   args: string[],
@@ -84,7 +104,7 @@ export function runOpenshellCommand(
   const spawnSyncImpl = opts.spawnSyncImpl ?? spawnSync;
   const result = spawnSyncImpl(binary, args, {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    env: buildOpenshellEnv(opts.env, opts.inheritFullEnv),
     encoding: "utf-8",
     stdio: opts.stdio ?? "inherit",
   });
@@ -108,7 +128,7 @@ export function captureOpenshellCommand(
   const spawnSyncImpl = opts.spawnSyncImpl ?? spawnSync;
   const result = spawnSyncImpl(binary, args, {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    env: buildOpenshellEnv(opts.env, opts.inheritFullEnv),
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
   });

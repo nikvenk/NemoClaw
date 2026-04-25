@@ -54,11 +54,11 @@ describe("buildDeployEnvLines", () => {
 
     expect(envLines).toContain("NEMOCLAW_NON_INTERACTIVE=1");
     expect(envLines).toContain("NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1");
-    expect(envLines).toContain("NEMOCLAW_SANDBOX_NAME='my-assistant'");
-    expect(envLines).toContain("NEMOCLAW_PROVIDER='build'");
-    expect(envLines).toContain("CHAT_UI_URL='https://chat.example.com'");
-    expect(envLines).toContain("NEMOCLAW_POLICY_MODE='suggested'");
-    expect(envLines).toContain("NVIDIA_API_KEY='nvapi-test'");
+    expect(envLines).toContain("NEMOCLAW_SANDBOX_NAME=my-assistant");
+    expect(envLines).toContain("NEMOCLAW_PROVIDER=build");
+    expect(envLines).toContain("CHAT_UI_URL=https://chat.example.com");
+    expect(envLines).toContain("NEMOCLAW_POLICY_MODE=suggested");
+    expect(envLines).toContain("NVIDIA_API_KEY=nvapi-test");
   });
 
   it("passes ALLOWED_CHAT_IDS through when Telegram is configured", () => {
@@ -73,8 +73,8 @@ describe("buildDeployEnvLines", () => {
       shellQuote: (value: string) => `'${value}'`,
     });
 
-    expect(envLines).toContain("TELEGRAM_BOT_TOKEN='123456:telegram-token'");
-    expect(envLines).toContain("ALLOWED_CHAT_IDS='111,222'");
+    expect(envLines).toContain("TELEGRAM_BOT_TOKEN=123456:telegram-token");
+    expect(envLines).toContain("ALLOWED_CHAT_IDS=111,222");
   });
 
   it("omits ALLOWED_CHAT_IDS when Telegram is not configured", () => {
@@ -88,7 +88,7 @@ describe("buildDeployEnvLines", () => {
       shellQuote: (value: string) => `'${value}'`,
     });
 
-    expect(envLines).not.toContain("ALLOWED_CHAT_IDS='111,222'");
+    expect(envLines).not.toContain("ALLOWED_CHAT_IDS=111,222");
   });
 });
 

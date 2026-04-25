@@ -10,7 +10,8 @@ import type { CurlProbeResult } from "./http-probe";
 import { runCurlProbe } from "./http-probe";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { shellQuote, runCapture } = require("./runner");
+const { runCapture } = require("./runner");
+import { formatShellToken } from "./shell-quote";
 
 import { VLLM_PORT, OLLAMA_PORT, OLLAMA_PROXY_PORT } from "./ports";
 
@@ -331,7 +332,7 @@ export function getOllamaWarmupCommand(model: string, keepAlive = "15m"): string
   return [
     "bash",
     "-c",
-    `nohup curl -s http://127.0.0.1:${OLLAMA_PORT}/api/generate -H 'Content-Type: application/json' -d ${shellQuote(payload)} >/dev/null 2>&1 &`,
+    `nohup curl -s http://127.0.0.1:${OLLAMA_PORT}/api/generate -H 'Content-Type: application/json' -d ${formatShellToken(payload)} >/dev/null 2>&1 &`,
   ];
 }
 

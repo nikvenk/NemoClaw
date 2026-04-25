@@ -65,6 +65,75 @@ describe("http-probe helpers", () => {
     expect(fs.existsSync(path.dirname(outputPath))).toBe(false);
   });
 
+  it("scrubs unrelated process env by default", () => {
+    const originalPath = process.env.PATH;
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    let seenEnv: NodeJS.ProcessEnv | undefined;
+
+    try {
+      process.env.PATH = "/usr/local/bin:/usr/bin";
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runCurlProbe(["-sS", "https://example.test/models"], {
+        spawnSyncImpl: (_command, _args, options) => {
+          seenEnv = options.env;
+          return {
+            pid: 1,
+            output: [],
+            stdout: "200",
+            stderr: "",
+            status: 0,
+            signal: null,
+          };
+        },
+      });
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+    }
+
+    expect(seenEnv?.PATH).toBe("/usr/local/bin:/usr/bin");
+    expect(seenEnv?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it("can opt into full parent env inheritance", () => {
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    let seenEnv: NodeJS.ProcessEnv | undefined;
+
+    try {
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runCurlProbe(["-sS", "https://example.test/models"], {
+        inheritFullEnv: true,
+        spawnSyncImpl: (_command, _args, options) => {
+          seenEnv = options.env;
+          return {
+            pid: 1,
+            output: [],
+            stdout: "200",
+            stderr: "",
+            status: 0,
+            signal: null,
+          };
+        },
+      });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+    }
+
+    expect(seenEnv?.AWS_SECRET_ACCESS_KEY).toBe("secret-from-parent-env");
+  });
+
   it("reports spawn errors as curl failures", () => {
     const result = runCurlProbe(["-sS", "https://example.test/models"], {
       spawnSyncImpl: () => {

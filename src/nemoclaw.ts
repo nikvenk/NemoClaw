@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-const { execFileSync, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -25,8 +25,8 @@ const {
   ROOT,
   run,
   runCapture: _runCapture,
+  runFile,
   runInteractive,
-  shellQuote,
   validateName,
 } = require("./lib/runner");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
@@ -55,6 +55,7 @@ const onboardSession = require("./lib/onboard-session");
 import type { Session } from "./lib/onboard-session";
 const { parseLiveSandboxNames } = require("./lib/runtime-recovery");
 const { NOTICE_ACCEPT_ENV, NOTICE_ACCEPT_FLAG } = require("./lib/usage-notice");
+const { sleepSeconds } = require("./lib/wait");
 const { runDebugCommand } = require("./lib/debug-command");
 const { runDeprecatedOnboardAliasCommand, runOnboardCommand } = require("./lib/onboard-command");
 const {
@@ -73,8 +74,8 @@ const sandboxVersion = require("./lib/sandbox-version");
 const sandboxState = require("./lib/sandbox-state");
 const { parseRestoreArgs } = sandboxState;
 const skillInstall = require("./lib/skill-install");
-const { sleepSeconds } = require("./lib/wait");
 const { parseSandboxPhase } = require("./lib/gateway-state");
+const { formatShellToken } = require("./lib/shell-quote");
 const {
   getActiveSandboxSessions,
   createSystemDeps: createSessionDeps,
@@ -165,13 +166,32 @@ function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
   });
 }
 
+function listGatewayDockerVolumes() {
+  return String(
+    _runCapture(
+      [
+        "docker",
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        `name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`,
+      ],
+      { ignoreError: true },
+    ) || "",
+  )
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function cleanupGatewayAfterLastSandbox() {
   runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], { ignoreError: true });
   runOpenshell(["gateway", "destroy", "-g", NEMOCLAW_GATEWAY_NAME], { ignoreError: true });
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+  const dockerVolumes = listGatewayDockerVolumes();
+  if (dockerVolumes.length > 0) {
+    run(["docker", "volume", "rm", ...dockerVolumes], { ignoreError: true });
+  }
 }
 
 function hasNoLiveSandboxes() {
@@ -217,7 +237,7 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
   const tmpFile = path.join(os.tmpdir(), `nemoclaw-ssh-${process.pid}-${Date.now()}.conf`);
   fs.writeFileSync(tmpFile, sshConfigResult.output, { mode: 0o600 });
   try {
-    const result = spawnSync(
+    const result = runFile(
       "ssh",
       [
         "-F",
@@ -233,7 +253,13 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
         `openshell-${sandboxName}`,
         command,
       ],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15000,
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
     return {
       status: result.status ?? 1,
@@ -272,7 +298,7 @@ function isSandboxGatewayRunning(sandboxName: string): boolean | null {
     : `http://127.0.0.1:${DASHBOARD_PORT}/health`;
   const result = executeSandboxCommand(
     sandboxName,
-    `curl -so /dev/null -w '%{http_code}' --max-time 3 ${shellQuote(probeUrl)} 2>/dev/null || echo 000`,
+    `curl -so /dev/null -w '%{http_code}' --max-time 3 ${formatShellToken(probeUrl)} 2>/dev/null || echo 000`,
   );
   if (!result) return null;
   const status = result.stdout.trim();
@@ -1128,18 +1154,8 @@ async function deploy(instanceName: string): Promise<void> {
     rootDir: ROOT,
     getCredential,
     validateName,
-    shellQuote,
     run,
     runInteractive,
-    execFileSync: (
-      file: string,
-      args: string[],
-      opts: Omit<
-        import("node:child_process").ExecFileSyncOptionsWithStringEncoding,
-        "encoding"
-      > = {},
-    ) => String(execFileSync(file, args, { encoding: "utf-8", ...opts })),
-    spawnSync,
     log: console.log,
     error: console.error,
     stdoutWrite: (message: string) => process.stdout.write(message),
@@ -1314,14 +1330,19 @@ function checkMessagingBridgeHealth(sandboxName: string, channels: string[]) {
   // gateway log. Discord/Slack have similar single-consumer constraints but
   // log differently; we can extend the regex when those patterns are known.
   if (!Array.isArray(channels) || !channels.includes("telegram")) return [];
-  const { spawnSync } = require("child_process");
   const script =
     'tail -n 200 /tmp/gateway.log 2>/dev/null | grep -cE "getUpdates conflict|409[[:space:]:]+Conflict" || true';
   try {
-    const result = spawnSync(
+    const result = runFile(
       getOpenshellBinary(),
       ["sandbox", "exec", "-n", sandboxName, "--", "sh", "-c", script],
-      { encoding: "utf-8", timeout: 3000, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "pipe"],
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
     const count = Number.parseInt((result.stdout || "").trim(), 10);
     if (!Number.isFinite(count) || count === 0) return [];
@@ -1369,9 +1390,8 @@ function backfillAndFindOverlaps() {
  * Read a short tail of the gateway log for degraded messaging diagnostics.
  */
 function readGatewayLog(sandboxName: string) {
-  const { spawnSync } = require("child_process");
   try {
-    const result = spawnSync(
+    const result = runFile(
       getOpenshellBinary(),
       [
         "sandbox",
@@ -1383,7 +1403,13 @@ function readGatewayLog(sandboxName: string) {
         "-c",
         "tail -n 10 /tmp/gateway.log 2>/dev/null",
       ],
-      { encoding: "utf-8", timeout: 3000, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "pipe"],
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
     const output = (result.stdout || "").trim();
     return output || null;
@@ -1568,7 +1594,7 @@ async function sandboxConnect(
     while (Date.now() < deadline) {
       const sleepFor = Math.min(interval, remainingMs() / 1000);
       if (sleepFor <= 0) break;
-      spawnSync("sleep", [String(sleepFor)]);
+      sleepSeconds(sleepFor);
       const poll = runSandboxList();
       const elapsed = elapsedSec();
       if (isSandboxReady(poll, sandboxName)) {
@@ -1627,10 +1653,11 @@ async function sandboxConnect(
     );
     console.log("");
   }
-  const result = spawnSync(getOpenshellBinary(), ["sandbox", "connect", sandboxName], {
+  const result = runFile(getOpenshellBinary(), ["sandbox", "connect", sandboxName], {
     stdio: "inherit",
     cwd: ROOT,
-    env: process.env,
+    ignoreError: true,
+    suppressOutput: true,
   });
   exitWithSpawnResult(result);
 }
@@ -3083,7 +3110,7 @@ function renderSnapshotTable(
 function resolveSrcPodImage(srcName: string): string | null {
   const gatewayContainer = `openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`;
   try {
-    const result = spawnSync(
+    const result = runFile(
       "docker",
       [
         "exec",
@@ -3097,7 +3124,13 @@ function resolveSrcPodImage(srcName: string): string | null {
         "-o",
         'jsonpath={.spec.containers[?(@.name=="agent")].image}',
       ],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000 },
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 10000,
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
     if (result.status !== 0) return null;
     const img = (result.stdout || "").trim().split(/\s+/)[0];
@@ -3128,7 +3161,7 @@ async function autoCreateSandboxFromSource(
     process.exit(1);
   }
 
-  const cmdParts = [
+  const command = [
     openshellBin,
     "sandbox",
     "create",
@@ -3141,8 +3174,7 @@ async function autoCreateSandboxFromSource(
     "--auto-providers",
     "--",
     "nemoclaw-start",
-  ].map((p) => shellQuote(p));
-  const command = `${cmdParts.join(" ")} 2>&1`;
+  ];
 
   console.log(`  '${dstName}' does not exist. Creating from '${srcName}' image (${fromImage})...`);
 
@@ -3460,7 +3492,7 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
 
   // 1. List all openshell/sandbox-from images on the host
-  const imagesResult = spawnSync(
+  const imagesResult = runFile(
     "docker",
     [
       "images",
@@ -3469,7 +3501,12 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
       "--format",
       "{{.Repository}}:{{.Tag}}\t{{.Size}}",
     ],
-    { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+    {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      ignoreError: true,
+      suppressOutput: true,
+    },
   );
   if (imagesResult.status !== 0) {
     console.error("  Failed to query Docker images. Is Docker running?");
@@ -3532,9 +3569,11 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   let removed = 0;
   let failed = 0;
   for (const img of orphans) {
-    const rmiResult = spawnSync("docker", ["rmi", img.tag], {
+    const rmiResult = runFile("docker", ["rmi", img.tag], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
+      ignoreError: true,
+      suppressOutput: true,
     });
     if (rmiResult.status === 0) {
       console.log(`  ${G}✓${R} Removed ${img.tag}`);

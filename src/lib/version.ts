@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+// runner.ts still uses CommonJS-style exports — use require here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runCapture } = require("./runner.js");
 
 type PackageInfo = { version?: string };
 
@@ -31,16 +34,11 @@ export function getVersion(opts: VersionOptions = {}): string {
   const root = opts.rootDir ?? join(__dirname, "..", "..");
 
   // 1. Try git (available in dev clones and CI)
-  try {
-    const raw = execFileSync("git", ["describe", "--tags", "--match", "v*"], {
-      cwd: root,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (raw) return raw.replace(/^v/, "");
-  } catch {
-    // no git, or no matching tags — fall through
-  }
+  const gitDescribe = runCapture(["git", "describe", "--tags", "--match", "v*"], {
+    cwd: root,
+    ignoreError: true,
+  });
+  if (gitDescribe) return gitDescribe.replace(/^v/, "");
 
   // 2. Try .version file (stamped by prepublishOnly)
   const versionFile = join(root, ".version");

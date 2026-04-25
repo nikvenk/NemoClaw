@@ -5,6 +5,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { buildSshScriptCommand } from "./remote-script";
+import { buildShellAssignment, formatShellToken } from "./shell-quote";
 import { sleepSeconds } from "./wait";
 
 type ExecLikeValue =
@@ -17,12 +19,18 @@ type ExecLikeValue =
   | NodeJS.ProcessEnv
   | object;
 type ExecLikeOptions = { [key: string]: ExecLikeValue };
+type ExecResultLike = {
+  status: number | null;
+  stdout?: string | Buffer;
+  stderr?: string | Buffer;
+  error?: Error | null;
+};
 
-function readCommandOutput(error: object | null, key: "stdout" | "stderr"): string {
-  if (error === null) {
+function readCommandOutput(result: ExecResultLike | null, key: "stdout" | "stderr"): string {
+  if (result === null) {
     return "";
   }
-  const value = Reflect.get(error, key);
+  const value = result[key];
   return typeof value === "string" ? value : String(value || "");
 }
 
@@ -58,11 +66,11 @@ export interface DeployExecutionOptions {
   rootDir: string;
   getCredential: (key: string) => string | null;
   validateName: (value: string, label: string) => string;
-  shellQuote: (value: string) => string;
-  run: (command: string, opts?: { ignoreError?: boolean }) => void;
-  runInteractive: (command: string) => void;
-  execFileSync: (file: string, args: string[], opts?: ExecLikeOptions) => string;
-  spawnSync: (file: string, args: string[], opts?: ExecLikeOptions) => void;
+  run: (
+    command: string | readonly string[],
+    opts?: ExecLikeOptions & { ignoreError?: boolean; suppressOutput?: boolean },
+  ) => ExecResultLike;
+  runInteractive: (command: string | readonly string[]) => void;
   log: (message?: string) => void;
   error: (message?: string) => void;
   stdoutWrite: (message: string) => void;
@@ -71,14 +79,14 @@ export interface DeployExecutionOptions {
 
 // SSH host key verification helper — resolves the real hostname from SSH config
 // (brev aliases aren't DNS-resolvable) and returns it for ssh-keyscan.
-export function resolveRealHost(
-  name: string,
-  execFileSync: DeployExecutionOptions["execFileSync"],
-): string {
-  const sshConfigOut = execFileSync("ssh", ["-G", name], {
+export function resolveRealHost(name: string, run: DeployExecutionOptions["run"]): string {
+  const sshConfigResult = run(["ssh", "-G", name], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
+    ignoreError: true,
+    suppressOutput: true,
   });
+  const sshConfigOut = readCommandOutput(sshConfigResult, "stdout");
   return (
     sshConfigOut
       .split("\n")
@@ -88,8 +96,8 @@ export function resolveRealHost(
 }
 
 // Build SSH options that enforce strict host key checking against a pinned known_hosts file.
-export function buildSshOpts(knownHostsFile: string, shellQuote: (v: string) => string): string {
-  return `-o UserKnownHostsFile=${shellQuote(knownHostsFile)} -o StrictHostKeyChecking=yes -o LogLevel=ERROR`;
+export function buildSshOpts(knownHostsFile: string): string {
+  return `-o UserKnownHostsFile=${formatShellToken(knownHostsFile)} -o StrictHostKeyChecking=yes -o LogLevel=ERROR`;
 }
 
 // Build SSH argument array for execFileSync calls with pinned host key verification.
@@ -131,14 +139,13 @@ export function buildDeployEnvLines(opts: {
   sandboxName: string;
   provider: string;
   credentials: DeployCredentials;
-  shellQuote: (value: string) => string;
 }): string[] {
-  const { env, sandboxName, provider, credentials, shellQuote } = opts;
+  const { env, sandboxName, provider, credentials } = opts;
   const envLines = [
     "NEMOCLAW_NON_INTERACTIVE=1",
     "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1",
-    `NEMOCLAW_SANDBOX_NAME=${shellQuote(sandboxName)}`,
-    `NEMOCLAW_PROVIDER=${shellQuote(provider)}`,
+    buildShellAssignment("NEMOCLAW_SANDBOX_NAME", sandboxName),
+    buildShellAssignment("NEMOCLAW_PROVIDER", provider),
   ];
 
   const passthroughVars = [
@@ -150,16 +157,16 @@ export function buildDeployEnvLines(opts: {
   ];
   for (const key of passthroughVars) {
     const value = env[key];
-    if (value) envLines.push(`${key}=${shellQuote(value)}`);
+    if (value) envLines.push(buildShellAssignment(key, value));
   }
 
   for (const [key, value] of Object.entries(credentials)) {
     if (!value || key === "ALLOWED_CHAT_IDS") continue;
-    envLines.push(`${key}=${shellQuote(value)}`);
+    envLines.push(buildShellAssignment(key, value));
   }
 
   if (credentials.TELEGRAM_BOT_TOKEN && credentials.ALLOWED_CHAT_IDS) {
-    envLines.push(`ALLOWED_CHAT_IDS=${shellQuote(credentials.ALLOWED_CHAT_IDS)}`);
+    envLines.push(buildShellAssignment("ALLOWED_CHAT_IDS", credentials.ALLOWED_CHAT_IDS));
   }
 
   return envLines;
@@ -205,14 +212,17 @@ export function isBrevInstanceReady(status: BrevInstanceStatus | null): boolean 
 
 function getBrevInstanceStatus(
   instanceName: string,
-  execFileSync: DeployExecutionOptions["execFileSync"],
+  run: DeployExecutionOptions["run"],
 ): BrevInstanceStatus | null {
-  try {
-    const raw = execFileSync("brev", ["ls", "--json"], { encoding: "utf-8" });
-    return findBrevInstanceStatus(raw, instanceName);
-  } catch {
+  const result = run(["brev", "ls", "--json"], {
+    encoding: "utf-8",
+    ignoreError: true,
+    suppressOutput: true,
+  });
+  if (result.status !== 0) {
     return null;
   }
+  return findBrevInstanceStatus(readCommandOutput(result, "stdout"), instanceName);
 }
 
 function fail(
@@ -231,11 +241,8 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     rootDir,
     getCredential,
     validateName,
-    shellQuote,
     run,
     runInteractive,
-    execFileSync,
-    spawnSync,
     log,
     error,
     stdoutWrite,
@@ -264,7 +271,6 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
   }
 
   const name = validateName(instanceName, "instance name");
-  const qname = shellQuote(name);
   const gpu = env.NEMOCLAW_GPU || "a2-highgpu-1g:nvidia-tesla-a100:1";
   const brevProvider = String(env.NEMOCLAW_BREV_PROVIDER || "gcp")
     .trim()
@@ -307,33 +313,41 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
   log("");
 
   try {
-    execFileSync("which", ["brev"], { stdio: "ignore" });
+    const whichResult = run(["which", "brev"], {
+      ignoreError: true,
+      suppressOutput: true,
+      stdio: "ignore",
+    });
+    if (whichResult.status !== 0) {
+      return fail(["brev CLI not found. Install: https://brev.nvidia.com"], error, exit);
+    }
   } catch {
     return fail(["brev CLI not found. Install: https://brev.nvidia.com"], error, exit);
   }
 
   let exists = false;
-  try {
-    const out = execFileSync("brev", ["ls"], { encoding: "utf-8" });
-    exists = outputHasExactLine(out, name);
-  } catch (caught) {
-    const caughtObject = typeof caught === "object" && caught !== null ? caught : null;
-    if (outputHasExactLine(readCommandOutput(caughtObject, "stdout"), name)) exists = true;
-    if (outputHasExactLine(readCommandOutput(caughtObject, "stderr"), name)) exists = true;
+  const brevLsResult = run(["brev", "ls"], {
+    encoding: "utf-8",
+    ignoreError: true,
+    suppressOutput: true,
+  });
+  exists = outputHasExactLine(readCommandOutput(brevLsResult, "stdout"), name);
+  if (!exists) {
+    exists = outputHasExactLine(readCommandOutput(brevLsResult, "stderr"), name);
   }
 
   if (!exists) {
     log(`  Creating Brev instance '${name}' (${gpu}, provider=${brevProvider})...`);
-    run(`brev create ${qname} --type ${shellQuote(gpu)} --provider ${shellQuote(brevProvider)}`);
+    run(["brev", "create", name, "--type", gpu, "--provider", brevProvider]);
   } else {
     log(`  Brev instance '${name}' already exists.`);
   }
 
-  run("brev refresh", { ignoreError: true });
+  run(["brev", "refresh"], { ignoreError: true });
 
   stdoutWrite("  Waiting for Brev instance readiness ");
   for (let i = 0; i < 60; i++) {
-    const brevStatus = getBrevInstanceStatus(name, execFileSync);
+    const brevStatus = getBrevInstanceStatus(name, run);
     if (isBrevInstanceFailed(brevStatus)) {
       stdoutWrite("\n");
       error(`  Brev instance '${name}' did not become ready.`);
@@ -350,7 +364,7 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
 
     if (i === 59) {
       stdoutWrite("\n");
-      const finalBrevStatus = getBrevInstanceStatus(name, execFileSync);
+      const finalBrevStatus = getBrevInstanceStatus(name, run);
       if (finalBrevStatus) {
         error(
           `  Brev status at timeout: status=${finalBrevStatus.status || "unknown"} build=${finalBrevStatus.build_status || "unknown"} shell=${finalBrevStatus.shell_status || "unknown"}`,
@@ -371,16 +385,19 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
   // Ref: https://github.com/NVIDIA/NemoClaw/issues/691
   const khDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-ssh-"));
   const knownHostsFile = path.join(khDir, "known_hosts");
-  const realHost = resolveRealHost(name, execFileSync);
+  const realHost = resolveRealHost(name, run);
 
   stdoutWrite("  Waiting for SSH ");
   for (let i = 0; i < 60; i++) {
     try {
-      const hostKeys = execFileSync("ssh-keyscan", ["-T", "5", "-H", realHost], {
+      const hostKeysResult = run(["ssh-keyscan", "-T", "5", "-H", realHost], {
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "ignore"],
+        ignoreError: true,
+        suppressOutput: true,
       });
-      if (hostKeys.trim()) {
+      const hostKeys = readCommandOutput(hostKeysResult, "stdout");
+      if (hostKeysResult.status === 0 && hostKeys.trim()) {
         fs.writeFileSync(knownHostsFile, hostKeys, { mode: 0o600 });
         stdoutWrite(" ✓\n");
         break;
@@ -401,34 +418,66 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     sleepSeconds(3);
   }
 
-  const sshOpts = buildSshOpts(knownHostsFile, shellQuote);
+  const sshOpts = buildSshOpts(knownHostsFile);
   const sshArgs = buildSshArgs(knownHostsFile);
 
   try {
-    const remoteHome = execFileSync("ssh", [...sshArgs, name, "echo", "$HOME"], {
+    const remoteHomeResult = run(["ssh", ...sshArgs, name, "echo", "$HOME"], {
       encoding: "utf-8",
-    }).trim();
+      ignoreError: true,
+      suppressOutput: true,
+    });
+    if (remoteHomeResult.status !== 0) {
+      return fail([`  Could not determine remote home for ${name}`], error, exit);
+    }
+    const remoteHome = readCommandOutput(remoteHomeResult, "stdout").trim();
     const remoteDir = `${remoteHome}/nemoclaw`;
 
     log("  Syncing NemoClaw to VM...");
-    run(`ssh ${sshOpts} ${qname} 'mkdir -p ${shellQuote(remoteDir)}'`);
     run(
-      `rsync -az --delete --exclude node_modules --exclude .git --exclude dist --exclude .venv -e "ssh ${sshOpts}" "${rootDir}/" ${qname}:${shellQuote(`${remoteDir}/`)}`,
+      buildSshScriptCommand({
+        sshArgs,
+        host: name,
+        commandArgs: ["mkdir", "-p", remoteDir],
+      }),
     );
+    run([
+      "rsync",
+      "-az",
+      "--delete",
+      "--exclude",
+      "node_modules",
+      "--exclude",
+      ".git",
+      "--exclude",
+      "dist",
+      "--exclude",
+      ".venv",
+      "-e",
+      `ssh ${sshOpts}`,
+      `${rootDir}/`,
+      `${name}:${remoteDir}/`,
+    ]);
 
     const envLines = buildDeployEnvLines({
       env,
       sandboxName,
       provider,
       credentials,
-      shellQuote,
     });
     const envDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-env-"));
     const envTmp = path.join(envDir, "env");
     fs.writeFileSync(envTmp, envLines.join("\n") + "\n", { mode: 0o600 });
     try {
-      run(`scp -q ${sshOpts} ${shellQuote(envTmp)} ${qname}:${shellQuote(`${remoteDir}/.env`)}`);
-      run(`ssh -q ${sshOpts} ${qname} 'chmod 600 ${shellQuote(`${remoteDir}/.env`)}'`);
+      run(["scp", "-q", ...sshArgs, envTmp, `${name}:${remoteDir}/.env`]);
+      run(
+        buildSshScriptCommand({
+          sshArgs,
+          host: name,
+          commandArgs: ["chmod", "600", `${remoteDir}/.env`],
+          quiet: true,
+        }),
+      );
     } finally {
       try {
         fs.unlinkSync(envTmp);
@@ -444,7 +493,19 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
 
     log("  Running setup...");
     runInteractive(
-      `ssh -t ${sshOpts} ${qname} 'cd ${shellQuote(remoteDir)} && set -a && . .env && set +a && bash scripts/install.sh --non-interactive --yes-i-accept-third-party-software'`,
+      buildSshScriptCommand({
+        sshArgs,
+        host: name,
+        cwd: remoteDir,
+        sourceEnv: true,
+        commandArgs: [
+          "bash",
+          "scripts/install.sh",
+          "--non-interactive",
+          "--yes-i-accept-third-party-software",
+        ],
+        tty: true,
+      }),
     );
 
     if (
@@ -455,7 +516,13 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     ) {
       log("  Starting services...");
       run(
-        `ssh ${sshOpts} ${qname} 'cd ${shellQuote(remoteDir)} && set -a && . .env && set +a && bash scripts/start-services.sh'`,
+        buildSshScriptCommand({
+          sshArgs,
+          host: name,
+          cwd: remoteDir,
+          sourceEnv: true,
+          commandArgs: ["bash", "scripts/start-services.sh"],
+        }),
       );
     }
 
@@ -475,7 +542,14 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     log("  Connecting to sandbox...");
     log("");
     runInteractive(
-      `ssh -t ${sshOpts} ${qname} 'cd ${shellQuote(remoteDir)} && set -a && . .env && set +a && openshell sandbox connect ${shellQuote(sandboxName)}'`,
+      buildSshScriptCommand({
+        sshArgs,
+        host: name,
+        cwd: remoteDir,
+        sourceEnv: true,
+        commandArgs: ["openshell", "sandbox", "connect", sandboxName],
+        tty: true,
+      }),
     );
   } finally {
     fs.rmSync(khDir, { recursive: true, force: true });

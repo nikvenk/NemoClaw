@@ -15,8 +15,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync } = require("child_process");
-const { validateName } = require("./runner");
+const { runFile, validateName } = require("./runner");
 const credentialFilter: typeof import("./credential-filter") = require("./credential-filter");
 const { stripCredentials, isConfigObject, isConfigValue } = credentialFilter;
 const { appendAuditEntry } = require("./shields-audit");
@@ -370,7 +369,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 8. Write config to sandbox via kubectl exec (bypasses Landlock)
   console.log(`  Writing config to sandbox (${target.configPath})...`);
   const content = fs.readFileSync(tmpFile, "utf-8");
-  execFileSync(
+  runFile(
     "docker",
     [
       "exec",
@@ -389,12 +388,18 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
       "-c",
       `cat > ${target.configPath}`,
     ],
-    { input: content, stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+    {
+      input: content,
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 15000,
+      ignoreError: false,
+      suppressOutput: true,
+    },
   );
 
   // 9. Fix ownership via kubectl exec (bypasses Landlock)
   try {
-    execFileSync(
+    runFile(
       "docker",
       [
         "exec",
@@ -411,7 +416,12 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
         "sandbox:sandbox",
         target.configPath,
       ],
-      { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15000,
+        ignoreError: true,
+        suppressOutput: true,
+      },
     );
   } catch {
     // Best effort — chown failure is non-fatal

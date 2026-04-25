@@ -11,8 +11,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { fork, execFileSync } = require("child_process");
-const { run, runCapture, validateName, shellQuote } = require("./runner");
+const { run, runCapture, runFile, validateName } = require("./runner");
+const { spawnChild } = require("./process-primitives");
 const {
   buildPolicyGetCommand,
   buildPolicySetCommand,
@@ -36,8 +36,8 @@ const STATE_DIR = path.join(process.env.HOME ?? "/tmp", ".nemoclaw", "state");
 
 const K3S_CONTAINER = "openshell-cluster-nemoclaw";
 
-function kubectlExec(sandboxName: string, cmd: string[]): void {
-  execFileSync(
+function execKubectlInSandbox(sandboxName: string, cmd: string[]): Buffer {
+  const result = runFile(
     "docker",
     [
       "exec",
@@ -52,28 +52,30 @@ function kubectlExec(sandboxName: string, cmd: string[]): void {
       "--",
       ...cmd,
     ],
-    { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 15000,
+      ignoreError: true,
+      suppressOutput: true,
+    },
   );
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(String(result.stderr || result.stdout || `docker exec failed (${result.status})`));
+  }
+  return Buffer.isBuffer(result.stdout)
+    ? result.stdout
+    : Buffer.from(String(result.stdout || ""), "utf-8");
+}
+
+function kubectlExec(sandboxName: string, cmd: string[]): void {
+  execKubectlInSandbox(sandboxName, cmd);
 }
 
 function kubectlExecCapture(sandboxName: string, cmd: string[]): string {
-  return execFileSync(
-    "docker",
-    [
-      "exec",
-      K3S_CONTAINER,
-      "kubectl",
-      "exec",
-      "-n",
-      "openshell",
-      sandboxName,
-      "-c",
-      "agent",
-      "--",
-      ...cmd,
-    ],
-    { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
-  )
+  return execKubectlInSandbox(sandboxName, cmd)
     .toString()
     .trim();
 }
@@ -476,16 +478,16 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
   const actualScript = fs.existsSync(timerScriptJs) ? timerScriptJs : timerScript;
 
   try {
-    const child = fork(
-      actualScript,
-      [sandboxName, snapshotPath, restoreAt.toISOString(), target.configPath, target.configDir],
+    const child = spawnChild(
+      process.execPath,
+      [actualScript, sandboxName, snapshotPath, restoreAt.toISOString(), target.configPath, target.configDir],
       {
         detached: true,
-        stdio: ["ignore", "ignore", "ignore", "ipc"],
+        stdio: "ignore",
+        env: process.env,
       },
     );
-    child.disconnect();
-    child.unref();
+    child.unref?.();
 
     // Write timer marker
     const markerPath = timerMarkerPath(sandboxName);

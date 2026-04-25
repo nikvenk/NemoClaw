@@ -7,7 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { shellQuote } from "./shell-quote";
+import { buildShellCommand } from "./remote-script";
+import { buildShellAssignment, formatShellToken } from "./shell-quote";
 
 type ErrnoLike = Error | { code?: string | number } | null;
 type JsonScalar = string | number | boolean | null;
@@ -52,17 +53,17 @@ function buildRemediation(): string {
     "  To fix, try one of these recovery paths:",
     "",
     "    # If you can use sudo, repair the existing config directory:",
-    `    sudo chown -R $(whoami) ${shellQuote(nemoclawDir)}`,
+    `    ${buildShellCommand({ command: `sudo chown -R $(whoami) ${formatShellToken(nemoclawDir)}` })}`,
     "    # or recreate it if it was created by another user:",
-    `    sudo rm -rf ${shellQuote(nemoclawDir)} && nemoclaw onboard`,
+    `    ${buildShellCommand({ commandArgs: ["sudo", "rm", "-rf", nemoclawDir], command: "nemoclaw onboard" })}`,
     "",
     "    # If sudo is unavailable, move the bad config aside from a writable HOME:",
-    `    mv ${shellQuote(nemoclawDir)} ${shellQuote(backupDir)} && nemoclaw onboard`,
+    `    ${buildShellCommand({ commandArgs: ["mv", nemoclawDir, backupDir], command: "nemoclaw onboard" })}`,
     "    # or, if you already own the directory, remove it without sudo:",
-    `    rm -rf ${shellQuote(nemoclawDir)} && nemoclaw onboard`,
+    `    ${buildShellCommand({ commandArgs: ["rm", "-rf", nemoclawDir], command: "nemoclaw onboard" })}`,
     "",
     "    # If HOME itself is not writable, start NemoClaw with a writable HOME:",
-    `    mkdir -p ${shellQuote(recoveryHome)} && HOME=${shellQuote(recoveryHome)} nemoclaw onboard`,
+    `    ${buildShellCommand({ commandArgs: ["mkdir", "-p", recoveryHome], command: `${buildShellAssignment("HOME", recoveryHome)} nemoclaw onboard` })}`,
     "",
     "  This usually happens when NemoClaw was first run with sudo",
     "  or the config directory was created by a different user.",
@@ -135,7 +136,7 @@ function rejectSymlinksOnPath(dirPath: string): void {
         throw new Error(
           `Refusing to use config directory: ${current} is a symbolic link ` +
             `(target: ${target}). This may indicate a symlink attack. ` +
-            `Remove the symlink and retry: rm ${shellQuote(current)}`,
+            `Remove the symlink and retry: ${buildShellCommand({ commandArgs: ["rm", current] })}`,
         );
       }
     } catch (error) {

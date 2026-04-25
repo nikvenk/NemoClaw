@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execSync, spawn } from "node:child_process";
+import { spawnChild } from "./process-primitives.js";
 import {
   closeSync,
   existsSync,
@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { DASHBOARD_PORT } from "./ports";
 import { buildSubprocessEnv } from "./subprocess-env";
+import { hasExecutable } from "./find-executable";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,7 +125,7 @@ function startService(
   // does not accept raw file descriptors for stdio.
   const logFile = join(pidDir, `${name}.log`);
   const logFd = openSync(logFile, "w");
-  const subprocess = spawn(command, args, {
+  const subprocess = spawnChild(command, args, {
     detached: true,
     stdio: ["ignore", logFd, logFd],
     env: buildSubprocessEnv(env),
@@ -258,16 +259,13 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   // No host-side bridge processes are needed. See: PR #1081.
 
   // cloudflared tunnel
-  try {
-    execSync("command -v cloudflared", {
-      stdio: ["ignore", "ignore", "ignore"],
-    });
+  if (hasExecutable("cloudflared")) {
     startService(pidDir, "cloudflared", "cloudflared", [
       "tunnel",
       "--url",
       `http://localhost:${String(dashboardPort)}`,
     ]);
-  } catch {
+  } else {
     warn("cloudflared not found — no public URL. Install cloudflared manually if you need one.");
   }
 

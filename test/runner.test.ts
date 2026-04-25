@@ -10,9 +10,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { runCapture } from "../dist/lib/runner";
+import { runCaptureShell } from "../dist/lib/runner";
 
 const runnerPath = path.join(import.meta.dirname, "..", "dist", "lib", "runner.js");
+const shellQuotePath = path.join(import.meta.dirname, "..", "dist", "lib", "shell-quote.js");
 
 type SpawnCallOptions = {
   stdio?: StdioOptions;
@@ -48,9 +49,9 @@ function requireCall(calls: SpawnCall[], index: number): SpawnCall {
 describe("runner helpers", () => {
   it("does not let child commands consume installer stdin", () => {
     const script = `
-      const { run } = require(${JSON.stringify(runnerPath)});
+      const { runShell } = require(${JSON.stringify(runnerPath)});
       process.stdin.setEncoding("utf8");
-      run("cat >/dev/null || true");
+      runShell("cat >/dev/null || true");
       process.stdin.once("data", (chunk) => {
         process.stdout.write(chunk);
       });
@@ -74,9 +75,9 @@ describe("runner helpers", () => {
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { run, runInteractive } = require(runnerPath);
-      run("echo noninteractive");
-      runInteractive("echo interactive");
+      const { runShell, runInteractiveShell } = require(runnerPath);
+      runShell("echo noninteractive");
+      runInteractiveShell("echo interactive");
     } finally {
       childProcess.spawnSync = originalSpawnSync;
       delete require.cache[require.resolve(runnerPath)];
@@ -87,6 +88,29 @@ describe("runner helpers", () => {
     const secondCall = requireCall(calls, 1);
     expect(firstCall[2]?.stdio).toEqual(["ignore", "pipe", "pipe"]);
     expect(secondCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
+  });
+
+  it("runs argv-style interactive commands without going through bash -c", () => {
+    const calls: SpawnCall[] = [];
+    const originalSpawnSync = childProcess.spawnSync;
+    // @ts-expect-error — intentional partial mock for testing
+    childProcess.spawnSync = captureSpawnCall(calls, { status: 0, stdout: "", stderr: "" });
+
+    try {
+      delete require.cache[require.resolve(runnerPath)];
+      const { runInteractive } = require(runnerPath);
+      runInteractive(["ssh", "-t", "box", "echo hi"]);
+    } finally {
+      childProcess.spawnSync = originalSpawnSync;
+      delete require.cache[require.resolve(runnerPath)];
+    }
+
+    expect(calls).toHaveLength(1);
+    const firstCall = requireCall(calls, 0);
+    expect(firstCall[0]).toBe("ssh");
+    expect(firstCall[1]).toEqual(["-t", "box", "echo hi"]);
+    expect(firstCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
+    expect(firstCall[2]?.shell).toBeUndefined();
   });
   it("runs argv-style commands without going through bash -c", () => {
     const calls: SpawnCall[] = [];
@@ -146,11 +170,11 @@ describe("runner helpers", () => {
 });
 
 describe("runner env merging", () => {
-  it("preserves process env when opts.env is provided to runCapture", () => {
+  it("preserves allowlisted process env when opts.env is provided to runCapture", () => {
     const originalGateway = process.env.OPENSHELL_GATEWAY;
     process.env.OPENSHELL_GATEWAY = "nemoclaw";
     try {
-      const output = runCapture('printf \'%s %s\' "$OPENSHELL_GATEWAY" "$OPENAI_API_KEY"', {
+      const output = runCaptureShell('printf \'%s %s\' "$OPENSHELL_GATEWAY" "$OPENAI_API_KEY"', {
         env: { OPENAI_API_KEY: "sk-test-secret" },
       });
       expect(output).toBe("nemoclaw sk-test-secret");
@@ -163,7 +187,7 @@ describe("runner env merging", () => {
     }
   });
 
-  it("preserves process env when opts.env is provided to run", () => {
+  it("preserves allowlisted process env when opts.env is provided to run", () => {
     const calls: SpawnCall[] = [];
     const originalSpawnSync = childProcess.spawnSync;
     const originalPath = process.env.PATH;
@@ -172,9 +196,9 @@ describe("runner env merging", () => {
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { run } = require(runnerPath);
+      const { runShell } = require(runnerPath);
       process.env.PATH = "/usr/local/bin:/usr/bin";
-      run("echo test", {
+      runShell("echo test", {
         env: { OPENSHELL_CLUSTER_IMAGE: "ghcr.io/nvidia/openshell/cluster:0.0.12" },
       });
     } finally {
@@ -195,7 +219,7 @@ describe("runner env merging", () => {
     expect(firstCall[2]?.env?.PATH).toBe("/usr/local/bin:/usr/bin");
   });
 
-  it("preserves process env when opts.env is provided to runFile", () => {
+  it("preserves allowlisted process env when opts.env is provided to runFile", () => {
     const calls: SpawnCall[] = [];
     const originalSpawnSync = childProcess.spawnSync;
     const originalPath = process.env.PATH;
@@ -226,21 +250,81 @@ describe("runner env merging", () => {
     );
     expect(firstCall[2]?.env?.PATH).toBe("/usr/local/bin:/usr/bin");
   });
+
+  it("scrubs unrelated process env by default", () => {
+    const calls: SpawnCall[] = [];
+    const originalSpawnSync = childProcess.spawnSync;
+    const originalPath = process.env.PATH;
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    // @ts-expect-error — intentional partial mock for testing
+    childProcess.spawnSync = captureSpawnCall(calls, { status: 0, stdout: "", stderr: "" });
+
+    try {
+      delete require.cache[require.resolve(runnerPath)];
+      const { runFile } = require(runnerPath);
+      process.env.PATH = "/usr/local/bin:/usr/bin";
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runFile("bash", ["/tmp/setup.sh"]);
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+      childProcess.spawnSync = originalSpawnSync;
+      delete require.cache[require.resolve(runnerPath)];
+    }
+
+    const firstCall = requireCall(calls, 0);
+    expect(firstCall[2]?.env?.PATH).toBe("/usr/local/bin:/usr/bin");
+    expect(firstCall[2]?.env?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it("can opt into full parent env inheritance", () => {
+    const calls: SpawnCall[] = [];
+    const originalSpawnSync = childProcess.spawnSync;
+    const originalSecret = process.env.AWS_SECRET_ACCESS_KEY;
+    // @ts-expect-error — intentional partial mock for testing
+    childProcess.spawnSync = captureSpawnCall(calls, { status: 0, stdout: "", stderr: "" });
+
+    try {
+      delete require.cache[require.resolve(runnerPath)];
+      const { runFile } = require(runnerPath);
+      process.env.AWS_SECRET_ACCESS_KEY = "secret-from-parent-env";
+      runFile("bash", ["/tmp/setup.sh"], { inheritFullEnv: true });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY;
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSecret;
+      }
+      childProcess.spawnSync = originalSpawnSync;
+      delete require.cache[require.resolve(runnerPath)];
+    }
+
+    const firstCall = requireCall(calls, 0);
+    expect(firstCall[2]?.env?.AWS_SECRET_ACCESS_KEY).toBe("secret-from-parent-env");
+  });
 });
 
 describe("shellQuote", () => {
   it("wraps in single quotes", () => {
-    const { shellQuote } = require(runnerPath);
+    const { shellQuote } = require(shellQuotePath);
     expect(shellQuote("hello")).toBe("'hello'");
   });
 
   it("escapes embedded single quotes", () => {
-    const { shellQuote } = require(runnerPath);
+    const { shellQuote } = require(shellQuotePath);
     expect(shellQuote("it's")).toBe("'it'\\''s'");
   });
 
   it("neutralizes shell metacharacters", () => {
-    const { shellQuote } = require(runnerPath);
+    const { shellQuote } = require(shellQuotePath);
     const dangerous = "test; rm -rf /";
     const quoted = shellQuote(dangerous);
     expect(quoted).toBe("'test; rm -rf /'");
@@ -249,7 +333,7 @@ describe("shellQuote", () => {
   });
 
   it("handles backticks and dollar signs", () => {
-    const { shellQuote } = require(runnerPath);
+    const { shellQuote } = require(shellQuotePath);
     const payload = "test`whoami`$HOME";
     const quoted = shellQuote(payload);
     const result = spawnSync("bash", ["-c", `echo ${quoted}`], { encoding: "utf-8" });
@@ -388,21 +472,27 @@ describe("redact", () => {
 });
 
 describe("regression guards", () => {
-  it("runCapture redacts secrets before rethrowing errors", () => {
-    const originalExecSync = childProcess.execSync;
-    childProcess.execSync = () => {
-      throw new Error(
+  it("runCaptureShell redacts secrets before rethrowing errors", () => {
+    const originalSpawnSync = childProcess.spawnSync;
+    childProcess.spawnSync = () => ({
+      pid: 1,
+      output: [],
+      stdout: "",
+      stderr: "",
+      status: null,
+      signal: null,
+      error: new Error(
         'command failed: export SERVICE_KEY="supersecretvalue12345" ghp_abcdefghijklmnopqrstuvwxyz1234567890',
-      );
-    };
+      ),
+    });
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { runCapture } = require(runnerPath);
+      const { runCaptureShell } = require(runnerPath);
 
       let error: Error | undefined;
       try {
-        runCapture("echo nope");
+        runCaptureShell("echo nope");
       } catch (err) {
         if (err instanceof Error) {
           error = err;
@@ -413,33 +503,41 @@ describe("regression guards", () => {
 
       expect(error).toBeInstanceOf(Error);
       if (!error) {
-        throw new Error("Expected runCapture() to throw");
+        throw new Error("Expected runCaptureShell() to throw");
       }
       expect(error.message).toContain("ghp_");
       expect(error.message).not.toContain("supersecretvalue12345");
       expect(error.message).not.toContain("abcdefghijklmnopqrstuvwxyz1234567890");
     } finally {
-      childProcess.execSync = originalExecSync;
+      childProcess.spawnSync = originalSpawnSync;
       delete require.cache[require.resolve(runnerPath)];
     }
   });
 
-  it("runCapture redacts execSync error cmd/output fields", () => {
-    const originalExecSync = childProcess.execSync;
-    childProcess.execSync = () => {
+  it("runCaptureShell redacts shell error cmd/output fields", () => {
+    const originalSpawnSync = childProcess.spawnSync;
+    childProcess.spawnSync = () => {
       const err: RedactedRunnerError = new Error("command failed");
       err.cmd = "echo nvapi-aaaabbbbcccc1111 && echo ghp_abcdefghijklmnopqrstuvwxyz123456";
       err.output = ["stdout: nvapi-aaaabbbbcccc1111", "stderr: PASSWORD=secret123456"];
-      throw err;
+      return {
+        pid: 1,
+        output: [],
+        stdout: "",
+        stderr: "",
+        status: null,
+        signal: null,
+        error: err,
+      };
     };
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { runCapture } = require(runnerPath);
+      const { runCaptureShell } = require(runnerPath);
 
       let error: RedactedRunnerError | undefined;
       try {
-        runCapture("echo nope");
+        runCaptureShell("echo nope");
       } catch (err) {
         if (err instanceof Error) {
           error = err;
@@ -451,7 +549,7 @@ describe("regression guards", () => {
       expect(error).toBeDefined();
       expect(error).toBeInstanceOf(Error);
       if (!error) {
-        throw new Error("Expected runCapture() to throw");
+        throw new Error("Expected runCaptureShell() to throw");
       }
       expect(error.cmd).toBeDefined();
       expect(error.output).toBeDefined();
@@ -466,7 +564,7 @@ describe("regression guards", () => {
       expect(error.output[0]).toContain("****");
       expect(error.output[1]).toContain("****");
     } finally {
-      childProcess.execSync = originalExecSync;
+      childProcess.spawnSync = originalSpawnSync;
       delete require.cache[require.resolve(runnerPath)];
     }
   });
@@ -490,8 +588,8 @@ describe("regression guards", () => {
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { run } = require(runnerPath);
-      expect(() => run("echo fail")).toThrow("exit:1");
+      const { runShell } = require(runnerPath);
+      expect(() => runShell("echo fail")).toThrow("exit:1");
       expect(stdoutSpy).toHaveBeenCalledWith("token ghp_********************\n");
       expect(stderrSpy).toHaveBeenCalledWith('export SERVICE_KEY="supe*****************"\n');
       expect(errorSpy).toHaveBeenCalledWith("  Command failed (exit 1): echo fail");
@@ -520,8 +618,8 @@ describe("regression guards", () => {
 
     try {
       delete require.cache[require.resolve(runnerPath)];
-      const { runInteractive } = require(runnerPath);
-      runInteractive("echo interactive");
+      const { runInteractiveShell } = require(runnerPath);
+      runInteractiveShell("echo interactive");
       const firstCall = requireCall(calls, 0);
       expect(firstCall[2]?.stdio).toEqual(["inherit", "pipe", "pipe"]);
       expect(stdoutSpy).toHaveBeenCalledWith("visit https://****:****@example.com/?token=****\n");
@@ -569,11 +667,8 @@ describe("regression guards", () => {
         defs.push(path.relative(repoRoot, file));
       }
     }
-    // runner.ts (CJS consumers) and shell-quote.ts (ESM consumers like config-io.ts)
-    expect(defs.sort()).toEqual([
-      path.join("src", "lib", "runner.ts"),
-      path.join("src", "lib", "shell-quote.ts"),
-    ]);
+    // shell-quote.ts is the single shared definition for the root CLI codebase.
+    expect(defs.sort()).toEqual([path.join("src", "lib", "shell-quote.ts")]);
   });
 
   it("CLI rejects malicious sandbox names before shell commands (e2e)", () => {
@@ -808,11 +903,10 @@ describe("regression guards", () => {
       expect(src).toContain('const { executeDeploy } = require("./lib/deploy")');
       expect(tsSrc).toContain("export function inferDeployProvider(");
       expect(tsSrc).toContain("export function buildDeployEnvLines(");
-      expect(tsSrc).toContain(
-        "bash scripts/install.sh --non-interactive --yes-i-accept-third-party-software",
-      );
+      expect(tsSrc).toContain('"scripts/install.sh"');
+      expect(tsSrc).toContain('"--yes-i-accept-third-party-software"');
       expect(tsSrc).not.toContain("sandbox connect nemoclaw");
-      expect(tsSrc).toContain("openshell sandbox connect ${shellQuote(sandboxName)}");
+      expect(tsSrc).toContain('commandArgs: ["openshell", "sandbox", "connect", sandboxName]');
     });
 
     it("deploy syncs a complete buildable checkout instead of excluding src", () => {
@@ -821,10 +915,11 @@ describe("regression guards", () => {
         "utf-8",
       );
       expect(src).not.toContain("--exclude src");
-      expect(src).toContain('"${rootDir}/"');
-      expect(src).toContain("--exclude dist");
+      expect(src).toContain("`${rootDir}/`");
+      expect(src).toContain('"--exclude"');
+      expect(src).toContain('"dist"');
       expect(src).toContain('const brevProvider = String(env.NEMOCLAW_BREV_PROVIDER || "gcp")');
-      expect(src).toContain("--provider ${shellQuote(brevProvider)}");
+      expect(src).toContain('run(["brev", "create", name, "--type", gpu, "--provider", brevProvider]);');
     });
 
     it("deploy supports test-friendly non-interactive skip flags", () => {
@@ -855,7 +950,7 @@ describe("regression guards", () => {
         "utf-8",
       );
       expect(src).toContain("function getBrevInstanceStatus(");
-      expect(src).toContain('brev", ["ls", "--json"]');
+      expect(src).toContain('["brev", "ls", "--json"]');
       expect(src).toContain("Brev instance '${name}' did not become ready.");
       expect(src).toContain("Try: brev reset");
       expect(src).toContain("Brev status at timeout:");

@@ -15,10 +15,11 @@ import os from "node:os";
 import path from "node:path";
 
 import { DASHBOARD_PORT } from "./ports";
+import { hasExecutable } from "./find-executable";
 
 // runner.ts still uses CommonJS-style exports — use require here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { runCapture } = require("./runner");
+const { run, runCapture, runCaptureShell } = require("./runner");
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -112,6 +113,27 @@ export interface RemediationAction {
   blocking: boolean;
 }
 
+type RunCaptureLike = (
+  command: string | readonly string[],
+  options?: { ignoreError?: boolean; timeout?: number },
+) => string | null;
+
+function defaultRunCapture(
+  command: string | readonly string[],
+  options?: { ignoreError?: boolean; timeout?: number },
+): string {
+  if (Array.isArray(command)) {
+    return runCapture(command, {
+      ignoreError: options?.ignoreError ?? false,
+      timeout: options?.timeout,
+    });
+  }
+  return runCaptureShell(command, {
+    ignoreError: options?.ignoreError ?? false,
+    timeout: options?.timeout,
+  });
+}
+
 export interface AssessHostOpts {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
@@ -120,15 +142,19 @@ export interface AssessHostOpts {
   dockerInfoOutput?: string;
   dockerInfoError?: string;
   readFileImpl?: (filePath: string, encoding: BufferEncoding) => string;
-  runCaptureImpl?: (command: string, options?: { ignoreError?: boolean }) => string;
+  runCaptureImpl?: RunCaptureLike;
   commandExistsImpl?: (commandName: string) => boolean;
   gpuProbeImpl?: () => boolean;
 }
 
 function commandExists(
   commandName: string,
-  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+  runCaptureImpl: RunCaptureLike,
+  preferLocalLookup = false,
 ): boolean {
+  if (preferLocalLookup) {
+    return hasExecutable(commandName);
+  }
   try {
     const output = runCaptureImpl(`command -v ${commandName}`, { ignoreError: true });
     return Boolean(String(output || "").trim());
@@ -204,22 +230,24 @@ function isHeadlessLikely(env: NodeJS.ProcessEnv): boolean {
 }
 
 function detectNvidiaGpu(
-  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+  runCaptureImpl: RunCaptureLike,
+  preferLocalLookup = false,
 ): boolean {
-  if (!commandExists("nvidia-smi", runCaptureImpl)) {
+  if (!commandExists("nvidia-smi", runCaptureImpl, preferLocalLookup)) {
     return false;
   }
   return Boolean(String(runCaptureImpl("nvidia-smi -L", { ignoreError: true }) || "").trim());
 }
 
 function detectPackageManager(
-  runCaptureImpl: (command: string, options?: { ignoreError?: boolean }) => string,
+  runCaptureImpl: RunCaptureLike,
+  preferLocalLookup = false,
 ): PackageManager {
-  if (commandExists("apt-get", runCaptureImpl)) return "apt";
-  if (commandExists("dnf", runCaptureImpl)) return "dnf";
-  if (commandExists("yum", runCaptureImpl)) return "yum";
-  if (commandExists("brew", runCaptureImpl)) return "brew";
-  if (commandExists("pacman", runCaptureImpl)) return "pacman";
+  if (commandExists("apt-get", runCaptureImpl, preferLocalLookup)) return "apt";
+  if (commandExists("dnf", runCaptureImpl, preferLocalLookup)) return "dnf";
+  if (commandExists("yum", runCaptureImpl, preferLocalLookup)) return "yum";
+  if (commandExists("brew", runCaptureImpl, preferLocalLookup)) return "brew";
+  if (commandExists("pacman", runCaptureImpl, preferLocalLookup)) return "pacman";
   return "unknown";
 }
 
@@ -243,27 +271,29 @@ function parseSystemctlState(value = ""): boolean | null {
 export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
-  const runCaptureImpl =
-    opts.runCaptureImpl ??
-    ((command: string, options?: { ignoreError?: boolean }) =>
-      runCapture(command, { ignoreError: options?.ignoreError ?? false }));
+  const runCaptureImpl = opts.runCaptureImpl ?? defaultRunCapture;
   const readFileImpl = opts.readFileImpl ?? fs.readFileSync;
+  const useLocalCommandLookup = opts.runCaptureImpl === undefined;
   const dockerInstalled =
-    opts.commandExistsImpl?.("docker") ?? commandExists("docker", runCaptureImpl);
-  const nodeInstalled = opts.commandExistsImpl?.("node") ?? commandExists("node", runCaptureImpl);
+    opts.commandExistsImpl?.("docker") ??
+    commandExists("docker", runCaptureImpl, useLocalCommandLookup);
+  const nodeInstalled =
+    opts.commandExistsImpl?.("node") ?? commandExists("node", runCaptureImpl, useLocalCommandLookup);
   const openshellInstalled =
-    opts.commandExistsImpl?.("openshell") ?? commandExists("openshell", runCaptureImpl);
-  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl);
-  const packageManager = detectPackageManager(runCaptureImpl);
-  const systemctlAvailable = commandExists("systemctl", runCaptureImpl);
+    opts.commandExistsImpl?.("openshell") ??
+    commandExists("openshell", runCaptureImpl, useLocalCommandLookup);
+  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl, useLocalCommandLookup);
+  const packageManager = detectPackageManager(runCaptureImpl, useLocalCommandLookup);
+  const systemctlAvailable = commandExists("systemctl", runCaptureImpl, useLocalCommandLookup);
 
   let dockerInfoOutput = opts.dockerInfoOutput;
   let dockerReachable = false;
   let dockerRunning = false;
   if (dockerInstalled && dockerInfoOutput === undefined) {
-    dockerInfoOutput = runCaptureImpl("docker info --format '{{json .}}' 2>/dev/null", {
-      ignoreError: true,
-    });
+    dockerInfoOutput =
+      runCaptureImpl("docker info --format '{{json .}}' 2>/dev/null", {
+        ignoreError: true,
+      }) ?? undefined;
   }
   if (dockerInstalled && String(dockerInfoOutput || "").trim()) {
     dockerReachable = true;
@@ -280,21 +310,21 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
         return "";
       }
     })();
-  let runtime = inferContainerRuntime(dockerInfoOutput);
+  let runtime = inferContainerRuntime(dockerInfoOutput ?? "");
   if (dockerReachable && runtime === "unknown" && platform === "linux") {
     runtime = "docker";
   }
   const dockerCgroupVersion = dockerReachable
-    ? parseDockerCgroupVersion(dockerInfoOutput)
+    ? parseDockerCgroupVersion(dockerInfoOutput ?? "")
     : "unknown";
   const dockerDefaultCgroupnsMode = readDockerDefaultCgroupnsMode(readFileImpl);
   const dockerServiceActive =
     platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-active docker", { ignoreError: true }))
+      ? parseSystemctlState(runCaptureImpl("systemctl is-active docker", { ignoreError: true }) ?? "")
       : null;
   const dockerServiceEnabled =
     platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-enabled docker", { ignoreError: true }))
+      ? parseSystemctlState(runCaptureImpl("systemctl is-enabled docker", { ignoreError: true }) ?? "")
       : null;
   const assessment: HostAssessment = {
     platform,
@@ -521,8 +551,7 @@ export async function checkPortAvailable(
     if (typeof o.lsofOutput === "string") {
       lsofOut = o.lsofOutput;
     } else {
-      // "command -v" is a shell builtin — must go through bash.
-      const hasLsof = runCapture("command -v lsof", { ignoreError: true });
+      const hasLsof = commandExists("lsof", runCapture, true);
       if (hasLsof) {
         lsofOut = runCapture(["lsof", "-i", `:${p}`, "-sTCP:LISTEN", "-P", "-n"], {
           ignoreError: true,
@@ -661,11 +690,15 @@ function getExistingSwapResult(mem: MemoryInfo): SwapResult | null {
 
 function checkSwapDiskSpace(): SwapResult | null {
   try {
-    // Pipe requires a shell: df ... | tail -1
-    const dfOut = runCapture("df / --output=avail -k 2>/dev/null | tail -1", {
+    const dfOut = runCapture(["df", "/", "--output=avail", "-k"], {
       ignoreError: true,
     });
-    const freeKB = parseInt((dfOut || "").trim(), 10);
+    const freeLine = String(dfOut || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1);
+    const freeKB = parseInt(freeLine || "", 10);
     if (!isNaN(freeKB) && freeKB < 5000000) {
       return {
         ok: false,
@@ -712,11 +745,17 @@ function createSwapfile(mem: MemoryInfo): SwapResult {
     runCapture(["sudo", "chmod", "600", "/swapfile"], { ignoreError: false });
     runCapture(["sudo", "mkswap", "/swapfile"], { ignoreError: false });
     runCapture(["sudo", "swapon", "/swapfile"], { ignoreError: false });
-    // Shell required: grep || echo | tee pipeline
-    runCapture(
-      "grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab",
-      { ignoreError: false },
-    );
+    const fstabHasSwapfile = run(["sudo", "grep", "-q", "/swapfile", "/etc/fstab"], {
+      ignoreError: true,
+      suppressOutput: true,
+    });
+    if (fstabHasSwapfile.status !== 0) {
+      run(["sudo", "tee", "-a", "/etc/fstab"], {
+        input: "/swapfile none swap sw 0 0\n",
+        ignoreError: false,
+        suppressOutput: true,
+      });
+    }
     writeManagedSwapMarker();
 
     return { ok: true, totalMB: mem.totalMB + 4096, swapCreated: true };
@@ -822,10 +861,7 @@ export interface ProbeContainerDnsOpts {
   /** Inject captured output (bypasses shell). */
   outputOverride?: string | null;
   /** Override runCapture. */
-  runCaptureImpl?: (
-    command: string,
-    opts?: { ignoreError?: boolean; timeout?: number },
-  ) => string | null;
+  runCaptureImpl?: RunCaptureLike;
 }
 
 /**
@@ -844,10 +880,8 @@ const PROBE_TIMEOUT_MS = 20_000;
  * `172.17.0.1`.
  */
 export function getDockerBridgeGatewayIp(
-  runCaptureImpl: (command: string, opts?: { ignoreError?: boolean }) => string | null = (
-    cmd,
-    o,
-  ) => runCapture(cmd, { ignoreError: o?.ignoreError ?? false }),
+  runCaptureImpl: RunCaptureLike = (cmd, o) =>
+    defaultRunCapture(cmd, { ignoreError: o?.ignoreError ?? false }),
 ): string | null {
   let raw: string | null;
   try {
@@ -902,13 +936,7 @@ export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeRes
   let output: string | null | undefined = opts.outputOverride;
   if (output === undefined) {
     try {
-      const runCaptureImpl =
-        opts.runCaptureImpl ??
-        ((cmd: string, o?: { ignoreError?: boolean; timeout?: number }) =>
-          runCapture(cmd, {
-            ignoreError: o?.ignoreError ?? false,
-            timeout: o?.timeout,
-          }));
+      const runCaptureImpl = opts.runCaptureImpl ?? defaultRunCapture;
       output = runCaptureImpl(command, {
         ignoreError: true,
         timeout: PROBE_TIMEOUT_MS,
