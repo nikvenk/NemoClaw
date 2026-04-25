@@ -316,7 +316,7 @@ function buildDashboardRecoverDeps() {
             const destDir = `${tmpDir}${require("path").sep}`;
             const dlResult = runOpenshell(
               ["sandbox", "download", name, "/sandbox/.openclaw/openclaw.json", destDir],
-              { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
+              { ignoreError: true, timeout: 15000, stdio: ["ignore", "ignore", "ignore"] },
             );
             if (dlResult.status !== 0) return null;
             const files: string[] = require("fs").readdirSync(tmpDir, { recursive: true });
