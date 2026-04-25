@@ -751,19 +751,24 @@ If this automatic step fails or you are using a custom setup flow, create swap m
 <section id="previous-onboarding-session-failed">
 <h3>Previous onboarding session failed<a class="headerlink" href="#previous-onboarding-session-failed" title="Link to this heading">#</a></h3>
 <p>If a previous <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> attempt fails partway through (for example, a provider or inference-setup step reporting an error), NemoClaw records the failure in <code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/onboard-session.json</span></code>.</p>
-<p>When you re-run the installer, it detects the failed session and does not silently retry it. Silent retry would loop on the same failure if your original choice, such as an unreachable provider, was the cause.</p>
+<p>When you re-run the installer, it detects the failed session and does not silently retry it.
+Silent retry would loop on the same failure if your original choice, such as an unreachable provider, was the cause.</p>
 <ul>
-<li><p>Interactive terminal: the installer prompts whether to resume the failed session or start fresh. Press <code class="docutils literal notranslate"><span class="pre">R</span></code> (or Enter) to retry the same session, or <code class="docutils literal notranslate"><span class="pre">f</span></code> to discard it and make fresh choices.</p></li>
-<li><p>Non-interactive (piped <code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">|</span> <span class="pre">bash</span></code> with <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>, CI, scripts): the installer refuses and exits with a non-zero status so a scripted re-run cannot loop. You must opt in to one of two paths explicitly:</p>
+<li><p>In an interactive terminal, the installer prompts whether to resume the failed session or start fresh.
+Press <code class="docutils literal notranslate"><span class="pre">R</span></code> (or Enter) to retry the same session, or <code class="docutils literal notranslate"><span class="pre">f</span></code> to discard it and make fresh choices.</p></li>
+<li><p>In non-interactive mode (piped <code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">|</span> <span class="pre">bash</span></code> with <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>, CI, scripts), the installer refuses and exits with a non-zero status so a scripted re-run cannot loop.
+You must opt in to one of two paths explicitly:</p>
 <p>Start over with new choices (discards the recorded session and provider/model selection):</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://www.nvidia.com/nemoclaw.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>--fresh
 </pre></div>
 </div>
-<p>Or equivalently, via env var. The variable must be set on the <code class="docutils literal notranslate"><span class="pre">bash</span></code> side of the pipe, not on <code class="docutils literal notranslate"><span class="pre">curl</span></code>, since only the right-hand process inherits it:</p>
+<p>Or equivalently, via env var.
+The variable must be set on the <code class="docutils literal notranslate"><span class="pre">bash</span></code> side of the pipe, not on <code class="docutils literal notranslate"><span class="pre">curl</span></code>, since only the right-hand process inherits it:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://www.nvidia.com/nemoclaw.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="nv">NEMOCLAW_FRESH</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>bash
 </pre></div>
 </div>
-<p>Retry the same session without re-prompting. This is only useful if the original failure was transient, for example a network blip or a stopped Docker daemon, and not a wrong provider choice:</p>
+<p>Retry the same session without re-prompting.
+This is only useful if the original failure was transient, for example a network blip or a stopped Docker daemon, and not a wrong provider choice:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--resume
 </pre></div>
 </div>
