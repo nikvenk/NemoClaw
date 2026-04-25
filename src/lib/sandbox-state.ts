@@ -686,7 +686,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       })
       .join("; ");
     const workspaceGlobCmd =
-      `cd ${formatShellToken(writableDir)}; ` +
+      `cd ${formatShellToken(writableDir)} && ` +
       `for d in workspace-*/; do [ -d "$d" ] && basename "$d"; done`;
     const fullCheckCmd = `set -e; ${existCheckCmd}; ${workspaceGlobCmd}`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
