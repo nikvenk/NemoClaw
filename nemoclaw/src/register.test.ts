@@ -149,6 +149,7 @@ describe("plugin registration", () => {
 describe("before_tool_call secret scanner hook (#1233)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedExecaSync.mockReset();
     mockedLoadOnboardConfig.mockReturnValue(null);
   });
 
