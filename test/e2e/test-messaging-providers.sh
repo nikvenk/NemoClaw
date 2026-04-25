@@ -663,8 +663,10 @@ print('yes' if 'slack' in d else 'no')
     # Diagnostics: check if the guard was installed and what NODE_OPTIONS looks like
     info "Checking guard installation diagnostics (via openshell exec as root):"
     # Dump all nemoclaw-* files in /tmp to see what the entrypoint created
-    tmp_files=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ls -la /tmp/nemoclaw-* /tmp/gateway.log 2>&1 || echo "ls failed")
-    info "  /tmp/nemoclaw-* files: $tmp_files"
+    # Quote the glob so it expands INSIDE the sandbox, not on the host
+    tmp_files=$(openshell sandbox exec --name "$SANDBOX_NAME" -- bash -c 'ls -la /tmp/nemoclaw-* /tmp/gateway.log /tmp/dns-proxy.py 2>&1 || true' 2>&1 || echo "exec failed")
+    info "  /tmp files in sandbox:"
+    echo "$tmp_files" | while IFS= read -r line; do info "    $line"; done
     guard_exists=$(openshell sandbox exec --name "$SANDBOX_NAME" -- ls -la /tmp/nemoclaw-slack-channel-guard.js 2>/dev/null || echo "EXEC_FAILED")
     info "  Guard file: $guard_exists"
     node_opts=$(openshell sandbox exec --name "$SANDBOX_NAME" -- bash -c 'echo "$NODE_OPTIONS"' 2>/dev/null || echo "EXEC_FAILED")
