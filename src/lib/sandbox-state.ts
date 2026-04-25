@@ -654,8 +654,8 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // First, check which declared state dirs actually exist in the sandbox,
     // then additionally discover per-agent `workspace-*` directories produced
     // by multi-agent OpenClaw deployments (see issue #1260) so they get
-    // snapshotted alongside the manifest-declared dirs. `awk '!seen[$0]++'`
-    // dedupes while preserving order.
+    // snapshotted alongside the manifest-declared dirs. Deduping happens
+    // locally so remote probe failures are not masked by a pipeline.
     const existCheckCmd = stateDirs
       .map((d) => {
         const dirPath = `${writableDir}/${d}`;
@@ -665,7 +665,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const workspaceGlobCmd =
       `cd ${formatShellToken(writableDir)} && ` +
       `for d in workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
-    const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
+    const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
     const existResult = runStateCommand("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
       encoding: "utf-8",
@@ -675,10 +675,14 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     _log(
       `Dir check: exit=${existResult.status}, stdout=${resultStdoutText(existResult).trim().substring(0, 200)}, stderr=${resultStderrText(existResult).trim().substring(0, 200)}`,
     );
-    const existingDirs = resultStdoutText(existResult)
-      .trim()
-      .split("\n")
-      .filter((d: string) => d.length > 0);
+    const existingDirs = Array.from(
+      new Set(
+        resultStdoutText(existResult)
+          .trim()
+          .split("\n")
+          .filter((d: string) => d.length > 0),
+      ),
+    );
     _log(
       `Existing dirs in sandbox: [${existingDirs.join(",")}] (${existingDirs.length}/${stateDirs.length})`,
     );
