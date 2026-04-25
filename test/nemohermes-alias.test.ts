@@ -46,7 +46,6 @@ describe("nemohermes alias", () => {
     const { code, out } = runHermes("--version");
     expect(code).toBe(0);
     expect(out).toMatch(/^nemohermes v[\d.]+/);
-    expect(out).toContain("(nemoclaw)");
   });
 
   it("nemoclaw --version does not contain nemohermes", () => {

@@ -5,6 +5,7 @@
 // Supports non-interactive mode via --non-interactive flag or
 // NEMOCLAW_NON_INTERACTIVE=1 env var for CI/CD pipelines.
 
+const { CLI_NAME, CLI_DISPLAY_NAME, AGENT_PRODUCT_NAME } = require("./branding");
 const crypto = require("node:crypto");
 const fs = require("fs");
 const os = require("os");
@@ -1953,7 +1954,7 @@ function probeOpenAiLikeEndpoint(
   const wslHint =
     isWsl() && retriedAfterTimeout
       ? " · WSL2 detected \u2014 network verification may be slower than expected. " +
-        "Run `nemoclaw onboard` with the `--skip-verify` flag if this endpoint is known to be reachable."
+        `Run \`${CLI_NAME} onboard\` with the \`--skip-verify\` flag if this endpoint is known to be reachable.`
       : "";
   return {
     ok: false,
@@ -2035,7 +2036,7 @@ async function validateOpenAiLikeSelection(
     }
     return { ok: false, retry };
   }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+  console.log(`  ${probe.label} available — ${AGENT_PRODUCT_NAME} will use ${probe.api}.`);
   return { ok: true, api: probe.api };
 }
 
@@ -2067,7 +2068,7 @@ async function validateAnthropicSelectionWithRetryMessage(
     }
     return { ok: false, retry };
   }
-  console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+  console.log(`  ${probe.label} available — ${AGENT_PRODUCT_NAME} will use ${probe.api}.`);
   return { ok: true, api: probe.api };
 }
 
@@ -2085,7 +2086,7 @@ async function validateCustomOpenAiLikeSelection(
     probeStreaming: true,
   });
   if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+    console.log(`  ${probe.label} available — ${AGENT_PRODUCT_NAME} will use ${probe.api}.`);
     return { ok: true, api: probe.api };
   }
   console.error(`  ${label} endpoint validation failed.`);
@@ -2116,7 +2117,7 @@ async function validateCustomAnthropicSelection(
   const apiKey = getCredential(credentialEnv);
   const probe = probeAnthropicEndpoint(endpointUrl, model, apiKey);
   if (probe.ok) {
-    console.log(`  ${probe.label} available — OpenClaw will use ${probe.api}.`);
+    console.log(`  ${probe.label} available — ${AGENT_PRODUCT_NAME} will use ${probe.api}.`);
     return { ok: true, api: probe.api };
   }
   console.error(`  ${label} endpoint validation failed.`);
@@ -3176,7 +3177,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
     );
     console.error(`    blueprint.yaml max_openshell_version: ${maxOpenshellVersion}`);
     console.error("");
-    console.error("    Upgrade NemoClaw to a version that supports your OpenShell release,");
+    console.error(`    Upgrade ${CLI_DISPLAY_NAME} to a version that supports your OpenShell release,`);
     console.error("    or install a supported OpenShell version:");
     console.error("      https://github.com/NVIDIA/OpenShell/releases");
     console.error("");
@@ -3222,7 +3223,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   }
 
   if (gatewayReuseState === "stale" || gatewayReuseState === "active-unnamed") {
-    console.log("  Cleaning up previous NemoClaw session...");
+    console.log(`  Cleaning up previous ${CLI_DISPLAY_NAME} session...`);
     runOpenshell(["forward", "stop", String(DASHBOARD_PORT)], { ignoreError: true });
     const destroyResult = runOpenshell(["gateway", "destroy", "-g", GATEWAY_NAME], {
       ignoreError: true,
@@ -3274,13 +3275,13 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   // Required ports — gateway and the dashboard port
   const requiredPorts = [
     { port: GATEWAY_PORT, label: "OpenShell gateway" },
-    { port: DASHBOARD_PORT, label: "NemoClaw dashboard" },
+    { port: DASHBOARD_PORT, label: "${CLI_DISPLAY_NAME} dashboard" },
   ];
   for (const { port, label } of requiredPorts) {
     let portCheck = await checkPortAvailable(port);
     if (!portCheck.ok) {
       if ((port === GATEWAY_PORT || port === DASHBOARD_PORT) && gatewayReuseState === "healthy") {
-        console.log(`  ✓ Port ${port} already owned by healthy NemoClaw runtime (${label})`);
+        console.log(`  ✓ Port ${port} already owned by healthy ${CLI_DISPLAY_NAME} runtime (${label})`);
         continue;
       }
       // Auto-cleanup orphaned SSH port-forward from a previous NemoClaw session
@@ -3694,7 +3695,7 @@ async function promptValidatedSandboxName() {
         "help",
       ]);
       if (RESERVED_NAMES.has(sandboxName)) {
-        console.error(`  Reserved name: '${sandboxName}' is a NemoClaw CLI command.`);
+        console.error(`  Reserved name: '${sandboxName}' is a ${CLI_DISPLAY_NAME} CLI command.`);
         console.error("  Choose a different name to avoid routing conflicts.");
         if (isNonInteractive()) {
           process.exit(1);
@@ -4447,14 +4448,14 @@ async function createSandbox(
       console.error(`  Could not remove the orphaned sandbox. Manual cleanup:`);
       console.error(`    openshell sandbox delete "${sandboxName}"`);
     }
-    console.error("  Retry: nemoclaw onboard");
+    console.error(`  Retry: ${CLI_NAME} onboard`);
     process.exit(1);
   }
 
-  // Wait for NemoClaw dashboard to become fully ready (web server live)
+  // Wait for ${CLI_DISPLAY_NAME} dashboard to become fully ready (web server live)
   // This prevents port forwards from connecting to a non-existent port
   // or seeing 502/503 errors during initial load.
-  console.log("  Waiting for NemoClaw dashboard to become ready...");
+  console.log("  Waiting for ${CLI_DISPLAY_NAME} dashboard to become ready...");
   const openshellBin = getOpenshellBinary();
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCaptureOpenshell(
@@ -5923,7 +5924,7 @@ async function setupOpenclaw(sandboxName: string, model: string, provider: strin
     }
   }
 
-  console.log("  ✓ OpenClaw gateway launched inside sandbox");
+  console.log(`  ✓ ${AGENT_PRODUCT_NAME} gateway launched inside sandbox`);
 }
 
 // ── Step 7: Policy presets ───────────────────────────────────────
@@ -6786,7 +6787,7 @@ function ensureDashboardForward(
     console.warn(
       `  Check: docker ps --format 'table {{.Names}}\\t{{.Ports}}' | grep ${portToStop}`,
     );
-    console.warn(`  Free the port, then reconnect: nemoclaw ${sandboxName} connect`);
+    console.warn(`  Free the port, then reconnect: ${CLI_NAME} ${sandboxName} connect`);
   }
 }
 
@@ -7114,9 +7115,9 @@ function printDashboard(
   console.log(`  Model        ${model} (${providerLabel})`);
   console.log(`  NIM          ${nimLabel}`);
   console.log(`  ${"─".repeat(50)}`);
-  console.log(`  Run:         nemoclaw ${sandboxName} connect`);
-  console.log(`  Status:      nemoclaw ${sandboxName} status`);
-  console.log(`  Logs:        nemoclaw ${sandboxName} logs --follow`);
+  console.log(`  Run:         ${CLI_NAME} ${sandboxName} connect`);
+  console.log(`  Status:      ${CLI_NAME} ${sandboxName} status`);
+  console.log(`  Logs:        ${CLI_NAME} ${sandboxName} logs --follow`);
   console.log("");
   if (agent) {
     agentOnboard.printDashboardUi(sandboxName, token, agent, {
@@ -7137,7 +7138,7 @@ function printDashboard(
     }
   } else {
     note("  Could not read gateway token from the sandbox (download failed).");
-    console.log("  OpenClaw UI");
+    console.log(`  ${AGENT_PRODUCT_NAME} UI`);
     for (const line of guidanceLines) {
       console.log(`  ${line}`);
     }
@@ -7155,8 +7156,8 @@ function printDashboard(
   console.log(
     `    Model:       openshell inference set -g nemoclaw --model <model> --provider <provider>`,
   );
-  console.log(`    Policies:    nemoclaw ${sandboxName} policy-add`);
-  console.log("    Credentials: nemoclaw credentials reset <KEY>  then  nemoclaw onboard");
+  console.log(`    Policies:    ${CLI_NAME} ${sandboxName} policy-add`);
+  console.log(`    Credentials: ${CLI_NAME} credentials reset <KEY>  then  ${CLI_NAME} onboard`);
   console.log("");
 }
 
@@ -7286,7 +7287,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     `nemoclaw onboard${resume ? " --resume" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
   );
   if (!lockResult.acquired) {
-    console.error("  Another NemoClaw onboarding run is already in progress.");
+    console.error(`  Another ${CLI_DISPLAY_NAME} onboarding run is already in progress.`);
     if (lockResult.holderPid) {
       console.error(`  Lock holder PID: ${lockResult.holderPid}`);
     }
@@ -7319,7 +7320,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
         console.error("  No resumable onboarding session was found.");
         console.error("  --resume only continues an interrupted onboarding run.");
         console.error("  To change configuration on an existing sandbox, rebuild it:");
-        console.error("    nemoclaw onboard");
+        console.error(`    ${CLI_NAME} onboard`);
         process.exit(1);
       }
       const sessionFrom = session?.metadata?.fromDockerfile || null;
@@ -7363,7 +7364,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
             );
           }
         }
-        console.error("  Run: nemoclaw onboard              # start a fresh onboarding session");
+        console.error(`  Run: ${CLI_NAME} onboard              # start a fresh onboarding session`);
         console.error("  Or rerun with the original settings to continue that session.");
         process.exit(1);
       }
@@ -7396,7 +7397,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     });
 
     console.log("");
-    console.log("  NemoClaw Onboarding");
+    console.log(`  ${CLI_DISPLAY_NAME} Onboarding`);
     if (isNonInteractive()) note("  (non-interactive mode)");
     if (resume) note("  (resume mode)");
     console.log("  ===================");
@@ -7556,10 +7557,10 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
           .trim()
           .toLowerCase();
         if (answer === "n" || answer === "no") {
-          console.log("  Aborted. Re-run `nemoclaw onboard` to start over.");
+          console.log(`  Aborted. Re-run \`${CLI_NAME} onboard\` to start over.`);
           console.log("  Credentials entered so far are stored in ~/.nemoclaw/credentials.json —");
           console.log(
-            "  clear them with `nemoclaw credentials reset <KEY>` if you no longer want them.",
+            "  clear them with `${CLI_NAME} credentials reset <KEY>` if you no longer want them.",
           );
           process.exit(0);
         }

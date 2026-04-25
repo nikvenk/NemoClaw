@@ -12,6 +12,7 @@
 // config set:          Host-initiated config mutation with validation.
 // config rotate-token: Credential rotation via stdin or env var.
 
+const { CLI_NAME } = require("./branding");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -306,13 +307,13 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
 
   if (!opts.key) {
     console.error("  --key is required.");
-    console.error("  Usage: nemoclaw <name> config set --key <dotpath> --value <value>");
+    console.error(`  Usage: ${CLI_NAME} <name> config set --key <dotpath> --value <value>`);
     process.exit(1);
   }
 
   if (opts.value === undefined || opts.value === null) {
     console.error("  --value is required.");
-    console.error("  Usage: nemoclaw <name> config set --key <dotpath> --value <value>");
+    console.error(`  Usage: ${CLI_NAME} <name> config set --key <dotpath> --value <value>`);
     process.exit(1);
   }
 
@@ -341,7 +342,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   // 4. Check that we're not modifying the gateway section (contains auth tokens)
   if (opts.key.startsWith("gateway.") || opts.key === "gateway") {
     console.error("  Cannot modify the gateway section directly.");
-    console.error("  Use `nemoclaw config rotate-token` for credential changes.");
+    console.error(`  Use \`${CLI_NAME} config rotate-token\` for credential changes.`);
     process.exit(1);
   }
 
@@ -454,7 +455,7 @@ function configSet(sandboxName: string, opts: ConfigSetOpts = {}): void {
   } else {
     console.log("");
     console.log("  Note: Some config changes require a sandbox restart to take effect.");
-    console.log(`  Re-run with --restart or recreate with: nemoclaw onboard --recreate-sandbox`);
+    console.log(`  Re-run with --restart or recreate with: ${CLI_NAME} onboard --recreate-sandbox`);
   }
 }
 
@@ -478,7 +479,7 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
   if (!session || !session.credentialEnv) {
     console.error(`  Cannot determine credential for sandbox '${sandboxName}'.`);
     console.error("  No onboard session found with a credentialEnv.");
-    console.error("  Re-run: nemoclaw onboard --recreate-sandbox");
+    console.error(`  Re-run: ${CLI_NAME} onboard --recreate-sandbox`);
     process.exit(1);
   }
 
