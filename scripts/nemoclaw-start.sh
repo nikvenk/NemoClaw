@@ -1207,6 +1207,10 @@ PROXYEOF
   fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
+  # Slack channel guard for connect sessions. The guard file is installed later
+  # by install_slack_channel_guard() — conditional on the file existing at
+  # source-time so connect sessions started before Slack is configured are safe.
+  echo "[ -f \"$_SLACK_GUARD_SCRIPT\" ] && export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_SLACK_GUARD_SCRIPT\""
   # Tool cache redirects — generated from _TOOL_REDIRECTS (single source of truth)
   echo '# Tool cache redirects — /sandbox is Landlock read-only (#804)'
   for _redir in "${_TOOL_REDIRECTS[@]}"; do
@@ -1392,11 +1396,12 @@ if [ ${#NEMOCLAW_CMD[@]} -gt 0 ]; then
   exec gosu sandbox "${NEMOCLAW_CMD[@]}"
 fi
 
-# SECURITY: Protect gateway log from sandbox user tampering
+# Gateway log: owned by gateway user, world-readable for diagnostics.
+# The sandbox user can read but not truncate/overwrite (not owner, sticky /tmp).
 # TODO(#2277-P2): migrate to shared emit_restricted_log() helper
 touch /tmp/gateway.log
 chown gateway:gateway /tmp/gateway.log
-chmod 600 /tmp/gateway.log
+chmod 644 /tmp/gateway.log
 
 # Separate log for auto-pair so sandbox user can write to it
 # TODO(#2277-P2): migrate to shared emit_restricted_log() helper
