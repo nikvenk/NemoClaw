@@ -244,6 +244,7 @@ type OnboardOptions = {
   recreateSandbox?: boolean;
   dangerouslySkipPermissions?: boolean;
   resume?: boolean;
+  fresh?: boolean;
   fromDockerfile?: string | null;
   acceptThirdPartySoftware?: boolean;
   agent?: string | null;

@@ -142,9 +142,7 @@ describe("onboard command", () => {
         {
           env: {},
           error: () => {},
-          exit: ((code: number) => {
-            throw new Error(String(code));
-          }) as never,
+          exit: exitWithCode,
         },
       ),
     ).toEqual({
@@ -169,9 +167,7 @@ describe("onboard command", () => {
         {
           env: {},
           error: (message = "") => errors.push(message),
-          exit: ((code: number) => {
-            throw new Error(`exit:${code}`);
-          }) as never,
+          exit: exitWithPrefixedCode,
         },
       ),
     ).toThrow("exit:1");
