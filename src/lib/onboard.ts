@@ -1328,7 +1328,7 @@ async function confirmRecreateForSelectionDrift(
   console.log(`  Current:   provider=${currentProvider}  model=${currentModel}`);
   console.log(`  Requested: provider=${nextProvider}  model=${nextModel}`);
   console.log(
-    "  Recreating the sandbox is required to apply this change to the running OpenClaw UI.",
+    `  Recreating the sandbox is required to apply this change to the running ${AGENT_PRODUCT_NAME} UI.`,
   );
 
   if (isNonInteractive()) {
@@ -7041,7 +7041,7 @@ function printDashboard(
     });
   } else if (token) {
     console.log(
-      "  OpenClaw UI (tokenized URL; treat it like a password; save it now - it will not be printed again)",
+      `  ${AGENT_PRODUCT_NAME} UI (tokenized URL; treat it like a password; save it now - it will not be printed again)`,
     );
     for (const line of guidanceLines) {
       console.log(`  ${line}`);

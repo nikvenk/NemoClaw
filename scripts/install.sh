@@ -1274,19 +1274,19 @@ run_onboard() {
         # Refuse in non-interactive mode (no safe default); prompt in
         # interactive mode so the user can pick resume vs. fresh.
         if [ "${NON_INTERACTIVE:-}" = "1" ]; then
-          error "Previous onboarding session failed. Re-run with --fresh to discard it, or run 'nemoclaw onboard --resume' to retry the same session."
+          error "Previous onboarding session failed. Re-run with --fresh to discard it, or run '${_CLI_BIN} onboard --resume' to retry the same session."
         fi
         local _prompt_stdin="/dev/tty"
         if [ -t 0 ]; then _prompt_stdin="/dev/stdin"; fi
         if [ ! -r "$_prompt_stdin" ]; then
-          error "Previous onboarding session failed, and no TTY is available to prompt. Re-run with --fresh or run 'nemoclaw onboard --resume'."
+          error "Previous onboarding session failed, and no TTY is available to prompt. Re-run with --fresh or run '${_CLI_BIN} onboard --resume'."
         fi
         info "Previous onboarding session failed."
         local _resume_answer=""
         while :; do
           printf "  Resume the failed session, or start fresh? [R/f]: " >&2
           if ! IFS= read -r _resume_answer <"$_prompt_stdin"; then
-            error "Could not read response from TTY. Re-run with --fresh or run 'nemoclaw onboard --resume'."
+            error "Could not read response from TTY. Re-run with --fresh or run '${_CLI_BIN} onboard --resume'."
           fi
           case "${_resume_answer,,}" in
             "" | r | resume)
@@ -1312,13 +1312,13 @@ run_onboard() {
     if [ "${ACCEPT_THIRD_PARTY_SOFTWARE:-}" = "1" ]; then
       onboard_cmd+=(--yes-i-accept-third-party-software)
     fi
-    nemoclaw "${onboard_cmd[@]}"
+    "${_CLI_BIN}" "${onboard_cmd[@]}"
   elif [ -t 0 ]; then
-    nemoclaw "${onboard_cmd[@]}"
+    "${_CLI_BIN}" "${onboard_cmd[@]}"
   elif exec 3</dev/tty; then
     info "Installer stdin is piped; attaching onboarding to /dev/tty…"
     local status=0
-    nemoclaw "${onboard_cmd[@]}" <&3 || status=$?
+    "${_CLI_BIN}" "${onboard_cmd[@]}" <&3 || status=$?
     exec 3<&-
     return "$status"
   else
