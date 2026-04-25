@@ -1,7 +1,18 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { spawnResult } from "./process-primitives.js";
 import { platform, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -63,6 +74,10 @@ export { redact };
 
 const isMacOS = platform() === "darwin";
 const TIMEOUT_MS = 30_000;
+const CAPTURE_CHUNK_BYTES = 16 * 1024;
+const CAPTURE_IN_MEMORY_LIMIT_BYTES = 1024 * 1024;
+const CAPTURE_FIRST_LINES = 400;
+const CAPTURE_LAST_LINES = 400;
 
 function commandExists(cmd: string): boolean {
   return hasExecutable(cmd);
@@ -84,6 +99,123 @@ function runCommand(
     encoding: opts.encoding ?? "utf-8",
     input: opts.input,
   });
+}
+
+function normalizeCapturedText(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
+function splitCapturedLines(text: string): string[] {
+  const lines = normalizeCapturedText(text).split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
+function readFirstLinesFromFile(filePath: string, count: number): string {
+  const fd = openSync(filePath, "r");
+  const chunk = Buffer.alloc(CAPTURE_CHUNK_BYTES);
+  const lines: string[] = [];
+  let pending = "";
+  let position = 0;
+
+  try {
+    while (lines.length < count) {
+      const bytesRead = readSync(fd, chunk, 0, chunk.length, position);
+      if (bytesRead === 0) {
+        break;
+      }
+      position += bytesRead;
+      const combined = normalizeCapturedText(
+        `${pending}${chunk.toString("utf-8", 0, bytesRead)}`,
+      );
+      const parts = combined.split("\n");
+      pending = parts.pop() ?? "";
+      lines.push(...parts);
+    }
+    if (pending && lines.length < count) {
+      lines.push(pending);
+    }
+    return lines.slice(0, count).join("\n");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readLastLinesFromFile(filePath: string, count: number): string {
+  const fd = openSync(filePath, "r");
+  const size = statSync(filePath).size;
+  let position = size;
+  let tail = "";
+
+  try {
+    while (position > 0) {
+      const readSize = Math.min(CAPTURE_CHUNK_BYTES, position);
+      position -= readSize;
+      const chunk = Buffer.alloc(readSize);
+      const bytesRead = readSync(fd, chunk, 0, readSize, position);
+      if (bytesRead === 0) {
+        break;
+      }
+      tail = normalizeCapturedText(chunk.toString("utf-8", 0, bytesRead)) + tail;
+      if (splitCapturedLines(tail).length > count) {
+        break;
+      }
+    }
+    const lines = splitCapturedLines(tail);
+    return lines.slice(Math.max(0, lines.length - count)).join("\n");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readBoundedOutput(filePath: string): string {
+  if (!existsSync(filePath)) {
+    return "";
+  }
+
+  const size = statSync(filePath).size;
+  if (size === 0) {
+    return "";
+  }
+
+  if (size <= CAPTURE_IN_MEMORY_LIMIT_BYTES) {
+    return normalizeCapturedText(readFileSync(filePath, "utf-8"));
+  }
+
+  const first = readFirstLinesFromFile(filePath, CAPTURE_FIRST_LINES);
+  const last = readLastLinesFromFile(filePath, CAPTURE_LAST_LINES);
+  return `${first}\n... output truncated ...\n${last}`;
+}
+
+function runCommandForTransform(
+  command: string,
+  args: string[],
+  opts: { timeout?: number; input?: string | Buffer } = {},
+): { stdout: string; stderr: string; status: number } {
+  const captureDir = mkdtempSync(join(tmpdir(), "nemoclaw-debug-capture-"));
+  const stdoutPath = join(captureDir, "stdout.txt");
+  const stderrPath = join(captureDir, "stderr.txt");
+  const stdoutFd = openSync(stdoutPath, "w");
+  const stderrFd = openSync(stderrPath, "w");
+
+  try {
+    const result = spawnResult(command, args, {
+      timeout: opts.timeout ?? TIMEOUT_MS,
+      stdio: ["ignore", stdoutFd, stderrFd],
+      input: opts.input,
+    });
+    return {
+      stdout: readBoundedOutput(stdoutPath),
+      stderr: readBoundedOutput(stderrPath),
+      status: result.status ?? 1,
+    };
+  } finally {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    rmSync(captureDir, { recursive: true, force: true });
+  }
 }
 
 function writeCollectedOutput(collectDir: string, label: string, raw: string, status: number): void {
@@ -134,21 +266,15 @@ function collectTransformed(
     return;
   }
 
-  const result = runCommand(command, args, {
+  const result = runCommandForTransform(command, args, {
     timeout: TIMEOUT_MS,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf-8",
   });
 
   writeCollectedOutput(
     collectDir,
     label,
-    transform({
-      stdout: String(result.stdout ?? ""),
-      stderr: String(result.stderr ?? ""),
-      status: result.status ?? 1,
-    }),
-    result.status ?? 1,
+    transform(result),
+    result.status,
   );
 }
 
