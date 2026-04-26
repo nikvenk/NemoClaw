@@ -74,11 +74,20 @@ export function buildPatchDockerfile(snapshotter: SnapshotterChoice): string {
   ].join("\n");
 }
 
-/** Strips registry prefix and digest, returning the version portion of a tag. */
+/**
+ * Strips registry prefix and digest, returning the version portion of a tag.
+ * A colon only delimits a tag when it appears after the last path separator —
+ * references like `registry:5000/repo` (registry with explicit port, no tag)
+ * must not be parsed as if `5000/repo` were the tag.
+ */
 export function extractUpstreamVersion(upstreamImage: string): string {
-  const afterAt = upstreamImage.split("@")[0];
-  const afterColon = afterAt.includes(":") ? afterAt.split(":").pop() : "";
-  return afterColon || "unknown";
+  const withoutDigest = upstreamImage.split("@")[0] ?? "";
+  const lastSlash = withoutDigest.lastIndexOf("/");
+  const lastColon = withoutDigest.lastIndexOf(":");
+  if (lastColon > lastSlash && lastColon < withoutDigest.length - 1) {
+    return withoutDigest.slice(lastColon + 1);
+  }
+  return "unknown";
 }
 
 /** Deterministic local image tag derived from upstream version, snapshotter, and Dockerfile content. */

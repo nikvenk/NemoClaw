@@ -3642,9 +3642,20 @@ function applyOverlayfsAutoFix(upstreamImage: string): string | null {
     return null;
   }
 
-  const requestedSnapshotter = (process.env.NEMOCLAW_OVERLAY_SNAPSHOTTER || "").trim();
-  const snapshotter: "fuse-overlayfs" | "native" =
-    requestedSnapshotter === "native" ? "native" : "fuse-overlayfs";
+  const requestedSnapshotter = (process.env.NEMOCLAW_OVERLAY_SNAPSHOTTER || "")
+    .trim()
+    .toLowerCase();
+  let snapshotter: "fuse-overlayfs" | "native" = "fuse-overlayfs";
+  if (requestedSnapshotter === "native" || requestedSnapshotter === "fuse-overlayfs") {
+    snapshotter = requestedSnapshotter;
+  } else if (requestedSnapshotter !== "") {
+    // Reject typos like 'NATIVE' or 'fuse' loudly so the user gets the image
+    // they intended, not a silent default.
+    console.warn(
+      `  NEMOCLAW_OVERLAY_SNAPSHOTTER='${requestedSnapshotter}' is not recognized. ` +
+        "Valid values are 'fuse-overlayfs' or 'native'. Falling back to 'fuse-overlayfs'.",
+    );
+  }
 
   console.log(
     `  Detected Docker 26+ containerd-snapshotter overlayfs (driver=${assessment.dockerStorageDriver}). ` +

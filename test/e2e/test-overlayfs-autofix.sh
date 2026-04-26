@@ -90,6 +90,7 @@ NEGATIVE_TIMEOUT="${NEMOCLAW_OVERLAYFS_E2E_NEGATIVE_TIMEOUT:-300}"
 GATEWAY_CONTAINER="openshell-cluster-nemoclaw"
 DAEMON_JSON="/etc/docker/daemon.json"
 DAEMON_JSON_BACKUP="/tmp/nemoclaw-e2e-daemon.json.bak"
+DAEMON_JSON_ABSENT_MARKER="/tmp/nemoclaw-e2e-daemon.json.absent"
 INSTALL_LOG="${NEMOCLAW_E2E_INSTALL_LOG:-/tmp/nemoclaw-e2e-install.log}"
 ONBOARD_LOG_POSITIVE="/tmp/nemoclaw-e2e-onboard-positive.log"
 ONBOARD_LOG_REPLAY="/tmp/nemoclaw-e2e-onboard-replay.log"
@@ -107,16 +108,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # runner in a degraded state if the test crashes mid-flight.
 # shellcheck disable=SC2329  # invoked via the EXIT trap below
 revert_daemon_config() {
-  if [ -f "$DAEMON_JSON_BACKUP" ]; then
+  if [ -f "$DAEMON_JSON_ABSENT_MARKER" ]; then
+    # No original file existed; remove whatever we wrote so the daemon
+    # falls back to defaults on restart.
+    info "Removing test-generated $DAEMON_JSON (no original to restore)..."
+    sudo rm -f "$DAEMON_JSON" 2>/dev/null || true
+    sudo systemctl restart docker 2>/dev/null || true
+    rm -f "$DAEMON_JSON_ABSENT_MARKER" "$DAEMON_JSON_BACKUP" 2>/dev/null || true
+  elif [ -f "$DAEMON_JSON_BACKUP" ]; then
     info "Reverting Docker daemon configuration..."
     sudo cp "$DAEMON_JSON_BACKUP" "$DAEMON_JSON" 2>/dev/null || true
     sudo systemctl restart docker 2>/dev/null || true
     rm -f "$DAEMON_JSON_BACKUP" 2>/dev/null || true
-  elif [ -f "$DAEMON_JSON" ] && grep -q '"containerd-snapshotter": *true' "$DAEMON_JSON" 2>/dev/null; then
-    # Backup never landed but we still flipped the flag — remove our edit.
-    info "Removing containerd-snapshotter flag from $DAEMON_JSON..."
-    sudo rm -f "$DAEMON_JSON" 2>/dev/null || true
-    sudo systemctl restart docker 2>/dev/null || true
   fi
 }
 trap revert_daemon_config EXIT
@@ -182,13 +185,17 @@ fi
 section "Phase 1: Enable containerd image store on the host"
 
 # Back up whatever's there (or note its absence) so the EXIT trap can restore it.
+rm -f "$DAEMON_JSON_ABSENT_MARKER" 2>/dev/null || true
 if [ -f "$DAEMON_JSON" ]; then
   sudo cp "$DAEMON_JSON" "$DAEMON_JSON_BACKUP"
   info "Backed up existing $DAEMON_JSON to $DAEMON_JSON_BACKUP"
 else
-  # Sentinel so revert knows there was no original.
-  echo "/* none */" | sudo tee "$DAEMON_JSON_BACKUP" >/dev/null
-  info "No existing $DAEMON_JSON; created sentinel for revert"
+  # Marker file (separate from the backup path) tells revert there was no
+  # original to restore — never write a non-JSON sentinel into the backup
+  # itself, since that would corrupt $DAEMON_JSON on revert.
+  : >/tmp/nemoclaw-e2e-daemon.json.absent.tmp
+  mv /tmp/nemoclaw-e2e-daemon.json.absent.tmp "$DAEMON_JSON_ABSENT_MARKER"
+  info "No existing $DAEMON_JSON; flagged for removal on revert"
 fi
 
 # Write a minimal daemon.json that enables the containerd-snapshotter feature.
@@ -328,12 +335,17 @@ else
   fail "No nemoclaw-cluster:*-fuse-overlayfs-* image found after onboard"
 fi
 
-# Gateway must be up; the cluster container must use the patched image.
-gateway_image=$(docker inspect --format '{{.Config.Image}}' "$GATEWAY_CONTAINER" 2>/dev/null || echo "")
-if [ "$gateway_image" = "$patched_tag" ]; then
-  pass "Gateway container is running the patched image"
-else
-  fail "Gateway image '$gateway_image' does not match patched tag '$patched_tag'"
+# Only assert image-equality + log-cleanliness when we actually found a
+# patched tag. Without this guard, an empty `gateway_image` could equal an
+# empty `patched_tag` and silently PASS, and the log-grep would scan the
+# wrong (empty / non-existent) container.
+if [ -n "$patched_tag" ]; then
+  gateway_image=$(docker inspect --format '{{.Config.Image}}' "$GATEWAY_CONTAINER" 2>/dev/null || echo "")
+  if [ "$gateway_image" = "$patched_tag" ]; then
+    pass "Gateway container is running the patched image"
+  else
+    fail "Gateway image '$gateway_image' does not match patched tag '$patched_tag'"
+  fi
 fi
 
 # Cluster log must NOT carry the original error string.
@@ -358,7 +370,10 @@ fi
 docker rm -f "$GATEWAY_CONTAINER" 2>/dev/null || true
 
 # Record current patched-image creation time, then run onboard again.
-before_created=$(docker inspect --format '{{.Created}}' "$patched_tag" 2>/dev/null || echo "")
+before_created=""
+if [ -n "$patched_tag" ]; then
+  before_created=$(docker inspect --format '{{.Created}}' "$patched_tag" 2>/dev/null || echo "")
+fi
 
 env \
   NEMOCLAW_NON_INTERACTIVE=1 \
@@ -368,7 +383,10 @@ env \
   bash install.sh --non-interactive >"$ONBOARD_LOG_REPLAY" 2>&1
 replay_exit=$?
 
-after_created=$(docker inspect --format '{{.Created}}' "$patched_tag" 2>/dev/null || echo "")
+after_created=""
+if [ -n "$patched_tag" ]; then
+  after_created=$(docker inspect --format '{{.Created}}' "$patched_tag" 2>/dev/null || echo "")
+fi
 
 if [ $replay_exit -eq 0 ]; then
   pass "Second onboard succeeded"
@@ -376,7 +394,11 @@ else
   fail "Second onboard failed (exit $replay_exit)"
 fi
 
-if [ -n "$before_created" ] && [ "$before_created" = "$after_created" ]; then
+# Idempotency assertion only meaningful when phase 3 actually produced a
+# patched image — otherwise we'd be comparing two empty strings.
+if [ -z "$patched_tag" ]; then
+  skip "Idempotency check skipped (no patched image from phase 3)"
+elif [ -n "$before_created" ] && [ "$before_created" = "$after_created" ]; then
   pass "Patched image was reused (Created timestamp unchanged: $before_created)"
 else
   fail "Patched image was rebuilt unexpectedly (before=$before_created after=$after_created)"

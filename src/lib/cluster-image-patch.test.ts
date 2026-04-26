@@ -40,6 +40,22 @@ describe("extractUpstreamVersion", () => {
   it("falls back to 'unknown' for an untagged reference", () => {
     expect(extractUpstreamVersion("ghcr.io/nvidia/openshell/cluster")).toBe("unknown");
   });
+
+  it("does not mistake a registry port for a tag", () => {
+    // `registry.example.com:5000/openshell/cluster` is a registry on port 5000
+    // with no explicit tag; a naive split-on-':' parser would return "5000/openshell/cluster".
+    expect(extractUpstreamVersion("registry.example.com:5000/openshell/cluster")).toBe("unknown");
+  });
+
+  it("extracts the tag when both a registry port and a tag are present", () => {
+    expect(extractUpstreamVersion("registry.example.com:5000/openshell/cluster:0.0.36")).toBe(
+      "0.0.36",
+    );
+  });
+
+  it("falls back to 'unknown' when the tag separator has no value after it", () => {
+    expect(extractUpstreamVersion("ghcr.io/nvidia/openshell/cluster:")).toBe("unknown");
+  });
 });
 
 describe("computePatchedTag", () => {
