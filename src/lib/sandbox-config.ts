@@ -12,6 +12,9 @@
 // config set:          Host-initiated config mutation with validation.
 // config rotate-token: Credential rotation via stdin or env var.
 
+// ESM `import` is preferred for new code in modern JS/TS; the surrounding
+// `require()` calls remain for compatibility with this file's existing CJS
+// surface and will be migrated incrementally.
 import * as readline from "readline";
 
 const fs = require("fs");
@@ -181,6 +184,33 @@ function validateConfigDotpath(dotpath: string): DotpathValidation {
     }
   }
   return { ok: true };
+}
+
+/**
+ * Decide what to do when `config set` targets a key that does not yet exist.
+ * Returns `accept` if an explicit override (CLI flag or env) is in effect,
+ * `prompt` if the caller should ask the user interactively, and `refuse`
+ * otherwise. Inputs are passed in so the gate can be tested without
+ * touching `process.env` or `process.stdin`.
+ */
+type NewKeyGate = { mode: "accept" } | { mode: "prompt" } | { mode: "refuse" };
+
+interface NewKeyGateInputs {
+  acceptNewPath?: boolean;
+  acceptEnv?: string;
+  isTTY?: boolean;
+  nonInteractiveEnv?: string;
+}
+
+function classifyNewKeyGate(inputs: NewKeyGateInputs): NewKeyGate {
+  if (inputs.acceptNewPath === true || inputs.acceptEnv === "1") {
+    return { mode: "accept" };
+  }
+  const interactive = !!inputs.isTTY && inputs.nonInteractiveEnv !== "1";
+  if (!interactive) {
+    return { mode: "refuse" };
+  }
+  return { mode: "prompt" };
 }
 
 /**
@@ -354,14 +384,14 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
 
   const target = resolveAgentConfig(sandboxName);
 
-  // 1. Read current config
+  // Read current config
   console.log(`  Reading ${target.agentName} config...`);
   const config = readSandboxConfig(sandboxName, target);
 
-  // 2. Parse and validate value
+  // Parse and validate value
   const parsedValue = parseCliConfigValue(opts.value);
 
-  // 3. Validate URLs for SSRF. validateUrlValue no-ops on non-URL input,
+  // Validate URLs for SSRF. validateUrlValue no-ops on non-URL input,
   // so run it for every string to avoid bypasses via mixed-case schemes
   // ("HTTP://127.0.0.1") or leading whitespace.
   if (typeof parsedValue === "string") {
@@ -374,39 +404,41 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     }
   }
 
-  // 4. Check that we're not modifying the gateway section (contains auth tokens)
+  // Check that we're not modifying the gateway section (contains auth tokens)
   if (opts.key.startsWith("gateway.") || opts.key === "gateway") {
     console.error("  Cannot modify the gateway section directly.");
     console.error("  Use `nemoclaw config rotate-token` for credential changes.");
     process.exit(1);
   }
 
-  // 5. Show what will change
+  // Show what will change
   const oldValue = extractDotpath(config, opts.key);
   console.log(`  Agent:     ${target.agentName}`);
   console.log(`  Key:       ${opts.key}`);
   console.log(`  Old value: ${oldValue !== undefined ? JSON.stringify(oldValue) : "(not set)"}`);
   console.log(`  New value: ${JSON.stringify(parsedValue)}`);
 
-  // 6. First-time writes go through a confirmation gate so users get a
+  // First-time writes go through a confirmation gate so users get a
   // signal when they are creating a brand-new key (which may be a typo)
   // without coupling the validator to OpenClaw's evolving config schema
   // (see #2400).
   if (oldValue === undefined) {
-    const accepted =
-      opts.acceptNewPath === true || process.env.NEMOCLAW_CONFIG_ACCEPT_NEW_PATH === "1";
-    if (!accepted) {
-      const interactive =
-        !!process.stdin.isTTY && process.env.NEMOCLAW_NON_INTERACTIVE !== "1";
-      if (!interactive) {
-        console.error(
-          `  Key '${opts.key}' does not currently exist in the ${target.agentName} config.`,
-        );
-        console.error(
-          "  Re-run interactively, pass --config-accept-new-path, or set NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1.",
-        );
-        process.exit(1);
-      }
+    const gate = classifyNewKeyGate({
+      acceptNewPath: opts.acceptNewPath,
+      acceptEnv: process.env.NEMOCLAW_CONFIG_ACCEPT_NEW_PATH,
+      isTTY: process.stdin.isTTY,
+      nonInteractiveEnv: process.env.NEMOCLAW_NON_INTERACTIVE,
+    });
+    if (gate.mode === "refuse") {
+      console.error(
+        `  Key '${opts.key}' does not currently exist in the ${target.agentName} config.`,
+      );
+      console.error(
+        "  Re-run interactively, pass --config-accept-new-path, or set NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1.",
+      );
+      process.exit(1);
+    }
+    if (gate.mode === "prompt") {
       const confirmed = await confirmYesNo("  Write this new key? [y/N] ");
       if (!confirmed) {
         console.error("  Aborted.");
@@ -415,15 +447,15 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     }
   }
 
-  // 7. Apply change
+  // Apply change
   setDotpath(config, opts.key, parsedValue);
 
-  // 8. Write to temp file in the agent's native format
+  // Write to temp file in the agent's native format
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-config-"));
   const tmpFile = path.join(tmpDir, target.configFile);
   fs.writeFileSync(tmpFile, serializeConfig(config, target.format), { mode: 0o600 });
 
-  // 9. Write config to sandbox via kubectl exec (bypasses Landlock)
+  // Write config to sandbox via kubectl exec (bypasses Landlock)
   console.log(`  Writing config to sandbox (${target.configPath})...`);
   const content = fs.readFileSync(tmpFile, "utf-8");
   execFileSync(
@@ -448,7 +480,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     { input: content, stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
   );
 
-  // 10. Fix ownership via kubectl exec (bypasses Landlock)
+  // Fix ownership via kubectl exec (bypasses Landlock)
   try {
     execFileSync(
       "docker",
@@ -473,7 +505,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     // Best effort — chown failure is non-fatal
   }
 
-  // 11. Cleanup temp
+  // Cleanup temp
   try {
     fs.unlinkSync(tmpFile);
     fs.rmdirSync(tmpDir);
@@ -481,7 +513,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
     // Best effort
   }
 
-  // 12. Audit log
+  // Audit log
   appendAuditEntry({
     action: "shields_down",
     sandbox: sandboxName,
@@ -491,7 +523,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
 
   console.log(`  ${target.agentName} config updated.`);
 
-  // 13. Restart if requested
+  // Restart if requested
   if (opts.restart) {
     console.log("  Restarting sandbox agent process...");
     const restartBinary = getOpenshellBinary();
@@ -666,10 +698,6 @@ function confirmYesNo(prompt: string): Promise<boolean> {
     const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
     rl.question(prompt, (answer: string) => {
       rl.close();
-      if (!process.stdin.isTTY) {
-        if (typeof process.stdin.pause === "function") process.stdin.pause();
-        if (typeof process.stdin.unref === "function") process.stdin.unref();
-      }
       resolve(/^y(es)?$/i.test(answer.trim()));
     });
   });
@@ -687,6 +715,7 @@ export {
   extractDotpath,
   setDotpath,
   validateConfigDotpath,
+  classifyNewKeyGate,
   validateUrlValue,
   readStdin,
 };

@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   extractDotpath,
   validateConfigDotpath,
+  classifyNewKeyGate,
   setDotpath,
   validateUrlValue,
   resolveAgentConfig,
@@ -138,6 +139,55 @@ describe("config set helpers", () => {
       const result = validateConfigDotpath("agents..defaults");
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toMatch(/empty segment/);
+    });
+  });
+
+  describe("classifyNewKeyGate", () => {
+    it("accepts when --config-accept-new-path is set, even without a TTY", () => {
+      expect(classifyNewKeyGate({ acceptNewPath: true, isTTY: false })).toEqual({
+        mode: "accept",
+      });
+    });
+
+    it("accepts when NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1, even without a TTY", () => {
+      expect(classifyNewKeyGate({ acceptEnv: "1", isTTY: false })).toEqual({
+        mode: "accept",
+      });
+    });
+
+    it("treats env values other than '1' as not accepted", () => {
+      expect(classifyNewKeyGate({ acceptEnv: "true", isTTY: false })).toEqual({
+        mode: "refuse",
+      });
+      expect(classifyNewKeyGate({ acceptEnv: "yes", isTTY: false })).toEqual({
+        mode: "refuse",
+      });
+      expect(classifyNewKeyGate({ acceptEnv: "", isTTY: false })).toEqual({
+        mode: "refuse",
+      });
+    });
+
+    it("refuses when stdin is not a TTY and no override is in effect", () => {
+      expect(classifyNewKeyGate({ isTTY: false })).toEqual({ mode: "refuse" });
+    });
+
+    it("refuses when NEMOCLAW_NON_INTERACTIVE=1, even on a TTY", () => {
+      expect(classifyNewKeyGate({ isTTY: true, nonInteractiveEnv: "1" })).toEqual({
+        mode: "refuse",
+      });
+    });
+
+    it("prompts on a TTY when no override is in effect", () => {
+      expect(classifyNewKeyGate({ isTTY: true })).toEqual({ mode: "prompt" });
+    });
+
+    it("override beats NEMOCLAW_NON_INTERACTIVE", () => {
+      expect(
+        classifyNewKeyGate({ acceptNewPath: true, isTTY: true, nonInteractiveEnv: "1" }),
+      ).toEqual({ mode: "accept" });
+      expect(
+        classifyNewKeyGate({ acceptEnv: "1", isTTY: false, nonInteractiveEnv: "1" }),
+      ).toEqual({ mode: "accept" });
     });
   });
 
