@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   extractDotpath,
   validateConfigDotpath,
+  findClobberingAncestor,
   classifyNewKeyGate,
   setDotpath,
   validateUrlValue,
@@ -127,18 +128,69 @@ describe("config set helpers", () => {
       expect(validateConfigDotpath("toString").ok).toBe(false);
     });
 
-    it("rejects numeric segments because array editing is unsupported", () => {
-      const result = validateConfigDotpath("tools.0.name");
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.reason).toMatch(/array index/);
-      expect(validateConfigDotpath("0").ok).toBe(false);
-      expect(validateConfigDotpath("policies.42").ok).toBe(false);
-    });
-
     it("returns a reason describing the failure", () => {
       const result = validateConfigDotpath("agents..defaults");
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toMatch(/empty segment/);
+    });
+  });
+
+  describe("findClobberingAncestor", () => {
+    it("returns null for a top-level path (no ancestors to clobber)", () => {
+      expect(findClobberingAncestor({ a: 1 }, "a")).toBeNull();
+      expect(findClobberingAncestor({}, "newKey")).toBeNull();
+    });
+
+    it("returns null when every existing ancestor is a config object", () => {
+      expect(findClobberingAncestor({ a: { b: { c: 1 } } }, "a.b.c")).toBeNull();
+      expect(findClobberingAncestor({ a: { b: {} } }, "a.b.newLeaf")).toBeNull();
+    });
+
+    it("returns null when an ancestor segment is missing entirely", () => {
+      expect(findClobberingAncestor({}, "a.b.c")).toBeNull();
+      expect(findClobberingAncestor({ a: { b: {} } }, "a.b.c.d.e")).toBeNull();
+    });
+
+    it("refuses numeric segments anywhere in the path", () => {
+      const top = findClobberingAncestor({}, "0");
+      expect(top).not.toBeNull();
+      expect(top?.segment).toBe("0");
+      expect(top?.reason).toMatch(/numeric/i);
+
+      const mid = findClobberingAncestor({}, "tools.0.name");
+      expect(mid).not.toBeNull();
+      expect(mid?.segment).toBe("tools.0");
+      expect(mid?.reason).toMatch(/array editing/i);
+    });
+
+    it("describes a string ancestor as 'a string'", () => {
+      const result = findClobberingAncestor({ a: "scalar" }, "a.b");
+      expect(result).toEqual({ segment: "a", reason: "is a string, not a config object" });
+    });
+
+    it("describes a number or boolean ancestor by typeof", () => {
+      expect(findClobberingAncestor({ a: 42 }, "a.b")?.reason).toBe(
+        "is a number, not a config object",
+      );
+      expect(findClobberingAncestor({ a: { b: true } }, "a.b.c")?.reason).toBe(
+        "is a boolean, not a config object",
+      );
+    });
+
+    it("describes a null ancestor as 'null'", () => {
+      const result = findClobberingAncestor({ a: null }, "a.b");
+      expect(result).toEqual({ segment: "a", reason: "is null, not a config object" });
+    });
+
+    it("describes an array ancestor as 'an array'", () => {
+      const result = findClobberingAncestor({ a: [1, 2, 3] }, "a.b");
+      expect(result).toEqual({ segment: "a", reason: "is an array, not a config object" });
+    });
+
+    it("identifies the deepest blocking ancestor along the path", () => {
+      const result = findClobberingAncestor({ a: { b: { c: "leaf" } } }, "a.b.c.d");
+      expect(result?.segment).toBe("a.b.c");
+      expect(result?.reason).toMatch(/string/);
     });
   });
 

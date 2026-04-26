@@ -12,11 +12,7 @@
 // config set:          Host-initiated config mutation with validation.
 // config rotate-token: Credential rotation via stdin or env var.
 
-// ESM `import` is preferred for new code in modern JS/TS; the surrounding
-// `require()` calls remain for compatibility with this file's existing CJS
-// surface and will be migrated incrementally.
-import * as readline from "readline";
-
+const readline = require("readline");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -172,18 +168,68 @@ function validateConfigDotpath(dotpath: string): DotpathValidation {
     if (UNSAFE_KEY_SEGMENTS.has(key)) {
       return { ok: false, reason: `segment '${key}' is reserved` };
     }
-    // Numeric segments would target array indices. extractDotpath reads
-    // them, but setDotpath always materialises plain objects, so allowing
-    // them here would silently overwrite array elements. Refuse until
-    // array editing is designed in as a feature of its own.
-    if (/^\d+$/.test(key)) {
+  }
+  return { ok: true };
+}
+
+/**
+ * Walk a dotpath and report the first reason `configSet` should refuse it:
+ *
+ *   - Numeric segment: would target an array index, but `setDotpath` always
+ *     materialises plain objects, so allowing this would either clobber an
+ *     existing array or create a confusingly object-shaped "array".
+ *   - Non-object ancestor: an existing intermediate value (string, number,
+ *     null, array, …) would be silently overwritten by `setDotpath` on its
+ *     way to the leaf.
+ *
+ * Missing ancestors are fine — they get materialised on write. Returns
+ * `null` when no refusal reason applies.
+ */
+function findClobberingAncestor(
+  obj: ConfigValue,
+  dotpath: string,
+): { segment: string; reason: string } | null {
+  const keys = dotpath.split(".");
+
+  for (let i = 0; i < keys.length; i++) {
+    if (/^\d+$/.test(keys[i])) {
       return {
-        ok: false,
-        reason: `segment '${key}' targets an array index, which 'config set' does not support`,
+        segment: keys.slice(0, i + 1).join("."),
+        reason: "is a numeric segment, but 'config set' does not support array editing",
       };
     }
   }
-  return { ok: true };
+
+  if (keys.length <= 1) return null;
+
+  let current: ConfigValue = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (!isConfigObject(current)) {
+      return {
+        segment: keys.slice(0, i).join(".") || "(root)",
+        reason: `is ${describeNonConfigValue(current)}, not a config object`,
+      };
+    }
+    const key = keys[i];
+    if (!Object.prototype.hasOwnProperty.call(current, key)) {
+      return null;
+    }
+    const next = current[key];
+    if (!isConfigObject(next)) {
+      return {
+        segment: keys.slice(0, i + 1).join("."),
+        reason: `is ${describeNonConfigValue(next)}, not a config object`,
+      };
+    }
+    current = next;
+  }
+  return null;
+}
+
+function describeNonConfigValue(value: ConfigValue): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  return `a ${typeof value}`;
 }
 
 /**
@@ -417,6 +463,18 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
   console.log(`  Key:       ${opts.key}`);
   console.log(`  Old value: ${oldValue !== undefined ? JSON.stringify(oldValue) : "(not set)"}`);
   console.log(`  New value: ${JSON.stringify(parsedValue)}`);
+
+  // Refuse outright if writing this path would silently overwrite an
+  // existing scalar ancestor or target an array index — setDotpath would
+  // either replace the scalar with a fresh empty object or clobber the
+  // array on its way to the leaf.
+  const refusal = findClobberingAncestor(config, opts.key);
+  if (refusal) {
+    console.error(
+      `  Cannot set '${opts.key}' in ${target.agentName} config: '${refusal.segment}' ${refusal.reason}.`,
+    );
+    process.exit(1);
+  }
 
   // First-time writes go through a confirmation gate so users get a
   // signal when they are creating a brand-new key (which may be a typo)
@@ -715,6 +773,7 @@ export {
   extractDotpath,
   setDotpath,
   validateConfigDotpath,
+  findClobberingAncestor,
   classifyNewKeyGate,
   validateUrlValue,
   readStdin,
