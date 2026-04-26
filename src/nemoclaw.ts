@@ -3819,17 +3819,24 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "set": {
-            const setOpts: { key: string | null; value: string | null; restart: boolean } = {
+            const setOpts: {
+              key: string | null;
+              value: string | null;
+              restart: boolean;
+              acceptNewPath: boolean;
+            } = {
               key: null,
               value: null,
               restart: false,
+              acceptNewPath: false,
             };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") setOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--value") setOpts.value = actionArgs[++i];
               else if (actionArgs[i] === "--restart") setOpts.restart = true;
+              else if (actionArgs[i] === "--config-accept-new-path") setOpts.acceptNewPath = true;
             }
-            sandboxConfig.configSet(cmd, setOpts);
+            await sandboxConfig.configSet(cmd, setOpts);
             break;
           }
           case "rotate-token": {
@@ -3847,7 +3854,9 @@ const [cmd, ...args] = process.argv.slice(2);
           default:
             console.error(`  Usage: ${CLI_NAME} <name> config <get|set|rotate-token>`);
             console.error("    get           [--key dotpath] [--format json|yaml]");
-            console.error("    set           --key <dotpath> --value <value> [--restart]");
+            console.error(
+              "    set           --key <dotpath> --value <value> [--restart] [--config-accept-new-path]",
+            );
             console.error("    rotate-token  [--from-env <VAR>] [--from-stdin]");
             process.exit(1);
         }
