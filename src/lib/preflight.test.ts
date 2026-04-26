@@ -397,6 +397,28 @@ describe("assessHost", () => {
     expect(result.hasNestedOverlayConflict).toBe(false);
   });
 
+  it("does not flag a WSL2 Linux host as a conflict even when the docker shape would otherwise match", () => {
+    // WSL2's overlay-mount story is not part of the user-confirmed
+    // reproducer for #2481. Until we can verify the bug actually
+    // manifests there, leave WSL hosts on the upstream image rather
+    // than burning a build for a maybe-unnecessary patch.
+    const result = assessHost({
+      platform: "linux",
+      env: { WSL_DISTRO_NAME: "Ubuntu" },
+      dockerInfoOutput: JSON.stringify({
+        ServerVersion: "29.1.3",
+        OperatingSystem: "Ubuntu 24.04",
+        Driver: "overlayfs",
+        DriverStatus: [["driver-type", "io.containerd.snapshotter.v1"]],
+        CgroupVersion: "2",
+      }),
+      commandExistsImpl: (name: string) => name === "docker",
+    });
+
+    expect(result.isWsl).toBe(true);
+    expect(result.hasNestedOverlayConflict).toBe(false);
+  });
+
   it("does not flag macOS Docker Desktop as a conflict even with overlayfs driver", () => {
     // Docker Desktop runs Linux in a VM; the kernel-overlay limitation does
     // not apply on the macOS host path. Scope the conflict to platform ===
@@ -426,6 +448,19 @@ describe("parseDockerStorageDriver", () => {
   it("returns undefined for empty or non-matching input", () => {
     expect(parseDockerStorageDriver("")).toBeUndefined();
     expect(parseDockerStorageDriver("not json at all")).toBeUndefined();
+  });
+
+  it("falls back to the plain-text 'Storage Driver: <name>' form", () => {
+    // Future callers passing raw `docker info` output (no `--format` flag)
+    // should still get the conflict detected.
+    const fixture = [
+      "Server:",
+      " Containers: 7",
+      " Storage Driver: overlayfs",
+      "  driver-type: io.containerd.snapshotter.v1",
+      "",
+    ].join("\n");
+    expect(parseDockerStorageDriver(fixture)).toBe("overlayfs");
   });
 });
 

@@ -3619,6 +3619,19 @@ function getGatewayStartEnv(): Record<string, string> {
 }
 
 /**
+ * Memoizes `applyOverlayfsAutoFix` per upstream image for the lifetime of
+ * the process. The expensive work (host assessment + image inspect / pull /
+ * build) only needs to happen once per onboard invocation; both
+ * `startGatewayWithOptions` and `recoverGatewayRuntime` go through
+ * `getGatewayStartEnv()`, and without this cache the recovery path would
+ * re-run the full assessment.
+ *
+ * Reset on a per-process basis only — env-var changes mid-process are
+ * not modelled here and shouldn't happen in the CLI's normal flow.
+ */
+const overlayFixResultCache = new Map<string, string | null>();
+
+/**
  * When the host runs Docker 26+ with the new containerd-snapshotter overlayfs
  * driver, k3s inside the upstream cluster image cannot mount nested overlays
  * and crashes. Build a tiny patched image locally that selects fuse-overlayfs
@@ -3632,13 +3645,23 @@ function applyOverlayfsAutoFix(upstreamImage: string): string | null {
   if (process.env.NEMOCLAW_DISABLE_OVERLAY_FIX === "1") {
     return null;
   }
+  if (overlayFixResultCache.has(upstreamImage)) {
+    return overlayFixResultCache.get(upstreamImage) ?? null;
+  }
   let assessment: ReturnType<typeof preflightUtils.assessHost>;
   try {
     assessment = preflightUtils.assessHost();
-  } catch {
+  } catch (err) {
+    // Don't silently swallow — log a breadcrumb so a future regression in
+    // assessHost (or a Docker-daemon hang past `2>/dev/null`) doesn't make
+    // the auto-fix mysteriously stop firing without any user-visible signal.
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`  Skipping overlayfs auto-fix: host assessment failed (${reason}).`);
+    overlayFixResultCache.set(upstreamImage, null);
     return null;
   }
   if (!assessment.hasNestedOverlayConflict) {
+    overlayFixResultCache.set(upstreamImage, null);
     return null;
   }
 
@@ -3666,16 +3689,19 @@ function applyOverlayfsAutoFix(upstreamImage: string): string | null {
   );
 
   try {
-    return clusterImagePatch.ensurePatchedClusterImage({
+    const patchedTag = clusterImagePatch.ensurePatchedClusterImage({
       upstreamImage,
       snapshotter,
     });
+    overlayFixResultCache.set(upstreamImage, patchedTag);
+    return patchedTag;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error(`  Patched cluster image build failed: ${reason}`);
     console.error(
       "  Falling back to the upstream image. The k3s server will likely fail; see docs/reference/troubleshooting.md.",
     );
+    overlayFixResultCache.set(upstreamImage, null);
     return null;
   }
 }

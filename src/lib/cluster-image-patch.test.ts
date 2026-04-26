@@ -147,6 +147,27 @@ describe("computePatchedTag", () => {
     });
     expect(a).not.toBe(b);
   });
+
+  it("differs when only the upstream digest changes (cache invalidates on registry re-push)", () => {
+    // Even with identical Dockerfile text and tag string, a different
+    // upstream content digest must produce a different patched tag —
+    // otherwise a registry re-push of the same tag would silently keep
+    // serving stale layers from the local cache.
+    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    const tagA = computePatchedTag({
+      upstreamImage: UPSTREAM,
+      snapshotter: "fuse-overlayfs",
+      dockerfile,
+      upstreamDigest: "sha256:aaaa1111",
+    });
+    const tagB = computePatchedTag({
+      upstreamImage: UPSTREAM,
+      snapshotter: "fuse-overlayfs",
+      dockerfile,
+      upstreamDigest: "sha256:bbbb2222",
+    });
+    expect(tagA).not.toBe(tagB);
+  });
 });
 
 interface MockFs {
@@ -171,16 +192,30 @@ function createMockFs(): MockFs {
 }
 
 describe("ensurePatchedClusterImage", () => {
-  it("returns the cached tag without invoking docker build when the image already exists", () => {
-    const calls: string[][] = [];
+  // Helpers for runCaptureImpl mocks. The implementation calls
+  // `docker image inspect --format '{{.Id}}' <ref>` twice in the typical
+  // flow: once to learn the upstream digest, once to check if the
+  // patched tag is cached. Tests differentiate by the ref argument.
+  function inspectAt(cmd: readonly string[]): "upstream" | "tag" | "other" {
+    if (cmd[0] !== "docker" || cmd[1] !== "image" || cmd[2] !== "inspect") return "other";
+    const ref = cmd[5];
+    if (ref === UPSTREAM) return "upstream";
+    if (typeof ref === "string" && ref.startsWith("nemoclaw-cluster:")) return "tag";
+    return "other";
+  }
+
+  it("uses the locally-cached upstream digest and skips the network entirely on full cache hit", () => {
+    const captureCalls: string[][] = [];
+    const runCalls: string[][] = [];
     const tag = ensurePatchedClusterImage({
       upstreamImage: UPSTREAM,
       runCaptureImpl: (cmd) => {
-        calls.push(["capture", ...cmd]);
-        return "sha256:abcd";
+        captureCalls.push([...cmd]);
+        // Both upstream and patched tag are present locally.
+        return "sha256:abcd1234";
       },
       runImpl: (cmd) => {
-        calls.push(["run", ...cmd]);
+        runCalls.push([...cmd]);
         return { status: 0 };
       },
       logger: () => {},
@@ -189,16 +224,29 @@ describe("ensurePatchedClusterImage", () => {
     });
 
     expect(tag.startsWith("nemoclaw-cluster:0.0.36-fuse-overlayfs-")).toBe(true);
-    const runCalls = calls.filter((entry) => entry[0] === "run");
+    // No pull, no manifest probe, no build — pure local-cache resolution.
     expect(runCalls).toHaveLength(0);
+    // Two inspects: one for upstream, one for the patched tag.
+    expect(captureCalls.filter((c) => inspectAt(c) === "upstream")).toHaveLength(1);
+    expect(captureCalls.filter((c) => inspectAt(c) === "tag")).toHaveLength(1);
   });
 
-  it("pulls upstream and builds the patched image on cache miss", () => {
+  it("probes registry reachability, pulls upstream, then builds on full cache miss", () => {
     const fsImpl = createMockFs();
     const runCalls: string[][] = [];
+    let upstreamInspectCount = 0;
+
     const tag = ensurePatchedClusterImage({
       upstreamImage: UPSTREAM,
-      runCaptureImpl: () => "",
+      runCaptureImpl: (cmd) => {
+        if (inspectAt(cmd) === "upstream") {
+          upstreamInspectCount += 1;
+          // First call: not cached. After-pull call: digest is now there.
+          return upstreamInspectCount === 1 ? "" : "sha256:9999aaaa";
+        }
+        // Patched tag never exists locally → cache miss → build.
+        return "";
+      },
       runImpl: (cmd) => {
         runCalls.push([...cmd]);
         return { status: 0 };
@@ -209,7 +257,9 @@ describe("ensurePatchedClusterImage", () => {
     });
 
     expect(tag.startsWith("nemoclaw-cluster:0.0.36-fuse-overlayfs-")).toBe(true);
-    expect(runCalls[0]).toEqual(["docker", "pull", UPSTREAM]);
+    // Reachability probe must precede the pull so air-gapped hosts fail fast.
+    expect(runCalls[0]).toEqual(["docker", "manifest", "inspect", UPSTREAM]);
+    expect(runCalls[1]).toEqual(["docker", "pull", UPSTREAM]);
     const buildCall = runCalls.find((entry) => entry[0] === "docker" && entry[1] === "build");
     expect(buildCall).toBeDefined();
     expect(buildCall).toContain("--build-arg");
@@ -226,10 +276,17 @@ describe("ensurePatchedClusterImage", () => {
 
   it("threads the native snapshotter through the build", () => {
     const fsImpl = createMockFs();
+    let upstreamInspectCount = 0;
     ensurePatchedClusterImage({
       upstreamImage: UPSTREAM,
       snapshotter: "native",
-      runCaptureImpl: () => "",
+      runCaptureImpl: (cmd) => {
+        if (inspectAt(cmd) === "upstream") {
+          upstreamInspectCount += 1;
+          return upstreamInspectCount === 1 ? "" : "sha256:beef";
+        }
+        return "";
+      },
       runImpl: () => ({ status: 0 }),
       logger: () => {},
       fsImpl,
@@ -240,6 +297,25 @@ describe("ensurePatchedClusterImage", () => {
       'CMD ["server", "--snapshotter=native"]',
     );
     expect(fsImpl.written.get(dockerfilePath)).not.toContain('"--snapshotter=fuse-overlayfs"');
+  });
+
+  it("fails fast with a documented error when upstream is unreachable on a cache miss", () => {
+    // Air-gapped / restricted-network case: no local upstream image AND
+    // the manifest probe times out / fails. This must surface in seconds,
+    // not 10 minutes, and the message must point at the troubleshooting docs.
+    expect(() =>
+      ensurePatchedClusterImage({
+        upstreamImage: UPSTREAM,
+        runCaptureImpl: () => "",
+        runImpl: (cmd) => {
+          if (cmd[1] === "manifest") return { status: 1 };
+          return { status: 0 };
+        },
+        logger: () => {},
+        fsImpl: createMockFs(),
+        tmpdirImpl: () => "/tmp",
+      }),
+    ).toThrow(/cannot reach upstream registry/);
   });
 
   it("throws ClusterImagePatchError on docker pull failure", () => {
@@ -256,10 +332,17 @@ describe("ensurePatchedClusterImage", () => {
   });
 
   it("throws ClusterImagePatchError on docker build failure", () => {
+    let upstreamInspectCount = 0;
     expect(() =>
       ensurePatchedClusterImage({
         upstreamImage: UPSTREAM,
-        runCaptureImpl: () => "",
+        runCaptureImpl: (cmd) => {
+          if (inspectAt(cmd) === "upstream") {
+            upstreamInspectCount += 1;
+            return upstreamInspectCount === 1 ? "" : "sha256:abcd";
+          }
+          return "";
+        },
         runImpl: (cmd) => (cmd[1] === "build" ? { status: 2 } : { status: 0 }),
         logger: () => {},
         fsImpl: createMockFs(),

@@ -171,16 +171,33 @@ export function extractUpstreamVersion(upstreamImage: string): string {
   return "unknown";
 }
 
-/** Deterministic local image tag derived from upstream version, snapshotter, and Dockerfile content. */
+/**
+ * Deterministic local image tag derived from upstream identity, snapshotter,
+ * and Dockerfile content.
+ *
+ * `upstreamDigest`, when supplied, is the resolved content digest of the
+ * upstream image (e.g. `sha256:abc…`). Including it binds the patched-image
+ * tag to the actual upstream bytes — if the registry republishes
+ * `ghcr.io/nvidia/openshell/cluster:0.0.36` with a security fix, the digest
+ * changes, the SHA changes, the patched tag changes, and the next onboard
+ * rebuilds. Without it, a stale upstream re-push is silently invisible.
+ *
+ * Callers should resolve and pass `upstreamDigest`. The optional fallback is
+ * for unit-testable callers that don't care to model docker inspect.
+ */
 export function computePatchedTag(opts: {
   upstreamImage: string;
   snapshotter: SnapshotterChoice;
   dockerfile: string;
+  upstreamDigest?: string;
 }): string {
   const version = extractUpstreamVersion(opts.upstreamImage);
+  const digestPart = opts.upstreamDigest ?? "";
   const sha = crypto
     .createHash("sha256")
-    .update(`${opts.upstreamImage}\n${opts.snapshotter}\n${opts.dockerfile}`)
+    .update(
+      `${opts.upstreamImage}\n${digestPart}\n${opts.snapshotter}\n${opts.dockerfile}`,
+    )
     .digest("hex")
     .slice(0, 8);
   return `${TAG_PREFIX}:${version}-${opts.snapshotter}-${sha}`;
@@ -190,9 +207,26 @@ export function computePatchedTag(opts: {
  * Idempotently produce a locally-built patched cluster image and return its
  * tag. Subsequent calls with the same inputs no-op via the local Docker cache.
  *
- * Throws on build failure with a structured error so callers can fall back to
- * the upstream image (and the upstream's eventual k3s crash) or surface the
- * documented manual workaround.
+ * Resolution order, with fast-fail on unreachable hosts:
+ *
+ *   1. `docker image inspect <upstream>` — if the upstream image is already
+ *      local, capture its digest and skip the network entirely. This is the
+ *      common path on warm hosts and the only path that works air-gapped
+ *      with a pre-staged image.
+ *   2. Otherwise, `docker manifest inspect <upstream>` with a 30 s budget
+ *      to verify reachability *before* committing to the long pull. This
+ *      keeps the air-gapped failure mode under 30 s + the inspect timeout
+ *      instead of the full 10 min pull timeout.
+ *   3. `docker pull <upstream>` (long timeout), then `docker image inspect`
+ *      to capture the now-local digest.
+ *
+ * The captured digest is folded into the patched-image tag's SHA, so a
+ * registry-side re-push of the same upstream tag invalidates the local
+ * patched-image cache.
+ *
+ * Throws on build failure with a structured error so callers can fall back
+ * to the upstream image (and the upstream's eventual k3s crash) or surface
+ * the documented manual workaround.
  */
 export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): string {
   const snapshotter = opts.snapshotter ?? DEFAULT_SNAPSHOTTER;
@@ -211,10 +245,63 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
   const inspectTimeoutMs = opts.inspectTimeoutMs ?? DEFAULT_INSPECT_TIMEOUT_MS;
 
   const dockerfile = buildPatchDockerfile(snapshotter);
+
+  // Phase 1: resolve the upstream digest. Prefer the local cache (works
+  // air-gapped with pre-staged images, and is sub-second when warm).
+  let upstreamDigest = inspectImageDigest(
+    opts.upstreamImage,
+    runCaptureImpl,
+    inspectTimeoutMs,
+  );
+
+  if (!upstreamDigest) {
+    // Upstream is not local. Probe network reachability with a short
+    // budget BEFORE committing to the multi-minute pull, so air-gapped
+    // and restricted-network hosts fail in seconds instead of minutes.
+    const probeResult = runImpl(["docker", "manifest", "inspect", opts.upstreamImage], {
+      ignoreError: true,
+      timeoutMs: inspectTimeoutMs,
+    });
+    if (probeResult.status !== 0) {
+      throw new ClusterImagePatchError(
+        `cannot reach upstream registry for ${opts.upstreamImage} ` +
+          `(docker manifest inspect exit ${probeResult.status} within ${inspectTimeoutMs} ms). ` +
+          "See docs/reference/troubleshooting.md for the manual daemon.json workaround.",
+      );
+    }
+
+    log(`  Pulling upstream cluster image: ${opts.upstreamImage}`);
+    const pullResult = runImpl(["docker", "pull", opts.upstreamImage], {
+      ignoreError: true,
+      timeoutMs: pullTimeoutMs,
+    });
+    if (pullResult.status !== 0) {
+      throw new ClusterImagePatchError(
+        `failed to pull upstream cluster image ${opts.upstreamImage} ` +
+          `(docker pull exit ${pullResult.status}; timeout ${pullTimeoutMs} ms)`,
+      );
+    }
+
+    upstreamDigest = inspectImageDigest(
+      opts.upstreamImage,
+      runCaptureImpl,
+      inspectTimeoutMs,
+    );
+    if (!upstreamDigest) {
+      throw new ClusterImagePatchError(
+        `failed to resolve digest for ${opts.upstreamImage} after successful pull`,
+      );
+    }
+  }
+
+  // Phase 2: digest-bound tag. A re-pushed upstream produces a different
+  // digest, hence a different SHA, hence a different patched tag — and
+  // the next onboard rebuilds rather than reusing stale layers.
   const tag = computePatchedTag({
     upstreamImage: opts.upstreamImage,
     snapshotter,
     dockerfile,
+    upstreamDigest,
   });
 
   if (imageExists(tag, runCaptureImpl, inspectTimeoutMs)) {
@@ -222,19 +309,8 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
   }
 
   log(`  Building patched cluster image (one-time) → ${tag}`);
-  log(`  Source: ${opts.upstreamImage}`);
+  log(`  Source: ${opts.upstreamImage} (${upstreamDigest})`);
   log(`  Snapshotter: ${snapshotter}`);
-
-  const pullResult = runImpl(["docker", "pull", opts.upstreamImage], {
-    ignoreError: true,
-    timeoutMs: pullTimeoutMs,
-  });
-  if (pullResult.status !== 0) {
-    throw new ClusterImagePatchError(
-      `failed to pull upstream cluster image ${opts.upstreamImage} ` +
-        `(docker pull exit ${pullResult.status}; timeout ${pullTimeoutMs} ms)`,
-    );
-  }
 
   const tmpDir = fsApi.mkdtempSync(path.join(tmpdirImpl(), "nemoclaw-cluster-patch-"));
   try {
@@ -282,6 +358,24 @@ function imageExists(
     timeoutMs: inspectTimeoutMs,
   });
   return Boolean(out && out.trim());
+}
+
+/**
+ * Returns the local content digest of `imageRef` (e.g. `sha256:abc…`), or
+ * an empty string if the image is not present locally. The probe is
+ * bounded by `inspectTimeoutMs` so a stuck Docker daemon can't hang the
+ * whole flow at this step.
+ */
+function inspectImageDigest(
+  imageRef: string,
+  runCaptureImpl: (cmd: readonly string[], opts?: RunOpts) => string,
+  inspectTimeoutMs: number,
+): string {
+  const out = runCaptureImpl(
+    ["docker", "image", "inspect", "--format", "{{.Id}}", imageRef],
+    { ignoreError: true, timeoutMs: inspectTimeoutMs },
+  );
+  return (out || "").trim();
 }
 
 export class ClusterImagePatchError extends Error {

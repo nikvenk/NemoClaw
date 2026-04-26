@@ -184,8 +184,14 @@ function parseDockerInfoSummary(info = ""): string | undefined {
 }
 
 export function parseDockerStorageDriver(info = ""): string | undefined {
-  const driverMatch = info.match(/"Driver"\s*:\s*"([^"]+)"/);
-  return driverMatch?.[1];
+  // JSON form (`docker info --format '{{json .}}'`) is the canonical caller
+  // path inside this file, but accept the plain-text `Storage Driver: <name>`
+  // form too so future callers that pass raw `docker info` don't silently
+  // miss the conflict and bypass the auto-fix.
+  const jsonMatch = info.match(/"Driver"\s*:\s*"([^"]+)"/);
+  if (jsonMatch) return jsonMatch[1];
+  const textMatch = info.match(/^\s*Storage Driver:\s*(\S+)\s*$/m);
+  return textMatch?.[1];
 }
 
 export function parseDockerUsesContainerdSnapshotter(info = ""): boolean {
@@ -316,8 +322,17 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
   // trees and is unaffected. Docker Desktop on macOS/Windows reports
   // overlayfs through a Linux VM that does not exhibit the same kernel
   // limitation, so we scope the conflict to platform === 'linux'.
+  //
+  // We additionally exclude WSL2 hosts. Native Docker inside WSL2 (without
+  // Docker Desktop integration) routes through the WSL kernel, which has
+  // a different overlay-mount story than bare Linux and is not part of
+  // the user-confirmed reproducer. Engaging the auto-fix there could
+  // build an unnecessary patched image; preferring to leave WSL alone
+  // until we have a confirmed repro is the conservative call.
+  const isWslHost = detectWsl({ platform, env, release, procVersion });
   const hasNestedOverlayConflict =
     platform === "linux" &&
+    !isWslHost &&
     runtime === "docker" &&
     dockerStorageDriver === "overlayfs" &&
     dockerUsesContainerdSnapshotter;
@@ -332,7 +347,7 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
       : null;
   const assessment: HostAssessment = {
     platform,
-    isWsl: detectWsl({ platform, env, release, procVersion }),
+    isWsl: isWslHost,
     runtime,
     packageManager,
     systemctlAvailable,

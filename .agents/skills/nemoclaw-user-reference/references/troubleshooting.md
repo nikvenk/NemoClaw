@@ -245,6 +245,7 @@ If you prefer to disable the new Docker storage driver instead of running the pa
 
 Then restart Docker (`sudo systemctl restart docker`) and re-run `nemoclaw onboard`.
 This restores the legacy `overlay2` driver host-wide, which kills any other running containers — prefer the auto-fix unless you need the change for unrelated reasons.
+Switching storage drivers also rebuilds the entire local image graph: previously-pulled images become unusable and Docker re-pulls them on first reference, so expect a cold cache and additional disk usage right after the restart.
 
 ### OpenShell version above maximum
 
