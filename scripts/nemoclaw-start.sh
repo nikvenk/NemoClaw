@@ -981,10 +981,23 @@ emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
 // sandbox-safety-net.js — last-resort handler that keeps the gateway alive
 // when any library throws an uncaught exception or unhandled rejection.
 // Only active inside OpenShell sandboxes (OPENSHELL_SANDBOX=1).
+//
+// IMPORTANT: this preload is loaded into EVERY Node process in the sandbox via
+// NODE_OPTIONS=--require, including short-lived CLI commands like
+// `openclaw agent`. Swallowing unhandled rejections in those processes silently
+// hangs them on awaited promises that should have rejected (the rejection
+// triggers `unhandledRejection` and we eat it). Surfaced first when OpenClaw
+// 2026.4.24's plugin-loader path produced unhandled rejections from
+// `openclaw agent`, which previously raised promptly and now hung indefinitely.
+//
+// Gate the swallow behavior to gateway processes only — argv[2] === "gateway"
+// when openclaw is invoked as `openclaw gateway run …`. CLI commands (agent,
+// doctor, plugins, tui, etc.) get default Node behavior — errors surface.
 
 (function () {
   'use strict';
   if (process.env.OPENSHELL_SANDBOX !== '1') return;
+  if (process.argv[2] !== 'gateway') return;
 
   // Track whether we're inside an unhandledRejection we chose to swallow.
   // OpenClaw's own handler calls process.exit(1) for non-transient rejections.
