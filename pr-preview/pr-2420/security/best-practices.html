@@ -1268,24 +1268,14 @@ See the [Filesystem Controls](https://docs.nvidia.com/openshell/latest/security/
 </section>
 <section id="read-only-openclaw-config">
 <h3>Read-Only <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> Config<a class="headerlink" href="#read-only-openclaw-config" title="Link to this heading">#</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> directory contains the OpenClaw gateway configuration (model routing, CORS settings, channel config).
-The gateway auth token is <strong>not</strong> stored in this directory — it is generated at container startup and passed via the <code class="docutils literal notranslate"><span class="pre">OPENCLAW_GATEWAY_TOKEN</span></code> environment variable only to the gateway process (which runs as the <code class="docutils literal notranslate"><span class="pre">gateway</span></code> user).</p>
-<p>The token file location depends on the startup mode:</p>
-<ul class="simple">
-<li><p><strong>Root mode</strong> (production): <code class="docutils literal notranslate"><span class="pre">/run/nemoclaw/gateway-token</span></code> (<code class="docutils literal notranslate"><span class="pre">gateway:gateway</span> <span class="pre">0400</span></code>).
-The sandbox user cannot read this file (different uid), cannot read the gateway process env (<code class="docutils literal notranslate"><span class="pre">/proc/pid/environ</span></code> is uid-gated), and <code class="docutils literal notranslate"><span class="pre">no-new-privileges</span></code> prevents escalation.</p></li>
-<li><p><strong>Non-root mode</strong> (dev/fallback): <code class="docutils literal notranslate"><span class="pre">/tmp/.runtime/nemoclaw/gateway-token</span></code> (<code class="docutils literal notranslate"><span class="pre">sandbox:sandbox</span> <span class="pre">0400</span></code>).
-Without uid separation the sandbox user owns the file, matching the pre-externalization security posture.
-The token is not exported to the shell env or written to rc files.</p></li>
-</ul>
-<p>The container mounts <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> read-only while writable agent state (plugins, agent data) lives in <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> through symlinks.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> directory contains the OpenClaw gateway configuration, including auth tokens and CORS settings.
+The container mounts it read-only while writable agent state (plugins, agent data) lives in <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> through symlinks.</p>
 <p>Multiple defense layers protect this directory:</p>
 <ul class="simple">
 <li><p><strong>DAC permissions.</strong> Root owns the directory and <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> with <code class="docutils literal notranslate"><span class="pre">chmod</span> <span class="pre">444</span></code>, so the sandbox user cannot write to them.</p></li>
 <li><p><strong>Immutable flag.</strong> The entrypoint applies <code class="docutils literal notranslate"><span class="pre">chattr</span> <span class="pre">+i</span></code> to the directory and all symlinks, preventing modification even if other controls fail.</p></li>
 <li><p><strong>Symlink validation.</strong> At startup, the entrypoint verifies every symlink in <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> points to the expected <code class="docutils literal notranslate"><span class="pre">.openclaw-data</span></code> target. If any symlink points elsewhere, the container refuses to start.</p></li>
 <li><p><strong>Config integrity hash.</strong> The build process pins a SHA256 hash of <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. The entrypoint verifies it at startup and refuses to start if the hash does not match.</p></li>
-<li><p><strong>Externalized gateway token.</strong> The gateway auth token never appears in <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. It is generated at container startup, written to a mode-dependent token file, and passed to the gateway process via an environment variable. In root mode, the token file is owned by the <code class="docutils literal notranslate"><span class="pre">gateway</span></code> user and unreadable by the sandbox agent.</p></li>
 </ul>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
@@ -1295,13 +1285,13 @@ The token is not exported to the shell env or written to rc files.</p></li>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Default</p></td>
-<td><p>The container mounts <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> as read-only, root-owned, immutable, and integrity-verified at startup. <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> remains writable. The gateway auth token is stored separately: <code class="docutils literal notranslate"><span class="pre">/run/nemoclaw/gateway-token</span></code> in root mode (<code class="docutils literal notranslate"><span class="pre">gateway:gateway</span> <span class="pre">0400</span></code>) or <code class="docutils literal notranslate"><span class="pre">/tmp/.runtime/nemoclaw/gateway-token</span></code> in non-root mode (<code class="docutils literal notranslate"><span class="pre">sandbox:sandbox</span> <span class="pre">0400</span></code>).</p></td>
+<td><p>The container mounts <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> as read-only, root-owned, immutable, and integrity-verified at startup. <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> remains writable.</p></td>
 </tr>
 <tr class="row-odd"><td><p>What you can change</p></td>
 <td><p>Move <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> from <code class="docutils literal notranslate"><span class="pre">read_only</span></code> to <code class="docutils literal notranslate"><span class="pre">read_write</span></code> in the policy file.</p></td>
 </tr>
 <tr class="row-even"><td><p>Risk if relaxed</p></td>
-<td><p>A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> directory lets the agent modify its own gateway config: disabling CORS or redirecting inference to an attacker-controlled endpoint. This is the single most dangerous filesystem change.</p></td>
+<td><p>A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> directory lets the agent modify its own gateway config: disabling CORS, changing auth tokens, or redirecting inference to an attacker-controlled endpoint. This is the single most dangerous filesystem change.</p></td>
 </tr>
 <tr class="row-odd"><td><p>Recommendation</p></td>
 <td><p>Never make <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> writable.</p></td>
