@@ -248,6 +248,25 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash test/e2e/test-sandbox-operations.sh
 
+      - name: Capture docker logs on failure (gateway log mirror)
+        if: failure()
+        run: |
+          mkdir -p docker-logs
+          for cid in $(docker ps -a --format '{{.ID}} {{.Names}}' | awk '/test-sbx/ {print $1}'); do
+            name=$(docker inspect --format '{{.Name}}' "$cid" | sed 's|^/||')
+            docker logs "$cid" > "docker-logs/${name}.log" 2>&1 || true
+            docker logs --tail 0 -f --until 1s "$cid" > "docker-logs/${name}.stderr.log" 2>&1 || true
+          done
+          ls -la docker-logs/ || true
+
+      - name: Upload docker logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-operations-docker-logs
+          path: docker-logs/
+          if-no-files-found: ignore
+
       - name: Upload test log on failure
         if: failure()
         uses: actions/upload-artifact@v4
