@@ -372,19 +372,28 @@ RUN openclaw doctor --fix > /dev/null 2>&1 || true \
 # hadolint ignore=DL3002
 USER root
 
-# Ensure .openclaw-data subdirs and symlinks exist for logs, credentials, and
-# sandbox. These are defined in Dockerfile.base but the GHCR base image may
-# not have been rebuilt yet. Idempotent — harmless once the base catches up.
+# Ensure .openclaw-data subdirs and symlinks exist for logs, credentials,
+# sandbox, and plugin-runtime-deps. These are defined in Dockerfile.base but
+# the GHCR base image may not have been rebuilt yet. Idempotent — harmless
+# once the base catches up.
+#
+# plugin-runtime-deps was added in OpenClaw 2026.4.24: the CLI lazy-installs
+# bundled plugin runtime dependencies into ~/.openclaw/plugin-runtime-deps/
+# on first invocation (Jiti loader). Without a writable target every bundled
+# plugin (nvidia, openai, anthropic, ollama, …) fails to load with EACCES,
+# leaving the agent CLI with no providers. See PluginLoadFailureError in #2484.
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/804
 RUN mkdir -p /sandbox/.openclaw-data/logs \
         /sandbox/.openclaw-data/credentials \
         /sandbox/.openclaw-data/sandbox \
         /sandbox/.openclaw-data/media \
+        /sandbox/.openclaw-data/plugin-runtime-deps \
     && chown sandbox:sandbox /sandbox/.openclaw-data/logs \
         /sandbox/.openclaw-data/credentials \
         /sandbox/.openclaw-data/sandbox \
         /sandbox/.openclaw-data/media \
-    && for dir in logs credentials sandbox media; do \
+        /sandbox/.openclaw-data/plugin-runtime-deps \
+    && for dir in logs credentials sandbox media plugin-runtime-deps; do \
         if [ -L "/sandbox/.openclaw/$dir" ]; then true; \
         elif [ -e "/sandbox/.openclaw/$dir" ]; then \
             cp -a "/sandbox/.openclaw/$dir/." "/sandbox/.openclaw-data/$dir/" 2>/dev/null || true; \
