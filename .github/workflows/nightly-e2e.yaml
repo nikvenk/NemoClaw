@@ -239,29 +239,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Start docker log streamer (background)
+      - name: Start k3s pod log streamer (background)
         run: |
-          # Diagnostic for NVIDIA/NemoClaw#2484: capture container stderr (which
-          # mirrors /tmp/gateway.log via the [gateway-log:] tail in
-          # nemoclaw-start.sh) BEFORE the test destroys containers as part of
-          # teardown. Watches for new containers and streams their logs to
-          # per-container files that persist on the host even after `docker rm`.
+          # Diagnostic for NVIDIA/NemoClaw#2484: NemoClaw sandboxes are
+          # Kubernetes pods running INSIDE the openshell-cluster container
+          # (k3s), not sibling docker containers. `docker logs` returns
+          # "configured logging driver does not support reading" for them.
+          # Use `docker exec openshell-cluster-* kubectl logs -f <pod>` to
+          # stream pod logs to host-side files that persist past pod removal.
           mkdir -p docker-logs
           nohup bash -c '
             captured=""
             while sleep 2; do
-              for cid in $(docker ps -aq 2>/dev/null); do
-                if ! printf "%s\n" "$captured" | grep -qx "$cid"; then
-                  name=$(docker inspect --format "{{.Name}}" "$cid" 2>/dev/null | sed "s|^/||")
-                  [ -z "$name" ] && continue
+              # Find the openshell cluster container (one per CI run).
+              cluster=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -E "openshell-cluster" | head -n 1)
+              [ -z "$cluster" ] && continue
+              # List all sandbox pods in the openshell namespace.
+              pods=$(docker exec "$cluster" kubectl get pods -n openshell -o name 2>/dev/null | sed "s|pod/||")
+              for pod in $pods; do
+                if ! printf "%s\n" "$captured" | grep -qx "$pod"; then
                   captured="$captured
-          $cid"
-                  docker logs -f "$cid" > "docker-logs/${name}.log" 2>&1 &
+          $pod"
+                  # Stream logs (-f follows) into per-pod file on host.
+                  docker exec "$cluster" kubectl logs -f -n openshell "$pod" --all-containers --prefix=true \
+                    > "docker-logs/${pod}.log" 2>&1 &
                 fi
               done
+              # Also dump the openshell-cluster docker logs (k3s/scheduling info).
+              docker logs "$cluster" > "docker-logs/${cluster}.log" 2>&1 || true
             done
           ' >/dev/null 2>&1 &
-          echo $! > /tmp/docker-log-streamer.pid
+          echo $! > /tmp/k3s-log-streamer.pid
 
       - name: Run sandbox operations E2E test
         env:
@@ -272,15 +280,15 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash test/e2e/test-sandbox-operations.sh
 
-      - name: Stop docker log streamer
+      - name: Stop k3s pod log streamer
         if: always()
         run: |
-          [ -f /tmp/docker-log-streamer.pid ] && kill "$(cat /tmp/docker-log-streamer.pid)" 2>/dev/null || true
-          # Give in-flight `docker logs -f` followers a moment to flush.
+          [ -f /tmp/k3s-log-streamer.pid ] && kill "$(cat /tmp/k3s-log-streamer.pid)" 2>/dev/null || true
+          # Give in-flight `kubectl logs -f` followers a moment to flush.
           sleep 2
           ls -la docker-logs/ || true
 
-      - name: Upload docker logs on failure
+      - name: Upload pod logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
