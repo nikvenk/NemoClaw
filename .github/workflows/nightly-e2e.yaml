@@ -239,6 +239,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Start docker log streamer (background)
+        run: |
+          # Diagnostic for NVIDIA/NemoClaw#2484: capture container stderr (which
+          # mirrors /tmp/gateway.log via the [gateway-log:] tail in
+          # nemoclaw-start.sh) BEFORE the test destroys containers as part of
+          # teardown. Watches for new containers and streams their logs to
+          # per-container files that persist on the host even after `docker rm`.
+          mkdir -p docker-logs
+          nohup bash -c '
+            captured=""
+            while sleep 2; do
+              for cid in $(docker ps -aq 2>/dev/null); do
+                if ! printf "%s\n" "$captured" | grep -qx "$cid"; then
+                  name=$(docker inspect --format "{{.Name}}" "$cid" 2>/dev/null | sed "s|^/||")
+                  [ -z "$name" ] && continue
+                  captured="$captured
+          $cid"
+                  docker logs -f "$cid" > "docker-logs/${name}.log" 2>&1 &
+                fi
+              done
+            done
+          ' >/dev/null 2>&1 &
+          echo $! > /tmp/docker-log-streamer.pid
+
       - name: Run sandbox operations E2E test
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -248,15 +272,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash test/e2e/test-sandbox-operations.sh
 
-      - name: Capture docker logs on failure (gateway log mirror)
-        if: failure()
+      - name: Stop docker log streamer
+        if: always()
         run: |
-          mkdir -p docker-logs
-          for cid in $(docker ps -a --format '{{.ID}} {{.Names}}' | awk '/test-sbx/ {print $1}'); do
-            name=$(docker inspect --format '{{.Name}}' "$cid" | sed 's|^/||')
-            docker logs "$cid" > "docker-logs/${name}.log" 2>&1 || true
-            docker logs --tail 0 -f --until 1s "$cid" > "docker-logs/${name}.stderr.log" 2>&1 || true
-          done
+          [ -f /tmp/docker-log-streamer.pid ] && kill "$(cat /tmp/docker-log-streamer.pid)" 2>/dev/null || true
+          # Give in-flight `docker logs -f` followers a moment to flush.
+          sleep 2
           ls -la docker-logs/ || true
 
       - name: Upload docker logs on failure
