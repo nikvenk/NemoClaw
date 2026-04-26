@@ -541,7 +541,6 @@ jobs:
           path: |
             /tmp/nemoclaw-e2e-install.log
             /tmp/nemoclaw-e2e-onboard-positive.log
-            /tmp/nemoclaw-e2e-onboard-replay.log
             /tmp/nemoclaw-e2e-onboard-negative.log
           if-no-files-found: ignore
 
