@@ -275,6 +275,13 @@ test_sbx_02_connect_chat() {
   log "=== TC-SBX-02: Connect & Chat ==="
   require_sandbox "$SANDBOX_A" "TC-SBX-02" || return
 
+  # Capture SSH-shell environment to diagnose proxy/auth resolution issues
+  # surfaced by OpenClaw 2026.4.24's global EnvHttpProxyAgent dispatcher.
+  log "  [diag] SSH-shell environment:"
+  local diag_env
+  diag_env=$(sandbox_exec 'echo HTTP_PROXY=${HTTP_PROXY:-unset}; echo HTTPS_PROXY=${HTTPS_PROXY:-unset}; echo NO_PROXY=${NO_PROXY:-unset}; echo OPENCLAW_GATEWAY_URL=${OPENCLAW_GATEWAY_URL:-unset}; echo OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:+set}${OPENCLAW_GATEWAY_TOKEN:-unset}; echo OPENSHELL_SANDBOX=${OPENSHELL_SANDBOX:-unset}; echo NVIDIA_API_KEY=${NVIDIA_API_KEY:+set}${NVIDIA_API_KEY:-unset}' 2>&1) || true
+  echo "$diag_env" | sed 's/^/    /'
+
   log "  Sending one-shot message to agent via SSH..."
   local reply
   reply=$(sandbox_exec "openclaw agent --agent main -m 'Say exactly: HELLO_E2E' --session-id e2e-test" 2>&1) || true
@@ -282,7 +289,7 @@ test_sbx_02_connect_chat() {
   if echo "$reply" | grep -qi "HELLO_E2E"; then
     pass "TC-SBX-02: Agent replied with expected token"
   else
-    fail "TC-SBX-02: Connect & Chat" "Got: $(echo "$reply" | head -3)"
+    fail "TC-SBX-02: Connect & Chat" "Got (full): $(echo "$reply" | head -20)"
   fi
 }
 
