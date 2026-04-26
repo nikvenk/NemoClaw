@@ -406,22 +406,7 @@ RUN mkdir -p /sandbox/.openclaw-data/logs \
     && if [ -e /sandbox/.openclaw-data/workspace/media ] && [ ! -L /sandbox/.openclaw-data/workspace/media ]; then \
         rm -rf /sandbox/.openclaw-data/workspace/media; \
     fi \
-    && ln -sfn /sandbox/.openclaw-data/media /sandbox/.openclaw-data/workspace/media \
-    # Ensure gateway user (different uid/gid than sandbox) can write to \
-    # plugin-runtime-deps. OpenClaw 2026.4.24+'s plugin loader runs on both \
-    # the sandbox-side CLI and the gateway side; both call \
-    # withBundledRuntimeDepsInstallRootLock which mkdirSyncs a lock dir under \
-    # the install root. Without write access for gateway, the gateway-side \
-    # plugin load throws EACCES on the lock and an agent request hangs \
-    # without producing a response. \
-    # \
-    # Add gateway to sandbox group (idempotent — usermod -aG is a no-op if \
-    # already a member), then setgid + group-write on the cache so files \
-    # created by either user inherit the sandbox group. Covers stale GHCR \
-    # base images that predate the Dockerfile.base supplementary-group line. \
-    && usermod -aG sandbox gateway \
-    && chmod 2775 /sandbox/.openclaw-data/plugin-runtime-deps \
-    && find /sandbox/.openclaw-data/plugin-runtime-deps -type d -exec chmod g+ws {} +
+    && ln -sfn /sandbox/.openclaw-data/media /sandbox/.openclaw-data/workspace/media
 
 # Ensure exec approvals path compatibility when using a stale published base
 # image that still points to ~/.openclaw/exec-approvals.json.

@@ -84,17 +84,8 @@ RUN arch="$(dpkg --print-architecture)" \
 # Create sandbox user (matches OpenShell convention) and gateway user.
 # The gateway runs as 'gateway' so the 'sandbox' user (agent) cannot
 # kill it or restart it with a tampered HOME/config.
-#
-# Add gateway to the sandbox supplementary group so it can share write
-# access to the plugin-runtime-deps cache (set 2775 below). Without this,
-# OpenClaw 2026.4.24+'s lazy plugin runtime deps loader (Jiti) can't
-# acquire its lock dir from the gateway-side plugin loader and the agent
-# request hangs waiting on a response that never comes. The original
-# security boundary (sandbox cannot affect gateway) is preserved — this
-# only opens gateway → sandbox-owned resources, not the reverse.
-RUN groupadd -r sandbox \
-    && groupadd -r gateway && useradd -r -g gateway -G sandbox -d /sandbox -s /usr/sbin/nologin gateway \
-    && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbox \
+RUN groupadd -r gateway && useradd -r -g gateway -d /sandbox -s /usr/sbin/nologin gateway \
+    && groupadd -r sandbox && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbox \
     && mkdir -p /sandbox/.nemoclaw \
     && chown -R sandbox:sandbox /sandbox
 
@@ -140,8 +131,7 @@ RUN mkdir -p /sandbox/.openclaw-data/agents/main/agent \
     && ln -s /sandbox/.openclaw-data/telegram /sandbox/.openclaw/telegram \
     && ln -s /sandbox/.openclaw-data/flows /sandbox/.openclaw/flows \
     && ln -s /sandbox/.openclaw-data/plugin-runtime-deps /sandbox/.openclaw/plugin-runtime-deps \
-    && chown -R sandbox:sandbox /sandbox/.openclaw /sandbox/.openclaw-data \
-    && chmod 2775 /sandbox/.openclaw-data/plugin-runtime-deps
+    && chown -R sandbox:sandbox /sandbox/.openclaw /sandbox/.openclaw-data
 
 # Pre-create shell init files for the sandbox user.
 # The /sandbox home directory is Landlock read-only at runtime (#804), so these
