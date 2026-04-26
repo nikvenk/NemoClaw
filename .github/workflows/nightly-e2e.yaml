@@ -239,37 +239,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Start k3s pod log streamer (background)
+      - name: Start gateway log streamer (background)
         run: |
-          # Diagnostic for NVIDIA/NemoClaw#2484: NemoClaw sandboxes are
-          # Kubernetes pods running INSIDE the openshell-cluster container
-          # (k3s), not sibling docker containers. `docker logs` returns
-          # "configured logging driver does not support reading" for them.
-          # Use `docker exec openshell-cluster-* kubectl logs -f <pod>` to
-          # stream pod logs to host-side files that persist past pod removal.
+          # Diagnostic for NVIDIA/NemoClaw#2484: NemoClaw sandboxes are k3s
+          # pods inside the openshell-cluster container, and the configured
+          # container log driver doesn't allow reading container stdio
+          # (`docker logs` returns "configured logging driver does not support
+          # reading", `kubectl logs` returns empty). The only way to get
+          # /tmp/gateway.log content out is via SSH inside the sandbox —
+          # `nemoclaw <sandbox> logs --follow` does exactly this.
+          #
+          # Wait until nemoclaw is installed (test does it as first step),
+          # then poll `nemoclaw list` and spawn a per-sandbox follower.
           mkdir -p docker-logs
           nohup bash -c '
             captured=""
-            while sleep 2; do
-              # Find the openshell cluster container (one per CI run).
-              cluster=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -E "openshell-cluster" | head -n 1)
-              [ -z "$cluster" ] && continue
-              # List all sandbox pods in the openshell namespace.
-              pods=$(docker exec "$cluster" kubectl get pods -n openshell -o name 2>/dev/null | sed "s|pod/||")
-              for pod in $pods; do
-                if ! printf "%s\n" "$captured" | grep -qx "$pod"; then
+            export PATH="$HOME/.local/bin:$PATH"
+            while sleep 5; do
+              # nemoclaw is installed by the test in its first phase.
+              command -v nemoclaw >/dev/null 2>&1 || continue
+              for name in $(nemoclaw list 2>/dev/null | awk "/^[[:space:]]*[a-zA-Z0-9_-]+/ {print \$1}" | grep -v "^Sandbox\$" | grep -v "^---"); do
+                if ! printf "%s\n" "$captured" | grep -qx "$name"; then
                   captured="$captured
-          $pod"
-                  # Stream logs (-f follows) into per-pod file on host.
-                  docker exec "$cluster" kubectl logs -f -n openshell "$pod" --all-containers --prefix=true \
-                    > "docker-logs/${pod}.log" 2>&1 &
+          $name"
+                  # Stream gateway log into per-sandbox file on host.
+                  nohup nemoclaw "$name" logs --follow > "docker-logs/sandbox-${name}.log" 2>&1 &
                 fi
               done
-              # Also dump the openshell-cluster docker logs (k3s/scheduling info).
-              docker logs "$cluster" > "docker-logs/${cluster}.log" 2>&1 || true
+              # Also keep dumping the openshell-cluster docker logs.
+              cluster=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -E "openshell-cluster" | head -n 1)
+              [ -n "$cluster" ] && docker logs "$cluster" > "docker-logs/${cluster}.log" 2>&1 || true
             done
           ' >/dev/null 2>&1 &
-          echo $! > /tmp/k3s-log-streamer.pid
+          echo $! > /tmp/gateway-log-streamer.pid
 
       - name: Run sandbox operations E2E test
         env:
@@ -280,15 +282,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash test/e2e/test-sandbox-operations.sh
 
-      - name: Stop k3s pod log streamer
+      - name: Stop gateway log streamer
         if: always()
         run: |
-          [ -f /tmp/k3s-log-streamer.pid ] && kill "$(cat /tmp/k3s-log-streamer.pid)" 2>/dev/null || true
-          # Give in-flight `kubectl logs -f` followers a moment to flush.
+          [ -f /tmp/gateway-log-streamer.pid ] && kill "$(cat /tmp/gateway-log-streamer.pid)" 2>/dev/null || true
+          # Give nemoclaw logs --follow processes a moment to flush.
+          pkill -f 'nemoclaw .* logs --follow' 2>/dev/null || true
           sleep 2
-          ls -la docker-logs/ || true
+          wc -l docker-logs/* 2>&1 | tail -20 || true
 
-      - name: Upload pod logs on failure
+      - name: Upload sandbox gateway logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
