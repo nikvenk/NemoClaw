@@ -226,6 +226,8 @@ def build_config(env: dict | None = None) -> dict:
 def clear_token() -> None:
     """Read existing openclaw.json and clear the gateway auth token."""
     path = os.path.expanduser("~/.openclaw/openclaw.json")
+    if not os.path.exists(path):
+        return
     with open(path) as f:
         cfg = json.load(f)
     cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = ""
