@@ -282,7 +282,11 @@ cd "$REPO_ROOT" || {
   exit 1
 }
 
-env \
+# Hermetic env: explicitly unset the auto-fix override knobs so a caller
+# that already exports NEMOCLAW_DISABLE_OVERLAY_FIX=1 or
+# NEMOCLAW_OVERLAY_SNAPSHOTTER=native can't silently change the path the
+# positive phase is asserting on (lines 325-345 below).
+env -u NEMOCLAW_DISABLE_OVERLAY_FIX -u NEMOCLAW_OVERLAY_SNAPSHOTTER \
   NEMOCLAW_NON_INTERACTIVE=1 \
   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
   NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
@@ -375,7 +379,8 @@ if [ -n "$patched_tag" ]; then
   before_created=$(docker inspect --format '{{.Created}}' "$patched_tag" 2>/dev/null || echo "")
 fi
 
-env \
+# Same hermetic env-var policy as phase 3 — see the comment there.
+env -u NEMOCLAW_DISABLE_OVERLAY_FIX -u NEMOCLAW_OVERLAY_SNAPSHOTTER \
   NEMOCLAW_NON_INTERACTIVE=1 \
   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
   NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \

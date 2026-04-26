@@ -13,40 +13,48 @@ import {
 const UPSTREAM = "ghcr.io/nvidia/openshell/cluster:0.0.36";
 
 describe("buildPatchDockerfile", () => {
-  it("uses a multi-stage build to fetch the upstream fuse-overlayfs static binary", () => {
+  it("uses a multi-stage ubuntu:24.04 builder to install fuse-overlayfs from apt", () => {
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    expect(dockerfile).toContain("FROM alpine:3.20 AS bin-fetcher");
+    expect(dockerfile).toContain("FROM ubuntu:24.04 AS bin-fetcher");
+    expect(dockerfile).toContain("apt-get install -y --no-install-recommends fuse-overlayfs");
     expect(dockerfile).toContain(
-      "https://github.com/containers/fuse-overlayfs/releases/download/",
+      "COPY --from=bin-fetcher /export/fuse-overlayfs /usr/local/bin/fuse-overlayfs",
     );
     expect(dockerfile).toContain(
-      "COPY --from=bin-fetcher /tmp/fuse-overlayfs /usr/local/bin/fuse-overlayfs",
+      "COPY --from=bin-fetcher /export/lib/libfuse3.so.3 /usr/local/lib/libfuse3.so.3",
     );
     expect(dockerfile).toContain('CMD ["server", "--snapshotter=fuse-overlayfs"]');
+  });
+
+  it("does not link to a third-party code repository in the Dockerfile", () => {
+    // Repo policy (CONTRIBUTING.md "No External Project Links") prohibits
+    // pointing at third-party GitHub repos in source. The previous static-
+    // binary approach pulled from `containers/fuse-overlayfs` releases —
+    // this assertion guards against regressing back to that.
+    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    expect(dockerfile).not.toContain("github.com");
   });
 
   it("does not RUN apt-get or curl in the final cluster stage", () => {
     // The upstream cluster image's base ships BusyBox tar (so dpkg-deb
     // cannot extract .debs) AND does not ship curl (RUN curl exits 127).
-    // The fix is structural: download in an Alpine stage, COPY --from
-    // into the cluster stage. Anyone reverting this should expect the
-    // e2e to surface the regression via the install log.
+    // The fix is structural: install in a clean ubuntu:24.04 builder,
+    // COPY --from into the cluster stage.
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    // The final stage starts after the second FROM and must not contain
-    // a RUN that touches apt-get or curl.
     const finalStage = dockerfile.split(/^FROM \$\{UPSTREAM\}/m)[1] ?? "";
     expect(finalStage).not.toMatch(/RUN[^\n]*apt-get/);
     expect(finalStage).not.toMatch(/RUN[^\n]*curl/);
   });
 
-  it("maps amd64 and arm64 TARGETARCH to upstream release naming", () => {
-    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    expect(dockerfile).toContain("amd64) FUSE_ARCH=x86_64");
-    expect(dockerfile).toContain("arm64) FUSE_ARCH=aarch64");
-  });
-
-  it("threads through the native snapshotter when requested", () => {
-    expect(buildPatchDockerfile("native")).toContain('CMD ["server", "--snapshotter=native"]');
+  it("threads through the native snapshotter without installing fuse-overlayfs", () => {
+    // K3s `native` snapshotter does not need the userspace fuse helper.
+    // Anyone selecting it (NEMOCLAW_OVERLAY_SNAPSHOTTER=native) should get
+    // a minimal patch image that only overrides CMD.
+    const dockerfile = buildPatchDockerfile("native");
+    expect(dockerfile).toContain('CMD ["server", "--snapshotter=native"]');
+    expect(dockerfile).not.toContain("fuse-overlayfs");
+    expect(dockerfile).not.toContain("apt-get");
+    expect(dockerfile).not.toContain("ubuntu:24.04");
   });
 });
 
