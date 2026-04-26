@@ -11,6 +11,8 @@ import {
   getDockerBridgeGatewayIp,
   getMemoryInfo,
   ensureSwap,
+  parseDockerStorageDriver,
+  parseDockerUsesContainerdSnapshotter,
   planHostRemediation,
   probeContainerDns,
 } from "../../dist/lib/preflight";
@@ -354,6 +356,96 @@ describe("assessHost", () => {
     expect(result.isHeadlessLikely).toBe(true);
     expect(result.notes).toContain("Headless environment likely");
   });
+
+  // Docker 26+ on Linux defaults fresh installs to the containerd image store
+  // with overlayfs snapshotter, breaking nested overlay mounts inside k3s.
+  // See cluster-image-patch.ts for the auto-fix downstream of this signal.
+  it("flags Docker 26+ containerd-snapshotter overlayfs as a nested overlay conflict", () => {
+    const result = assessHost({
+      platform: "linux",
+      env: {},
+      dockerInfoOutput: JSON.stringify({
+        ServerVersion: "29.1.3",
+        OperatingSystem: "Ubuntu 24.04.4 LTS",
+        Driver: "overlayfs",
+        DriverStatus: [["driver-type", "io.containerd.snapshotter.v1"]],
+        CgroupVersion: "2",
+      }),
+      commandExistsImpl: (name: string) => name === "docker",
+    });
+
+    expect(result.dockerStorageDriver).toBe("overlayfs");
+    expect(result.dockerUsesContainerdSnapshotter).toBe(true);
+    expect(result.hasNestedOverlayConflict).toBe(true);
+  });
+
+  it("does not flag the legacy overlay2 driver as a conflict", () => {
+    const result = assessHost({
+      platform: "linux",
+      env: {},
+      dockerInfoOutput: JSON.stringify({
+        ServerVersion: "25.0.5",
+        OperatingSystem: "Ubuntu 24.04",
+        Driver: "overlay2",
+        CgroupVersion: "2",
+      }),
+      commandExistsImpl: (name: string) => name === "docker",
+    });
+
+    expect(result.dockerStorageDriver).toBe("overlay2");
+    expect(result.dockerUsesContainerdSnapshotter).toBe(false);
+    expect(result.hasNestedOverlayConflict).toBe(false);
+  });
+
+  it("does not flag macOS Docker Desktop as a conflict even with overlayfs driver", () => {
+    // Docker Desktop runs Linux in a VM; the kernel-overlay limitation does
+    // not apply on the macOS host path. Scope the conflict to platform ===
+    // 'linux' so we don't auto-build patched images for Mac users.
+    const result = assessHost({
+      platform: "darwin",
+      env: {},
+      dockerInfoOutput: JSON.stringify({
+        ServerVersion: "29.1.3",
+        OperatingSystem: "Docker Desktop",
+        Driver: "overlayfs",
+        DriverStatus: [["driver-type", "io.containerd.snapshotter.v1"]],
+      }),
+      commandExistsImpl: (name: string) => name === "docker",
+    });
+
+    expect(result.hasNestedOverlayConflict).toBe(false);
+  });
+});
+
+describe("parseDockerStorageDriver", () => {
+  it("extracts the Driver field from JSON docker info output", () => {
+    expect(parseDockerStorageDriver('{"Driver":"overlayfs","Other":"x"}')).toBe("overlayfs");
+    expect(parseDockerStorageDriver('{"Driver":"overlay2"}')).toBe("overlay2");
+  });
+
+  it("returns undefined for empty or non-matching input", () => {
+    expect(parseDockerStorageDriver("")).toBeUndefined();
+    expect(parseDockerStorageDriver("not json at all")).toBeUndefined();
+  });
+});
+
+describe("parseDockerUsesContainerdSnapshotter", () => {
+  it("returns true when DriverStatus mentions io.containerd.snapshotter.v1", () => {
+    const fixture = JSON.stringify({
+      Driver: "overlayfs",
+      DriverStatus: [["driver-type", "io.containerd.snapshotter.v1"]],
+    });
+    expect(parseDockerUsesContainerdSnapshotter(fixture)).toBe(true);
+  });
+
+  it("returns false for legacy overlay2 driver output without the snapshotter marker", () => {
+    const fixture = JSON.stringify({ Driver: "overlay2" });
+    expect(parseDockerUsesContainerdSnapshotter(fixture)).toBe(false);
+  });
+
+  it("returns false for empty input", () => {
+    expect(parseDockerUsesContainerdSnapshotter("")).toBe(false);
+  });
 });
 
 describe("planHostRemediation", () => {
@@ -373,6 +465,7 @@ describe("planHostRemediation", () => {
       openshellInstalled: true,
       dockerCgroupVersion: "unknown",
       dockerDefaultCgroupnsMode: "unknown",
+      hasNestedOverlayConflict: false,
       requiresHostCgroupnsFix: false,
       isUnsupportedRuntime: false,
       isHeadlessLikely: false,
@@ -401,6 +494,7 @@ describe("planHostRemediation", () => {
       openshellInstalled: true,
       dockerCgroupVersion: "unknown",
       dockerDefaultCgroupnsMode: "unknown",
+      hasNestedOverlayConflict: false,
       requiresHostCgroupnsFix: false,
       isUnsupportedRuntime: false,
       isHeadlessLikely: false,
@@ -433,6 +527,7 @@ describe("planHostRemediation", () => {
       openshellInstalled: true,
       dockerCgroupVersion: "unknown",
       dockerDefaultCgroupnsMode: "unknown",
+      hasNestedOverlayConflict: false,
       requiresHostCgroupnsFix: false,
       isUnsupportedRuntime: true,
       isHeadlessLikely: false,
@@ -463,6 +558,7 @@ describe("planHostRemediation", () => {
       openshellInstalled: true,
       dockerCgroupVersion: "unknown",
       dockerDefaultCgroupnsMode: "unknown",
+      hasNestedOverlayConflict: false,
       requiresHostCgroupnsFix: false,
       isUnsupportedRuntime: false,
       isHeadlessLikely: false,
@@ -490,6 +586,7 @@ describe("planHostRemediation", () => {
       openshellInstalled: false,
       dockerCgroupVersion: "v2",
       dockerDefaultCgroupnsMode: "unknown",
+      hasNestedOverlayConflict: false,
       requiresHostCgroupnsFix: false,
       isUnsupportedRuntime: false,
       isHeadlessLikely: false,

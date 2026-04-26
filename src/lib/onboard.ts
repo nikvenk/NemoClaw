@@ -92,6 +92,7 @@ const shields = require("./shields");
 const tiers: typeof import("./tiers") = require("./tiers");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
 const preflightUtils: typeof import("./preflight") = require("./preflight");
+const clusterImagePatch: typeof import("./cluster-image-patch") = require("./cluster-image-patch");
 const {
   assessHost,
   checkPortAvailable,
@@ -3609,8 +3610,63 @@ function getGatewayStartEnv(): Record<string, string> {
   if (stableGatewayImage && openshellVersion) {
     gatewayEnv.OPENSHELL_CLUSTER_IMAGE = stableGatewayImage;
     gatewayEnv.IMAGE_TAG = openshellVersion;
+    const overlayOverride = applyOverlayfsAutoFix(stableGatewayImage);
+    if (overlayOverride) {
+      gatewayEnv.OPENSHELL_CLUSTER_IMAGE = overlayOverride;
+    }
   }
   return gatewayEnv;
+}
+
+/**
+ * When the host runs Docker 26+ with the new containerd-snapshotter overlayfs
+ * driver, k3s inside the upstream cluster image cannot mount nested overlays
+ * and crashes. Build a tiny patched image locally that selects fuse-overlayfs
+ * (or `native` via NEMOCLAW_OVERLAY_SNAPSHOTTER) and return its tag so the
+ * caller can route OPENSHELL_CLUSTER_IMAGE to it. Returns null on every host
+ * that is not affected, when the user opts out, or when the build fails (in
+ * which case we fall through to the upstream image and let the existing
+ * doctor diagnostics surface the underlying error).
+ */
+function applyOverlayfsAutoFix(upstreamImage: string): string | null {
+  if (process.env.NEMOCLAW_DISABLE_OVERLAY_FIX === "1") {
+    return null;
+  }
+  let assessment: ReturnType<typeof preflightUtils.assessHost>;
+  try {
+    assessment = preflightUtils.assessHost();
+  } catch {
+    return null;
+  }
+  if (!assessment.hasNestedOverlayConflict) {
+    return null;
+  }
+
+  const requestedSnapshotter = (process.env.NEMOCLAW_OVERLAY_SNAPSHOTTER || "").trim();
+  const snapshotter: "fuse-overlayfs" | "native" =
+    requestedSnapshotter === "native" ? "native" : "fuse-overlayfs";
+
+  console.log(
+    `  Detected Docker 26+ containerd-snapshotter overlayfs (driver=${assessment.dockerStorageDriver}). ` +
+      `Routing through a locally-built ${snapshotter} cluster image to bypass nested-overlay break.`,
+  );
+  console.log(
+    "  Set NEMOCLAW_DISABLE_OVERLAY_FIX=1 to disable this auto-fix; see docs for the manual daemon.json workaround.",
+  );
+
+  try {
+    return clusterImagePatch.ensurePatchedClusterImage({
+      upstreamImage,
+      snapshotter,
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`  Patched cluster image build failed: ${reason}`);
+    console.error(
+      "  Falling back to the upstream image. The k3s server will likely fail; see docs/reference/troubleshooting.md.",
+    );
+    return null;
+  }
 }
 
 async function recoverGatewayRuntime() {
