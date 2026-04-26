@@ -72,8 +72,12 @@ require_sandbox() {
 
 # Run a command inside a named sandbox via SSH. Returns the command output.
 # Logs warnings on SSH config failure, empty config, timeout, or non-zero exit.
+# Third arg is the SSH timeout in seconds (default 60). Bump it for commands
+# that exercise OpenClaw 2026.4.24+'s lazy plugin runtime deps install
+# (50+ bundled plugins compiled by Jiti on first invocation — first call can
+# exceed 60s even with deps pre-cached at build time).
 sandbox_exec_for() {
-  local name="$1" cmd="$2"
+  local name="$1" cmd="$2" timeout="${3:-60}"
   local ssh_cfg
   ssh_cfg="$(mktemp)"
   if ! openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null; then
@@ -89,13 +93,13 @@ sandbox_exec_for() {
     return 1
   fi
   local result exit_code=0
-  result=$(run_with_timeout 60 ssh -F "$ssh_cfg" \
+  result=$(run_with_timeout "$timeout" ssh -F "$ssh_cfg" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 -o LogLevel=ERROR \
     "openshell-${name}" "$cmd" 2>&1) || exit_code=$?
   rm -f "$ssh_cfg"
   if [[ $exit_code -eq 124 ]]; then
-    log "  [sandbox_exec] SSH command timed out after 60s for '$name'"
+    log "  [sandbox_exec] SSH command timed out after ${timeout}s for '$name'"
   elif [[ $exit_code -ne 0 && -z "$result" ]]; then
     log "  [sandbox_exec] SSH command failed (exit $exit_code) for '$name'"
   fi
@@ -104,7 +108,7 @@ sandbox_exec_for() {
 
 # Shorthand: run a command inside sandbox A.
 sandbox_exec() {
-  sandbox_exec_for "$SANDBOX_A" "$1"
+  sandbox_exec_for "$SANDBOX_A" "$1" "${2:-}"
 }
 
 # Onboard a sandbox by name. Removes stale locks, runs nemoclaw onboard in
@@ -283,8 +287,14 @@ test_sbx_02_connect_chat() {
   echo "$diag_env" | sed 's/^/    /'
 
   log "  Sending one-shot message to agent via SSH..."
+  # 240s timeout (vs default 60s): OpenClaw 2026.4.24+ lazy-installs and
+  # Jiti-compiles ~50 bundled plugin runtime deps on the first agent
+  # invocation. Even with deps pre-cached at build time, plugin registry
+  # bootstrap + provider warmup + LLM round-trip can exceed 60s on a fresh
+  # sandbox. The openclaw agent's own --timeout default is 600s, so 240s
+  # is a comfortable upper bound for a single-turn reply.
   local reply
-  reply=$(sandbox_exec "openclaw agent --agent main -m 'Say exactly: HELLO_E2E' --session-id e2e-test" 2>&1) || true
+  reply=$(sandbox_exec "openclaw agent --agent main -m 'Say exactly: HELLO_E2E' --session-id e2e-test" 240 2>&1) || true
 
   if echo "$reply" | grep -qi "HELLO_E2E"; then
     pass "TC-SBX-02: Agent replied with expected token"
