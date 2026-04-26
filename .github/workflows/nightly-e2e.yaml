@@ -241,34 +241,28 @@ jobs:
 
       - name: Start gateway log streamer (background)
         run: |
-          # Diagnostic for NVIDIA/NemoClaw#2484: NemoClaw sandboxes are k3s
-          # pods inside the openshell-cluster container, and the configured
-          # container log driver doesn't allow reading container stdio
-          # (`docker logs` returns "configured logging driver does not support
-          # reading", `kubectl logs` returns empty). The only way to get
-          # /tmp/gateway.log content out is via SSH inside the sandbox —
-          # `nemoclaw <sandbox> logs --follow` does exactly this.
+          # Diagnostic for NVIDIA/NemoClaw#2484: container log driver in
+          # openshell's k3s setup doesn't allow reading container stdio —
+          # only working path to /tmp/gateway.log is via SSH, which
+          # `nemoclaw <sandbox> logs` uses internally.
           #
-          # Wait until nemoclaw is installed (test does it as first step),
-          # then poll `nemoclaw list` and spawn a per-sandbox follower.
+          # Snapshot mode (not follow): every 10s, overwrite per-sandbox
+          # log file with the latest gateway log content. Bounded output
+          # (~62 lines per snapshot). When a sandbox is destroyed by the
+          # test, the file holds the final pre-destroy snapshot.
           mkdir -p docker-logs
           nohup bash -c '
-            captured=""
             export PATH="$HOME/.local/bin:$PATH"
-            while sleep 5; do
-              # nemoclaw is installed by the test in its first phase.
+            while sleep 10; do
               command -v nemoclaw >/dev/null 2>&1 || continue
               for name in $(nemoclaw list 2>/dev/null | awk "/^[[:space:]]*[a-zA-Z0-9_-]+/ {print \$1}" | grep -v "^Sandbox\$" | grep -v "^---"); do
-                if ! printf "%s\n" "$captured" | grep -qx "$name"; then
-                  captured="$captured
-          $name"
-                  # Stream gateway log into per-sandbox file on host.
-                  nohup nemoclaw "$name" logs --follow > "docker-logs/sandbox-${name}.log" 2>&1 &
-                fi
+                # Snapshot — overwrite each iteration. nemoclaw logs reads
+                # /tmp/gateway.log via SSH and prints it; default is bounded.
+                # Capped at ~256KB per file as a safety net.
+                timeout 8 nemoclaw "$name" logs 2>&1 | head -c 262144 > "docker-logs/sandbox-${name}.log.tmp" \
+                  && mv "docker-logs/sandbox-${name}.log.tmp" "docker-logs/sandbox-${name}.log" \
+                  || true
               done
-              # Also keep dumping the openshell-cluster docker logs.
-              cluster=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -E "openshell-cluster" | head -n 1)
-              [ -n "$cluster" ] && docker logs "$cluster" > "docker-logs/${cluster}.log" 2>&1 || true
             done
           ' >/dev/null 2>&1 &
           echo $! > /tmp/gateway-log-streamer.pid
@@ -286,10 +280,11 @@ jobs:
         if: always()
         run: |
           [ -f /tmp/gateway-log-streamer.pid ] && kill "$(cat /tmp/gateway-log-streamer.pid)" 2>/dev/null || true
-          # Give nemoclaw logs --follow processes a moment to flush.
-          pkill -f 'nemoclaw .* logs --follow' 2>/dev/null || true
           sleep 2
-          wc -l docker-logs/* 2>&1 | tail -20 || true
+          # Ensure no temp files left mid-write.
+          rm -f docker-logs/*.log.tmp 2>/dev/null || true
+          ls -la docker-logs/ 2>&1 | head -20 || true
+          du -sh docker-logs/ 2>&1 || true
 
       - name: Upload sandbox gateway logs on failure
         if: failure()
