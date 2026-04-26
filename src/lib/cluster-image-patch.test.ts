@@ -13,10 +13,27 @@ import {
 const UPSTREAM = "ghcr.io/nvidia/openshell/cluster:0.0.36";
 
 describe("buildPatchDockerfile", () => {
-  it("includes fuse-overlayfs install and snapshotter CMD override", () => {
+  it("downloads the upstream fuse-overlayfs static binary and overrides the snapshotter CMD", () => {
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    expect(dockerfile).toContain("apt-get install -y --no-install-recommends fuse-overlayfs");
+    expect(dockerfile).toContain(
+      "https://github.com/containers/fuse-overlayfs/releases/download/",
+    );
+    expect(dockerfile).toContain("/usr/local/bin/fuse-overlayfs");
     expect(dockerfile).toContain('CMD ["server", "--snapshotter=fuse-overlayfs"]');
+  });
+
+  it("does not invoke apt-get to install fuse-overlayfs (upstream base lacks GNU tar)", () => {
+    // The upstream cluster image's base ships BusyBox tar; dpkg-deb cannot
+    // extract .debs there. Anyone changing this back to apt should expect
+    // the e2e to surface the regression via the install log.
+    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    expect(dockerfile).not.toMatch(/apt-get\s+install[^\n]*fuse-overlayfs/);
+  });
+
+  it("maps amd64 and arm64 TARGETARCH to upstream release naming", () => {
+    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    expect(dockerfile).toContain("amd64) FUSE_ARCH=x86_64");
+    expect(dockerfile).toContain("arm64) FUSE_ARCH=aarch64");
   });
 
   it("threads through the native snapshotter when requested", () => {
