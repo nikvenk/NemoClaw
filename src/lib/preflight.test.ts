@@ -360,10 +360,18 @@ describe("assessHost", () => {
   // Docker 26+ on Linux defaults fresh installs to the containerd image store
   // with overlayfs snapshotter, breaking nested overlay mounts inside k3s.
   // See cluster-image-patch.ts for the auto-fix downstream of this signal.
+  //
+  // The fixtures here explicitly pin `release` and override `readFileImpl`
+  // for /proc/version so the underlying `detectWsl` heuristic does not
+  // pick up the test runner's actual environment (e.g. the wsl-e2e job
+  // running on real WSL would otherwise see kernel 5.15.x-microsoft-WSL
+  // and flip isWsl true, gating off the conflict).
   it("flags Docker 26+ containerd-snapshotter overlayfs as a nested overlay conflict", () => {
     const result = assessHost({
       platform: "linux",
       env: {},
+      release: "6.8.0-58-generic",
+      readFileImpl: () => "Linux version 6.8.0-58-generic (buildd@lcy02-amd64)",
       dockerInfoOutput: JSON.stringify({
         ServerVersion: "29.1.3",
         OperatingSystem: "Ubuntu 24.04.4 LTS",
@@ -374,6 +382,7 @@ describe("assessHost", () => {
       commandExistsImpl: (name: string) => name === "docker",
     });
 
+    expect(result.isWsl).toBe(false);
     expect(result.dockerStorageDriver).toBe("overlayfs");
     expect(result.dockerUsesContainerdSnapshotter).toBe(true);
     expect(result.hasNestedOverlayConflict).toBe(true);
@@ -383,6 +392,8 @@ describe("assessHost", () => {
     const result = assessHost({
       platform: "linux",
       env: {},
+      release: "6.8.0-58-generic",
+      readFileImpl: () => "Linux version 6.8.0-58-generic (buildd@lcy02-amd64)",
       dockerInfoOutput: JSON.stringify({
         ServerVersion: "25.0.5",
         OperatingSystem: "Ubuntu 24.04",
