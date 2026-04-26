@@ -13,21 +13,30 @@ import {
 const UPSTREAM = "ghcr.io/nvidia/openshell/cluster:0.0.36";
 
 describe("buildPatchDockerfile", () => {
-  it("downloads the upstream fuse-overlayfs static binary and overrides the snapshotter CMD", () => {
+  it("uses a multi-stage build to fetch the upstream fuse-overlayfs static binary", () => {
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    expect(dockerfile).toContain("FROM alpine:3.20 AS bin-fetcher");
     expect(dockerfile).toContain(
       "https://github.com/containers/fuse-overlayfs/releases/download/",
     );
-    expect(dockerfile).toContain("/usr/local/bin/fuse-overlayfs");
+    expect(dockerfile).toContain(
+      "COPY --from=bin-fetcher /tmp/fuse-overlayfs /usr/local/bin/fuse-overlayfs",
+    );
     expect(dockerfile).toContain('CMD ["server", "--snapshotter=fuse-overlayfs"]');
   });
 
-  it("does not invoke apt-get to install fuse-overlayfs (upstream base lacks GNU tar)", () => {
-    // The upstream cluster image's base ships BusyBox tar; dpkg-deb cannot
-    // extract .debs there. Anyone changing this back to apt should expect
-    // the e2e to surface the regression via the install log.
+  it("does not RUN apt-get or curl in the final cluster stage", () => {
+    // The upstream cluster image's base ships BusyBox tar (so dpkg-deb
+    // cannot extract .debs) AND does not ship curl (RUN curl exits 127).
+    // The fix is structural: download in an Alpine stage, COPY --from
+    // into the cluster stage. Anyone reverting this should expect the
+    // e2e to surface the regression via the install log.
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    expect(dockerfile).not.toMatch(/apt-get\s+install[^\n]*fuse-overlayfs/);
+    // The final stage starts after the second FROM and must not contain
+    // a RUN that touches apt-get or curl.
+    const finalStage = dockerfile.split(/^FROM \$\{UPSTREAM\}/m)[1] ?? "";
+    expect(finalStage).not.toMatch(/RUN[^\n]*apt-get/);
+    expect(finalStage).not.toMatch(/RUN[^\n]*curl/);
   });
 
   it("maps amd64 and arm64 TARGETARCH to upstream release naming", () => {
