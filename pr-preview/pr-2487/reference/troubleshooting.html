@@ -701,7 +701,8 @@ Default is <code class="docutils literal notranslate"><span class="pre">fuse-ove
 </pre></div>
 </div>
 <p>Then restart Docker (<code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">docker</span></code>) and re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.
-This restores the legacy <code class="docutils literal notranslate"><span class="pre">overlay2</span></code> driver host-wide, which kills any other running containers — prefer the auto-fix unless you need the change for unrelated reasons.</p>
+This restores the legacy <code class="docutils literal notranslate"><span class="pre">overlay2</span></code> driver host-wide, which kills any other running containers — prefer the auto-fix unless you need the change for unrelated reasons.
+Switching storage drivers also rebuilds the entire local image graph: previously-pulled images become unusable and Docker re-pulls them on first reference, so expect a cold cache and additional disk usage right after the restart.</p>
 </section>
 <section id="openshell-version-above-maximum">
 <h3>OpenShell version above maximum<a class="headerlink" href="#openshell-version-above-maximum" title="Link to this heading">#</a></h3>
