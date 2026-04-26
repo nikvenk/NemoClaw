@@ -70,12 +70,33 @@ export interface EnsurePatchedClusterImageOpts {
    * tiny (one apt-get layer + CMD) so 5 minutes is generous. Default 5 minutes.
    */
   buildTimeoutMs?: number;
+  /**
+   * Hard wall-clock timeout (ms) for the `docker image inspect` cache
+   * probe. A stuck Docker daemon would otherwise hang onboard at the
+   * very first step. Default 30 seconds.
+   */
+  inspectTimeoutMs?: number;
 }
 
 /** 10 minutes — generous for a slow registry, short enough to fail fast on a hung daemon. */
 export const DEFAULT_PULL_TIMEOUT_MS = 10 * 60 * 1000;
 /** 5 minutes — a one-layer apt-get build should complete in seconds. */
 export const DEFAULT_BUILD_TIMEOUT_MS = 5 * 60 * 1000;
+/** 30 seconds — `docker image inspect` against a healthy daemon is sub-second. */
+export const DEFAULT_INSPECT_TIMEOUT_MS = 30 * 1000;
+
+/**
+ * Pinned digest for the `ubuntu:24.04` builder base image. The patched-image
+ * tag is a SHA over the Dockerfile *text*, so a floating `ubuntu:24.04` tag
+ * would let the same NemoClaw tag produce different image bytes whenever
+ * Ubuntu publishes a security update. Pinning to a digest keeps the
+ * (text → bytes) contract honest.
+ *
+ * To refresh: `docker pull ubuntu:24.04 && docker images --digests ubuntu:24.04`.
+ * Update both this constant and the same value in any unit test fixture.
+ */
+export const UBUNTU_BUILDER_DIGEST =
+  "sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b";
 
 /** Returns the Dockerfile contents used to patch a single upstream cluster image. */
 export function buildPatchDockerfile(snapshotter: SnapshotterChoice): string {
@@ -112,7 +133,7 @@ export function buildPatchDockerfile(snapshotter: SnapshotterChoice): string {
     "# syntax=docker/dockerfile:1",
     "ARG UPSTREAM",
     "",
-    "FROM ubuntu:24.04 AS bin-fetcher",
+    `FROM ubuntu:24.04@${UBUNTU_BUILDER_DIGEST} AS bin-fetcher`,
     'RUN set -eux; \\',
     "    apt-get update; \\",
     "    apt-get install -y --no-install-recommends fuse-overlayfs ca-certificates; \\",
@@ -187,6 +208,7 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
   const tmpdirImpl = opts.tmpdirImpl ?? os.tmpdir;
   const pullTimeoutMs = opts.pullTimeoutMs ?? DEFAULT_PULL_TIMEOUT_MS;
   const buildTimeoutMs = opts.buildTimeoutMs ?? DEFAULT_BUILD_TIMEOUT_MS;
+  const inspectTimeoutMs = opts.inspectTimeoutMs ?? DEFAULT_INSPECT_TIMEOUT_MS;
 
   const dockerfile = buildPatchDockerfile(snapshotter);
   const tag = computePatchedTag({
@@ -195,7 +217,7 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
     dockerfile,
   });
 
-  if (imageExists(tag, runCaptureImpl)) {
+  if (imageExists(tag, runCaptureImpl, inspectTimeoutMs)) {
     return tag;
   }
 
@@ -253,9 +275,11 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
 function imageExists(
   tag: string,
   runCaptureImpl: (cmd: readonly string[], opts?: RunOpts) => string,
+  inspectTimeoutMs: number,
 ): boolean {
   const out = runCaptureImpl(["docker", "image", "inspect", "--format", "{{.Id}}", tag], {
     ignoreError: true,
+    timeoutMs: inspectTimeoutMs,
   });
   return Boolean(out && out.trim());
 }

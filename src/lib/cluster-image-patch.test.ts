@@ -15,7 +15,8 @@ const UPSTREAM = "ghcr.io/nvidia/openshell/cluster:0.0.36";
 describe("buildPatchDockerfile", () => {
   it("uses a multi-stage ubuntu:24.04 builder to install fuse-overlayfs from apt", () => {
     const dockerfile = buildPatchDockerfile("fuse-overlayfs");
-    expect(dockerfile).toContain("FROM ubuntu:24.04 AS bin-fetcher");
+    expect(dockerfile).toContain("FROM ubuntu:24.04@sha256:");
+    expect(dockerfile).toContain("AS bin-fetcher");
     expect(dockerfile).toContain("apt-get install -y --no-install-recommends fuse-overlayfs");
     expect(dockerfile).toContain(
       "COPY --from=bin-fetcher /export/fuse-overlayfs /usr/local/bin/fuse-overlayfs",
@@ -24,6 +25,15 @@ describe("buildPatchDockerfile", () => {
       "COPY --from=bin-fetcher /export/lib/libfuse3.so.3 /usr/local/lib/libfuse3.so.3",
     );
     expect(dockerfile).toContain('CMD ["server", "--snapshotter=fuse-overlayfs"]');
+  });
+
+  it("pins the ubuntu builder base by digest so the Dockerfile-text-derived tag stays content-stable", () => {
+    // The patched-image tag is a SHA over the Dockerfile text. If the
+    // builder base were a floating tag like `ubuntu:24.04`, the same
+    // NemoClaw tag could produce different image bytes whenever Ubuntu
+    // publishes a security update — breaking the (text → bytes) contract.
+    const dockerfile = buildPatchDockerfile("fuse-overlayfs");
+    expect(dockerfile).toMatch(/FROM ubuntu:24\.04@sha256:[0-9a-f]{64} AS bin-fetcher/);
   });
 
   it("does not link to a third-party code repository in the Dockerfile", () => {

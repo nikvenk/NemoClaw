@@ -94,8 +94,16 @@ SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-e2e-overlayfs}"
 NEGATIVE_TIMEOUT="${NEMOCLAW_OVERLAYFS_E2E_NEGATIVE_TIMEOUT:-300}"
 GATEWAY_CONTAINER="openshell-cluster-nemoclaw"
 DAEMON_JSON="/etc/docker/daemon.json"
-DAEMON_JSON_BACKUP="/tmp/nemoclaw-e2e-daemon.json.bak"
-DAEMON_JSON_ABSENT_MARKER="/tmp/nemoclaw-e2e-daemon.json.absent"
+
+# Use a private temp directory for daemon-state files. The previous
+# fixed-name paths under /tmp were predictable enough that a pre-created
+# symlink at /tmp/nemoclaw-e2e-daemon.json.bak could redirect the
+# subsequent `sudo cp` into an attacker-chosen path on a shared runner.
+# `mktemp -d` returns a per-run directory with mode 0700, so neither the
+# backup nor the absent-marker path is guessable.
+STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/nemoclaw-overlayfs-e2e.XXXXXX")"
+DAEMON_JSON_BACKUP="${STATE_DIR}/daemon.json.bak"
+DAEMON_JSON_ABSENT_MARKER="${STATE_DIR}/daemon.json.absent"
 INSTALL_LOG="${NEMOCLAW_E2E_INSTALL_LOG:-/tmp/nemoclaw-e2e-install.log}"
 ONBOARD_LOG_POSITIVE="/tmp/nemoclaw-e2e-onboard-positive.log"
 ONBOARD_LOG_NEGATIVE="/tmp/nemoclaw-e2e-onboard-negative.log"
@@ -118,13 +126,14 @@ revert_daemon_config() {
     info "Removing test-generated $DAEMON_JSON (no original to restore)..."
     sudo rm -f "$DAEMON_JSON" 2>/dev/null || true
     sudo systemctl restart docker 2>/dev/null || true
-    rm -f "$DAEMON_JSON_ABSENT_MARKER" "$DAEMON_JSON_BACKUP" 2>/dev/null || true
   elif [ -f "$DAEMON_JSON_BACKUP" ]; then
     info "Reverting Docker daemon configuration..."
     sudo cp "$DAEMON_JSON_BACKUP" "$DAEMON_JSON" 2>/dev/null || true
     sudo systemctl restart docker 2>/dev/null || true
-    rm -f "$DAEMON_JSON_BACKUP" 2>/dev/null || true
   fi
+  # Always wipe the private state dir on exit. mktemp -d created it 0700,
+  # so this is per-run cleanup without affecting other concurrent tests.
+  rm -rf "$STATE_DIR" 2>/dev/null || true
 }
 trap revert_daemon_config EXIT
 
@@ -189,7 +198,8 @@ fi
 section "Phase 1: Enable containerd image store on the host"
 
 # Back up whatever's there (or note its absence) so the EXIT trap can restore it.
-rm -f "$DAEMON_JSON_ABSENT_MARKER" 2>/dev/null || true
+# Both paths live inside the per-run STATE_DIR (mode 0700, mktemp-allocated),
+# so neither is guessable for symlink redirects.
 if [ -f "$DAEMON_JSON" ]; then
   sudo cp "$DAEMON_JSON" "$DAEMON_JSON_BACKUP"
   info "Backed up existing $DAEMON_JSON to $DAEMON_JSON_BACKUP"
@@ -197,8 +207,8 @@ else
   # Marker file (separate from the backup path) tells revert there was no
   # original to restore — never write a non-JSON sentinel into the backup
   # itself, since that would corrupt $DAEMON_JSON on revert.
-  : >/tmp/nemoclaw-e2e-daemon.json.absent.tmp
-  mv /tmp/nemoclaw-e2e-daemon.json.absent.tmp "$DAEMON_JSON_ABSENT_MARKER"
+  : >"${DAEMON_JSON_ABSENT_MARKER}.tmp"
+  mv "${DAEMON_JSON_ABSENT_MARKER}.tmp" "$DAEMON_JSON_ABSENT_MARKER"
   info "No existing $DAEMON_JSON; flagged for removal on revert"
 fi
 
