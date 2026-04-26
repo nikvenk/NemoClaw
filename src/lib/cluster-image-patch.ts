@@ -38,22 +38,44 @@ export interface PatchFsApi {
   rmSync: (filePath: string, options?: { recursive?: boolean; force?: boolean }) => void;
 }
 
+export interface RunOpts {
+  ignoreError?: boolean;
+  /** Hard wall-clock timeout (ms). Child is killed on expiry. */
+  timeoutMs?: number;
+}
+
 export interface EnsurePatchedClusterImageOpts {
   /** Upstream OpenShell cluster image reference, e.g. `ghcr.io/nvidia/openshell/cluster:0.0.36`. */
   upstreamImage: string;
   /** Snapshotter to bake into the patched image's k3s CMD. Defaults to fuse-overlayfs. */
   snapshotter?: SnapshotterChoice;
   /** Captures stdout from a command (used to probe `docker image inspect`). */
-  runCaptureImpl?: (cmd: readonly string[], opts?: { ignoreError?: boolean }) => string;
+  runCaptureImpl?: (cmd: readonly string[], opts?: RunOpts) => string;
   /** Streams a command's stdio (used for `docker pull` and `docker build`). */
-  runImpl?: (cmd: readonly string[], opts?: { ignoreError?: boolean }) => { status: number | null };
+  runImpl?: (cmd: readonly string[], opts?: RunOpts) => { status: number | null };
   /** Logger for human-readable progress lines. Defaults to console.error. */
   logger?: (msg: string) => void;
   /** Filesystem implementation (testing seam). */
   fsImpl?: PatchFsApi;
   /** Temp dir resolver (testing seam). */
   tmpdirImpl?: () => string;
+  /**
+   * Hard wall-clock timeout (ms) for `docker pull`. spawnSync has no native
+   * timeout safety on its own, and a stuck registry on this critical path
+   * would hang the entire onboard. Default 10 minutes.
+   */
+  pullTimeoutMs?: number;
+  /**
+   * Hard wall-clock timeout (ms) for `docker build`. The patched image is
+   * tiny (one apt-get layer + CMD) so 5 minutes is generous. Default 5 minutes.
+   */
+  buildTimeoutMs?: number;
 }
+
+/** 10 minutes — generous for a slow registry, short enough to fail fast on a hung daemon. */
+export const DEFAULT_PULL_TIMEOUT_MS = 10 * 60 * 1000;
+/** 5 minutes — a one-layer apt-get build should complete in seconds. */
+export const DEFAULT_BUILD_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Returns the Dockerfile contents used to patch a single upstream cluster image. */
 export function buildPatchDockerfile(snapshotter: SnapshotterChoice): string {
@@ -125,6 +147,8 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
     rmSync: (filePath: string, options) => fs.rmSync(filePath, options),
   };
   const tmpdirImpl = opts.tmpdirImpl ?? os.tmpdir;
+  const pullTimeoutMs = opts.pullTimeoutMs ?? DEFAULT_PULL_TIMEOUT_MS;
+  const buildTimeoutMs = opts.buildTimeoutMs ?? DEFAULT_BUILD_TIMEOUT_MS;
 
   const dockerfile = buildPatchDockerfile(snapshotter);
   const tag = computePatchedTag({
@@ -141,10 +165,14 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
   log(`  Source: ${opts.upstreamImage}`);
   log(`  Snapshotter: ${snapshotter}`);
 
-  const pullResult = runImpl(["docker", "pull", opts.upstreamImage], { ignoreError: true });
+  const pullResult = runImpl(["docker", "pull", opts.upstreamImage], {
+    ignoreError: true,
+    timeoutMs: pullTimeoutMs,
+  });
   if (pullResult.status !== 0) {
     throw new ClusterImagePatchError(
-      `failed to pull upstream cluster image ${opts.upstreamImage} (docker pull exit ${pullResult.status})`,
+      `failed to pull upstream cluster image ${opts.upstreamImage} ` +
+        `(docker pull exit ${pullResult.status}; timeout ${pullTimeoutMs} ms)`,
     );
   }
 
@@ -163,12 +191,13 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
         tag,
         tmpDir,
       ],
-      { ignoreError: true },
+      { ignoreError: true, timeoutMs: buildTimeoutMs },
     );
 
     if (buildResult.status !== 0) {
       throw new ClusterImagePatchError(
-        `failed to build patched cluster image (docker build exit ${buildResult.status})`,
+        `failed to build patched cluster image ` +
+          `(docker build exit ${buildResult.status}; timeout ${buildTimeoutMs} ms)`,
       );
     }
   } finally {
@@ -185,7 +214,7 @@ export function ensurePatchedClusterImage(opts: EnsurePatchedClusterImageOpts): 
 
 function imageExists(
   tag: string,
-  runCaptureImpl: (cmd: readonly string[], opts?: { ignoreError?: boolean }) => string,
+  runCaptureImpl: (cmd: readonly string[], opts?: RunOpts) => string,
 ): boolean {
   const out = runCaptureImpl(["docker", "image", "inspect", "--format", "{{.Id}}", tag], {
     ignoreError: true,
@@ -202,17 +231,17 @@ export class ClusterImagePatchError extends Error {
 
 const runner: typeof import("./runner") = require("./runner");
 
-function defaultRunCapture(
-  cmd: readonly string[],
-  opts: { ignoreError?: boolean } = {},
-): string {
-  return runner.runCapture(cmd, { ignoreError: opts.ignoreError });
+function defaultRunCapture(cmd: readonly string[], opts: RunOpts = {}): string {
+  return runner.runCapture(cmd, {
+    ignoreError: opts.ignoreError,
+    ...(opts.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
+  });
 }
 
-function defaultRun(
-  cmd: readonly string[],
-  opts: { ignoreError?: boolean } = {},
-): { status: number | null } {
-  const result = runner.run(cmd, { ignoreError: opts.ignoreError });
+function defaultRun(cmd: readonly string[], opts: RunOpts = {}): { status: number | null } {
+  const result = runner.run(cmd, {
+    ignoreError: opts.ignoreError,
+    ...(opts.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
+  });
   return { status: result.status ?? null };
 }

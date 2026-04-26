@@ -418,7 +418,12 @@ if command -v openshell >/dev/null 2>&1; then
 fi
 docker rm -f "$GATEWAY_CONTAINER" 2>/dev/null || true
 
-set +e
+# The script header sets `set -uo pipefail` only — errexit is NOT enabled,
+# so a non-zero exit from `timeout` won't terminate us. The previous
+# `set +e` / `set -e` toggle was both unnecessary and unsafe: forcing
+# `set -e` after the timeout would have made later `((PASS++))` calls fatal
+# whenever the counter starts at zero (post-increment returns 0, which bash
+# interprets as exit 1 under errexit). Just don't touch errexit here.
 env \
   NEMOCLAW_NON_INTERACTIVE=1 \
   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
@@ -427,7 +432,6 @@ env \
   NEMOCLAW_DISABLE_OVERLAY_FIX=1 \
   timeout "$NEGATIVE_TIMEOUT" bash install.sh --non-interactive >"$ONBOARD_LOG_NEGATIVE" 2>&1
 negative_exit=$?
-set -e
 
 if [ $negative_exit -ne 0 ]; then
   pass "Onboard with auto-fix disabled exited non-zero (exit $negative_exit) within $NEGATIVE_TIMEOUT s"
