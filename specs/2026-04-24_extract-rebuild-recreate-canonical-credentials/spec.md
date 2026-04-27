@@ -174,7 +174,7 @@ All 6 must resolve credentials identically. The parametric test ensures this.
 
 ## Implementation Phases
 
-## Phase 1: Canonical Credential Resolution
+## Phase 1: Canonical Credential Resolution [COMPLETED: 16ec7acc]
 
 **Goal:** Introduce `resolveProviderCredential()` as the single canonical entry point for all provider credential resolution, replace the dual-pattern in onboard.ts, and add a parametric test that covers all 6 providers.
 
