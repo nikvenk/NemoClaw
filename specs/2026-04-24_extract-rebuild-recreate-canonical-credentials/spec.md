@@ -405,7 +405,7 @@ class RecreateError extends Error {
 - [ ] `npm run build:cli` compiles the new module
 - [ ] `npm test` passes
 
-## Phase 3: Rewire sandboxRebuild
+## Phase 3: Rewire sandboxRebuild [COMPLETED: 6d4c4fd2]
 
 **Goal:** Replace the `onboard()` call and `process.exit` interceptor in `sandboxRebuild()` with a clean `recreateSandbox()` call in try/catch. Also fix the duplicate policy application.
 
