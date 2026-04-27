@@ -238,3 +238,35 @@ describe("generate-openclaw-config.py: non-loopback auto-disable device auth", (
     expect(config.gateway.controlUi.dangerouslyDisableDeviceAuth).toBe(true);
   });
 });
+
+describe("generate-openclaw-config.py: empty-string env vars fall back to defaults", () => {
+  it("treats empty CHAT_UI_URL as unset and uses the loopback default", () => {
+    const config = runConfigScript({ CHAT_UI_URL: "" });
+    expect(config.gateway.controlUi.dangerouslyDisableDeviceAuth).toBe(false);
+    expect(config.gateway.controlUi.allowedOrigins).toEqual([
+      "http://127.0.0.1:18789",
+    ]);
+  });
+
+  it("treats empty NEMOCLAW_PROXY_HOST as unset and uses the documented default", () => {
+    const channelB64 = Buffer.from(JSON.stringify(["telegram"])).toString("base64");
+    const cfg = runConfigScript({
+      NEMOCLAW_PROXY_HOST: "",
+      NEMOCLAW_MESSAGING_CHANNELS_B64: channelB64,
+    });
+    expect(cfg.channels.telegram.accounts.default.proxy).toBe(
+      "http://10.200.0.1:3128",
+    );
+  });
+
+  it("treats empty NEMOCLAW_PROXY_PORT as unset and uses the documented default", () => {
+    const channelB64 = Buffer.from(JSON.stringify(["telegram"])).toString("base64");
+    const cfg = runConfigScript({
+      NEMOCLAW_PROXY_PORT: "",
+      NEMOCLAW_MESSAGING_CHANNELS_B64: channelB64,
+    });
+    expect(cfg.channels.telegram.accounts.default.proxy).toBe(
+      "http://10.200.0.1:3128",
+    );
+  });
+});

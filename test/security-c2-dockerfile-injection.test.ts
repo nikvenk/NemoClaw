@@ -203,8 +203,12 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
       if (inEnvBlock && !/\\\s*$/.test(line)) {
         inEnvBlock = false;
       }
-      // Verify promotion happened before the python3 -c RUN layer
-      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+      // Verify promotion happened before the config-generation RUN layer
+      if (
+        /^\s*RUN\b.*python3\s+\/usr\/local\/lib\/nemoclaw\/generate-openclaw-config\.py\b/.test(
+          line,
+        )
+      ) {
         expect(chatUiUrlPromoted).toBeTruthy();
         return; // Found the RUN layer and verified — done
       }
@@ -249,8 +253,12 @@ describe("C-2 regression: Dockerfile must not interpolate build-args into Python
       if (inEnvBlock && !/\\\s*$/.test(line)) {
         inEnvBlock = false;
       }
-      // Verify promotion happened before the python3 -c RUN layer
-      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+      // Verify promotion happened before the config-generation RUN layer
+      if (
+        /^\s*RUN\b.*python3\s+\/usr\/local\/lib\/nemoclaw\/generate-openclaw-config\.py\b/.test(
+          line,
+        )
+      ) {
         expect(nemoModelPromoted).toBeTruthy();
         return; // Found the RUN layer and verified — done
       }
@@ -334,7 +342,11 @@ describe("Gateway auth hardening: Dockerfile must not hardcode insecure auth def
       if (inEnvBlock && !/\\\s*$/.test(line)) {
         inEnvBlock = false;
       }
-      if (/^\s*RUN\b.*python3\s+-c\b/.test(line)) {
+      if (
+        /^\s*RUN\b.*python3\s+\/usr\/local\/lib\/nemoclaw\/generate-openclaw-config\.py\b/.test(
+          line,
+        )
+      ) {
         expect(promoted).toBeTruthy();
         return;
       }

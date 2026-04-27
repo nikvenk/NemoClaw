@@ -67,11 +67,14 @@ def build_config(env: dict | None = None) -> dict:
     if env is None:
         env = dict(os.environ)
 
-    proxy_host = env.get("NEMOCLAW_PROXY_HOST", "10.200.0.1")
-    proxy_port = env.get("NEMOCLAW_PROXY_PORT", "3128")
+    # Treat empty-string env vars as unset so the documented defaults still
+    # apply when callers pass an explicit "" (e.g. `docker build --build-arg
+    # CHAT_UI_URL=`).
+    proxy_host = env.get("NEMOCLAW_PROXY_HOST") or "10.200.0.1"
+    proxy_port = env.get("NEMOCLAW_PROXY_PORT") or "3128"
     proxy_url = f"http://{proxy_host}:{proxy_port}"
     model = env["NEMOCLAW_MODEL"]
-    chat_ui_url = env.get("CHAT_UI_URL", "http://127.0.0.1:18789")
+    chat_ui_url = env.get("CHAT_UI_URL") or "http://127.0.0.1:18789"
     provider_key = env["NEMOCLAW_PROVIDER_KEY"]
     primary_model_ref = env["NEMOCLAW_PRIMARY_MODEL_REF"]
     inference_base_url = env["NEMOCLAW_INFERENCE_BASE_URL"]
