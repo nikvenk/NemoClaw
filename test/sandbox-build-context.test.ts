@@ -27,6 +27,9 @@ describe("sandbox build context staging", () => {
         ),
       ).toBe(true);
       expect(fs.existsSync(path.join(buildCtx, "scripts", "nemoclaw-start.sh"))).toBe(true);
+      expect(fs.existsSync(path.join(buildCtx, "scripts", "generate-openclaw-config.py"))).toBe(
+        true,
+      );
       expect(fs.existsSync(path.join(buildCtx, "scripts", "setup.sh"))).toBe(false);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
