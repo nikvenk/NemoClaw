@@ -59,20 +59,21 @@ export function streamSandboxCreate(
   }
 
   const spawnImpl = options.spawnImpl ?? spawnChild;
-  const child: StreamableChildProcess = Array.isArray(command)
-    ? spawnImpl(command[0], [...command.slice(1)], {
-        cwd: ROOT,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-      })
-    : (() => {
-        const shellCommand = String(command);
-        return spawnImpl("bash", ["-lc", shellCommand], {
-          cwd: ROOT,
-          env,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-      })();
+  let child: StreamableChildProcess;
+  if (Array.isArray(command)) {
+    child = spawnImpl(command[0], [...command.slice(1)], {
+      cwd: ROOT,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } else {
+    const shellCommand = String(command);
+    child = spawnImpl("bash", ["-lc", shellCommand], {
+      cwd: ROOT,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
 
   const logLine = options.logLine ?? console.log;
   const lines: string[] = [];

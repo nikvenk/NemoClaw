@@ -959,6 +959,18 @@ describe("regression guards", () => {
       expect(src).toContain("nemoclaw-ssh-");
     });
 
+    it("sandbox SSH helpers pin host keys and honor configured ports", () => {
+      const src = fs.readFileSync(
+        path.join(import.meta.dirname, "..", "src", "nemoclaw.ts"),
+        "utf-8",
+      );
+      expect(src).not.toContain("StrictHostKeyChecking=no");
+      expect(src).not.toContain("UserKnownHostsFile=/dev/null");
+      expect(src).toContain("buildPinnedSandboxSshContext");
+      expect(src).toContain('tempDirPrefix: "nemoclaw-sandbox-known-hosts-"');
+      expect(src).toContain('"-p", sshPort');
+    });
+
     it("deploy reports Brev failure states before SSH timeout", () => {
       const src = fs.readFileSync(
         path.join(import.meta.dirname, "..", "src", "lib", "deploy.ts"),

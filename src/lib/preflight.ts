@@ -146,16 +146,17 @@ export interface AssessHostOpts {
   dockerInfoError?: string;
   readFileImpl?: (filePath: string, encoding: BufferEncoding) => string;
   runCaptureImpl?: RunCaptureLike;
-  commandExistsImpl?: (commandName: string) => boolean;
+  commandExistsImpl?: (commandName: string, env?: NodeJS.ProcessEnv) => boolean;
   gpuProbeImpl?: () => boolean;
 }
 
 function commandExists(
   commandName: string,
-  commandExistsImpl?: (commandName: string) => boolean,
+  commandExistsImpl?: (commandName: string, env?: NodeJS.ProcessEnv) => boolean,
+  env?: NodeJS.ProcessEnv,
 ): boolean {
   try {
-    return commandExistsImpl?.(commandName) ?? hasExecutable(commandName);
+    return commandExistsImpl?.(commandName, env) ?? hasExecutable(commandName, { env });
   } catch {
     return false;
   }
@@ -248,20 +249,24 @@ function isHeadlessLikely(env: NodeJS.ProcessEnv): boolean {
 
 function detectNvidiaGpu(
   runCaptureImpl: RunCaptureLike,
-  commandExistsImpl?: (commandName: string) => boolean,
+  commandExistsImpl?: (commandName: string, env?: NodeJS.ProcessEnv) => boolean,
+  env?: NodeJS.ProcessEnv,
 ): boolean {
-  if (!commandExists("nvidia-smi", commandExistsImpl)) {
+  if (!commandExists("nvidia-smi", commandExistsImpl, env)) {
     return false;
   }
-  return Boolean(String(runCaptureImpl("nvidia-smi -L", { ignoreError: true }) || "").trim());
+  return Boolean(String(runCaptureImpl(["nvidia-smi", "-L"], { ignoreError: true }) || "").trim());
 }
 
-function detectPackageManager(commandExistsImpl?: (commandName: string) => boolean): PackageManager {
-  if (commandExists("apt-get", commandExistsImpl)) return "apt";
-  if (commandExists("dnf", commandExistsImpl)) return "dnf";
-  if (commandExists("yum", commandExistsImpl)) return "yum";
-  if (commandExists("brew", commandExistsImpl)) return "brew";
-  if (commandExists("pacman", commandExistsImpl)) return "pacman";
+function detectPackageManager(
+  commandExistsImpl?: (commandName: string, env?: NodeJS.ProcessEnv) => boolean,
+  env?: NodeJS.ProcessEnv,
+): PackageManager {
+  if (commandExists("apt-get", commandExistsImpl, env)) return "apt";
+  if (commandExists("dnf", commandExistsImpl, env)) return "dnf";
+  if (commandExists("yum", commandExistsImpl, env)) return "yum";
+  if (commandExists("brew", commandExistsImpl, env)) return "brew";
+  if (commandExists("pacman", commandExistsImpl, env)) return "pacman";
   return "unknown";
 }
 
@@ -287,19 +292,20 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
   const env = opts.env ?? process.env;
   const runCaptureImpl = opts.runCaptureImpl ?? defaultRunCapture;
   const readFileImpl = opts.readFileImpl ?? fs.readFileSync;
-  const dockerInstalled = commandExists("docker", opts.commandExistsImpl);
-  const nodeInstalled = commandExists("node", opts.commandExistsImpl);
-  const openshellInstalled = commandExists("openshell", opts.commandExistsImpl);
-  const hasNvidiaGpu = opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl, opts.commandExistsImpl);
-  const packageManager = detectPackageManager(opts.commandExistsImpl);
-  const systemctlAvailable = commandExists("systemctl", opts.commandExistsImpl);
+  const dockerInstalled = commandExists("docker", opts.commandExistsImpl, env);
+  const nodeInstalled = commandExists("node", opts.commandExistsImpl, env);
+  const openshellInstalled = commandExists("openshell", opts.commandExistsImpl, env);
+  const hasNvidiaGpu =
+    opts.gpuProbeImpl?.() ?? detectNvidiaGpu(runCaptureImpl, opts.commandExistsImpl, env);
+  const packageManager = detectPackageManager(opts.commandExistsImpl, env);
+  const systemctlAvailable = commandExists("systemctl", opts.commandExistsImpl, env);
 
   let dockerInfoOutput = opts.dockerInfoOutput;
   let dockerReachable = false;
   let dockerRunning = false;
   if (dockerInstalled && dockerInfoOutput === undefined) {
     dockerInfoOutput =
-      runCaptureImpl("docker info --format '{{json .}}' 2>/dev/null", {
+      runCaptureImpl(["docker", "info", "--format", "{{json .}}"], {
         ignoreError: true,
       }) ?? undefined;
   }
@@ -355,11 +361,15 @@ export function assessHost(opts: AssessHostOpts = {}): HostAssessment {
   const dockerDefaultCgroupnsMode = readDockerDefaultCgroupnsMode(readFileImpl);
   const dockerServiceActive =
     platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-active docker", { ignoreError: true }) ?? "")
+      ? parseSystemctlState(
+          runCaptureImpl(["systemctl", "is-active", "docker"], { ignoreError: true }) ?? "",
+        )
       : null;
   const dockerServiceEnabled =
     platform === "linux" && systemctlAvailable && dockerInstalled
-      ? parseSystemctlState(runCaptureImpl("systemctl is-enabled docker", { ignoreError: true }) ?? "")
+      ? parseSystemctlState(
+          runCaptureImpl(["systemctl", "is-enabled", "docker"], { ignoreError: true }) ?? "",
+        )
       : null;
   const assessment: HostAssessment = {
     platform,

@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 // runner.ts still uses CommonJS-style exports — use require here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { runCapture } = require("./runner.js");
+const { runCapture } = require("./runner");
 
 type PackageInfo = { version?: string };
 

@@ -24,6 +24,20 @@ function isOllamaProbe(command) {
 }
 `;
 
+function writeFakeOllamaVersion(fakeBin: string, version = "ollama version 0.11.0") {
+  fs.writeFileSync(
+    path.join(fakeBin, "ollama"),
+    `#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  echo ${JSON.stringify(version)}
+  exit 0
+fi
+exit 0
+`,
+    { mode: 0o755 },
+  );
+}
+
 function writeOpenAiStyleAuthRetryCurl(fakeBin: string, goodToken: string, models = ["gpt-5.4"]) {
   fs.writeFileSync(
     path.join(fakeBin, "curl"),
@@ -137,6 +151,8 @@ printf '%s' "$status"
 `,
       { mode: 0o755 },
     );
+    writeFakeOllamaVersion(fakeBin);
+
     const script = String.raw`
 ${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
@@ -609,6 +625,8 @@ printf '%s' "$status"
       { mode: 0o755 },
     );
 
+    writeFakeOllamaVersion(fakeBin);
+
     const script = String.raw`
 ${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});
 const runner = require(${runnerPath});
@@ -717,6 +735,8 @@ printf '%s' "$status"
 `,
       { mode: 0o755 },
     );
+
+    writeFakeOllamaVersion(fakeBin);
 
     const script = String.raw`
 ${EMBEDDED_COMMAND_HELPERS}const credentials = require(${credentialsPath});

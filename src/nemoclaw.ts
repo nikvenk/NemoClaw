@@ -21,14 +21,7 @@ const R = _useColor ? "\x1b[0m" : "";
 const _RD = _useColor ? "\x1b[1;31m" : "";
 const YW = _useColor ? "\x1b[1;33m" : "";
 
-const {
-  ROOT,
-  run,
-  runCapture: _runCapture,
-  runFile,
-  runInteractive,
-  validateName,
-} = require("./lib/runner");
+const { ROOT, run, runCapture, runFile, runInteractive, validateName } = require("./lib/runner");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
   fetchGatewayAuthTokenFromSandbox,
@@ -70,7 +63,7 @@ const {
   versionGte,
 } = require("./lib/openshell");
 const { listSandboxesCommand, showStatusCommand } = require("./lib/inventory-commands");
-const { buildSshArgs, executeDeploy, resolveRealHost } = require("./lib/deploy");
+const { buildSshArgs, executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
 const agentRuntime = require("../bin/lib/agent-runtime");
@@ -81,6 +74,7 @@ const skillInstall = require("./lib/skill-install");
 const { sleepSeconds } = require("./lib/wait");
 const { parseSandboxPhase } = require("./lib/gateway-state");
 const { formatShellToken } = require("./lib/shell-quote");
+const { listGatewayDockerVolumes: listGatewayVolumes } = require("./lib/gateway-volumes");
 const {
   getActiveSandboxSessions,
   createSystemDeps: createSessionDeps,
@@ -171,29 +165,10 @@ function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
   });
 }
 
-function listGatewayDockerVolumes() {
-  return String(
-    _runCapture(
-      [
-        "docker",
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        `name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`,
-      ],
-      { ignoreError: true },
-    ) || "",
-  )
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith(`openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`));
-}
-
 function cleanupGatewayAfterLastSandbox() {
   runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], { ignoreError: true });
   runOpenshell(["gateway", "destroy", "-g", NEMOCLAW_GATEWAY_NAME], { ignoreError: true });
-  const dockerVolumes = listGatewayDockerVolumes();
+  const dockerVolumes = listGatewayVolumes(NEMOCLAW_GATEWAY_NAME, runCapture);
   if (dockerVolumes.length > 0) {
     run(["docker", "volume", "rm", ...dockerVolumes], { ignoreError: true });
   }
@@ -227,6 +202,61 @@ function getInstalledOpenshellVersionOrNull() {
   });
 }
 
+function resolveSandboxSshTarget(configFile: string, sandboxName: string) {
+  const hostAlias = `openshell-${sandboxName}`;
+  const configResult = runFile("ssh", ["-F", configFile, "-G", hostAlias], {
+    encoding: "utf-8",
+    ignoreError: true,
+    suppressOutput: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const lines = String(configResult.stdout || "").split(/\r?\n/);
+  const findValue = (key: string): string | null => {
+    const line = lines.find((entry) => entry.startsWith(`${key} `));
+    return line ? line.split(/\s+/, 2)[1] || null : null;
+  };
+  return {
+    hostAlias,
+    realHost: findValue("hostname") || hostAlias,
+    sshPort: findValue("port"),
+  };
+}
+
+function buildPinnedSandboxSshContext(
+  configFile: string,
+  sandboxName: string,
+  opts: { connectTimeoutSeconds: number; tempDirPrefix: string },
+) {
+  const { hostAlias, realHost, sshPort } = resolveSandboxSshTarget(configFile, sandboxName);
+  const knownHostsDir = fs.mkdtempSync(path.join(os.tmpdir(), opts.tempDirPrefix));
+  const knownHostsFile = path.join(knownHostsDir, "known_hosts");
+  const keyscanArgs = ["-T", "5", "-H", ...(sshPort ? ["-p", sshPort] : []), realHost];
+  const hostKeysResult = runFile("ssh-keyscan", keyscanArgs, {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    ignoreError: true,
+    suppressOutput: true,
+  });
+  const hostKeys = String(hostKeysResult.stdout || "").trim();
+  if (hostKeysResult.status !== 0 || !hostKeys) {
+    fs.rmSync(knownHostsDir, { recursive: true, force: true });
+    throw new Error(`Failed to pin sandbox SSH host key for ${sandboxName}`);
+  }
+  fs.writeFileSync(knownHostsFile, `${hostKeys}\n`, { mode: 0o600 });
+
+  return {
+    hostAlias,
+    sshArgs: [
+      "-F",
+      configFile,
+      ...buildSshArgs(knownHostsFile),
+      "-o",
+      `ConnectTimeout=${opts.connectTimeoutSeconds}`,
+    ],
+    cleanupDir: knownHostsDir,
+  };
+}
+
 // ── Sandbox process health (OpenClaw gateway inside the sandbox) ─────────
 
 /**
@@ -241,31 +271,25 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
 
   const tmpFile = path.join(os.tmpdir(), `nemoclaw-ssh-${process.pid}-${Date.now()}.conf`);
   fs.writeFileSync(tmpFile, sshConfigResult.output, { mode: 0o600 });
+  let sshContext:
+    | {
+        hostAlias: string;
+        sshArgs: string[];
+        cleanupDir: string;
+      }
+    | null = null;
   try {
-    const result = runFile(
-      "ssh",
-      [
-        "-F",
-        tmpFile,
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "ConnectTimeout=5",
-        "-o",
-        "LogLevel=ERROR",
-        `openshell-${sandboxName}`,
-        command,
-      ],
-      {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 15000,
-        ignoreError: true,
-        suppressOutput: true,
-      },
-    );
+    sshContext = buildPinnedSandboxSshContext(tmpFile, sandboxName, {
+      connectTimeoutSeconds: 5,
+      tempDirPrefix: "nemoclaw-sandbox-known-hosts-",
+    });
+    const result = runFile("ssh", [...sshContext.sshArgs, sshContext.hostAlias, command], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 15000,
+      ignoreError: true,
+      suppressOutput: true,
+    });
     return {
       status: result.status ?? 1,
       stdout: (result.stdout || "").trim(),
@@ -274,6 +298,9 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
   } catch {
     return null;
   } finally {
+    if (sshContext?.cleanupDir) {
+      fs.rmSync(sshContext.cleanupDir, { recursive: true, force: true });
+    }
     try {
       fs.unlinkSync(tmpFile);
     } catch {
@@ -1602,7 +1629,6 @@ async function sandboxConnect(
     stdio: "inherit",
     cwd: ROOT,
     ignoreError: true,
-    suppressOutput: true,
   });
   exitWithSpawnResult(result);
 }
@@ -2218,43 +2244,15 @@ async function sandboxChannelsStart(sandboxName: string, args: string[] = []): P
 }
 
 function buildSkillInstallSshContext(configFile: string, sandboxName: string) {
-  const hostAlias = `openshell-${sandboxName}`;
-  const runForResolution = (command: readonly string[], opts: Record<string, unknown> = {}) => {
-    const [file, ...args] = command;
-    const normalizedArgs = file === "ssh" && args[0] === "-G" ? ["-F", configFile, ...args] : args;
-    return runFile(file, normalizedArgs, {
-      encoding: "utf-8",
-      ignoreError: true,
-      suppressOutput: true,
-      stdio: (opts.stdio as import("node:child_process").StdioOptions | undefined) ?? [
-        "ignore",
-        "pipe",
-        "ignore",
-      ],
-    });
-  };
-
-  const realHost = resolveRealHost(hostAlias, runForResolution);
-  const knownHostsDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-skill-known-hosts-"));
-  const knownHostsFile = path.join(knownHostsDir, "known_hosts");
-  const hostKeysResult = runFile("ssh-keyscan", ["-T", "5", "-H", realHost], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"],
-    ignoreError: true,
-    suppressOutput: true,
+  const sshContext = buildPinnedSandboxSshContext(configFile, sandboxName, {
+    connectTimeoutSeconds: 10,
+    tempDirPrefix: "nemoclaw-skill-known-hosts-",
   });
-  const hostKeys = String(hostKeysResult.stdout || "").trim();
-  if (hostKeysResult.status !== 0 || !hostKeys) {
-    fs.rmSync(knownHostsDir, { recursive: true, force: true });
-    throw new Error(`Failed to pin sandbox SSH host key for ${sandboxName}`);
-  }
-  fs.writeFileSync(knownHostsFile, `${hostKeys}\n`, { mode: 0o600 });
-
   return {
     configFile,
     sandboxName,
-    sshArgs: ["-F", configFile, ...buildSshArgs(knownHostsFile), "-o", "ConnectTimeout=10"],
-    cleanupDir: knownHostsDir,
+    sshArgs: sshContext.sshArgs,
+    cleanupDir: sshContext.cleanupDir,
   };
 }
 

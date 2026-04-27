@@ -175,6 +175,11 @@ function readBoundedOutput(filePath: string): string {
     return "";
   }
 
+  // Debug commands can dump hundreds of megabytes (docker inspect, tar
+  // listings, verbose logs). Keep small outputs intact, but for giant captures
+  // preserve both the start and the end so operators still see the command
+  // preamble plus the final failure context without loading the whole file.
+
   const size = statSync(filePath).size;
   if (size === 0) {
     return "";

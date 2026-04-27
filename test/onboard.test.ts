@@ -2627,7 +2627,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2735,7 +2735,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2829,7 +2829,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -2854,7 +2854,6 @@ const { createSandbox } = require(${onboardPath});
     // Without this, a CHAT_UI_URL set in the developer's shell or CI would be
     // inherited, causing chatUiUrl to use the wrong port and making the forward
     // command assertion below fail spuriously.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { CHAT_UI_URL: _stripped, ...inheritedEnv } = process.env;
     const result = spawnSync(process.execPath, [scriptPath], {
       cwd: repoRoot,
@@ -2958,7 +2957,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3399,7 +3398,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3513,7 +3512,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3770,7 +3769,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -3893,7 +3892,7 @@ const fakeSpawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -4380,7 +4379,7 @@ childProcess.spawn = (...args) => {
     process.nextTick(() => child.emit("close", signal === "SIGTERM" ? 0 : 1));
     return true;
   };
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null, child });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null, child });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
   });
@@ -4754,7 +4753,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -4884,7 +4883,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  commands.push({ command: _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]), env: args[2]?.env || null });
+  commands.push({ command: _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]), env: args[2]?.env || null });
   process.nextTick(() => {
     child.stdout.emit("data", Buffer.from("Created sandbox: my-assistant\n"));
     child.emit("close", 0);
@@ -5478,7 +5477,7 @@ childProcess.spawn = (...args) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  const cmd = _n(Array.isArray(args[1]) && args[1][0] === "-lc" ? args[1][1] : args[1]);
+  const cmd = _n(Array.isArray(args[1]) && (args[1][0] === "-lc" || args[1][0] === "-c") ? args[1][1] : args[1]);
   commands.push({ command: cmd, env: args[2]?.env || null });
   // Observe the staged build context state while the sandbox create is in
   // flight — onboard deletes it once streamSandboxCreate resolves.

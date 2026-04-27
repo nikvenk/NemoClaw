@@ -108,8 +108,12 @@ export function buildSshScriptCommand(opts: {
   );
 }
 
-function buildDockerExecScriptArgs(containerName: string, script: string): string[] {
-  return ["docker", "exec", containerName, "sh", "-lc", script];
+function buildDockerExecScriptArgs(
+  containerName: string,
+  script: string,
+  login = true,
+): string[] {
+  return ["docker", "exec", containerName, "sh", login ? "-lc" : "-c", script];
 }
 
 export function buildDockerExecScriptCommand(opts: {
@@ -120,6 +124,7 @@ export function buildDockerExecScriptCommand(opts: {
   cwd?: string;
   sourceEnv?: boolean;
   steps?: ShellCommandStep[];
+  login?: boolean;
 }): string[] {
   return buildDockerExecScriptArgs(
     opts.containerName,
@@ -131,5 +136,6 @@ export function buildDockerExecScriptCommand(opts: {
       sourceEnv: opts.sourceEnv,
       steps: opts.steps,
     }),
+    opts.login ?? true,
   );
 }

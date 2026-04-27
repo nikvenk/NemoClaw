@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildShellCommand } from "../../dist/lib/remote-script";
+import { buildDockerExecScriptCommand, buildShellCommand } from "../../dist/lib/remote-script";
 
 describe("buildShellCommand", () => {
   it("supports multi-step shell scripts without mixing raw and argv command fields", () => {
@@ -32,5 +32,26 @@ describe("buildShellCommand", () => {
         steps: [{ command: "echo hello", stdoutRedirect: "/tmp/out" }],
       }),
     ).toThrow(/cannot use stdoutRedirect/);
+  });
+});
+
+describe("buildDockerExecScriptCommand", () => {
+  it("uses a login shell by default", () => {
+    expect(
+      buildDockerExecScriptCommand({
+        containerName: "demo",
+        commandArgs: ["echo", "hello"],
+      }),
+    ).toEqual(["docker", "exec", "demo", "sh", "-lc", "echo hello"]);
+  });
+
+  it("supports plain shell execution when login is disabled", () => {
+    expect(
+      buildDockerExecScriptCommand({
+        containerName: "demo",
+        commandArgs: ["echo", "hello"],
+        login: false,
+      }),
+    ).toEqual(["docker", "exec", "demo", "sh", "-c", "echo hello"]);
   });
 });

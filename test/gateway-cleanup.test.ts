@@ -15,10 +15,14 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 
 describe("gateway cleanup: Docker volumes removed on failure (#17)", () => {
   it("onboard.js: destroyGateway() removes Docker volumes", () => {
-    const content = fs.readFileSync(path.join(ROOT, "src/lib/onboard.ts"), "utf-8");
-    expect(content.includes('"docker", "volume"') && content.includes("openshell-cluster")).toBe(
-      true,
+    const onboardContent = fs.readFileSync(path.join(ROOT, "src/lib/onboard.ts"), "utf-8");
+    const helperContent = fs.readFileSync(
+      path.join(ROOT, "src/lib/gateway-volumes.ts"),
+      "utf-8",
     );
+    expect(onboardContent).toContain('"docker", "volume", "rm", ...volumes');
+    expect(onboardContent).toContain("listGatewayVolumes(GATEWAY_NAME, runCapture)");
+    expect(helperContent).toContain("openshell-cluster-");
   });
 
   it("onboard.js: volume cleanup runs on gateway start failure", () => {

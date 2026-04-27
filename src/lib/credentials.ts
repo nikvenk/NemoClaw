@@ -11,7 +11,7 @@ import { isErrnoException } from "./errno";
 
 // runner.ts still uses CommonJS-style exports — use require here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { runCapture } = require("./runner.js");
+const { runCapture } = require("./runner");
 
 const UNSAFE_HOME_PATHS = new Set(["/tmp", "/var/tmp", "/dev/shm", "/"]);
 

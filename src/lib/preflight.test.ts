@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 // Import through the compiled dist/ output (via the bin/lib shim) so
 // coverage is attributed to dist/lib/preflight.js, which is what the
 // ratchet measures.
@@ -358,6 +361,25 @@ describe("assessHost", () => {
 
     expect(result.isHeadlessLikely).toBe(true);
     expect(result.notes).toContain("Headless environment likely");
+  });
+
+  it("uses AssessHostOpts.env when locating executables", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-preflight-path-"));
+    const fakeBin = path.join(tmpDir, "bin");
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\nexit 0\n", {
+      mode: 0o755,
+    });
+
+    const result = assessHost({
+      platform: "linux",
+      env: { PATH: fakeBin },
+      dockerInfoOutput: "",
+      commandExistsImpl: undefined,
+    });
+
+    expect(result.dockerInstalled).toBe(true);
+    expect(result.nodeInstalled).toBe(false);
   });
 
   // Docker 26+ on Linux defaults fresh installs to the containerd image store

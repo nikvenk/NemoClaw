@@ -5,52 +5,47 @@
 // Ollama auth-proxy lifecycle: token persistence, PID management,
 // proxy start/stop, model pull and validation.
 
+const crypto = require("node:crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawn, spawnSync } = require("child_process");
-const { ROOT, SCRIPTS, run, runCapture, shellQuote } = require("./runner");
+const { ROOT, SCRIPTS, run, runCapture, runDetachedFile, runFile } = require("./runner");
+const { spawnChild } = require("./process-primitives");
+const { buildEnvForSubprocess } = require("./subprocess-env");
 const { OLLAMA_PORT, OLLAMA_PROXY_PORT } = require("./ports");
 const {
   getDefaultOllamaModel,
   getBootstrapOllamaModelOptions,
   getOllamaModelOptions,
-  getOllamaWarmupCommand,
+  startOllamaWarmup,
   validateOllamaModel,
 } = require("./local-inference");
 const { prompt } = require("./credentials");
 const { promptManualModelId } = require("./model-prompts");
-
-// ── State ────────────────────────────────────────────────────────
+const { sleepSeconds } = require("./wait");
 
 const PROXY_STATE_DIR = path.join(os.homedir(), ".nemoclaw");
 const PROXY_TOKEN_PATH = path.join(PROXY_STATE_DIR, "ollama-proxy-token");
 const PROXY_PID_PATH = path.join(PROXY_STATE_DIR, "ollama-auth-proxy.pid");
+const OLLAMA_INSTALLER_DOWNLOAD_TIMEOUT_MS = 130_000;
+const OLLAMA_INSTALLER_RUN_TIMEOUT_MS = 600_000;
 
-let ollamaProxyToken: string | null = null;
+let ollamaProxyToken = null;
 
-function sleep(seconds) {
-  spawnSync("sleep", [String(seconds)]);
-}
-
-// ── Proxy state dir ──────────────────────────────────────────────
-
-function ensureProxyStateDir(): void {
+function ensureProxyStateDir() {
   if (!fs.existsSync(PROXY_STATE_DIR)) {
     fs.mkdirSync(PROXY_STATE_DIR, { recursive: true });
   }
 }
 
-// ── Token persistence ────────────────────────────────────────────
-
-function persistProxyToken(token: string): void {
+function persistProxyToken(token) {
   ensureProxyStateDir();
   fs.writeFileSync(PROXY_TOKEN_PATH, token, { mode: 0o600 });
   // mode only applies on creation; ensure permissions on existing files too
   fs.chmodSync(PROXY_TOKEN_PATH, 0o600);
 }
 
-function loadPersistedProxyToken(): string | null {
+function loadPersistedProxyToken() {
   try {
     if (fs.existsSync(PROXY_TOKEN_PATH)) {
       const token = fs.readFileSync(PROXY_TOKEN_PATH, "utf-8").trim();
@@ -62,16 +57,15 @@ function loadPersistedProxyToken(): string | null {
   return null;
 }
 
-// ── PID persistence ──────────────────────────────────────────────
-
-function persistProxyPid(pid: number | null | undefined): void {
-  if (!Number.isInteger(pid) || pid <= 0) return;
+function persistProxyPid(pid) {
+  const validPid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : null;
+  if (validPid === null) return;
   ensureProxyStateDir();
-  fs.writeFileSync(PROXY_PID_PATH, `${pid}\n`, { mode: 0o600 });
+  fs.writeFileSync(PROXY_PID_PATH, `${validPid}\n`, { mode: 0o600 });
   fs.chmodSync(PROXY_PID_PATH, 0o600);
 }
 
-function loadPersistedProxyPid(): number | null {
+function loadPersistedProxyPid() {
   try {
     if (!fs.existsSync(PROXY_PID_PATH)) return null;
     const raw = fs.readFileSync(PROXY_PID_PATH, "utf-8").trim();
@@ -82,7 +76,7 @@ function loadPersistedProxyPid(): number | null {
   }
 }
 
-function clearPersistedProxyPid(): void {
+function clearPersistedProxyPid() {
   try {
     if (fs.existsSync(PROXY_PID_PATH)) {
       fs.unlinkSync(PROXY_PID_PATH);
@@ -92,31 +86,131 @@ function clearPersistedProxyPid(): void {
   }
 }
 
-// ── Process management ───────────────────────────────────────────
+function collectOllamaEnv(extra = {}) {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith("OLLAMA_") && value !== undefined) {
+      env[key] = value;
+    }
+  }
+  return { ...env, ...extra };
+}
 
-function isOllamaProxyProcess(pid: number | null | undefined): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  const cmdline = runCapture(["ps", "-p", String(pid), "-o", "args="], { ignoreError: true });
+function isOllamaProxyProcess(pid) {
+  const validPid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : null;
+  if (validPid === null) return false;
+  const cmdline = runCapture(["ps", "-p", String(validPid), "-o", "args="], {
+    ignoreError: true,
+  });
   return Boolean(cmdline && cmdline.includes("ollama-auth-proxy.js"));
 }
 
-function spawnOllamaAuthProxy(token: string): number | null {
-  const child = spawn(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
+function spawnDetachedProcess(command, args, opts = {}) {
+  const child = spawnChild(command, args, {
     detached: true,
     stdio: "ignore",
+    cwd: opts.cwd ?? ROOT,
+    env: buildEnvForSubprocess(opts.env),
+  });
+  child.on?.("error", () => {});
+  child.unref?.();
+  return child.pid ?? null;
+}
+
+function spawnOllamaAuthProxy(token) {
+  const pid = spawnDetachedProcess(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
     env: {
-      ...process.env,
       OLLAMA_PROXY_TOKEN: token,
       OLLAMA_PROXY_PORT: String(OLLAMA_PROXY_PORT),
       OLLAMA_BACKEND_PORT: String(OLLAMA_PORT),
     },
   });
-  child.unref();
-  persistProxyPid(child.pid);
-  return child.pid ?? null;
+  persistProxyPid(pid);
+  return pid;
 }
 
-function killStaleProxy(): void {
+function getOllamaClientHost() {
+  return `127.0.0.1:${OLLAMA_PORT}`;
+}
+
+function getOllamaServeHostBinding(exposeToDocker) {
+  return `${exposeToDocker ? "0.0.0.0" : "127.0.0.1"}:${OLLAMA_PORT}`;
+}
+
+function startDetachedOllamaServe(hostBinding) {
+  spawnDetachedProcess("ollama", ["serve"], {
+    env: collectOllamaEnv({ OLLAMA_HOST: hostBinding }),
+  });
+}
+
+function startDetachedOllamaWarmup(model) {
+  return startOllamaWarmup(model, "15m", (file, args) =>
+    runDetachedFile(file, [...args], {
+      env: collectOllamaEnv({ OLLAMA_HOST: getOllamaClientHost() }),
+    }),
+  );
+}
+
+function installOllamaViaOfficialScript() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-ollama-install-"));
+  const installerPath = path.join(tempDir, "install.sh");
+  try {
+    const download = run(
+      [
+        "curl",
+        "-fsSL",
+        "--connect-timeout",
+        "20",
+        "--max-time",
+        "120",
+        "-o",
+        installerPath,
+        "https://ollama.com/install.sh",
+      ],
+      {
+        ignoreError: true,
+        timeout: OLLAMA_INSTALLER_DOWNLOAD_TIMEOUT_MS,
+      },
+    );
+    if (download.error) {
+      throw new Error(`Failed to download Ollama installer: ${download.error.message}`);
+    }
+    if (download.status !== 0) {
+      const detail = String(download.stderr || "").trim();
+      if (download.status === 28 || download.signal === "SIGTERM") {
+        throw new Error("Timed out while downloading Ollama installer.");
+      }
+      throw new Error(
+        detail
+          ? `Failed to download Ollama installer: ${detail}`
+          : `Failed to download Ollama installer (exit ${download.status ?? 1})`,
+      );
+    }
+
+    const install = run(["sh", installerPath], {
+      ignoreError: true,
+      timeout: OLLAMA_INSTALLER_RUN_TIMEOUT_MS,
+    });
+    if (install.error) {
+      throw new Error(`Failed to run Ollama installer: ${install.error.message}`);
+    }
+    if (install.status !== 0) {
+      const detail = String(install.stderr || "").trim();
+      if (install.signal === "SIGTERM") {
+        throw new Error("Timed out while running Ollama installer.");
+      }
+      throw new Error(
+        detail
+          ? `Ollama installer failed: ${detail}`
+          : `Ollama installer failed (exit ${install.status ?? 1})`,
+      );
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function killStaleProxy() {
   try {
     const persistedPid = loadPersistedProxyPid();
     if (isOllamaProxyProcess(persistedPid)) {
@@ -134,17 +228,14 @@ function killStaleProxy(): void {
           run(["kill", pid], { ignoreError: true, suppressOutput: true });
         }
       }
-      sleep(1);
+      sleepSeconds(1);
     }
   } catch {
     /* ignore */
   }
 }
 
-// ── Public API ───────────────────────────────────────────────────
-
-function startOllamaAuthProxy(): boolean {
-  const crypto = require("crypto");
+function startOllamaAuthProxy() {
   killStaleProxy();
 
   const proxyToken = crypto.randomBytes(24).toString("hex");
@@ -153,7 +244,7 @@ function startOllamaAuthProxy(): boolean {
   // If the user backs out to a different provider, the token stays in memory
   // only and is discarded.
   const pid = spawnOllamaAuthProxy(proxyToken);
-  sleep(1);
+  sleepSeconds(1);
   if (!isOllamaProxyProcess(pid)) {
     console.error(`  Error: Ollama auth proxy failed to start on :${OLLAMA_PROXY_PORT}`);
     console.error(`  Containers will not be able to reach Ollama without the proxy.`);
@@ -169,8 +260,7 @@ function startOllamaAuthProxy(): boolean {
  * Ensure the auth proxy is running — called on sandbox connect to recover
  * from host reboots where the background proxy process was lost.
  */
-function ensureOllamaAuthProxy(): void {
-  // Try to load persisted token first — if none, this isn't an Ollama setup.
+function ensureOllamaAuthProxy() {
   const token = loadPersistedProxyToken();
   if (!token) return;
 
@@ -180,16 +270,14 @@ function ensureOllamaAuthProxy(): void {
     return;
   }
 
-  // Proxy not running — restart it with the persisted token.
   killStaleProxy();
   ollamaProxyToken = token;
   spawnOllamaAuthProxy(token);
-  sleep(1);
+  sleepSeconds(1);
 }
 
-function getOllamaProxyToken(): string | null {
+function getOllamaProxyToken() {
   if (ollamaProxyToken) return ollamaProxyToken;
-  // Fall back to persisted token (resume / reconnect scenario)
   ollamaProxyToken = loadPersistedProxyToken();
   return ollamaProxyToken;
 }
@@ -230,16 +318,17 @@ function printOllamaExposureWarning() {
 }
 
 function pullOllamaModel(model) {
-  const result = spawnSync("bash", ["-c", `ollama pull ${shellQuote(model)}`], {
+  const result = runFile("ollama", ["pull", model], {
     cwd: ROOT,
+    env: collectOllamaEnv({ OLLAMA_HOST: getOllamaClientHost() }),
     encoding: "utf8",
     stdio: "inherit",
     timeout: 600_000,
-    env: { ...process.env },
+    ignoreError: true,
   });
   if (result.signal === "SIGTERM") {
     console.error(
-      `  Model pull timed out after 10 minutes. Try a smaller model or check your network connection.`,
+      "  Model pull timed out after 10 minutes. Try a smaller model or check your network connection.",
     );
     return false;
   }
@@ -261,17 +350,21 @@ function prepareOllamaModel(model, installedModels = []) {
   }
 
   console.log(`  Loading Ollama model: ${model}`);
-  run(getOllamaWarmupCommand(model), { ignoreError: true });
+  startDetachedOllamaWarmup(model);
   return validateOllamaModel(model);
 }
 
 module.exports = {
   ensureOllamaAuthProxy,
   getOllamaProxyToken,
+  getOllamaServeHostBinding,
+  installOllamaViaOfficialScript,
   persistProxyToken,
-  startOllamaAuthProxy,
-  promptOllamaModel,
-  printOllamaExposureWarning,
-  pullOllamaModel,
   prepareOllamaModel,
+  printOllamaExposureWarning,
+  promptOllamaModel,
+  pullOllamaModel,
+  startDetachedOllamaServe,
+  startDetachedOllamaWarmup,
+  startOllamaAuthProxy,
 };

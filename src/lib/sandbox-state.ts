@@ -428,7 +428,7 @@ export function safeTarExtract(tarBuffer: Buffer, targetDir: string): SafeExtrac
   if (extractResult.status !== 0) {
     return {
       success: false,
-      error: `tar extraction failed (exit ${extractResult.status}): ${(extractResult.stderr?.toString() || "").substring(0, 200)}`,
+      error: `tar extraction failed (exit ${extractResult.status}): ${resultStderrText(extractResult).substring(0, 200)}`,
     };
   }
 

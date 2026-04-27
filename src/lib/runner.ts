@@ -11,7 +11,7 @@ const path = require("path");
 const { detectDockerHost } = require("./platform.js");
 const { spawnChild, spawnResult } = require("./process-primitives.js");
 const { joinShellWords } = require("./shell-quote");
-const { buildSubprocessEnv } = require("./subprocess-env.js");
+const { buildEnvForSubprocess } = require("./subprocess-env.js");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPTS = path.join(ROOT, "scripts");
@@ -44,23 +44,6 @@ if (dockerHost) {
   process.env.DOCKER_HOST = dockerHost.dockerHost;
 }
 
-function buildRunnerEnv(
-  extraEnv: NodeJS.ProcessEnv | undefined,
-  inheritFullEnv = false,
-): NodeJS.ProcessEnv {
-  if (inheritFullEnv) {
-    return { ...process.env, ...extraEnv };
-  }
-
-  const normalizedExtraEnv: Record<string, string> = {};
-  for (const [key, value] of Object.entries(extraEnv || {})) {
-    if (value !== undefined) {
-      normalizedExtraEnv[key] = value;
-    }
-  }
-  return buildSubprocessEnv(normalizedExtraEnv);
-}
-
 function logOpenshellRuntimeHint(file: string, renderedCommand = ""): void {
   if (
     file === "openshell" ||
@@ -87,7 +70,7 @@ function spawnAndHandle(
     ...opts,
     stdio,
     cwd: opts.cwd ?? ROOT,
-    env: buildRunnerEnv(opts.env, opts.inheritFullEnv),
+    env: buildEnvForSubprocess(opts.env, opts.inheritFullEnv),
   });
   if (!opts.suppressOutput) {
     writeRedactedResult(result, stdio);
@@ -214,7 +197,7 @@ function runDetachedFile(
   const child = spawnChild(file, normalizedArgs, {
     ...opts,
     cwd: opts.cwd ?? ROOT,
-    env: buildRunnerEnv(opts.env, opts.inheritFullEnv),
+    env: buildEnvForSubprocess(opts.env, opts.inheritFullEnv),
     detached: true,
     stdio: opts.stdio ?? "ignore",
     shell: false,
@@ -270,7 +253,7 @@ function runCaptureShell(cmd: string, opts: CaptureOptions = {}): string {
     const result = spawnResult("bash", ["-c", shellCmd], {
       ...spawnOpts,
       cwd: spawnOpts.cwd ?? ROOT,
-      env: buildRunnerEnv(extraEnv, inheritFullEnv),
+      env: buildEnvForSubprocess(extraEnv, inheritFullEnv),
       stdio: ["pipe", "pipe", "pipe"],
       encoding: "utf-8",
     });
