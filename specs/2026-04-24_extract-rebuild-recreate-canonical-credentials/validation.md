@@ -37,7 +37,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ## Phase 1: Canonical Credential Resolution — Validation Scenarios
 
-### Scenario 1.1: Credential resolved from file during non-interactive onboard [STATUS: pending]
+### Scenario 1.1: Credential resolved from file during non-interactive onboard [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: A fresh temp HOME with `~/.nemoclaw/credentials.json` containing `NVIDIA_API_KEY`, no `NVIDIA_API_KEY` in `process.env`
@@ -53,7 +53,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 1.2: Credential not found anywhere returns null without side effects [STATUS: pending]
+### Scenario 1.2: Credential not found anywhere returns null without side effects [VALIDATED: 76824abc]
 **Type**: Sad Path
 
 **Given**: Empty temp HOME, no env var set for `NVIDIA_API_KEY`
@@ -69,7 +69,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 1.3: hydrateCredentialEnv backward compatibility [STATUS: pending]
+### Scenario 1.3: hydrateCredentialEnv backward compatibility [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: Existing code in onboard.ts that calls `hydrateCredentialEnv(credentialEnv)`
@@ -86,7 +86,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ## Phase 2: Extract Composable Sandbox Primitives — Validation Scenarios
 
-### Scenario 2.1: sandbox-recreate.ts compiles and exports correct interface [STATUS: pending]
+### Scenario 2.1: sandbox-recreate.ts compiles and exports correct interface [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: `src/lib/sandbox-recreate.ts` exists with all exported functions
@@ -102,7 +102,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 2.2: No process.exit calls in sandbox-recreate.ts [STATUS: pending]
+### Scenario 2.2: No process.exit calls in sandbox-recreate.ts [VALIDATED: 76824abc]
 **Type**: Happy Path (structural guarantee)
 
 **Given**: `src/lib/sandbox-recreate.ts` file on disk
@@ -117,7 +117,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 2.3: RecreateError is instanceof Error with correct code [STATUS: pending]
+### Scenario 2.3: RecreateError is instanceof Error with correct code [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: Compiled `dist/lib/sandbox-recreate.js`
@@ -134,7 +134,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ## Phase 3: Rewire sandboxRebuild — Validation Scenarios
 
-### Scenario 3.1: Rebuild succeeds end-to-end with real sandbox (OpenClaw) [STATUS: pending]
+### Scenario 3.1: Rebuild succeeds end-to-end with real sandbox (OpenClaw) [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: A running OpenClaw sandbox created via `nemoclaw onboard`, `NVIDIA_API_KEY` saved in credentials.json
@@ -157,7 +157,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.2: Rebuild fails gracefully when credential is missing [STATUS: pending]
+### Scenario 3.2: Rebuild fails gracefully when credential is missing [VALIDATED: 76824abc]
 **Type**: Sad Path
 
 **Given**: A running sandbox, `NVIDIA_API_KEY` removed from both env and `credentials.json`
@@ -176,7 +176,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.3: Rebuild recovery instructions on recreate failure [STATUS: pending]
+### Scenario 3.3: Rebuild recovery instructions on recreate failure [VALIDATED: 76824abc]
 **Type**: Sad Path
 
 **Given**: A running sandbox with valid credential, but the Docker daemon is stopped/broken after backup+delete
@@ -192,7 +192,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.4: upgrade-sandboxes batch rebuild works [STATUS: pending]
+### Scenario 3.4: upgrade-sandboxes batch rebuild works [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: Two running sandboxes, one at a stale agent version
@@ -210,7 +210,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.5: No session file manipulation during rebuild [STATUS: pending]
+### Scenario 3.5: No session file manipulation during rebuild [VALIDATED: 76824abc]
 **Type**: Happy Path (structural guarantee)
 
 **Given**: A running sandbox with a valid session file
@@ -227,7 +227,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.6: No process.exit interceptor in sandboxRebuild [STATUS: pending]
+### Scenario 3.6: No process.exit interceptor in sandboxRebuild [VALIDATED: 76824abc]
 **Type**: Happy Path (structural guarantee)
 
 **Given**: `src/nemoclaw.ts` after Phase 3 changes
@@ -242,7 +242,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 3.7: Policy presets applied exactly once [STATUS: pending]
+### Scenario 3.7: Policy presets applied exactly once [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: A sandbox with policy presets ["balanced", "npm"] saved in backup manifest
@@ -261,7 +261,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ## Phase 4: ESLint Guard Rule — Validation Scenarios
 
-### Scenario 4.1: ESLint passes on onboard.ts with no credential env violations [STATUS: pending]
+### Scenario 4.1: ESLint passes on onboard.ts with no credential env violations [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: Phase 1 changes applied (all direct `process.env[credentialKey]` replaced), ESLint rule registered
@@ -276,7 +276,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 4.2: ESLint catches regression if someone adds direct process.env credential access [STATUS: pending]
+### Scenario 4.2: ESLint catches regression if someone adds direct process.env credential access [VALIDATED: 76824abc]
 **Type**: Sad Path (regression guard)
 
 **Given**: A temporary modification to `src/lib/onboard.ts` adding `if (!process.env.NVIDIA_API_KEY)` in the provider selection area
@@ -295,7 +295,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ## Phase 5: Clean the House — Validation Scenarios
 
-### Scenario 5.1: Full test suite passes [STATUS: pending]
+### Scenario 5.1: Full test suite passes [VALIDATED: 76824abc]
 **Type**: Happy Path
 
 **Given**: All phases implemented
@@ -310,7 +310,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 
 ---
 
-### Scenario 5.2: No TODO or FIXME references to #2306 remain [STATUS: pending]
+### Scenario 5.2: No TODO or FIXME references to #2306 remain [VALIDATED: 76824abc]
 **Type**: Happy Path (cleanup)
 
 **Given**: All phases implemented
@@ -343,9 +343,9 @@ If modifications to the E2E scripts are needed (unlikely), update them in the sa
 
 | Phase | Happy | Sad | Total | Passed | Failed | Pending |
 |-------|-------|-----|-------|--------|--------|---------|
-| Phase 1: Credential Resolution | 2 | 1 | 3 | 0 | 0 | 3 |
-| Phase 2: Sandbox Primitives | 2 | 1 | 3 | 0 | 0 | 3 |
-| Phase 3: Rewire sandboxRebuild | 4 | 1 | 5 | 0 | 0 | 5 |
-| Phase 4: ESLint Guard | 1 | 1 | 2 | 0 | 0 | 2 |
-| Phase 5: Clean the House | 2 | 0 | 2 | 0 | 0 | 2 |
-| **Total** | **11** | **4** | **15** | **0** | **0** | **15** |
+| Phase 1: Credential Resolution | 2 | 1 | 3 | 3 | 0 | 0 |
+| Phase 2: Sandbox Primitives | 2 | 1 | 3 | 3 | 0 | 0 |
+| Phase 3: Rewire sandboxRebuild | 4 | 1 | 5 | 5 | 0 | 0 |
+| Phase 4: ESLint Guard | 1 | 1 | 2 | 2 | 0 | 0 |
+| Phase 5: Clean the House | 2 | 0 | 2 | 2 | 0 | 0 |
+| **Total** | **11** | **4** | **15** | **15** | **0** | **0** |
