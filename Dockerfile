@@ -309,6 +309,8 @@ _token_keys = {'discord': 'token', 'telegram': 'botToken', 'slack': 'botToken'};
 _env_keys = {'discord': 'DISCORD_BOT_TOKEN', 'telegram': 'TELEGRAM_BOT_TOKEN', 'slack': 'SLACK_BOT_TOKEN'}; \
 _ch_cfg = {ch: {'accounts': {'default': {_token_keys[ch]: f'openshell:resolve:env:{_env_keys[ch]}', 'enabled': True, 'healthMonitor': {'enabled': False}, **({'appToken': 'openshell:resolve:env:SLACK_APP_TOKEN'} if ch == 'slack' else {}), **({'proxy': proxy_url} if ch in ('telegram', 'discord') else {}), **({'groupPolicy': 'open'} if ch == 'telegram' else {}), **({'dmPolicy': 'allowlist', 'allowFrom': _allowed_ids[ch]} if ch in _allowed_ids and _allowed_ids[ch] else {})}}} for ch in msg_channels if ch in _token_keys}; \
 _ch_cfg['discord'].update({'groupPolicy': 'allowlist', 'guilds': _discord_guilds}) if 'discord' in _ch_cfg and _discord_guilds else None; \
+_bundled_channel_ids = ['bluebubbles', 'discord', 'feishu', 'googlechat', 'imessage', 'irc', 'line', 'matrix', 'mattermost', 'msteams', 'nextcloud-talk', 'nostr', 'qqbot', 'signal', 'slack', 'synology-chat', 'telegram', 'tlon', 'twitch', 'whatsapp', 'zalo', 'zalouser']; \
+_disabled_ch = {ch: {'enabled': False} for ch in _bundled_channel_ids if ch not in _ch_cfg}; \
 parsed = urlparse(chat_ui_url); \
 chat_origin = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme and parsed.netloc else 'http://127.0.0.1:18789'; \
 origins = ['http://127.0.0.1:18789']; \
@@ -326,7 +328,7 @@ providers = { \
 config = { \
     'agents': {'defaults': {'model': {'primary': primary_model_ref}, 'timeoutSeconds': agent_timeout}}, \
     'models': {'mode': 'merge', 'providers': providers}, \
-    'channels': {'defaults': {}, **_ch_cfg}, \
+    'channels': {'defaults': {}, **_disabled_ch, **_ch_cfg}, \
     'update': {'checkOnStart': False}, \
     'plugins': {'entries': {'bonjour': {'enabled': False}}}, \
     'gateway': { \
