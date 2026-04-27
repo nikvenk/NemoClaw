@@ -528,7 +528,7 @@ try {
 - [ ] `npm test` passes
 - [ ] `npm run build:cli` compiles without errors
 
-## Phase 4: ESLint Guard Rule
+## Phase 4: ESLint Guard Rule [COMPLETED: 1e84f181]
 
 **Goal:** Add a custom ESLint rule that flags direct `process.env` access for known provider credential keys in `onboard.ts`, preventing regression of the dual-pattern credential bug.
 
