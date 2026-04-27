@@ -94,6 +94,23 @@ export function getCredential(key: string): string | null {
   return value || null;
 }
 
+/**
+ * Canonical entry point for provider credential resolution.
+ * Resolves from process.env or ~/.nemoclaw/credentials.json via getCredential(),
+ * and populates process.env so downstream code reading process.env directly
+ * sees the value.  Returns the resolved value or null.
+ *
+ * This replaces the dual-pattern of hydrateCredentialEnv() + process.env[key]
+ * checks.  See #2306.
+ */
+export function resolveProviderCredential(envName: string): string | null {
+  const value = getCredential(envName);
+  if (value) {
+    process.env[envName] = value;
+  }
+  return value || null;
+}
+
 export function deleteCredential(key: string): boolean {
   const file = getCredsFile();
   if (!fs.existsSync(file)) return false;
