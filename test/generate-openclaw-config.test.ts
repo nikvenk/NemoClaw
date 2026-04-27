@@ -57,22 +57,6 @@ function runConfigScript(envOverrides: Record<string, string> = {}): any {
   return JSON.parse(fs.readFileSync(configPath, "utf-8"));
 }
 
-function runClearToken(): void {
-  const env: Record<string, string> = { HOME: tmpDir };
-  const result = spawnSync("python3", [SCRIPT_PATH, "--clear-token"], {
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-    env,
-    timeout: 10_000,
-  });
-
-  if (result.status !== 0) {
-    throw new Error(
-      `Script --clear-token failed (exit ${result.status}):\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
-    );
-  }
-}
-
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-config-test-"));
 });
@@ -161,31 +145,6 @@ describe("generate-openclaw-config.py: config generation", () => {
     const stats = fs.statSync(configPath);
     // 0o600 = owner read/write only (octal 600 = decimal 384)
     expect(stats.mode & 0o777).toBe(0o600);
-  });
-});
-
-describe("generate-openclaw-config.py: --clear-token", () => {
-  it("clears token while preserving other config", () => {
-    // Generate initial config
-    const original = runConfigScript();
-    expect(original.gateway.auth.token).toBe("");
-
-    // Manually set a non-empty token
-    const configPath = path.join(tmpDir, ".openclaw", "openclaw.json");
-    original.gateway.auth.token = "test-token-123";
-    fs.writeFileSync(configPath, JSON.stringify(original, null, 2));
-    fs.chmodSync(configPath, 0o600);
-
-    // Run --clear-token
-    runClearToken();
-
-    // Verify token is cleared but everything else preserved
-    const cleared = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    expect(cleared.gateway.auth.token).toBe("");
-    expect(cleared.gateway.controlUi.allowedOrigins).toEqual(
-      original.gateway.controlUi.allowedOrigins,
-    );
-    expect(cleared.models).toEqual(original.models);
   });
 });
 

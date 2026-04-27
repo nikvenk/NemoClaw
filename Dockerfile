@@ -207,6 +207,10 @@ ARG NEMOCLAW_INFERENCE_API=openai-completions
 ARG NEMOCLAW_CONTEXT_WINDOW=131072
 ARG NEMOCLAW_MAX_TOKENS=4096
 ARG NEMOCLAW_REASONING=false
+# Comma-separated list of input modalities accepted by the primary model
+# (e.g. "text" or "text,image" for vision-capable models). OpenClaw's
+# model schema currently accepts "text" and "image". See #2421.
+ARG NEMOCLAW_INFERENCE_INPUTS=text
 # Per-request inference timeout (seconds) baked into agents.defaults.timeoutSeconds.
 # Increase for slow local inference (e.g., CPU Ollama). openclaw.json is
 # immutable at runtime (Landlock read-only), so this can only be changed by
@@ -230,9 +234,9 @@ ARG NEMOCLAW_DISCORD_GUILDS_B64=e30=
 # since terminal-based pairing is impossible in those contexts.
 # Default: "0" (device auth enabled for local deployments — secure by default).
 ARG NEMOCLAW_DISABLE_DEVICE_AUTH=0
-# Unique per build to bust Docker cache for config materialization layers.
+# Unique per build — busts the Docker cache for the token-injection layer
+# so each image gets a fresh gateway auth token.
 # Pass --build-arg NEMOCLAW_BUILD_ID=$(date +%s) to bust the cache.
-# Gateway auth token is generated at container startup by the entrypoint.
 ARG NEMOCLAW_BUILD_ID=default
 # Sandbox egress proxy host/port. Defaults match the OpenShell-injected
 # gateway (10.200.0.1:3128). Operators on non-default networks can override
@@ -258,6 +262,7 @@ ENV NEMOCLAW_MODEL=${NEMOCLAW_MODEL} \
     NEMOCLAW_CONTEXT_WINDOW=${NEMOCLAW_CONTEXT_WINDOW} \
     NEMOCLAW_MAX_TOKENS=${NEMOCLAW_MAX_TOKENS} \
     NEMOCLAW_REASONING=${NEMOCLAW_REASONING} \
+    NEMOCLAW_INFERENCE_INPUTS=${NEMOCLAW_INFERENCE_INPUTS} \
     NEMOCLAW_AGENT_TIMEOUT=${NEMOCLAW_AGENT_TIMEOUT} \
     NEMOCLAW_INFERENCE_COMPAT_B64=${NEMOCLAW_INFERENCE_COMPAT_B64} \
     NEMOCLAW_MESSAGING_CHANNELS_B64=${NEMOCLAW_MESSAGING_CHANNELS_B64} \
@@ -271,17 +276,9 @@ ENV NEMOCLAW_MODEL=${NEMOCLAW_MODEL} \
 WORKDIR /sandbox
 USER sandbox
 
-# Write openclaw.json with gateway config but WITHOUT the real auth token.
-# The gateway auth token is generated at container startup by the entrypoint
-# and passed via OPENCLAW_GATEWAY_TOKEN env var only to the gateway process
-# (running as 'gateway' user). The token file location depends on startup mode:
-#   Root mode:     /run/nemoclaw/gateway-token (gateway:gateway 0400)
-#   Non-root mode: $XDG_RUNTIME_DIR/nemoclaw/gateway-token (sandbox:sandbox 0400)
-# In root mode the sandbox user cannot read the env var (/proc/pid/environ is
-# uid-gated) or the file (wrong uid, no-new-privileges blocks escalation).
-# See: scripts/nemoclaw-start.sh generate_gateway_token()
-#
-# This file is immutable at runtime (Landlock read-only on /sandbox/.openclaw).
+# Write openclaw.json with gateway config and a placeholder auth token.
+# The real token is injected in a later layer (see "Inject gateway auth
+# token" below) so this expensive layer stays cached across builds.
 # Build args (NEMOCLAW_MODEL, CHAT_UI_URL) customize per deployment.
 #
 # Temporary workaround for NemoClaw#1738: the OpenClaw Discord extension's
@@ -303,10 +300,18 @@ RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py
 RUN openclaw doctor --fix > /dev/null 2>&1 || true \
     && openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
 
-# SECURITY: Clear any gateway auth token that openclaw doctor/plugins may have
-# auto-generated. The real token is created at container startup by the
-# entrypoint (generate_gateway_token) and never stored in openclaw.json.
-RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py --clear-token
+# Inject gateway auth token into openclaw.json.
+# NEMOCLAW_BUILD_ID busts the Docker cache so each image gets a unique token.
+# This is the ONLY layer that rebuilds on every build — the expensive
+# doctor/plugins layer above stays cached.
+# openclaw doctor --fix may auto-generate a token; this overwrites it.
+RUN NEMOCLAW_BUILD_ID="${NEMOCLAW_BUILD_ID}" python3 -c "\
+import json, os, secrets; \
+path = os.path.expanduser('~/.openclaw/openclaw.json'); \
+cfg = json.load(open(path)); \
+cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = secrets.token_hex(32); \
+json.dump(cfg, open(path, 'w'), indent=2); \
+os.chmod(path, 0o600)"
 
 # Lock openclaw.json via DAC: chown to root so the sandbox user cannot modify
 # it at runtime.  This works regardless of Landlock enforcement status.

@@ -9,7 +9,6 @@ in Dockerfile source. See: C-2 security model.
 
 Usage:
     python3 scripts/generate-openclaw-config.py            # Generate config
-    python3 scripts/generate-openclaw-config.py --clear-token  # Clear auth token
 
 Environment variables:
     CHAT_UI_URL                         Dashboard URL (default: http://127.0.0.1:18789)
@@ -18,6 +17,7 @@ Environment variables:
     NEMOCLAW_PRIMARY_MODEL_REF          Primary model reference
     NEMOCLAW_INFERENCE_BASE_URL         Inference endpoint
     NEMOCLAW_INFERENCE_API              Inference API type
+    NEMOCLAW_INFERENCE_INPUTS           Comma-separated model inputs (default: text)
     NEMOCLAW_CONTEXT_WINDOW             Context window size (default: 131072)
     NEMOCLAW_MAX_TOKENS                 Max tokens (default: 4096)
     NEMOCLAW_REASONING                  Enable reasoning (default: false)
@@ -38,8 +38,6 @@ import base64
 import json
 import os
 import re
-import sys
-from typing import Optional
 from urllib.parse import urlparse
 
 
@@ -82,6 +80,11 @@ def build_config(env: dict | None = None) -> dict:
     context_window = int(env.get("NEMOCLAW_CONTEXT_WINDOW", "131072"))
     max_tokens = int(env.get("NEMOCLAW_MAX_TOKENS", "4096"))
     reasoning = env.get("NEMOCLAW_REASONING", "false") == "true"
+    inference_inputs = [
+        v.strip()
+        for v in env.get("NEMOCLAW_INFERENCE_INPUTS", "text").split(",")
+        if v.strip()
+    ] or ["text"]
 
     _raw_agent_timeout = env.get("NEMOCLAW_AGENT_TIMEOUT", "600")
     if not _raw_agent_timeout.isdigit() or int(_raw_agent_timeout) <= 0:
@@ -122,6 +125,7 @@ def build_config(env: dict | None = None) -> dict:
         account = {
             _token_keys[ch]: f"openshell:resolve:env:{_env_keys[ch]}",
             "enabled": True,
+            "healthMonitor": {"enabled": False},
         }
         if ch == "slack":
             account["appToken"] = "openshell:resolve:env:SLACK_APP_TOKEN"
@@ -175,7 +179,7 @@ def build_config(env: dict | None = None) -> dict:
                     "id": model,
                     "name": primary_model_ref,
                     "reasoning": reasoning,
-                    "input": ["text"],
+                    "input": inference_inputs,
                     "cost": {
                         "input": 0,
                         "output": 0,
@@ -226,25 +230,8 @@ def build_config(env: dict | None = None) -> dict:
     return config
 
 
-def clear_token() -> None:
-    """Read existing openclaw.json and clear the gateway auth token."""
-    path = os.path.expanduser("~/.openclaw/openclaw.json")
-    if not os.path.exists(path):
-        return
-    with open(path) as f:
-        cfg = json.load(f)
-    cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = ""
-    with open(path, "w") as f:
-        json.dump(cfg, f, indent=2)
-    os.chmod(path, 0o600)
-
-
 def main() -> None:
-    """Generate openclaw.json or clear token based on CLI args."""
-    if "--clear-token" in sys.argv:
-        clear_token()
-        return
-
+    """Generate openclaw.json from environment variables."""
     config = build_config()
     path = os.path.expanduser("~/.openclaw/openclaw.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)

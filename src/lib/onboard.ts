@@ -9,7 +9,7 @@ const crypto = require("node:crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync, spawn, spawnSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const pRetry = require("p-retry");
 
 /** Parse a numeric env var, returning `fallback` when unset or non-finite. */
@@ -92,6 +92,7 @@ const shields = require("./shields");
 const tiers: typeof import("./tiers") = require("./tiers");
 const { ensureUsageNoticeConsent } = require("./usage-notice");
 const preflightUtils: typeof import("./preflight") = require("./preflight");
+const clusterImagePatch: typeof import("./cluster-image-patch") = require("./cluster-image-patch");
 const {
   assessHost,
   checkPortAvailable,
@@ -244,6 +245,7 @@ type OnboardOptions = {
   recreateSandbox?: boolean;
   dangerouslySkipPermissions?: boolean;
   resume?: boolean;
+  fresh?: boolean;
   fromDockerfile?: string | null;
   acceptThirdPartySoftware?: boolean;
   agent?: string | null;
@@ -1548,6 +1550,17 @@ function patchStagedDockerfile(
     dockerfile = dockerfile.replace(
       /^ARG NEMOCLAW_REASONING=.*$/m,
       `ARG NEMOCLAW_REASONING=${reasoning}`,
+    );
+  }
+  // Honor NEMOCLAW_INFERENCE_INPUTS for vision-capable models. OpenClaw's
+  // model schema currently accepts "text" and "image" only, so validate
+  // strictly against that vocabulary. Adding modalities to OpenClaw later
+  // only requires widening this regex. See #2421.
+  const inferenceInputs = process.env.NEMOCLAW_INFERENCE_INPUTS;
+  if (inferenceInputs && /^(text|image)(,(text|image))*$/.test(inferenceInputs)) {
+    dockerfile = dockerfile.replace(
+      /^ARG NEMOCLAW_INFERENCE_INPUTS=.*$/m,
+      `ARG NEMOCLAW_INFERENCE_INPUTS=${inferenceInputs}`,
     );
   }
   // NEMOCLAW_AGENT_TIMEOUT — override agents.defaults.timeoutSeconds at build
@@ -3597,8 +3610,100 @@ function getGatewayStartEnv(): Record<string, string> {
   if (stableGatewayImage && openshellVersion) {
     gatewayEnv.OPENSHELL_CLUSTER_IMAGE = stableGatewayImage;
     gatewayEnv.IMAGE_TAG = openshellVersion;
+    const overlayOverride = applyOverlayfsAutoFix(stableGatewayImage);
+    if (overlayOverride) {
+      gatewayEnv.OPENSHELL_CLUSTER_IMAGE = overlayOverride;
+    }
   }
   return gatewayEnv;
+}
+
+/**
+ * Memoizes `applyOverlayfsAutoFix` per upstream image for the lifetime of
+ * the process. The expensive work (host assessment + image inspect / pull /
+ * build) only needs to happen once per onboard invocation; both
+ * `startGatewayWithOptions` and `recoverGatewayRuntime` go through
+ * `getGatewayStartEnv()`, and without this cache the recovery path would
+ * re-run the full assessment.
+ *
+ * Reset on a per-process basis only — env-var changes mid-process are
+ * not modelled here and shouldn't happen in the CLI's normal flow.
+ */
+const overlayFixResultCache = new Map<string, string | null>();
+
+/**
+ * When the host runs Docker 26+ with the new containerd-snapshotter overlayfs
+ * driver, k3s inside the upstream cluster image cannot mount nested overlays
+ * and crashes. Build a tiny patched image locally that selects fuse-overlayfs
+ * (or `native` via NEMOCLAW_OVERLAY_SNAPSHOTTER) and return its tag so the
+ * caller can route OPENSHELL_CLUSTER_IMAGE to it. Returns null on every host
+ * that is not affected, when the user opts out, or when the build fails (in
+ * which case we fall through to the upstream image and let the existing
+ * doctor diagnostics surface the underlying error).
+ */
+function applyOverlayfsAutoFix(upstreamImage: string): string | null {
+  if (process.env.NEMOCLAW_DISABLE_OVERLAY_FIX === "1") {
+    return null;
+  }
+  if (overlayFixResultCache.has(upstreamImage)) {
+    return overlayFixResultCache.get(upstreamImage) ?? null;
+  }
+  let assessment: ReturnType<typeof preflightUtils.assessHost>;
+  try {
+    assessment = preflightUtils.assessHost();
+  } catch (err) {
+    // Don't silently swallow — log a breadcrumb so a future regression in
+    // assessHost (or a Docker-daemon hang past `2>/dev/null`) doesn't make
+    // the auto-fix mysteriously stop firing without any user-visible signal.
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`  Skipping overlayfs auto-fix: host assessment failed (${reason}).`);
+    overlayFixResultCache.set(upstreamImage, null);
+    return null;
+  }
+  if (!assessment.hasNestedOverlayConflict) {
+    overlayFixResultCache.set(upstreamImage, null);
+    return null;
+  }
+
+  const requestedSnapshotter = (process.env.NEMOCLAW_OVERLAY_SNAPSHOTTER || "")
+    .trim()
+    .toLowerCase();
+  let snapshotter: "fuse-overlayfs" | "native" = "fuse-overlayfs";
+  if (requestedSnapshotter === "native" || requestedSnapshotter === "fuse-overlayfs") {
+    snapshotter = requestedSnapshotter;
+  } else if (requestedSnapshotter !== "") {
+    // Reject typos like 'NATIVE' or 'fuse' loudly so the user gets the image
+    // they intended, not a silent default.
+    console.warn(
+      `  NEMOCLAW_OVERLAY_SNAPSHOTTER='${requestedSnapshotter}' is not recognized. ` +
+        "Valid values are 'fuse-overlayfs' or 'native'. Falling back to 'fuse-overlayfs'.",
+    );
+  }
+
+  console.log(
+    `  Detected Docker 26+ containerd-snapshotter overlayfs (driver=${assessment.dockerStorageDriver}). ` +
+      `Routing through a locally-built ${snapshotter} cluster image to bypass nested-overlay break.`,
+  );
+  console.log(
+    "  Set NEMOCLAW_DISABLE_OVERLAY_FIX=1 to disable this auto-fix; see docs for the manual daemon.json workaround.",
+  );
+
+  try {
+    const patchedTag = clusterImagePatch.ensurePatchedClusterImage({
+      upstreamImage,
+      snapshotter,
+    });
+    overlayFixResultCache.set(upstreamImage, patchedTag);
+    return patchedTag;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`  Patched cluster image build failed: ${reason}`);
+    console.error(
+      "  Falling back to the upstream image. The k3s server will likely fail; see docs/reference/troubleshooting.md.",
+    );
+    overlayFixResultCache.set(upstreamImage, null);
+    return null;
+  }
 }
 
 async function recoverGatewayRuntime() {
@@ -6790,21 +6895,6 @@ function ensureDashboardForward(
   }
 }
 
-function findFileRecursive(dir: string, filename: string): string | null {
-  if (!fs.existsSync(dir)) return null;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const e of entries) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      const found = findFileRecursive(p, filename);
-      if (found) return found;
-    } else if (e.name === filename) {
-      return p;
-    }
-  }
-  return null;
-}
-
 function findOpenclawJsonPath(dir: string): string | null {
   if (!fs.existsSync(dir)) return null;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -6821,64 +6911,13 @@ function findOpenclawJsonPath(dir: string): string | null {
 }
 
 /**
- * Pull gateway auth token from the sandbox.
- *
- * Tries three retrieval paths in order:
- *  1. kubectl exec cat /run/nemoclaw/gateway-token  (root mode — gateway:gateway 0400)
- *  2. sandbox download /tmp/.runtime/nemoclaw/gateway-token  (non-root mode — sandbox:sandbox 0400)
- *  3. sandbox download openclaw.json → gateway.auth.token  (pre-externalization images)
- *
- * Path 1 uses the same kubectl-via-K3s pattern as shields.ts — it runs as
- * root inside the pod so it can read gateway-owned files.
- * Path 2 works because sandbox download runs as the sandbox user, which owns
- * the non-root token file.
+ * Pull gateway.auth.token from the sandbox image via openshell sandbox download
+ * so onboard can print copy-paste Control UI URLs with #token= (same idea as nemoclaw-start.sh).
  */
 function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
-  // 1. Root mode: kubectl exec reads gateway:gateway 0400 file (same as shields.ts)
-  try {
-    const k3sContainer = "openshell-cluster-nemoclaw";
-    const result = execFileSync(
-      "docker",
-      [
-        "exec",
-        k3sContainer,
-        "kubectl",
-        "exec",
-        "-n",
-        "openshell",
-        sandboxName,
-        "-c",
-        "agent",
-        "--",
-        "cat",
-        "/run/nemoclaw/gateway-token",
-      ],
-      { stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
-    );
-    const token = result.toString().trim();
-    if (token.length > 0) return token;
-  } catch {
-    // kubectl exec not available or file absent — fall through
-  }
-
-  // 2. Non-root mode: token at $XDG_RUNTIME_DIR/nemoclaw/gateway-token
-  // (sandbox-owned, downloadable via openshell sandbox download)
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-token-"));
   try {
     const destDir = `${tmpDir}${path.sep}`;
-    const nonRootResult = runOpenshell(
-      ["sandbox", "download", sandboxName, "/tmp/.runtime/nemoclaw/gateway-token", destDir],
-      { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
-    );
-    if (nonRootResult.status === 0) {
-      const tokenPath = findFileRecursive(tmpDir, "gateway-token");
-      if (tokenPath) {
-        const token = fs.readFileSync(tokenPath, "utf-8").trim();
-        if (token.length > 0) return token;
-      }
-    }
-
-    // 3. Legacy: openclaw.json (pre-externalization images)
     const result = runOpenshell(
       ["sandbox", "download", sandboxName, "/sandbox/.openclaw/openclaw.json", destDir],
       { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
@@ -7144,7 +7183,9 @@ function printDashboard(
     for (const entry of dashboardAccess) {
       console.log(`  ${entry.label}: ${entry.url}`);
     }
-    console.log(`  Token:       see /tmp/gateway.log inside the sandbox, or re-run onboard.`);
+    console.log(
+      `  Token:       nemoclaw ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
+    );
     console.log(
       `               append  #token=<token>  to the URL, or see /tmp/gateway.log inside the sandbox.`,
     );
@@ -7263,6 +7304,11 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   }
   delete process.env.OPENSHELL_GATEWAY;
   const resume = opts.resume === true;
+  const fresh = opts.fresh === true;
+  if (resume && fresh) {
+    console.error("  --resume and --fresh cannot both be set.");
+    process.exit(1);
+  }
   // In non-interactive mode also accept the env var so CI pipelines can set it.
   // This is the explicitly requested value; on resume it may be absent and the
   // session-recorded path is used instead (see below).
@@ -7283,7 +7329,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   // problem: an unsupported provider value.
   getRequestedProviderHint();
   const lockResult = onboardSession.acquireOnboardLock(
-    `nemoclaw onboard${resume ? " --resume" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
+    `nemoclaw onboard${resume ? " --resume" : ""}${fresh ? " --fresh" : ""}${isNonInteractive() ? " --non-interactive" : ""}${requestedFromDockerfile ? ` --from ${requestedFromDockerfile}` : ""}`,
   );
   if (!lockResult.acquired) {
     console.error("  Another NemoClaw onboarding run is already in progress.");
@@ -7375,6 +7421,13 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
       });
       session = onboardSession.loadSession();
     } else {
+      // --fresh asks for an explicit fresh start. createSession + saveSession
+      // already overwrites any existing file, but clearing first removes the
+      // old file outright so an interrupted createSession cannot leave the
+      // previous session readable on disk.
+      if (fresh) {
+        onboardSession.clearSession();
+      }
       fromDockerfile = requestedFromDockerfile ? path.resolve(requestedFromDockerfile) : null;
       session = onboardSession.saveSession(
         onboardSession.createSession({
