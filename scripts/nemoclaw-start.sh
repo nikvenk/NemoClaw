@@ -1353,31 +1353,37 @@ emit_sandbox_sourced_file "$_CIAO_GUARD_SCRIPT" <<'CIAO_GUARD_EOF'
   };
 
   // Fallback: catch uncaughtException from ciao if the monkey-patch
-  // doesn't cover all call sites. Non-ciao errors fall through to the
-  // sandbox safety net (registered later in the preload chain) which
-  // logs and keeps the gateway alive — taking the gateway down for
-  // unrelated errors is not this guard's job.
-  process.on('uncaughtException', function (err, origin) {
-    if (
-      err && err.code === 'ERR_SYSTEM_ERROR' &&
-      String(err.message || '').indexOf('uv_interface_addresses') !== -1
-    ) {
-      process.stderr.write(
-        '[guard] ciao/networkInterfaces crash caught: ' + (err.message || err) +
-        ' \u2014 gateway continues\n'
-      );
-      return;
-    }
-    if (err && err.stack && err.stack.indexOf('ciao') !== -1 &&
-        String(err.message || '').indexOf('networkInterfaces') !== -1) {
-      process.stderr.write(
-        '[guard] ciao network error caught: ' + (err.message || err) +
-        ' \u2014 gateway continues\n'
-      );
-      return;
-    }
-    // Not ciao — let the sandbox safety net handle it.
-  });
+  // doesn't cover all call sites. Gateway-only — registering ANY
+  // uncaughtException listener tells Node "don't crash by default", and
+  // we want CLI processes (agent, doctor, plugins, tui) to keep default
+  // Node crash behavior so errors surface promptly.
+  //
+  // For gateway processes, non-ciao errors fall through (return) to the
+  // sandbox safety net registered later in the preload chain. The safety
+  // net is the single point of "keep gateway alive on unknown errors".
+  if (process.argv[2] === 'gateway') {
+    process.on('uncaughtException', function (err, origin) {
+      if (
+        err && err.code === 'ERR_SYSTEM_ERROR' &&
+        String(err.message || '').indexOf('uv_interface_addresses') !== -1
+      ) {
+        process.stderr.write(
+          '[guard] ciao/networkInterfaces crash caught: ' + (err.message || err) +
+          ' \u2014 gateway continues\n'
+        );
+        return;
+      }
+      if (err && err.stack && err.stack.indexOf('ciao') !== -1 &&
+          String(err.message || '').indexOf('networkInterfaces') !== -1) {
+        process.stderr.write(
+          '[guard] ciao network error caught: ' + (err.message || err) +
+          ' \u2014 gateway continues\n'
+        );
+        return;
+      }
+      // Not ciao — let the sandbox safety net handle it.
+    });
+  }
 })();
 CIAO_GUARD_EOF
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_CIAO_GUARD_SCRIPT"
