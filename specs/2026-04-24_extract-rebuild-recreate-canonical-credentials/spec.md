@@ -251,20 +251,28 @@ All 6 must resolve credentials identically. The parametric test ensures this.
 
 **What can we import from onboard.ts vs. what must we reimplement?**
 
-Functions we can import directly (already exported):
-- `upsertProvider()` — creates/updates gateway providers
-- `buildProviderArgs()` — builds openshell CLI args for provider operations
+Functions we can import from `onboard.ts` re-exports (wrappers with `runOpenshell` already injected):
+- `upsertProvider()` — creates/updates gateway providers (wrapper calls `onboard-providers.upsertProvider(..., runOpenshell)`)
+- `providerExistsInGateway()` — checks if a provider exists (same injection pattern)
 - `buildSandboxConfigSyncScript()` — generates the config sync script
 - `writeSandboxConfigSyncFile()` — writes sync script to temp file
 - `patchStagedDockerfile()` — patches Dockerfile with model/provider config
-- `formatEnvAssignment()` — formats env vars for openshell
 - `isSandboxReady()` / `parseSandboxStatus()` — sandbox readiness checks
 - `isInferenceRouteReady()` — checks gateway inference routing
-- `providerExistsInGateway()` — checks if a provider exists
 - `hashCredential()` — hashes credentials for registry storage
 - `hydrateCredentialEnv()` — credential hydration (now delegates to resolveProviderCredential)
 - `getSuggestedPolicyPresets()` — computes default policy presets
-- `ensureOllamaAuthProxy()` — Ollama auth setup
+- `ensureOllamaAuthProxy()` — Ollama auth setup (from `onboard-ollama-proxy.ts`, re-exported)
+- `runCaptureOpenshell()` — already exported from onboard.ts
+
+Functions we can import directly from `onboard-providers.ts` (extracted by #2087/#2495):
+- `REMOTE_PROVIDER_CONFIG` — the 6 remote provider configurations (exported from `onboard-providers.ts`, NOT re-exported from `onboard.ts`)
+- `buildProviderArgs()` — builds openshell CLI args for provider operations
+- `getSandboxInferenceConfig()` — resolves provider key, model ref, inference URL/API
+
+Functions to newly export from onboard.ts (currently private):
+- `runOpenshell()` — runs openshell CLI commands (wraps `run()` from runner.ts with openshell binary resolution). Needed by `sandbox-recreate.ts` for gateway select, inference set, and sandbox connect commands.
+- `GATEWAY_NAME` — the gateway name constant
 
 Functions that use `process.exit()` internally and need wrapping:
 - `createSandbox()` — 13 `process.exit` calls. We wrap the underlying `streamSandboxCreate()` and `runOpenshell()` calls directly instead of calling `createSandbox()`.
@@ -322,13 +330,13 @@ interface RecreateResult {
   9. Register sandbox in registry
 - On any failure: throw `RecreateError` with descriptive message instead of process.exit
 - Returns the sandbox name
-- This function imports `streamSandboxCreate` from `sandbox-create-stream.ts`, runner functions from `runner.ts`, and helpers from `onboard.ts`
+- This function imports `streamSandboxCreate` from `sandbox-create-stream.ts`, `runOpenshell` from `onboard.ts`, and helpers from `onboard.ts`/`onboard-providers.ts`
 
 **`configureInferenceDirect(params): void`**
 - Accepts: sandboxName, provider, model, credentialEnv, endpointUrl
-- Selects the gateway: `runOpenshell(["gateway", "select", GATEWAY_NAME])`
-- Resolves the remote provider config from `REMOTE_PROVIDER_CONFIG` or `getProviderSelectionConfig()`
-- Calls `upsertProvider()` (imported from onboard.ts)
+- Selects the gateway: `runOpenshell(["gateway", "select", GATEWAY_NAME])` (runOpenshell from onboard.ts, GATEWAY_NAME from onboard.ts)
+- Resolves the remote provider config from `REMOTE_PROVIDER_CONFIG` (imported from `onboard-providers.ts`) or `getProviderSelectionConfig()`
+- Calls `upsertProvider()` (imported from onboard.ts — the wrapper that injects runOpenshell)
 - Runs `openshell inference set --provider <provider> --model <model>` (with `--no-verify` for skip-verify providers)
 - On failure: throw `RecreateError` instead of process.exit
 
