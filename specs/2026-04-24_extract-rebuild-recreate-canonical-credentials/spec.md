@@ -238,7 +238,7 @@ All 6 must resolve credentials identically. The parametric test ensures this.
 - [ ] Existing tests pass: `npm test` in the worktree
 - [ ] `npm run build:cli` compiles without errors
 
-## Phase 2: Extract Composable Sandbox Primitives
+## Phase 2: Extract Composable Sandbox Primitives [COMPLETED: b8b12041]
 
 **Goal:** Extract throw-based, composable functions from `onboard.ts` into a new `src/lib/sandbox-recreate.ts` module that performs the subset of operations rebuild needs: credential validation, sandbox creation, inference configuration, agent setup, and policy application.
 
