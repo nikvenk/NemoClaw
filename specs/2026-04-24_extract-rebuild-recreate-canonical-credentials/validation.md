@@ -153,7 +153,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 9. **Verify**: bash: No onboard lock file left behind: `[ ! -f ~/.nemoclaw/onboard.lock ]`
 
 **Tools Required**: nemoclaw CLI, openshell CLI, bash
-**Environment**: Self-hosted runner with Docker (nightly E2E or sparky)
+**Environment**: Nightly CI (`rebuild-openclaw-e2e` in `nightly-e2e.yaml`) — no manual execution needed
 
 ---
 
@@ -172,7 +172,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 5. **Verify**: bash: Sandbox is still running: `nemoclaw <name> status` shows healthy
 
 **Tools Required**: nemoclaw CLI, bash
-**Environment**: Self-hosted runner with Docker
+**Environment**: Nightly CI (`rebuild-openclaw-e2e` in `nightly-e2e.yaml`) — no manual execution needed
 
 ---
 
@@ -206,7 +206,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 4. **Verify**: bash: Both sandboxes are running after the batch
 
 **Tools Required**: nemoclaw CLI, bash
-**Environment**: Self-hosted runner with Docker
+**Environment**: Nightly CI (`rebuild-openclaw-e2e` in `nightly-e2e.yaml`) — no manual execution needed
 
 ---
 
@@ -255,7 +255,7 @@ This validation plan focuses on **end-to-end observable behavior** that unit tes
 3. **Verify**: bash: `nemoclaw <name> policy-list` matches pre-rebuild state exactly
 
 **Tools Required**: nemoclaw CLI, bash
-**Environment**: Self-hosted runner with Docker
+**Environment**: Nightly CI (`rebuild-openclaw-e2e` in `nightly-e2e.yaml`) — no manual execution needed
 
 ---
 
@@ -333,7 +333,7 @@ The existing nightly E2E workflow (`nightly-e2e.yaml`) includes two rebuild test
 
 These scripts test the full rebuild lifecycle: install → create old sandbox → write markers → rebuild → verify markers survive → verify version updated → verify no credential leaks → verify policy presets survive.
 
-**After merging this PR**, these E2E tests should pass without modification because the external behavior of `nemoclaw <name> rebuild --yes` is unchanged. The nightly run validates Scenarios 3.1 and 3.7 automatically.
+**After merging this PR**, these E2E tests should pass without modification because the external behavior of `nemoclaw <name> rebuild --yes` is unchanged. The nightly run validates Scenarios 3.1, 3.4, and 3.7 automatically. No Brev instances or sparky self-hosted runner needed — the nightly CI runs on `ubuntu-latest` with real Docker.
 
 If modifications to the E2E scripts are needed (unlikely), update them in the same PR.
 
