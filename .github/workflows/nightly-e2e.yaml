@@ -253,24 +253,40 @@ jobs:
           mkdir -p docker-logs
           nohup bash -c '
             export PATH="$HOME/.local/bin:$PATH"
-            while sleep 10; do
-              command -v nemoclaw >/dev/null 2>&1 || continue
-              # Read the sandboxes registry directly to avoid parsing pretty-printed
-              # `nemoclaw list` output (which contains a "Sandboxes:" header line
-              # whose first token has a colon, breaking artifact upload).
+            # Track which sandboxes are currently being streamed (via openshell ssh
+            # tail), keyed by name. Killed when the sandbox disappears.
+            declare -A streamer_pids=()
+            while sleep 5; do
+              command -v openshell >/dev/null 2>&1 || continue
               registry="$HOME/.nemoclaw/sandboxes.json"
               [ -f "$registry" ] || continue
-              names=$(jq -r ".sandboxes // {} | keys[]?" "$registry" 2>/dev/null)
-              for name in $names; do
-                # Sanity: only valid sandbox names (lowercase, digits, dashes,
-                # underscores). Reject anything with non-filename-safe chars.
+              live=$(jq -r ".sandboxes // {} | keys[]?" "$registry" 2>/dev/null)
+              for name in $live; do
                 case "$name" in
                   *[!a-z0-9_-]*|"") continue ;;
                 esac
-                # Snapshot — overwrite each iteration; capped at ~256KB.
-                timeout 8 nemoclaw "$name" logs 2>&1 | head -c 262144 > "docker-logs/sandbox-${name}.log.tmp" \
-                  && mv "docker-logs/sandbox-${name}.log.tmp" "docker-logs/sandbox-${name}.log" \
-                  || true
+                # If we already have a follower running for this sandbox, skip.
+                pid="${streamer_pids[$name]:-}"
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
+                # Spawn a follower: SSH into the sandbox and tail
+                # /tmp/gateway.log directly so we see the FULL stream rather
+                # than nemoclaw logs deciding what fits in N lines. The stderr
+                # mirror to PID 1 in nemoclaw-start.sh prefixes [gateway-log:],
+                # but here we read the file straight, so no prefix. Filter the
+                # ciao-mDNS spam (uv_interface_addresses) inline — keeps useful
+                # events visible without losing them to noise. Cap at ~512KB.
+                ssh_cfg="$(mktemp)"
+                if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
+                   && [ -s "$ssh_cfg" ]; then
+                  nohup ssh -F "$ssh_cfg" \
+                       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                       -o ConnectTimeout=10 -o LogLevel=ERROR -o ServerAliveInterval=30 \
+                       "openshell-${name}" \
+                       "tail -n +1 -F /tmp/gateway.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses | head -c 524288" \
+                    > "docker-logs/sandbox-${name}.log" 2>&1 &
+                  streamer_pids[$name]=$!
+                fi
+                rm -f "$ssh_cfg"
               done
             done
           ' >/dev/null 2>&1 &
@@ -289,9 +305,10 @@ jobs:
         if: always()
         run: |
           [ -f /tmp/gateway-log-streamer.pid ] && kill "$(cat /tmp/gateway-log-streamer.pid)" 2>/dev/null || true
+          # Kill any per-sandbox SSH+tail followers spawned by the streamer.
+          pkill -f 'tail -n \+1 -F /tmp/gateway.log' 2>/dev/null || true
+          pkill -f 'ssh.*openshell-' 2>/dev/null || true
           sleep 2
-          # Ensure no temp files left mid-write.
-          rm -f docker-logs/*.log.tmp 2>/dev/null || true
           ls -la docker-logs/ 2>&1 | head -20 || true
           du -sh docker-logs/ 2>&1 || true
 
