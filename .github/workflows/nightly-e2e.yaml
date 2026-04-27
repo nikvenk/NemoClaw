@@ -327,28 +327,37 @@ jobs:
           # /tmp/openclaw-<uid>/ dirs mid-test) get missed. Re-glob now and
           # append every openclaw log file from each live sandbox to the
           # per-sandbox docker-logs file.
+          #
+          # Use `nemoclaw <name> logs` (not raw openshell ssh-config + ssh)
+          # because nemoclaw handles SSH key/host setup and is robust to
+          # streamer race conditions. Tested working in TC-SBX-04.
           export PATH="$HOME/.local/bin:$PATH"
-          if command -v openshell >/dev/null 2>&1 && [ -f "$HOME/.nemoclaw/sandboxes.json" ]; then
-            for name in $(jq -r ".sandboxes // {} | keys[]?" "$HOME/.nemoclaw/sandboxes.json" 2>/dev/null); do
-              case "$name" in *[!a-z0-9_-]*|"") continue ;; esac
-              ssh_cfg="/tmp/sshcfg-final-${name}.tmp"
-              openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null || continue
-              [ -s "$ssh_cfg" ] || { rm -f "$ssh_cfg"; continue; }
+          echo "=== final-snapshot: PATH=$PATH"
+          echo "=== final-snapshot: nemoclaw=$(command -v nemoclaw)"
+          echo "=== final-snapshot: openshell=$(command -v openshell)"
+          if [ -f "$HOME/.nemoclaw/sandboxes.json" ]; then
+            echo "=== final-snapshot: sandboxes.json contents:"
+            cat "$HOME/.nemoclaw/sandboxes.json" 2>&1 | head -30
+            registry_keys=$(jq -r ".sandboxes // {} | keys[]?" "$HOME/.nemoclaw/sandboxes.json" 2>&1)
+            echo "=== final-snapshot: sandbox names from jq: '$registry_keys'"
+            for name in $registry_keys; do
+              case "$name" in *[!a-z0-9_-]*|"") echo "=== final-snapshot: skipping invalid name '$name'"; continue ;; esac
+              echo "=== final-snapshot: capturing logs for '$name'"
               {
                 printf '\n\n===== FINAL SNAPSHOT: %s =====\n' "$name"
-                ssh -F "$ssh_cfg" \
-                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                    -o ConnectTimeout=10 -o LogLevel=ERROR \
-                    "openshell-${name}" \
-                    'set -e
-                     for f in /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
-                       [ -f "$f" ] || continue
-                       printf "\n----- %s -----\n" "$f"
-                       cat -- "$f" 2>/dev/null || true
-                     done' 2>&1 || true
+                # nemoclaw <name> logs handles SSH internally. Use --max-lines 5000
+                # to bound output. Drops connection-refused noise.
+                if command -v nemoclaw >/dev/null 2>&1; then
+                  # `nemoclaw <name> logs` is what TC-SBX-04 uses successfully.
+                  # No --follow so it returns once log file end is reached.
+                  nemoclaw "$name" logs 2>&1 | tail -c 500000 || echo "(nemoclaw logs failed for $name)"
+                else
+                  echo "(nemoclaw not on PATH — install dir missing)"
+                fi
               } >> "docker-logs/sandbox-${name}.log"
-              rm -f "$ssh_cfg"
             done
+          else
+            echo "=== final-snapshot: sandboxes.json not found at $HOME/.nemoclaw/sandboxes.json"
           fi
           # Cap each log file at 5MB by keeping only the last 5MB — useful
           # content (real gateway events) is mixed throughout, so tail-trim
