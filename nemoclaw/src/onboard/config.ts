@@ -18,6 +18,17 @@ export type EndpointType =
   | "ollama"
   | "custom";
 
+export interface OllamaTuning {
+  vramPercent?: number;
+  numGpuLayers?: number;
+  numCtx?: number;
+  numBatch?: number;
+  flashAttention?: boolean;
+  kvCacheType?: "f16" | "q8_0" | "q4_0";
+  appliedAt: string;
+  appliedFor?: string;
+}
+
 export interface NemoClawOnboardConfig {
   endpointType: EndpointType;
   endpointUrl: string;
@@ -28,6 +39,7 @@ export interface NemoClawOnboardConfig {
   provider?: string;
   providerLabel?: string;
   onboardedAt: string;
+  ollamaTuning?: OllamaTuning;
 }
 
 type OnboardConfigSource = {
@@ -40,6 +52,7 @@ type OnboardConfigSource = {
   provider?: string;
   providerLabel?: string;
   onboardedAt?: string;
+  ollamaTuning?: unknown;
 };
 
 function isRecord(value: object | null): value is OnboardConfigSource {
@@ -64,6 +77,32 @@ function isOptionalString(value: string | null | undefined): boolean {
   return value === undefined || typeof value === "string";
 }
 
+function isValidOllamaTuning(value: unknown): value is OllamaTuning | undefined {
+  if (value === undefined) return true;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const t = value as Record<string, unknown>;
+  if (typeof t.appliedAt !== "string") return false;
+  if (t.vramPercent !== undefined) {
+    if (typeof t.vramPercent !== "number" || t.vramPercent < 1 || t.vramPercent > 100) return false;
+  }
+  if (t.numGpuLayers !== undefined) {
+    if (typeof t.numGpuLayers !== "number" || t.numGpuLayers < -1) return false;
+  }
+  if (t.numCtx !== undefined) {
+    if (typeof t.numCtx !== "number" || t.numCtx <= 0) return false;
+  }
+  if (t.numBatch !== undefined) {
+    if (typeof t.numBatch !== "number" || t.numBatch <= 0) return false;
+  }
+  if (t.flashAttention !== undefined && typeof t.flashAttention !== "boolean") return false;
+  if (t.kvCacheType !== undefined) {
+    if (t.kvCacheType !== "f16" && t.kvCacheType !== "q8_0" && t.kvCacheType !== "q4_0")
+      return false;
+  }
+  if (t.appliedFor !== undefined && typeof t.appliedFor !== "string") return false;
+  return true;
+}
+
 function isOnboardConfig(value: OnboardConfigSource | null): value is NemoClawOnboardConfig {
   return (
     isRecord(value) &&
@@ -75,7 +114,8 @@ function isOnboardConfig(value: OnboardConfigSource | null): value is NemoClawOn
     typeof value.credentialEnv === "string" &&
     isOptionalString(value.providerLabel) &&
     isOptionalString(value.provider) &&
-    typeof value.onboardedAt === "string"
+    typeof value.onboardedAt === "string" &&
+    isValidOllamaTuning(value.ollamaTuning)
   );
 }
 

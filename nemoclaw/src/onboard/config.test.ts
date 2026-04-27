@@ -11,6 +11,7 @@ import {
   clearOnboardConfig,
   type NemoClawOnboardConfig,
   type EndpointType,
+  type OllamaTuning,
 } from "./config.js";
 
 // Mock node:fs so tests don't touch the real filesystem.
@@ -179,6 +180,128 @@ describe("onboard/config", () => {
       expect(() => {
         clearOnboardConfig();
       }).not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // OllamaTuning round-trip and validation
+  // -------------------------------------------------------------------------
+
+  describe("OllamaTuning", () => {
+    it("round-trips a full OllamaTuning block", () => {
+      const tuning: OllamaTuning = {
+        vramPercent: 80,
+        numGpuLayers: -1,
+        numCtx: 32768,
+        numBatch: 512,
+        flashAttention: true,
+        kvCacheType: "q8_0",
+        appliedAt: "2026-04-27T00:00:00.000Z",
+        appliedFor: "gemma4:e4b",
+      };
+      const config = makeConfig({ ollamaTuning: tuning });
+      saveOnboardConfig(config);
+      const loaded = loadOnboardConfig();
+      expect(loaded?.ollamaTuning).toEqual(tuning);
+    });
+
+    it("round-trips with ollamaTuning absent", () => {
+      const config = makeConfig();
+      saveOnboardConfig(config);
+      const loaded = loadOnboardConfig();
+      expect(loaded?.ollamaTuning).toBeUndefined();
+    });
+
+    it("rejects vramPercent > 100", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { vramPercent: 200, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("rejects vramPercent < 1", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { vramPercent: 0, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("rejects kvCacheType with unknown value", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { kvCacheType: "garbage", appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("rejects numCtx: 0", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { numCtx: 0, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("rejects numBatch: 0", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { numBatch: 0, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("rejects numGpuLayers < -1", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { numGpuLayers: -2, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("accepts numGpuLayers: -1 (all layers sentinel)", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = {
+        ...makeConfig(),
+        ollamaTuning: { numGpuLayers: -1, appliedAt: "2026-04-27T00:00:00.000Z" },
+      };
+      store.set(configPath, JSON.stringify(raw));
+      const loaded = loadOnboardConfig();
+      expect(loaded?.ollamaTuning?.numGpuLayers).toBe(-1);
+    });
+
+    it("rejects ollamaTuning missing required appliedAt", () => {
+      const configPath = `${homedir()}/.nemoclaw/config.json`;
+      const raw = { ...makeConfig(), ollamaTuning: { vramPercent: 80 } };
+      store.set(configPath, JSON.stringify(raw));
+      expect(loadOnboardConfig()).toBeNull();
+    });
+
+    it("accepts all valid kvCacheType values", () => {
+      for (const kv of ["f16", "q8_0", "q4_0"] as const) {
+        const configPath = `${homedir()}/.nemoclaw/config.json`;
+        const raw = {
+          ...makeConfig(),
+          ollamaTuning: { kvCacheType: kv, appliedAt: "2026-04-27T00:00:00.000Z" },
+        };
+        store.set(configPath, JSON.stringify(raw));
+        const loaded = loadOnboardConfig();
+        expect(loaded?.ollamaTuning?.kvCacheType).toBe(kv);
+        store.clear();
+      }
     });
   });
 });
