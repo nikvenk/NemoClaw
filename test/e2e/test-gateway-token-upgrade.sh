@@ -337,27 +337,28 @@ if [ "${HOST_TOKEN}" != "${POST_TOKEN}" ]; then
 fi
 pass "Phase 5: host-side gateway-token matches in-sandbox token"
 
-# ── Phase 6: Token rotates on restart (runtime mechanism) ──────────
-info "Phase 6: Restarting sandbox to confirm runtime token rotation..."
+# ── Phase 6: Token rotates on container recreation (runtime mech) ──
+info "Phase 6: Recreating container via 'nemoclaw rebuild' to confirm runtime token rotation..."
 
-# `openshell sandbox restart` returns before the pod has actually
-# transitioned, and the kubelet may roll quickly enough that a "wait
-# for non-Ready, then Ready" check misses the window entirely. Poll
-# the resolved token directly — the entrypoint regenerates it on
-# every start, so an observed rotation is unambiguous proof the
-# entrypoint re-ran. A 90s deadline tolerates slow node-image pulls
-# without hiding a real "entrypoint never ran" regression.
-openshell sandbox restart "${SANDBOX_NAME}" >/dev/null 2>&1 || true
+# `openshell sandbox` exposes create/delete/exec/etc. but NOT a
+# restart subcommand, so the rebuild path is the supported way to
+# force a fresh entrypoint run. The image layer is already cached
+# from Phase 4, so this re-runs container creation only — it's the
+# closest thing to "container restart" available, and a fresh
+# entrypoint run is exactly what we want to verify rotates the
+# token. 240s tolerates a stale-cache rebuild + Ready transition.
+nemoclaw "${SANDBOX_NAME}" rebuild --yes >/dev/null 2>&1 \
+  || fail "Phase 6: nemoclaw rebuild (rotation trigger) failed"
 
 RESOLVED_TOKEN=""
-if ! wait_for_token_change "${SANDBOX_NAME}" "${POST_TOKEN}" 90; then
-  fail "Phase 6: token did not rotate within 90s — entrypoint inject_gateway_token() did not re-run, or sandbox restart did not propagate"
+if ! wait_for_token_change "${SANDBOX_NAME}" "${POST_TOKEN}" 240; then
+  fail "Phase 6: token did not rotate within 240s — entrypoint inject_gateway_token() did not re-run on the recreated container"
 fi
 ROTATED_TOKEN="${RESOLVED_TOKEN}"
-pass "Phase 6: token rotated on restart (runtime injection confirmed)"
+pass "Phase 6: token rotated on container recreation (runtime injection confirmed)"
 
 # Final TUI smoke against the rotated container — one more guard
-# against a "Missing gateway auth token" regression after restart.
+# against a "Missing gateway auth token" regression on the new pod.
 TUI_RESULT_TOKEN=""
 tui_smoke "${SANDBOX_NAME}" "Phase 6 post-rotation"
 if [ "${TUI_RESULT_TOKEN}" != "${ROTATED_TOKEN}" ]; then
