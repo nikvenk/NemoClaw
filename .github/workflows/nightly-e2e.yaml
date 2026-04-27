@@ -270,12 +270,13 @@ jobs:
                 if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
                 # Spawn a follower: SSH into the sandbox and tail
                 # /tmp/gateway.log directly so we see the FULL stream rather
-                # than nemoclaw logs deciding what fits in N lines. The stderr
-                # mirror to PID 1 in nemoclaw-start.sh prefixes [gateway-log:],
-                # but here we read the file straight, so no prefix. Filter the
+                # than nemoclaw logs deciding what fits in N lines. Filter the
                 # ciao-mDNS spam (uv_interface_addresses) inline — keeps useful
                 # events visible without losing them to noise. Cap at ~512KB.
-                ssh_cfg="$(mktemp)"
+                # NOTE: keep ssh_cfg around for the lifetime of the SSH child
+                # — `rm` before SSH actually connects races and trips
+                # "Can't open user config file" inside ssh.
+                ssh_cfg="/tmp/sshcfg-${name}.tmp"
                 if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
                    && [ -s "$ssh_cfg" ]; then
                   nohup ssh -F "$ssh_cfg" \
@@ -286,7 +287,6 @@ jobs:
                     > "docker-logs/sandbox-${name}.log" 2>&1 &
                   streamer_pids[$name]=$!
                 fi
-                rm -f "$ssh_cfg"
               done
             done
           ' >/dev/null 2>&1 &
