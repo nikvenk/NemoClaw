@@ -12,7 +12,8 @@
 # Optional env:
 #   NVIDIA_API_KEY                API key for NVIDIA-hosted inference
 #   CHAT_UI_URL                   Browser origin that will access the forwarded dashboard
-#   NEMOCLAW_DISABLE_DEVICE_AUTH  Build-time only. Set to "1" to skip device-pairing auth
+#   NEMOCLAW_DISABLE_DEVICE_AUTH  Build-time only. Set to "1" to skip device-pairing auth.
+#                                  Also auto-disabled when CHAT_UI_URL is non-loopback.
 #                                 (development/headless). Has no runtime effect — openclaw.json
 #                                 is baked at image build and verified by hash at startup.
 #   NEMOCLAW_MODEL_OVERRIDE       Override the primary model at startup without rebuilding
@@ -466,43 +467,6 @@ PYSLACK
   printf '[channels] Config hash recomputed after Slack token override\n' >&2
 }
 
-# ── Gateway auth token (externalized) ──────────────────────────
-# The gateway auth token is NOT stored in openclaw.json. It is generated
-# at container startup and passed as OPENCLAW_GATEWAY_TOKEN env var only
-# to the gateway process launch line. OpenClaw reads this natively via
-# its resolveGatewayCredentialsFromValues() path.
-#
-# Token file location depends on startup mode:
-#   Root mode:     /run/nemoclaw/gateway-token (gateway:gateway 0400)
-#                  Host reads via kubectl exec (runs as root in pod).
-#                  Sandbox user cannot access: wrong uid, /proc/pid/environ
-#                  is uid-gated, no-new-privileges blocks escalation.
-#   Non-root mode: $XDG_RUNTIME_DIR/nemoclaw/gateway-token (sandbox:sandbox 0400)
-#                  Host reads via openshell sandbox download (sandbox user).
-#                  No uid isolation — matches pre-externalization posture.
-#
-# Both paths regenerate the token on every container start.
-GATEWAY_TOKEN_DIR="/run/nemoclaw"
-GATEWAY_TOKEN_FILE="${GATEWAY_TOKEN_DIR}/gateway-token"
-
-generate_gateway_token() {
-  [ "$(id -u)" -eq 0 ] || {
-    printf '[SECURITY] generate_gateway_token requires root — skipping\n' >&2
-    return 1
-  }
-
-  mkdir -p "$GATEWAY_TOKEN_DIR"
-  chmod 755 "$GATEWAY_TOKEN_DIR"
-
-  python3 -c "import secrets; print(secrets.token_hex(32), end='')" \
-    >"$GATEWAY_TOKEN_FILE"
-
-  chown gateway:gateway "$GATEWAY_TOKEN_FILE"
-  chmod 400 "$GATEWAY_TOKEN_FILE"
-  printf '[token] Gateway auth token generated at %s (gateway:gateway 0400)\n' \
-    "$GATEWAY_TOKEN_FILE" >&2
-}
-
 # ── Slack channel guard (unhandled-rejection safety net) ─────────
 # Prevents the gateway from crashing when a Slack channel fails to
 # initialize (e.g., invalid_auth, token_revoked, unresolved placeholder
@@ -638,10 +602,74 @@ SLACK_GUARD_EOF
 }
 
 _read_gateway_token() {
-  # Read the gateway token from the externalized file.
-  # Callable by root (entrypoint) and gateway user only.
-  # Returns the token on stdout; empty output means no token.
-  cat "$GATEWAY_TOKEN_FILE" 2>/dev/null || true
+  python3 - <<'PYTOKEN'
+import json
+try:
+    with open('/sandbox/.openclaw/openclaw.json') as f:
+        cfg = json.load(f)
+    print(cfg.get('gateway', {}).get('auth', {}).get('token', ''))
+except Exception:
+    print('')
+PYTOKEN
+}
+
+export_gateway_token() {
+  local token
+  token="$(_read_gateway_token)"
+  local marker_begin="# nemoclaw-gateway-token begin"
+  local marker_end="# nemoclaw-gateway-token end"
+
+  if [ -z "$token" ]; then
+    # Remove any stale marker blocks from rc files so revoked/old tokens
+    # are not re-exported in later interactive sessions.
+    unset OPENCLAW_GATEWAY_TOKEN
+    for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+      if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+        local tmp
+        tmp="$(mktemp)" || continue
+        awk -v b="$marker_begin" -v e="$marker_end" \
+          '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+          rm -f "$tmp"
+          continue
+        }
+        cat "$tmp" >"$rc_file" 2>/dev/null || true
+        rm -f "$tmp"
+      fi
+    done
+    return
+  fi
+  export OPENCLAW_GATEWAY_TOKEN="$token"
+
+  # Persist to .bashrc/.profile so interactive sessions (openshell sandbox
+  # connect) also see the token — same pattern as the proxy config above.
+  # Shell-escape the token so quotes/dollars/backticks cannot break the
+  # sourced snippet or allow code injection.
+  local escaped_token
+  escaped_token="$(printf '%s' "$token" | sed "s/'/'\\\\''/g")"
+  local snippet
+  snippet="${marker_begin}
+export OPENCLAW_GATEWAY_TOKEN='${escaped_token}'
+${marker_end}"
+
+  for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    [ -f "$rc_file" ] || continue
+    # All writes use || true because Landlock may block writes even though
+    # DAC (-w) says writable (#804) — same pattern as install_configure_guard.
+    if grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+      local tmp
+      tmp="$(mktemp)" || continue
+      awk -v b="$marker_begin" -v e="$marker_end" \
+        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+        rm -f "$tmp"
+        continue
+      }
+      printf '%s\n' "$snippet" >>"$tmp"
+      cat "$tmp" >"$rc_file" 2>/dev/null || true
+      rm -f "$tmp"
+    else
+      printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
+    fi
+  done
 }
 
 install_configure_guard() {
@@ -1064,6 +1092,66 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
   }
   if (!proxyHost) return;
 
+  // Strip headers that were meaningful for the proxy hop only. Once we
+  // re-issue against the target via https.request, the original Host
+  // points at the proxy and the hop-by-hop headers (RFC 7230 §6.1) leak
+  // upstream — they describe the connection between the caller and the
+  // proxy, not the rewritten connection to the target.
+  //
+  // RFC 7230 §6.1 hop-by-hop set (request direction):
+  //   Connection, Keep-Alive, Proxy-Authorization, TE, Trailer,
+  //   Transfer-Encoding, Upgrade.
+  // Also stripped: Host (points at the proxy); Proxy-Connection (de
+  // facto deprecated header still emitted by some clients); and
+  // Proxy-Authenticate (response-only per RFC 7235 §4.3, included
+  // belt-and-suspenders for clients that echo response headers into
+  // retry-request options). Plus: per RFC 7230 §6.1, any token named in
+  // the Connection header is itself hop-by-hop and must be stripped.
+  var STATIC_HOP_BY_HOP = [
+    'host',
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'proxy-connection',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+  ];
+
+  function sanitizeHeaders(headers) {
+    if (!headers || typeof headers !== 'object') return undefined;
+    // Collect tokens named in the Connection header — those become
+    // hop-by-hop transitively per RFC 7230 §6.1.
+    var dynamic = new Set();
+    for (var k in headers) {
+      if (
+        !Object.prototype.hasOwnProperty.call(headers, k) ||
+        String(k).toLowerCase() !== 'connection'
+      ) {
+        continue;
+      }
+      var raw = headers[k];
+      var listed = Array.isArray(raw) ? raw.join(',') : raw;
+      if (typeof listed === 'string') {
+        listed.split(',').forEach(function (token) {
+          var t = token.trim().toLowerCase();
+          if (t) dynamic.add(t);
+        });
+      }
+    }
+    var staticSet = new Set(STATIC_HOP_BY_HOP);
+    var out = {};
+    for (var key in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, key)) continue;
+      var lower = String(key).toLowerCase();
+      if (staticSet.has(lower) || dynamic.has(lower)) continue;
+      out[key] = headers[key];
+    }
+    return out;
+  }
+
   http.request = function (options, callback) {
     if (typeof options === 'string' || !options) {
       return origRequest.apply(http, arguments);
@@ -1080,10 +1168,34 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
         return origRequest.apply(http, arguments);
       }
       var https = require('https');
-      // Clone caller's options and overwrite only the proxy-specific
-      // routing fields. Preserves signal (AbortController), lookup,
-      // TLS fields (ca/cert/key/rejectUnauthorized), auth, timeout,
-      // and any other per-request setting the caller supplied.
+      // Clone caller's options and overwrite proxy-specific routing
+      // fields. Strip fields that were set up for the proxy hop and
+      // would misbehave on the rewritten https.request to the target:
+      //   - agent: a forward-proxy http.Agent cannot speak TLS. Leaving
+      //     it attached caused upstreams like deepinfra to surface as
+      //     "LLM request failed: network connection error" while other
+      //     upstreams that don't end up on this code path still worked.
+      //     On Node 22 https.request throws a synchronous TypeError; on
+      //     Node 18/20 it falls through and the TLS handshake fails.
+      //   - auth: basic-auth meant for the proxy hop. Leaving it on
+      //     would Basic-auth the target server with proxy credentials.
+      //   - servername / checkServerIdentity: TLS SNI + cert validation
+      //     pre-computed for the proxy hop. Wrong cert chain and wrong
+      //     SNI must not survive into the rewrite — drop them so Node
+      //     re-derives from the new `hostname`.
+      //   - socketPath: Unix-socket proxies exist (e.g. cntlm-style
+      //     local proxies). Routing TLS bytes into the proxy's Unix
+      //     socket would defeat the entire rewrite.
+      //   - localAddress / lookup / family / hints: source-binding and
+      //     DNS hints picked for reachability to the proxy. The
+      //     rewritten target may not be reachable from the same NIC or
+      //     DNS family.
+      //   - Host / hop-by-hop headers (RFC 7230 §6.1): stripped via
+      //     sanitizeHeaders so Node regenerates Host from `host`/`port`
+      //     to point at the real target.
+      // Signal (AbortController) and TLS material (ca/cert/key/
+      // rejectUnauthorized), timeout, body, and target-intent headers
+      // (Authorization, Content-Type, …) are preserved.
       var rewritten = Object.assign({}, options, {
         method: options.method || 'GET',
         hostname: target.hostname,
@@ -1091,7 +1203,17 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
         port: target.port || 443,
         path: target.pathname + target.search,
         protocol: 'https:',
+        headers: sanitizeHeaders(options.headers),
       });
+      delete rewritten.agent;
+      delete rewritten.auth;
+      delete rewritten.servername;
+      delete rewritten.checkServerIdentity;
+      delete rewritten.socketPath;
+      delete rewritten.localAddress;
+      delete rewritten.lookup;
+      delete rewritten.family;
+      delete rewritten.hints;
       return https.request(rewritten, callback);
     }
     return origRequest.apply(http, arguments);
@@ -1393,19 +1515,7 @@ if [ "$(id -u)" -ne 0 ]; then
   apply_model_override
   apply_cors_override
   apply_slack_token_override
-  # Non-root: no privilege separation — uid separation is unavailable, so the
-  # sandbox user can read the token file. This is no worse than the pre-PR
-  # state where the token lived in openclaw.json (also sandbox-readable).
-  # Write the token to a restrictive file (0400) so it is not world-readable,
-  # and pass it on the gateway launch line (not exported to the shell env).
-  _NONROOT_GATEWAY_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(32), end='')")"
-  _NONROOT_TOKEN_DIR="${XDG_RUNTIME_DIR:-/tmp}/nemoclaw"
-  _NONROOT_TOKEN_FILE="${_NONROOT_TOKEN_DIR}/gateway-token"
-  mkdir -p "$_NONROOT_TOKEN_DIR"
-  rm -f "$_NONROOT_TOKEN_FILE"
-  printf '%s' "$_NONROOT_GATEWAY_TOKEN" >"$_NONROOT_TOKEN_FILE"
-  chmod 0400 "$_NONROOT_TOKEN_FILE"
-  printf '[SECURITY] Non-root mode — gateway token at %s (no uid isolation)\n' "$_NONROOT_TOKEN_FILE" >&2
+  export_gateway_token
   install_configure_guard
   configure_messaging_channels
   install_slack_channel_guard
@@ -1495,11 +1605,8 @@ if [ "$(id -u)" -ne 0 ]; then
   # inject code into any Node process via NODE_OPTIONS).
   validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
 
-  # Start gateway in background, auto-pair, then wait.
-  # Pass OPENCLAW_GATEWAY_TOKEN only on this launch line so it lives solely
-  # in the gateway process env — not exported to the sandbox shell.
-  OPENCLAW_GATEWAY_TOKEN="$_NONROOT_GATEWAY_TOKEN" \
-    nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
+  # Start gateway in background, auto-pair, then wait
+  nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
   GATEWAY_PID=$!
   echo "[gateway] openclaw gateway launched (pid $GATEWAY_PID)" >&2
   start_auto_pair
@@ -1524,7 +1631,7 @@ verify_config_integrity /sandbox/.openclaw
 apply_model_override
 apply_cors_override
 apply_slack_token_override
-generate_gateway_token
+export_gateway_token
 install_configure_guard
 
 # Inject messaging channel config if provider tokens are present.
@@ -1640,10 +1747,7 @@ validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON
 # SECURITY: The sandbox user cannot kill this process because it runs
 # under a different UID. The fake-HOME attack no longer works because
 # the agent cannot restart the gateway with a tampered config.
-# SECURITY: OPENCLAW_GATEWAY_TOKEN is passed only to the gateway process
-# env — the sandbox user cannot read /proc/<pid>/environ (different uid).
-OPENCLAW_GATEWAY_TOKEN="$(_read_gateway_token)" \
-  nohup gosu gateway "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
+nohup gosu gateway "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
 GATEWAY_PID=$!
 echo "[gateway] openclaw gateway launched as 'gateway' user (pid $GATEWAY_PID)" >&2
 
