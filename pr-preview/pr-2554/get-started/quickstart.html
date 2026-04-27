@@ -766,13 +766,13 @@ Dashboard: http://127.0.0.1:18789/#token=&lt;auth-token&gt;
 </section>
 <section id="reset-a-stored-credential">
 <h3>Reset a Stored Credential<a class="headerlink" href="#reset-a-stored-credential" title="Link to this heading">#</a></h3>
-<p>If an API key was entered incorrectly during onboarding, clear the stored value and re-enter it on the next onboard run:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>list<span class="w">           </span><span class="c1"># see which keys are stored</span>
-<span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>reset<span class="w"> </span>&lt;KEY&gt;<span class="w">    </span><span class="c1"># clear a single key, for example NVIDIA_API_KEY</span>
-<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w">                    </span><span class="c1"># re-run to re-enter the cleared key</span>
+<p>If a provider credential was entered incorrectly during onboarding, clear the gateway-registered value and re-enter it on the next onboard run:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>list<span class="w">                </span><span class="c1"># see which providers are registered</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>reset<span class="w"> </span>&lt;PROVIDER&gt;<span class="w">    </span><span class="c1"># clear a single provider, for example nvidia-prod</span>
+<span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w">                         </span><span class="c1"># re-run to re-enter the cleared provider</span>
 </pre></div>
 </div>
-<p>The credentials command is documented in full at <a class="reference internal" href="../reference/commands.html#nemoclaw-credentials-reset-key"><span class="std std-ref"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code></span></a>.</p>
+<p>The credentials command is documented in full at <a class="reference internal" href="../reference/commands.html#nemoclaw-credentials-reset-provider"><span class="std std-ref"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;PROVIDER&gt;</span></code></span></a>.</p>
 </section>
 <section id="rebuild-a-sandbox-while-preserving-workspace-state">
 <h3>Rebuild a Sandbox While Preserving Workspace State<a class="headerlink" href="#rebuild-a-sandbox-while-preserving-workspace-state" title="Link to this heading">#</a></h3>

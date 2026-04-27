@@ -493,7 +493,7 @@
                 <article class="bd-article">
                   
   <!--
-  SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
   SPDX-License-Identifier: Apache-2.0
 -->
 <section class="tex2jax_ignore mathjax_ignore" id="commands">
@@ -926,7 +926,9 @@ Running <code class="docutils literal notranslate"><span class="pre">remove</spa
 </section>
 <section id="nemoclaw-name-channels-stop-channel">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">channels</span> <span class="pre">stop</span> <span class="pre">&lt;channel&gt;</span></code><a class="headerlink" href="#nemoclaw-name-channels-stop-channel" title="Link to this heading">#</a></h3>
-<p>Pause a single messaging bridge (<code class="docutils literal notranslate"><span class="pre">telegram</span></code>, <code class="docutils literal notranslate"><span class="pre">discord</span></code>, or <code class="docutils literal notranslate"><span class="pre">slack</span></code>) without clearing its credentials. The channel is marked disabled in the per-sandbox registry, and the sandbox is rebuilt so the onboard step skips registering the bridge with the gateway. The provider stays registered with the OpenShell gateway, so a later <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">start</span></code> brings the bridge back without re-entering tokens.</p>
+<p>Pause a single messaging bridge (<code class="docutils literal notranslate"><span class="pre">telegram</span></code>, <code class="docutils literal notranslate"><span class="pre">discord</span></code>, or <code class="docutils literal notranslate"><span class="pre">slack</span></code>) without clearing its credentials.
+The channel is marked disabled in the per-sandbox registry, and the sandbox is rebuilt so the onboard step skips registering the bridge with the gateway.
+The provider stays registered with the OpenShell gateway, so a later <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">start</span></code> brings the bridge back without re-entering tokens.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>channels<span class="w"> </span>stop<span class="w"> </span>telegram
 </pre></div>
 </div>
@@ -1221,11 +1223,12 @@ Values are not printed.</p>
 </pre></div>
 </div>
 </section>
-<section id="nemoclaw-credentials-reset-key">
-<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code><a class="headerlink" href="#nemoclaw-credentials-reset-key" title="Link to this heading">#</a></h3>
-<p>Remove a stored credential by name.
-After removal, re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> re-prompts for that key.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>reset<span class="w"> </span>NVIDIA_API_KEY
+<section id="nemoclaw-credentials-reset-provider">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;PROVIDER&gt;</span></code><a class="headerlink" href="#nemoclaw-credentials-reset-provider" title="Link to this heading">#</a></h3>
+<p>Remove a provider credential from the OpenShell gateway by provider name.
+After removal, re-running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> re-prompts for that provider’s credential.
+Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">list</span></code> first if you are not sure of the provider name.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>credentials<span class="w"> </span>reset<span class="w"> </span>nvidia-prod
 </pre></div>
 </div>
 <div class="pst-scrollable-table-container"><table class="table">
@@ -1486,7 +1489,7 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-setup-spark"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup-spark</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-debug"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">debug</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">list</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-reset-key"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-reset-provider"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;PROVIDER&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-gc"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">gc</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall-vs-the-hosted-uninstall-sh"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code> vs. the hosted <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code></a></li>
