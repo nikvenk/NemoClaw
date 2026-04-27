@@ -597,7 +597,7 @@ Invalid patterns (SHOULD report):
 - [ ] Rule tester tests pass in `test/no-direct-credential-env.test.ts`
 - [ ] `npm test` passes
 
-## Phase 5: Clean the House
+## Phase 5: Clean the House [COMPLETED: 456b2fbe]
 
 **Goal:** Remove dead code, update documentation, and resolve any TODOs left from the implementation.
 
