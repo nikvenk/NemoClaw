@@ -961,31 +961,89 @@ export no_proxy="$_NO_PROXY_VAL"
 # Dockerfile layer and hangs npm ci in k3s Docker-in-Docker. See
 # src/lib/sandbox-build-context.ts. A sync test enforces that the
 # embedded copy is byte-identical to the canonical file.
-# ── Removed: Global sandbox safety net ────────────────────────
+# ── Global sandbox safety net ──────────────────────────────────
+# Catch-all handler for uncaught exceptions and unhandled rejections
+# that would otherwise crash the gateway. In a sandbox environment,
+# a crashed gateway means total loss of inference, chat, and TUI —
+# worse than degraded service from a swallowed error.
 #
-# Previously this section installed a Node `--require` preload that caught
-# every `unhandledRejection` and `uncaughtException`, swallowed them, and
-# intercepted `process.exit` to prevent the gateway from terminating on any
-# non-fatal error.
+# This MUST be the first --require preload so its handlers register
+# before any library code runs. Specific guards (Slack, ciao) provide
+# targeted handling; this catches everything else.
 #
-# That mechanism was a hack: it converted every plugin-level bug into a
-# silent, stateful corruption of the gateway. Specifically, swallowing an
-# async rejection in the same event-loop tick as an in-flight WebSocket
-# handshake tore down the WS connection with code 1006, causing the
-# `openclaw agent` CLI to hang on `gateway timeout`. NVIDIA/NemoClaw#2484
-# traced the original symptom to the bonjour mDNS plugin (since disabled
-# in openclaw.json); but ANY plugin that throws an async rejection has the
-# same destabilizing effect, so removing the safety net is the right
-# systemic fix rather than disabling plugins one at a time.
-#
-# Without this preload, a crashed gateway exits the entrypoint, the pod
-# terminates, and OpenShell's k3s supervision restarts it — the proper
-# supervision model. TC-SBX-06 (gateway auto-recovery) and TC-SBX-08
-# (process recovery) both already verify that the recovery path works.
-#
-# Connect-session NODE_OPTIONS injection (in /tmp/nemoclaw-proxy-env.sh
-# below) was also dropping this preload via the connect-time export,
-# updated to match.
+# Only active when OPENSHELL_SANDBOX=1 (set by OpenShell at runtime).
+# Outside a sandbox, normal Node.js crash behavior is preserved.
+_SANDBOX_SAFETY_NET="/tmp/nemoclaw-sandbox-safety-net.js"
+emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// sandbox-safety-net.js — last-resort handler that keeps the gateway alive
+// when any library throws an uncaught exception or unhandled rejection.
+// Only active inside OpenShell sandboxes (OPENSHELL_SANDBOX=1).
+//
+// IMPORTANT: this preload is loaded into EVERY Node process in the sandbox via
+// NODE_OPTIONS=--require, including short-lived CLI commands like
+// `openclaw agent`. Swallowing unhandled rejections in those processes silently
+// hangs them on awaited promises that should have rejected (the rejection
+// triggers `unhandledRejection` and we eat it). Surfaced first when OpenClaw
+// 2026.4.24's plugin-loader path produced unhandled rejections from
+// `openclaw agent`, which previously raised promptly and now hung indefinitely.
+//
+// Gate the swallow behavior to gateway processes only — argv[2] === "gateway"
+// when openclaw is invoked as `openclaw gateway run …`. CLI commands (agent,
+// doctor, plugins, tui, etc.) get default Node behavior — errors surface.
+
+(function () {
+  'use strict';
+  if (process.env.OPENSHELL_SANDBOX !== '1') return;
+  if (process.argv[2] !== 'gateway') return;
+
+  // Track whether we're inside an unhandledRejection we chose to swallow.
+  // OpenClaw's own handler calls process.exit(1) for non-transient rejections.
+  // We intercept process.exit during swallowed rejections to prevent that.
+  var _swallowing = false;
+  var _origExit = process.exit;
+  process.exit = function (code) {
+    if (_swallowing) {
+      try {
+        process.stderr.write(
+          '[sandbox-safety-net] blocked process.exit(' + code +
+          ') during swallowed rejection — gateway continues\n'
+        );
+      } catch (_) {}
+      return;
+    }
+    return _origExit.call(process, code);
+  };
+
+  process.on('uncaughtException', function (err, origin) {
+    try {
+      process.stderr.write(
+        '[sandbox-safety-net] uncaughtException: ' +
+        (err && err.stack ? err.stack : String(err)) +
+        ' (origin: ' + origin + ') — swallowed, gateway continues\n'
+      );
+    } catch (_) {}
+  });
+
+  process.on('unhandledRejection', function (reason, promise) {
+    _swallowing = true;
+    try {
+      process.stderr.write(
+        '[sandbox-safety-net] unhandledRejection: ' +
+        (reason && reason.stack ? reason.stack : String(reason)) +
+        ' — swallowed, gateway continues\n'
+      );
+    } catch (_) {}
+    // Keep _swallowing=true through this tick so OpenClaw's handler
+    // (which runs in the same microtask delivery) hits our process.exit
+    // intercept. Reset on next tick.
+    Promise.resolve().then(function () { _swallowing = false; });
+  });
+})();
+SAFETY_NET_EOF
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_SANDBOX_SAFETY_NET"
 
 _PROXY_FIX_SCRIPT="/tmp/nemoclaw-http-proxy-fix.js"
 if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
@@ -1319,11 +1377,8 @@ export http_proxy="$_PROXY_URL"
 export https_proxy="$_PROXY_URL"
 export no_proxy="$_NO_PROXY_VAL"
 PROXYEOF
-  # NB: the global sandbox safety net is intentionally NOT injected here.
-  # It was removed (see comment block above) — its swallow-and-continue
-  # behavior on async rejections destabilized in-flight WebSocket
-  # handshakes, causing `openclaw agent` to hang on gateway timeout.
-  # Connect sessions get default Node behavior — errors surface.
+  # Global sandbox safety net for connect sessions — must be first.
+  echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_SANDBOX_SAFETY_NET\""
   # HTTP library double-proxy fix: also expose NODE_OPTIONS in connect
   # sessions so interactive shells and user commands started via
   # `openshell sandbox connect` benefit from the preload. (NemoClaw#2109)
@@ -1466,7 +1521,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
 
   # Start gateway in background, auto-pair, then wait
   nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
@@ -1608,7 +1663,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs
