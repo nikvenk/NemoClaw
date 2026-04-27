@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
+    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -390,8 +390,11 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../get-started/prerequisites.html">Prerequisites</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../get-started/windows-preparation.html">Prepare Windows for NemoClaw</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -666,6 +669,14 @@ All NemoClaw build arguments (<code class="docutils literal notranslate"><span c
 <p>The flag is persisted on the sandbox registry entry, so <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">status</span></code> surfaces <code class="docutils literal notranslate"><span class="pre">Permissions:</span> <span class="pre">dangerously-skip-permissions</span> <span class="pre">(shields</span> <span class="pre">permanently</span> <span class="pre">down)</span></code> for sandboxes created this way. To tighten a sandbox after the fact, re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> without the flag.</p>
 </section>
 </section>
+<section id="nemoclaw-onboard-from">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span></code><a class="headerlink" href="#nemoclaw-onboard-from" title="Link to this heading">#</a></h3>
+<p>Use a custom Dockerfile for the sandbox image.
+This variant of <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> accepts a <code class="docutils literal notranslate"><span class="pre">--from</span> <span class="pre">&lt;Dockerfile&gt;</span></code> argument to build the sandbox from a user-supplied Dockerfile instead of the default NemoClaw image.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--from<span class="w"> </span>./Dockerfile.custom
+</pre></div>
+</div>
+</section>
 <section id="nemoclaw-list">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">list</span></code><a class="headerlink" href="#nemoclaw-list" title="Link to this heading">#</a></h3>
 <p>List all registered sandboxes with their model, provider, and policy presets.
@@ -747,6 +758,24 @@ The command also tails <code class="docutils literal notranslate"><span class="p
 Use <code class="docutils literal notranslate"><span class="pre">--follow</span></code> to stream output in real time.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>logs<span class="w"> </span><span class="o">[</span>--follow<span class="o">]</span>
 </pre></div>
+</div>
+</section>
+<section id="nemoclaw-name-gateway-token">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">gateway-token</span></code><a class="headerlink" href="#nemoclaw-name-gateway-token" title="Link to this heading">#</a></h3>
+<p>Print the OpenClaw gateway auth token for a running sandbox to stdout.
+The token is required by <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">tui</span></code> and the OpenClaw dashboard URL, but onboarding only prints it once.
+Pipe it into automation or capture it into an environment variable:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">TOKEN</span><span class="o">=</span><span class="k">$(</span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>gateway-token<span class="w"> </span>--quiet<span class="k">)</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">OPENCLAW_GATEWAY_TOKEN</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$TOKEN</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+<p>The token is written to stdout with no surrounding text.
+A one-line security warning is written to stderr; pass <code class="docutils literal notranslate"><span class="pre">--quiet</span></code> (or <code class="docutils literal notranslate"><span class="pre">-q</span></code>) to suppress it.
+The command exits non-zero with a diagnostic on stderr when the sandbox is not registered or when the token cannot be retrieved (for example, if the sandbox is not running).</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Treat the gateway token like a password.
+Do not log it, share it, or commit it to version control.</p>
 </div>
 </section>
 <section id="nemoclaw-name-destroy">
@@ -1085,15 +1114,15 @@ When <code class="docutils literal notranslate"><span class="pre">dst</span></co
 </pre></div>
 </div>
 </section>
+</section>
 <section id="openshell-term">
-<h3><code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code><a class="headerlink" href="#openshell-term" title="Link to this heading">#</a></h3>
+<h2><code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code><a class="headerlink" href="#openshell-term" title="Link to this heading">#</a></h2>
 <p>Open the OpenShell TUI to monitor sandbox activity and approve network egress requests.
 Run this on the host where the sandbox is running.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>openshell<span class="w"> </span>term
 </pre></div>
 </div>
 <p>For a remote Brev instance, SSH to the instance and run <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code> there, or use a port-forward to the gateway.</p>
-</section>
 <section id="nemoclaw-tunnel-start">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code><a class="headerlink" href="#nemoclaw-tunnel-start" title="Link to this heading">#</a></h3>
 <p>Start optional host auxiliary services. This is the cloudflared tunnel when <code class="docutils literal notranslate"><span class="pre">cloudflared</span></code> is installed (for a public URL to the dashboard). Channel messaging (Telegram, Discord, Slack) is not started here; it is configured during <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> and runs through OpenShell-managed constructs.</p>
@@ -1110,10 +1139,38 @@ Run this on the host where the sandbox is running.</p>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code> remains as a deprecated alias that prints a warning and delegates to <code class="docutils literal notranslate"><span class="pre">tunnel</span> <span class="pre">stop</span></code>.</p>
 </section>
+<section id="nemoclaw-start">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code><a class="headerlink" href="#nemoclaw-start" title="Link to this heading">#</a></h3>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Deprecated. Use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code> instead.</p>
+</div>
+<p>This command remains as a compatibility alias to <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code>.</p>
+</section>
+<section id="nemoclaw-stop">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code><a class="headerlink" href="#nemoclaw-stop" title="Link to this heading">#</a></h3>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Deprecated. Use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">stop</span></code> instead.</p>
+</div>
+<p>This command remains as a compatibility alias to <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">stop</span></code>.</p>
+</section>
 <section id="nemoclaw-status">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code><a class="headerlink" href="#nemoclaw-status" title="Link to this heading">#</a></h3>
 <p>Show the sandbox list and the status of host auxiliary services (for example cloudflared).</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>status
+</pre></div>
+</div>
+</section>
+<section id="nemoclaw-setup">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code><a class="headerlink" href="#nemoclaw-setup" title="Link to this heading">#</a></h3>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code> command is deprecated.
+Use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> instead.</p>
+</div>
+<p>This command remains as a compatibility alias to <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>setup
 </pre></div>
 </div>
 </section>
@@ -1216,7 +1273,9 @@ This command lists all <code class="docutils literal notranslate"><span class="p
 <section id="nemoclaw-uninstall">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code><a class="headerlink" href="#nemoclaw-uninstall" title="Link to this heading">#</a></h3>
 <p>Run <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> to remove NemoClaw sandboxes, gateway resources, related images and containers, and local state.
-The CLI uses the local <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> first and falls back to the hosted script if the local file is unavailable.</p>
+The CLI runs the local <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> shipped with the installed npm package.
+If that local script is missing, the CLI does not auto-fetch a remote copy.
+It prints the versioned URL of the matching <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> so you can download, review, and run it manually.</p>
 <p>Uninstall also stops any orphaned <code class="docutils literal notranslate"><span class="pre">openshell</span></code> host processes left behind by previous onboard or destroy cycles, including <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">create</span></code>, <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">ssh-proxy</span></code>, and SSH sessions spawned by OpenShell.
 Earlier releases only stopped <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">forward</span></code> processes, so those orphans accumulated across runs.</p>
 <div class="pst-scrollable-table-container"><table class="table">
@@ -1241,6 +1300,43 @@ Earlier releases only stopped <code class="docutils literal notranslate"><span c
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>uninstall<span class="w"> </span><span class="o">[</span>--yes<span class="o">]</span><span class="w"> </span><span class="o">[</span>--keep-openshell<span class="o">]</span><span class="w"> </span><span class="o">[</span>--delete-models<span class="o">]</span>
 </pre></div>
 </div>
+<section id="nemoclaw-uninstall-vs-the-hosted-uninstall-sh">
+<h4><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code> vs. the hosted <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code><a class="headerlink" href="#nemoclaw-uninstall-vs-the-hosted-uninstall-sh" title="Link to this heading">#</a></h4>
+<p>Both forms execute the same <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> with the same flags, but differ in where the script comes from and how much they trust the network.
+Use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code> by default.
+Use the hosted <code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">…</span> <span class="pre">|</span> <span class="pre">bash</span></code> form only when the CLI is broken or already partially removed.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code></p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">…</span> <span class="pre">|</span> <span class="pre">bash</span></code> (Quickstart)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Source of the script</strong></p></td>
+<td><p>Local <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code> shipped with the installed npm package.</p></td>
+<td><p>Pulled live from <code class="docutils literal notranslate"><span class="pre">refs/heads/main</span></code> on GitHub.</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Version pinning</strong></p></td>
+<td><p>Pinned to the version of NemoClaw you installed.</p></td>
+<td><p>Whatever is on <code class="docutils literal notranslate"><span class="pre">main</span></code> right now; may be newer than your installed CLI.</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Network trust</strong></p></td>
+<td><p>No network fetch at uninstall time; runs a vetted local file via <code class="docutils literal notranslate"><span class="pre">bash</span></code>.</p></td>
+<td><p>Pipes a remote script straight to <code class="docutils literal notranslate"><span class="pre">bash</span></code> with no review step.</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Robustness</strong></p></td>
+<td><p>Requires the npm package to be discoverable so the CLI can find the local script.</p></td>
+<td><p>Works even if the <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> CLI is missing, broken, or partially uninstalled.</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Recommended for</strong></p></td>
+<td><p>Routine uninstalls.</p></td>
+<td><p>Recovery when the CLI is unavailable.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 </section>
 </section>
 <section id="environment-variables">
@@ -1261,7 +1357,7 @@ All ports must be non-privileged integers between 1024 and 65535.</p>
 <td><p>OpenShell gateway</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code></p></td>
-<td><p>18789</p></td>
+<td><p>18789 (auto-derived from <code class="docutils literal notranslate"><span class="pre">CHAT_UI_URL</span></code> port if set)</p></td>
 <td><p>Dashboard UI</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_VLLM_PORT</span></code></p></td>
@@ -1272,10 +1368,16 @@ All ports must be non-privileged integers between 1024 and 65535.</p>
 <td><p>11434</p></td>
 <td><p>Ollama inference</p></td>
 </tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_OLLAMA_PROXY_PORT</span></code></p></td>
+<td><p>11435</p></td>
+<td><p>Ollama auth proxy</p></td>
+</tr>
 </tbody>
 </table>
 </div>
-<p>If a port value is not a valid integer or falls outside the allowed range, the CLI exits with an error.</p>
+<p>If a port value is not a valid integer or falls outside the allowed range, the CLI exits with an error.
+On non-WSL hosts, <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_OLLAMA_PORT</span></code> and <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_OLLAMA_PROXY_PORT</span></code> must be different.
+If you run Ollama on port 11435, set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_OLLAMA_PROXY_PORT</span></code> to another free port before onboarding.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_DASHBOARD_PORT</span><span class="o">=</span><span class="m">19000</span>
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
 </pre></div>
@@ -1351,11 +1453,13 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#dangerously-skip-permissions"><code class="docutils literal notranslate"><span class="pre">--dangerously-skip-permissions</span></code></a></li>
 </ul>
 </li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-onboard-from"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">list</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-deploy"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">deploy</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-connect"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-status"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">status</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-logs"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">logs</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-gateway-token"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">gateway-token</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-destroy"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">destroy</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-policy-add"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-add</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-policy-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-list</span></code></a></li>
@@ -1372,16 +1476,24 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-create"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">create</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">list</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-snapshot-restore-selector-to-dst"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">restore</span> <span class="pre">[selector]</span> <span class="pre">[--to</span> <span class="pre">&lt;dst&gt;]</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openshell-term"><code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#openshell-term"><code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">term</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-tunnel-start"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">start</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-tunnel-stop"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">tunnel</span> <span class="pre">stop</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-start"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">start</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-stop"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">stop</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-status"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">status</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-setup"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-setup-spark"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup-spark</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-debug"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">debug</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">list</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-credentials-reset-key"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">credentials</span> <span class="pre">reset</span> <span class="pre">&lt;KEY&gt;</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-gc"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">gc</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-uninstall-vs-the-hosted-uninstall-sh"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">uninstall</span></code> vs. the hosted <code class="docutils literal notranslate"><span class="pre">uninstall.sh</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-variables">Environment Variables</a><ul class="nav section-nav flex-column">

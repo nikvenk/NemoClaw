@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=6d9d808d"></script>
+    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.23';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -390,8 +390,11 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../get-started/prerequisites.html">Prerequisites</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../get-started/windows-preparation.html">Prepare Windows for NemoClaw</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="../get-started/quickstart.html">Quickstart</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../get-started/windows-setup.html">Windows Prerequisites</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Inference</span></p>
 <ul class="nav bd-sidenav">
@@ -706,6 +709,62 @@ presets.</p>
 See <a class="reference internal" href="../reference/commands.html#nemoclaw-name-policy-add"><span class="std std-ref">Commands</span></a> for the full flag reference.</p>
 <p><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code> reapplies every policy preset to the recreated sandbox, so presets survive an agent-version upgrade without manual reapplication.</p>
 </section>
+<section id="custom-preset-files">
+<h2>Custom Preset Files<a class="headerlink" href="#custom-preset-files" title="Link to this heading">#</a></h2>
+<p>Apply a user-authored preset YAML to a running sandbox without editing the baseline or dropping to <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">policy</span> <span class="pre">set</span></code>.</p>
+<section id="authoring">
+<h3>Authoring<a class="headerlink" href="#authoring" title="Link to this heading">#</a></h3>
+<p>A custom preset follows the same shape as the built-in ones under <code class="docutils literal notranslate"><span class="pre">nemoclaw-blueprint/policies/presets/</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">preset</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-internal-api</span>
+<span class="w">  </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Internal</span><span class="nv"> </span><span class="s">service&quot;</span>
+<span class="nt">network_policies</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">my-internal-api</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-internal-api</span>
+<span class="w">    </span><span class="nt">endpoints</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.example.internal</span>
+<span class="w">        </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">443</span>
+<span class="w">        </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rest</span>
+<span class="w">        </span><span class="nt">enforcement</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">enforce</span>
+<span class="w">        </span><span class="nt">rules</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">allow</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> method</span><span class="p">:</span><span class="w"> </span><span class="nv">GET</span><span class="p p-Indicator">,</span><span class="nt"> path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/**&quot;</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">binaries</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> path</span><span class="p">:</span><span class="w"> </span><span class="nv">/usr/local/bin/node</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</pre></div>
+</div>
+<p>The top-level <code class="docutils literal notranslate"><span class="pre">preset.name</span></code> must be a lowercase RFC 1123 label (letters, digits, hyphens) and must not collide with a built-in preset name such as <code class="docutils literal notranslate"><span class="pre">slack</span></code> or <code class="docutils literal notranslate"><span class="pre">pypi</span></code>.
+Rename <code class="docutils literal notranslate"><span class="pre">preset.name</span></code> if NemoClaw refuses to apply the file because of a collision.</p>
+</section>
+<section id="apply-a-single-file">
+<h3>Apply a Single File<a class="headerlink" href="#apply-a-single-file" title="Link to this heading">#</a></h3>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--from-file<span class="w"> </span>./presets/my-internal-api.yaml
+</pre></div>
+</div>
+<p>Preview the endpoints without applying with <code class="docutils literal notranslate"><span class="pre">--dry-run</span></code>, and skip the confirmation prompt with <code class="docutils literal notranslate"><span class="pre">--yes</span></code> or by exporting <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>.</p>
+</section>
+<section id="apply-every-file-in-a-directory">
+<h3>Apply Every File in a Directory<a class="headerlink" href="#apply-every-file-in-a-directory" title="Link to this heading">#</a></h3>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--from-dir<span class="w"> </span>./presets/<span class="w"> </span>--yes
+</pre></div>
+</div>
+<p>Files are processed in lexicographic order.
+Processing stops at the first failure; presets already applied are not rolled back.
+Fix the failing file and re-run the command to continue.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Custom preset hosts bypass NemoClaw’s review process and can widen sandbox egress to arbitrary destinations.
+Review every host in a custom preset before applying it, especially when the file originates outside your team.</p>
+</div>
+</section>
+<section id="remove-a-custom-preset">
+<h3>Remove a Custom Preset<a class="headerlink" href="#remove-a-custom-preset" title="Link to this heading">#</a></h3>
+<p>Custom presets applied with <code class="docutils literal notranslate"><span class="pre">--from-file</span></code> or <code class="docutils literal notranslate"><span class="pre">--from-dir</span></code> are recorded in the NemoClaw sandbox registry alongside their full YAML content, so they can be removed by name — the original file does not need to be kept on disk:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-remove<span class="w"> </span>my-internal-api<span class="w"> </span>--yes
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">policy-remove</span></code> accepts both built-in and custom preset names. Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-list</span></code> to see every preset currently applied to the sandbox.</p>
+</section>
+</section>
 <section id="related-topics">
 <h2>Related Topics<a class="headerlink" href="#related-topics" title="Link to this heading">#</a></h2>
 <ul class="simple">
@@ -781,6 +840,13 @@ See <a class="reference internal" href="../reference/commands.html#nemoclaw-name
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#policy-presets">Policy Presets</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-preset-files">Custom Preset Files</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#authoring">Authoring</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#apply-a-single-file">Apply a Single File</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#apply-every-file-in-a-directory">Apply Every File in a Directory</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#remove-a-custom-preset">Remove a Custom Preset</a></li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-topics">Related Topics</a></li>
 </ul>
   </nav></div>
