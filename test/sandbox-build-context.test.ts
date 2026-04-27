@@ -20,11 +20,13 @@ describe("sandbox build context staging", () => {
     const dockerfileContent = fs.readFileSync(dockerfilePath, "utf8");
 
     // Extract source paths from every "COPY scripts/<path>" line in the Dockerfile.
-    // Skips multi-source COPY forms (multiple sources before dest) for simplicity.
-    const copyPattern = /^COPY\s+(scripts\/\S+)\s+\S/gm;
+    // Skips multi-source COPY forms and inter-stage --from= copies.
+    const copyPattern = /^COPY(?:\s+--\w+[^\s]*)*\s+(scripts\/\S+)\s+\S/gm;
     const scriptSources: string[] = [];
     let match: RegExpExecArray | null;
     while ((match = copyPattern.exec(dockerfileContent)) !== null) {
+      // Skip --from=<stage> copies — those are inter-stage, not host → context.
+      if (/--from=/i.test(match[0])) continue;
       scriptSources.push(match[1]);
     }
 
