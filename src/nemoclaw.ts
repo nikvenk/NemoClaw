@@ -286,7 +286,15 @@ function recoverSandboxProcesses(sandboxName: string): boolean {
   const script =
     agentScript ||
     [
-      "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
+      // Source /tmp/nemoclaw-proxy-env.sh explicitly so NODE_OPTIONS preload
+      // guards (safety-net, ciao, slack, …) survive gateway respawn. Without
+      // this, library errors crash-loop the gateway because the original
+      // .bashrc-only path silently failed when the env file was unreadable
+      // or the shell did not source ~/.bashrc. See #2478. Mirrors the
+      // hardened block in src/lib/agent-runtime.ts:buildRecoveryScript.
+      "if [ -r /tmp/nemoclaw-proxy-env.sh ]; then . /tmp/nemoclaw-proxy-env.sh; else echo '[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing — gateway launching without library guards (#2478)' >&2; fi;",
+      "[ -f ~/.bashrc ] && . ~/.bashrc;",
+      'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) ;; *) echo "[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload — gateway may crash on unhandled library errors (#2478)" >&2 ;; esac;',
       `if curl -sf --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
       "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
       "rm -f /tmp/gateway.log /tmp/auto-pair.log;",

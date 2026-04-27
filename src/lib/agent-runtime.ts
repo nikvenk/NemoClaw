@@ -78,8 +78,20 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   const isHermes = agent.name === "hermes";
   const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes-data; " : "";
 
+  // Source /tmp/nemoclaw-proxy-env.sh explicitly before launching. That file
+  // is the single source of truth for NODE_OPTIONS preload guards (safety-net,
+  // ciao networkInterfaces, slack, http-proxy, ws-proxy, nemotron). On the
+  // first start it reaches the gateway transitively via .bashrc, but on
+  // gateway respawn (laptop sleep, health-monitor restart) silent sourcing
+  // failures left guards out of NODE_OPTIONS and the gateway crash-looped
+  // on the next library error (#2478). Source it explicitly, log when the
+  // file is missing, and warn when the safety-net preload is not in the
+  // resulting NODE_OPTIONS so future regressions stay observable instead
+  // of silently regressing into a crash loop.
   return [
-    "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
+    "if [ -r /tmp/nemoclaw-proxy-env.sh ]; then . /tmp/nemoclaw-proxy-env.sh; else echo '[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing — gateway launching without library guards (#2478)' >&2; fi;",
+    "[ -f ~/.bashrc ] && . ~/.bashrc;",
+    'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) ;; *) echo "[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload — gateway may crash on unhandled library errors (#2478)" >&2 ;; esac;',
     hermesHome,
     `if curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
     "rm -f /tmp/gateway.log;",

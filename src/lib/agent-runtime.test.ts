@@ -77,4 +77,47 @@ describe("buildRecoveryScript", () => {
     expect(script).toContain('command -v "$GATEWAY_CMD_BIN" >/dev/null 2>&1');
     expect(script).toContain("nohup custom-launch --mode recovery --port 19000");
   });
+
+  // Regression coverage for #2478. The recovery script must explicitly source
+  // /tmp/nemoclaw-proxy-env.sh (single source of truth for NODE_OPTIONS
+  // library guards) and warn — not silently continue — when the file is
+  // missing or the safety-net preload is absent from NODE_OPTIONS. The pre-fix
+  // recovery path swallowed sourcing errors via `2>/dev/null`, leaving
+  // respawned gateways guard-less and crash-looping on the next library
+  // error from ciao, model-pricing, or anything else hitting a sandboxed
+  // syscall.
+  describe("#2478 hardened library-guard preload chain", () => {
+    it("explicitly sources the gateway env file", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).toContain(". /tmp/nemoclaw-proxy-env.sh");
+    });
+
+    it("warns when the gateway env file is missing instead of silently launching", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).toContain("/tmp/nemoclaw-proxy-env.sh missing");
+      expect(script).toContain("#2478");
+    });
+
+    it("does not silence sourcing errors with 2>/dev/null", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).not.toContain(". ~/.bashrc 2>/dev/null");
+      expect(script).not.toContain(". /tmp/nemoclaw-proxy-env.sh 2>/dev/null");
+    });
+
+    it("checks NODE_OPTIONS for the safety-net preload after sourcing", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).toContain("nemoclaw-sandbox-safety-net");
+      expect(script).toContain("NODE_OPTIONS missing safety-net preload");
+    });
+
+    it("sources proxy-env.sh BEFORE launching the gateway binary", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).not.toBeNull();
+      const sourceIdx = script!.indexOf("/tmp/nemoclaw-proxy-env.sh");
+      const launchIdx = script!.indexOf("gateway run");
+      expect(sourceIdx).toBeGreaterThanOrEqual(0);
+      expect(launchIdx).toBeGreaterThanOrEqual(0);
+      expect(sourceIdx).toBeLessThan(launchIdx);
+    });
+  });
 });
