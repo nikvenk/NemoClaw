@@ -328,6 +328,7 @@ config = { \
     'models': {'mode': 'merge', 'providers': providers}, \
     'channels': {'defaults': {}, **_ch_cfg}, \
     'update': {'checkOnStart': False}, \
+    'plugins': {'entries': {'bonjour': {'enabled': False}}}, \
     'gateway': { \
         'mode': 'local', \
         'controlUi': { \
