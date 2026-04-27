@@ -271,11 +271,11 @@ jobs:
                 # Spawn a follower: SSH into the sandbox and tail
                 # /tmp/gateway.log directly so we see the FULL stream rather
                 # than nemoclaw logs deciding what fits in N lines. Filter the
-                # ciao-mDNS spam (uv_interface_addresses) inline — keeps useful
-                # events visible without losing them to noise. Cap at ~512KB.
-                # NOTE: keep ssh_cfg around for the lifetime of the SSH child
-                # — `rm` before SSH actually connects races and trips
-                # "Can't open user config file" inside ssh.
+                # ciao-mDNS spam (uv_interface_addresses) inline so noise does
+                # not bury useful events. Cap each follower at 512KB.
+                # Keep ssh_cfg around for the lifetime of the SSH child:
+                # removing it before SSH connects races and trips a config
+                # not-found error inside ssh.
                 ssh_cfg="/tmp/sshcfg-${name}.tmp"
                 if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
                    && [ -s "$ssh_cfg" ]; then
