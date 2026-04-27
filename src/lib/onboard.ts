@@ -6088,9 +6088,14 @@ function fetchGatewayAuthTokenFromSandbox(sandboxName: string): string | null {
     if (result.status === 0) {
       const jsonPath = findOpenclawJsonPath(tmpDir);
       if (jsonPath) {
-        const cfg = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
-        const token = cfg && cfg.gateway && cfg.gateway.auth && cfg.gateway.auth.token;
-        if (typeof token === "string" && token.length > 0) return token;
+        try {
+          const cfg = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+          const token = cfg && cfg.gateway && cfg.gateway.auth && cfg.gateway.auth.token;
+          if (typeof token === "string" && token.length > 0) return token;
+        } catch {
+          // openclaw.json unreadable or malformed — fall through to the
+          // env-file fallback rather than aborting both retrieval paths.
+        }
       }
     }
 
@@ -6356,10 +6361,10 @@ function printDashboard(
       console.log(`  ${entry.label}: ${entry.url}`);
     }
     console.log(
-      `  Token:       see /tmp/gateway.log inside the sandbox, or re-run onboard.`,
+      `  Token:       run \`cat /tmp/nemoclaw-gateway-token.env\` inside the sandbox, or re-run onboard.`,
     );
     console.log(
-      `               append  #token=<token>  to the URL, or see /tmp/gateway.log inside the sandbox.`,
+      `               append  #token=<token>  to the URL, or inspect /tmp/nemoclaw-gateway-token.env inside the sandbox.`,
     );
   }
   console.log(`  ${"─".repeat(50)}`);

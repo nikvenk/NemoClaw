@@ -674,8 +674,11 @@ inject_gateway_token() {
     return 1
   fi
 
+  # Atomic write: temp file in same dir → fsync → os.replace, so an
+  # interrupt mid-write can't leave the integrity-pinned config truncated
+  # (which would brick the next boot via verify_config_integrity).
   python3 - "$config_file" "$token" <<'PYINJECT'
-import json, sys
+import json, os, sys, tempfile
 
 config_file, token = sys.argv[1], sys.argv[2]
 
@@ -684,11 +687,24 @@ with open(config_file) as f:
 
 cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = token
 
-with open(config_file, "w") as f:
-    json.dump(cfg, f, indent=2)
+dir_name = os.path.dirname(config_file) or "."
+fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".openclaw.json.")
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp_path, 0o444)
+    os.replace(tmp_path, config_file)
+except Exception:
+    try:
+        os.unlink(tmp_path)
+    except FileNotFoundError:
+        pass
+    raise
 PYINJECT
 
-  # Recompute config hash after injection.
+  # Recompute config hash after the atomic replace lands.
   (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
   printf '[token] Gateway auth token injected into openclaw.json (hash recomputed)\n' >&2
 }
@@ -716,6 +732,10 @@ export_gateway_token() {
 
   if [ -z "$token" ]; then
     unset OPENCLAW_GATEWAY_TOKEN
+    # Drop the /tmp token file too — proxy-env.sh sources it on every
+    # connect session, so a leftover would resurrect the previous
+    # credential and break TUI auth with a stale value.
+    rm -f "$_GATEWAY_TOKEN_ENV_FILE" 2>/dev/null || true
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
       if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
         local tmp

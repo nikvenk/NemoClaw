@@ -210,7 +210,10 @@ The container mounts system directories read-only to prevent the agent from modi
 ### Read-Only `.openclaw` Config
 
 The `/sandbox/.openclaw` directory contains the OpenClaw gateway configuration (model routing, CORS settings, channel config).
-The gateway auth token is **not** baked into the Docker image — it is generated uniquely at each container startup. In root mode, the token is injected into `openclaw.json` before the config is locked with `chattr +i`. In non-root mode, the token is delivered via the `OPENCLAW_GATEWAY_TOKEN` environment variable. Both modes also persist the token to rc files and `/tmp/nemoclaw-gateway-token.env` so interactive sessions (`openclaw tui` via `openshell sandbox connect`) can authenticate.
+The gateway auth token is generated uniquely at each container startup, not baked into the Docker image.
+In root mode, the entrypoint injects the token into `openclaw.json` before the config is locked with `chattr +i`.
+In non-root mode, the entrypoint delivers the token via the `OPENCLAW_GATEWAY_TOKEN` environment variable.
+Both modes also persist the token to rc files and `/tmp/nemoclaw-gateway-token.env` so interactive sessions (`openclaw tui` via `openshell sandbox connect`) can authenticate.
 
 The container mounts `.openclaw` read-only while writable agent state (plugins, agent data) lives in `/sandbox/.openclaw-data` through symlinks.
 
@@ -224,7 +227,7 @@ Multiple defense layers protect this directory:
 
 | Aspect | Detail |
 |---|---|
-| Default | The container mounts `/sandbox/.openclaw` as read-only, root-owned, immutable, and integrity-verified at startup. `/sandbox/.openclaw-data` remains writable. The gateway auth token is generated per container start and injected into `openclaw.json` (root mode) before locking. In non-root mode the token is delivered via env var only. |
+| Default | The container mounts `/sandbox/.openclaw` as read-only, root-owned, immutable, and integrity-verified at startup. `/sandbox/.openclaw-data` remains writable. The gateway auth token is generated per container start and injected into `openclaw.json` (root mode) before locking; in non-root mode the token is delivered via env var only. |
 | What you can change | Move `/sandbox/.openclaw` from `read_only` to `read_write` in the policy file. |
 | Risk if relaxed | A writable `.openclaw` directory lets the agent modify its own gateway config: disabling CORS, changing auth tokens, or redirecting inference to an attacker-controlled endpoint. This is the single most dangerous filesystem change. |
 | Recommendation | Never make `/sandbox/.openclaw` writable. |

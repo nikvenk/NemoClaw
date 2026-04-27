@@ -91,7 +91,12 @@ tui_smoke() {
   # tell a "missing token" failure from a "TUI doesn't like our pty"
   # failure. Resolution order matches OpenClaw 2026.4.9: env var first,
   # then gateway.auth.token from config.
+  #
+  # Capture the exec exit status separately — `|| true` would mask a
+  # broken sandbox-exec call, and stderr leaking into ${resolved} could
+  # then satisfy a length-only token check.
   local resolved
+  local resolved_status=0
   resolved="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc '
     python3 - <<"PY"
 import json, os, sys
@@ -107,19 +112,24 @@ if not token:
     sys.exit(2)
 print(token)
 PY
-  ' 2>&1 || true)"
+  ' 2>&1)" || resolved_status=$?
 
-  if echo "${resolved}" | grep -q "MISSING_GATEWAY_AUTH_TOKEN"; then
-    fail "${label}: token resolution path mirrors 'openclaw tui' and returned empty — TUI would fail with 'Missing gateway auth token'"
+  if [ "${resolved_status}" -ne 0 ]; then
+    if echo "${resolved}" | grep -q "MISSING_GATEWAY_AUTH_TOKEN"; then
+      fail "${label}: token resolution path mirrors 'openclaw tui' and returned empty — TUI would fail with 'Missing gateway auth token'"
+    fi
+    echo "${resolved}" | head -20 >&2
+    fail "${label}: token-resolution sandbox exec failed (exit ${resolved_status})"
   fi
 
-  # Pull the actual token off the last line (the python script may emit
-  # warnings before printing) and reject anything that doesn't look like
-  # a hex string of plausible length.
+  # Pull the actual token off the last line and require the exact
+  # secrets.token_hex(32) format the entrypoint generates: 64 hex chars,
+  # nothing else. This rejects any stderr fragment that happens to land
+  # on the last line.
   local token
-  token="$(echo "${resolved}" | tail -n 1)"
-  if [ -z "${token}" ] || [ "${#token}" -lt 16 ]; then
-    fail "${label}: resolved token is empty or implausibly short: '${token}'"
+  token="$(printf '%s\n' "${resolved}" | tail -n 1)"
+  if ! printf '%s' "${token}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+    fail "${label}: resolved token does not match 64-hex format: '${token}'"
   fi
 
   # Step 2: actually start `openclaw tui`. We can't drive it
