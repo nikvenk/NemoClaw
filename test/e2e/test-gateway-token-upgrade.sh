@@ -77,69 +77,61 @@ if ! git -C "${REPO_ROOT}" cat-file -e "${PRE_REF}^{commit}" 2>/dev/null; then
     || fail "Could not fetch pre-ref ${PRE_REF}"
 fi
 
-# ── tui_smoke: drives `openclaw tui` inside the sandbox and asserts
-# the auth-resolution path works. The original #2480 bug surfaced as
-# "Missing gateway auth token" on stderr — we treat any output that
-# omits that string AND yields a non-empty resolved token as success.
+# ── tui_smoke: replicates `openclaw tui`'s token resolution and runs
+# the real binary as a canary. The #2480 failure mode was an early
+# "Missing gateway auth token" before any UI work, so we assert both:
+# the token resolves to a 64-hex string, AND `openclaw tui` doesn't
+# emit that error.
+#
+# Important: `openshell sandbox exec` rejects arguments that contain
+# newlines or carriage returns (gRPC InvalidArgument), so every
+# in-sandbox command here must be a single line.
 tui_smoke() {
   local sandbox_name="$1"
   local label="$2"
 
   info "${label}: running TUI smoke test inside ${sandbox_name}..."
 
-  # Step 1: replicate openclaw tui's token resolution exactly so we can
-  # tell a "missing token" failure from a "TUI doesn't like our pty"
-  # failure. Resolution order matches OpenClaw 2026.4.9: env var first,
-  # then gateway.auth.token from config.
-  #
-  # Capture the exec exit status separately — `|| true` would mask a
-  # broken sandbox-exec call, and stderr leaking into ${resolved} could
-  # then satisfy a length-only token check.
-  local resolved
-  local resolved_status=0
-  resolved="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc '
-    python3 - <<"PY"
-import json, os, sys
-token = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
-if not token:
-    try:
-        with open("/sandbox/.openclaw/openclaw.json") as f:
-            token = json.load(f).get("gateway", {}).get("auth", {}).get("token", "")
-    except Exception:
-        pass
-if not token:
-    print("MISSING_GATEWAY_AUTH_TOKEN", file=sys.stderr)
-    sys.exit(2)
-print(token)
-PY
-  ' 2>&1)" || resolved_status=$?
+  # Step 1a: read OPENCLAW_GATEWAY_TOKEN from a non-interactive shell
+  # the same way `openclaw tui` would (it inherits the env). Single-
+  # line printf so openshell exec's no-newline rule isn't tripped.
+  local env_token=""
+  local env_status=0
+  # shellcheck disable=SC2016 # ${OPENCLAW_GATEWAY_TOKEN} must expand in-sandbox, not on host.
+  env_token="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc 'printf %s "${OPENCLAW_GATEWAY_TOKEN:-}"' 2>&1)" || env_status=$?
+  if [ "${env_status}" -ne 0 ]; then
+    echo "${env_token}" | head -20 >&2
+    fail "${label}: env-var probe failed (exit ${env_status})"
+  fi
 
-  if [ "${resolved_status}" -ne 0 ]; then
-    if echo "${resolved}" | grep -q "MISSING_GATEWAY_AUTH_TOKEN"; then
-      fail "${label}: token resolution path mirrors 'openclaw tui' and returned empty — TUI would fail with 'Missing gateway auth token'"
+  # Step 1b: download openclaw.json and parse on the host. This avoids
+  # multi-line python -c arguments inside openshell exec entirely.
+  local cfg_token=""
+  local fetch_dir
+  fetch_dir="$(mktemp -d -t nemoclaw-tui-XXXXXX)"
+  if openshell sandbox download "${sandbox_name}" /sandbox/.openclaw/openclaw.json "${fetch_dir}/" >/dev/null 2>&1; then
+    local cfg_path
+    cfg_path="$(find "${fetch_dir}" -name openclaw.json -print -quit)"
+    if [ -n "${cfg_path}" ]; then
+      cfg_token="$(python3 -c "import json,sys; cfg=json.load(open(sys.argv[1])); print(cfg.get('gateway',{}).get('auth',{}).get('token',''))" "${cfg_path}" 2>/dev/null || true)"
     fi
-    echo "${resolved}" | head -20 >&2
-    fail "${label}: token-resolution sandbox exec failed (exit ${resolved_status})"
   fi
+  rm -rf "${fetch_dir}"
 
-  # Pull the actual token off the last line and require the exact
-  # secrets.token_hex(32) format the entrypoint generates: 64 hex chars,
-  # nothing else. This rejects any stderr fragment that happens to land
-  # on the last line.
-  local token
-  token="$(printf '%s\n' "${resolved}" | tail -n 1)"
+  # OpenClaw 2026.4.9 resolution: env var → gateway.auth.token in config.
+  local token="${env_token:-${cfg_token}}"
+  if [ -z "${token}" ]; then
+    fail "${label}: no token resolvable (env var empty, config token empty) — TUI would fail with 'Missing gateway auth token'"
+  fi
   if ! printf '%s' "${token}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
-    fail "${label}: resolved token does not match 64-hex format: '${token}'"
+    fail "${label}: resolved token does not match secrets.token_hex(32) format: '${token}'"
   fi
 
-  # Step 2: actually start `openclaw tui`. We can't drive it
-  # interactively without a pty, but we can confirm it gets past the
-  # auth-resolution step — the bug we're guarding against was an early
-  # exit with "Missing gateway auth token" before any UI work.
+  # Step 2: run `openclaw tui` itself with a 6s timeout and a single-
+  # line bash command (no heredoc). The bug we guard against is a fast
+  # exit with the #2480 error string before any UI work happens.
   local tui_out
-  tui_out="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc '
-    timeout --preserve-status 6 openclaw tui </dev/null 2>&1 | head -c 8192
-  ' 2>&1 || true)"
+  tui_out="$(openshell sandbox exec --name "${sandbox_name}" -- bash -c 'timeout --preserve-status 6 openclaw tui </dev/null 2>&1 | head -c 8192' 2>&1 || true)"
 
   if echo "${tui_out}" | grep -qi "Missing gateway auth token"; then
     echo "${tui_out}" | head -40 >&2
@@ -147,7 +139,7 @@ PY
   fi
 
   pass "${label}: TUI startup resolved gateway token (${#token} chars)"
-  printf '%s' "${token}"
+  TUI_RESULT_TOKEN="${token}"
 }
 
 # ── Phase 1: Install current NemoClaw ──────────────────────────────
@@ -216,7 +208,9 @@ openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready" \
 pass "Phase 2: pre-upgrade sandbox running (build-baked token design)"
 
 # ── Phase 3: TUI smoke + capture pre-upgrade token ─────────────────
-PRE_TOKEN="$(tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade")"
+TUI_RESULT_TOKEN=""
+tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade"
+PRE_TOKEN="${TUI_RESULT_TOKEN}"
 
 # Sanity: in the OLD design the token comes from the Docker layer, so
 # it must be identical across container restarts. Restart and reread to
@@ -228,7 +222,9 @@ for _i in $(seq 1 30); do
   fi
   sleep 5
 done
-PRE_TOKEN_AFTER_RESTART="$(tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade post-restart")"
+TUI_RESULT_TOKEN=""
+tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade post-restart"
+PRE_TOKEN_AFTER_RESTART="${TUI_RESULT_TOKEN}"
 if [ "${PRE_TOKEN}" != "${PRE_TOKEN_AFTER_RESTART}" ]; then
   fail "Phase 3: build-baked token unexpectedly changed across restart — PRE_REF may already include runtime injection"
 fi
@@ -302,7 +298,9 @@ openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready" \
 pass "Phase 4: post-upgrade sandbox running (runtime-injection design)"
 
 # ── Phase 5: TUI smoke after upgrade ───────────────────────────────
-POST_TOKEN="$(tui_smoke "${SANDBOX_NAME}" "Phase 5 post-upgrade")"
+TUI_RESULT_TOKEN=""
+tui_smoke "${SANDBOX_NAME}" "Phase 5 post-upgrade"
+POST_TOKEN="${TUI_RESULT_TOKEN}"
 
 if [ "${POST_TOKEN}" = "${PRE_TOKEN}" ]; then
   fail "Phase 5: post-upgrade token equals pre-upgrade token — rebuild reused the old image layer (NEMOCLAW_BUILD_ID cache miss?) or runtime injection didn't run"
@@ -331,7 +329,9 @@ for _i in $(seq 1 30); do
   sleep 5
 done
 
-ROTATED_TOKEN="$(tui_smoke "${SANDBOX_NAME}" "Phase 6 post-restart")"
+TUI_RESULT_TOKEN=""
+tui_smoke "${SANDBOX_NAME}" "Phase 6 post-restart"
+ROTATED_TOKEN="${TUI_RESULT_TOKEN}"
 
 if [ "${ROTATED_TOKEN}" = "${POST_TOKEN}" ]; then
   fail "Phase 6: token did not rotate across restart — entrypoint inject_gateway_token() did not run"
