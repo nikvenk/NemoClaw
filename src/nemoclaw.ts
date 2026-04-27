@@ -210,7 +210,11 @@ function resolveSandboxSshTarget(configFile: string, sandboxName: string) {
     suppressOutput: true,
     stdio: ["ignore", "pipe", "ignore"],
   });
-  const lines = String(configResult.stdout || "").split(/\r?\n/);
+  const configText = String(configResult.stdout || "").trim();
+  if (configResult.status !== 0 || !configText) {
+    return null;
+  }
+  const lines = configText.split(/\r?\n/);
   const findValue = (key: string): string | null => {
     const line = lines.find((entry) => entry.startsWith(`${key} `));
     return line ? line.split(/\s+/, 2)[1] || null : null;
@@ -227,7 +231,16 @@ function buildPinnedSandboxSshContext(
   sandboxName: string,
   opts: { connectTimeoutSeconds: number; tempDirPrefix: string },
 ) {
-  const { hostAlias, realHost, sshPort } = resolveSandboxSshTarget(configFile, sandboxName);
+  const rawConfig = fs.readFileSync(configFile, "utf-8").trim();
+  if (!rawConfig) {
+    throw new Error(`Sandbox SSH config is empty for ${sandboxName}`);
+  }
+
+  const target = resolveSandboxSshTarget(configFile, sandboxName);
+  if (!target) {
+    throw new Error(`Failed to resolve sandbox SSH target for ${sandboxName}`);
+  }
+  const { hostAlias, realHost, sshPort } = target;
   const knownHostsDir = fs.mkdtempSync(path.join(os.tmpdir(), opts.tempDirPrefix));
   const knownHostsFile = path.join(knownHostsDir, "known_hosts");
   const keyscanArgs = ["-T", "5", "-H", ...(sshPort ? ["-p", sshPort] : []), realHost];
