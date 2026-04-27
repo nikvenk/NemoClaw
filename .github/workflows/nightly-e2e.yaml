@@ -15,6 +15,10 @@
 #                            probe → live inference. Validates the multi-agent architecture.
 #   skip-permissions-e2e     Validates --dangerously-skip-permissions activates the permissive
 #                            policy (not stuck in Pending) and sandbox egress works (not 403).
+#   gateway-token-upgrade-e2e Gateway auth token upgrade — `openclaw tui` works on the
+#                            pre-PR build-baked design AND after rebuilding to the
+#                            runtime-injected design (issue #2480). Token must rotate
+#                            on container restart.
 #   gpu-e2e                  Local Ollama inference on a GPU self-hosted runner.
 #                            Controlled by the GPU_E2E_ENABLED repository variable.
 #                            Set vars.GPU_E2E_ENABLED to "true" in repo settings to enable.
@@ -483,6 +487,40 @@ jobs:
             /tmp/nemoclaw-e2e-upgrade-install.log
           if-no-files-found: ignore
 
+  # ── Gateway-token upgrade E2E (#2480) ────────────────────────
+  # Proves `openclaw tui` keeps working across the build-baked-token
+  # → runtime-injected-token transition. Builds a sandbox at the
+  # pre-PR commit (token baked via secrets.token_hex), runs TUI as a
+  # canary, rebuilds with current source, runs TUI again, and checks
+  # the token rotates on restart (runtime mechanism). Needs deeper
+  # git history than the default shallow checkout to reach the pre-ref.
+  gateway-token-upgrade-e2e:
+    if: github.repository == 'NVIDIA/NemoClaw'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run gateway-token upgrade E2E test
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NEMOCLAW_NON_INTERACTIVE: "1"
+          NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE: "1"
+          NEMOCLAW_SANDBOX_NAME: "e2e-gateway-token-upgrade"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash test/e2e/test-gateway-token-upgrade.sh
+
+      - name: Upload install log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-token-upgrade-install-log
+          path: /tmp/nemoclaw-e2e-install.log
+          if-no-files-found: ignore
+
   # ── Hermes rebuild upgrade E2E ──────────────────────────────
   # Same upgrade scenario as OpenClaw but for Hermes Agent.
   rebuild-hermes-e2e:
@@ -613,6 +651,7 @@ jobs:
         shields-config-e2e,
         rebuild-openclaw-e2e,
         upgrade-stale-sandbox-e2e,
+        gateway-token-upgrade-e2e,
         rebuild-hermes-e2e,
         overlayfs-autofix-e2e,
         gpu-e2e,
