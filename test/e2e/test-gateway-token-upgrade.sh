@@ -77,35 +77,26 @@ if ! git -C "${REPO_ROOT}" cat-file -e "${PRE_REF}^{commit}" 2>/dev/null; then
     || fail "Could not fetch pre-ref ${PRE_REF}"
 fi
 
-# ── tui_smoke: replicates `openclaw tui`'s token resolution and runs
-# the real binary as a canary. The #2480 failure mode was an early
-# "Missing gateway auth token" before any UI work, so we assert both:
-# the token resolves to a 64-hex string, AND `openclaw tui` doesn't
-# emit that error.
+# ── fetch_resolved_token: replicates `openclaw tui`'s token resolution
+# (env var → gateway.auth.token in config) without failing the test on
+# transient errors. Sets RESOLVED_TOKEN on success, leaves it empty on
+# failure. Used by both tui_smoke (assertive) and the rotation poll in
+# Phase 6 (best-effort).
 #
 # Important: `openshell sandbox exec` rejects arguments that contain
 # newlines or carriage returns (gRPC InvalidArgument), so every
 # in-sandbox command here must be a single line.
-tui_smoke() {
+fetch_resolved_token() {
   local sandbox_name="$1"
-  local label="$2"
+  RESOLVED_TOKEN=""
 
-  info "${label}: running TUI smoke test inside ${sandbox_name}..."
-
-  # Step 1a: read OPENCLAW_GATEWAY_TOKEN from a non-interactive shell
-  # the same way `openclaw tui` would (it inherits the env). Single-
-  # line printf so openshell exec's no-newline rule isn't tripped.
+  # 1a: env var the same way `openclaw tui` would inherit it.
   local env_token=""
-  local env_status=0
   # shellcheck disable=SC2016 # ${OPENCLAW_GATEWAY_TOKEN} must expand in-sandbox, not on host.
-  env_token="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc 'printf %s "${OPENCLAW_GATEWAY_TOKEN:-}"' 2>&1)" || env_status=$?
-  if [ "${env_status}" -ne 0 ]; then
-    echo "${env_token}" | head -20 >&2
-    fail "${label}: env-var probe failed (exit ${env_status})"
-  fi
+  env_token="$(openshell sandbox exec --name "${sandbox_name}" -- bash -lc 'printf %s "${OPENCLAW_GATEWAY_TOKEN:-}"' 2>/dev/null || true)"
 
-  # Step 1b: download openclaw.json and parse on the host. This avoids
-  # multi-line python -c arguments inside openshell exec entirely.
+  # 1b: download openclaw.json and parse on the host (avoids multi-line
+  # python -c arguments inside openshell exec).
   local cfg_token=""
   local fetch_dir
   fetch_dir="$(mktemp -d -t nemoclaw-tui-XXXXXX)"
@@ -118,8 +109,22 @@ tui_smoke() {
   fi
   rm -rf "${fetch_dir}"
 
-  # OpenClaw 2026.4.9 resolution: env var → gateway.auth.token in config.
-  local token="${env_token:-${cfg_token}}"
+  RESOLVED_TOKEN="${env_token:-${cfg_token}}"
+}
+
+# ── tui_smoke: asserts both that token resolution yields a 64-hex
+# string AND that `openclaw tui` doesn't emit "Missing gateway auth
+# token" (the #2480 failure mode).
+tui_smoke() {
+  local sandbox_name="$1"
+  local label="$2"
+
+  info "${label}: running TUI smoke test inside ${sandbox_name}..."
+
+  RESOLVED_TOKEN=""
+  fetch_resolved_token "${sandbox_name}"
+  local token="${RESOLVED_TOKEN}"
+
   if [ -z "${token}" ]; then
     fail "${label}: no token resolvable (env var empty, config token empty) — TUI would fail with 'Missing gateway auth token'"
   fi
@@ -127,9 +132,9 @@ tui_smoke() {
     fail "${label}: resolved token does not match secrets.token_hex(32) format: '${token}'"
   fi
 
-  # Step 2: run `openclaw tui` itself with a 6s timeout and a single-
-  # line bash command (no heredoc). The bug we guard against is a fast
-  # exit with the #2480 error string before any UI work happens.
+  # Run `openclaw tui` itself with a 6s timeout and a single-line bash
+  # command (no heredoc). The bug we guard against is a fast exit with
+  # the #2480 error string before any UI work happens.
   local tui_out
   tui_out="$(openshell sandbox exec --name "${sandbox_name}" -- bash -c 'timeout --preserve-status 6 openclaw tui </dev/null 2>&1 | head -c 8192' 2>&1 || true)"
 
@@ -140,6 +145,31 @@ tui_smoke() {
 
   pass "${label}: TUI startup resolved gateway token (${#token} chars)"
   TUI_RESULT_TOKEN="${token}"
+}
+
+# ── wait_for_token_change: polls fetch_resolved_token until the
+# resolved token differs from the supplied baseline. Returns 0 with
+# RESOLVED_TOKEN set on success, 1 (timed out) otherwise. Use this
+# instead of waiting on `openshell sandbox list` after a restart —
+# `sandbox restart` may return before the pod transitions, so the
+# Ready→Ready window is too narrow to detect reliably.
+wait_for_token_change() {
+  local sandbox_name="$1"
+  local baseline="$2"
+  local timeout_seconds="${3:-90}"
+  local deadline=$(($(date +%s) + timeout_seconds))
+
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    sleep 5
+    RESOLVED_TOKEN=""
+    fetch_resolved_token "${sandbox_name}"
+    if [ -n "${RESOLVED_TOKEN}" ] \
+      && [ "${RESOLVED_TOKEN}" != "${baseline}" ] \
+      && printf '%s' "${RESOLVED_TOKEN}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # ── Phase 1: Install current NemoClaw ──────────────────────────────
@@ -208,27 +238,16 @@ openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready" \
 pass "Phase 2: pre-upgrade sandbox running (build-baked token design)"
 
 # ── Phase 3: TUI smoke + capture pre-upgrade token ─────────────────
+# Establish the pre-upgrade baseline. We do *not* exercise a restart
+# here because `openshell sandbox restart` returns before the pod has
+# transitioned, so a "token unchanged across restart" check on a
+# build-baked token is satisfied even when the entrypoint never
+# actually re-runs — false sense of security. The meaningful upgrade
+# proof is the Phase 5/6 pair below: post-upgrade token differs from
+# pre-upgrade, and post-restart token differs from post-upgrade.
 TUI_RESULT_TOKEN=""
 tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade"
 PRE_TOKEN="${TUI_RESULT_TOKEN}"
-
-# Sanity: in the OLD design the token comes from the Docker layer, so
-# it must be identical across container restarts. Restart and reread to
-# pin down the current behavior we're upgrading away from.
-openshell sandbox restart "${SANDBOX_NAME}" >/dev/null 2>&1 || true
-for _i in $(seq 1 30); do
-  if openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready"; then
-    break
-  fi
-  sleep 5
-done
-TUI_RESULT_TOKEN=""
-tui_smoke "${SANDBOX_NAME}" "Phase 3 pre-upgrade post-restart"
-PRE_TOKEN_AFTER_RESTART="${TUI_RESULT_TOKEN}"
-if [ "${PRE_TOKEN}" != "${PRE_TOKEN_AFTER_RESTART}" ]; then
-  fail "Phase 3: build-baked token unexpectedly changed across restart — PRE_REF may already include runtime injection"
-fi
-pass "Phase 3: pre-upgrade token is stable across restart (build-baked behavior confirmed)"
 
 # Register the sandbox in NemoClaw's registry so `nemoclaw rebuild`
 # treats it as a known sandbox (otherwise the rebuild command refuses).
@@ -321,22 +340,29 @@ pass "Phase 5: host-side gateway-token matches in-sandbox token"
 # ── Phase 6: Token rotates on restart (runtime mechanism) ──────────
 info "Phase 6: Restarting sandbox to confirm runtime token rotation..."
 
+# `openshell sandbox restart` returns before the pod has actually
+# transitioned, and the kubelet may roll quickly enough that a "wait
+# for non-Ready, then Ready" check misses the window entirely. Poll
+# the resolved token directly — the entrypoint regenerates it on
+# every start, so an observed rotation is unambiguous proof the
+# entrypoint re-ran. A 90s deadline tolerates slow node-image pulls
+# without hiding a real "entrypoint never ran" regression.
 openshell sandbox restart "${SANDBOX_NAME}" >/dev/null 2>&1 || true
-for _i in $(seq 1 30); do
-  if openshell sandbox list 2>/dev/null | grep -q "${SANDBOX_NAME}.*Ready"; then
-    break
-  fi
-  sleep 5
-done
 
-TUI_RESULT_TOKEN=""
-tui_smoke "${SANDBOX_NAME}" "Phase 6 post-restart"
-ROTATED_TOKEN="${TUI_RESULT_TOKEN}"
-
-if [ "${ROTATED_TOKEN}" = "${POST_TOKEN}" ]; then
-  fail "Phase 6: token did not rotate across restart — entrypoint inject_gateway_token() did not run"
+RESOLVED_TOKEN=""
+if ! wait_for_token_change "${SANDBOX_NAME}" "${POST_TOKEN}" 90; then
+  fail "Phase 6: token did not rotate within 90s — entrypoint inject_gateway_token() did not re-run, or sandbox restart did not propagate"
 fi
+ROTATED_TOKEN="${RESOLVED_TOKEN}"
 pass "Phase 6: token rotated on restart (runtime injection confirmed)"
+
+# Final TUI smoke against the rotated container — one more guard
+# against a "Missing gateway auth token" regression after restart.
+TUI_RESULT_TOKEN=""
+tui_smoke "${SANDBOX_NAME}" "Phase 6 post-rotation"
+if [ "${TUI_RESULT_TOKEN}" != "${ROTATED_TOKEN}" ]; then
+  fail "Phase 6: TUI-resolved token (${#TUI_RESULT_TOKEN} chars) does not match polled rotated token (${#ROTATED_TOKEN} chars)"
+fi
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
