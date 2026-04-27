@@ -255,10 +255,19 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
             while sleep 10; do
               command -v nemoclaw >/dev/null 2>&1 || continue
-              for name in $(nemoclaw list 2>/dev/null | awk "/^[[:space:]]*[a-zA-Z0-9_-]+/ {print \$1}" | grep -v "^Sandbox\$" | grep -v "^---"); do
-                # Snapshot — overwrite each iteration. nemoclaw logs reads
-                # /tmp/gateway.log via SSH and prints it; default is bounded.
-                # Capped at ~256KB per file as a safety net.
+              # Read the sandboxes registry directly to avoid parsing pretty-printed
+              # `nemoclaw list` output (which contains a "Sandboxes:" header line
+              # whose first token has a colon, breaking artifact upload).
+              registry="$HOME/.nemoclaw/sandboxes.json"
+              [ -f "$registry" ] || continue
+              names=$(jq -r ".sandboxes // {} | keys[]?" "$registry" 2>/dev/null)
+              for name in $names; do
+                # Sanity: only valid sandbox names (lowercase, digits, dashes,
+                # underscores). Reject anything with non-filename-safe chars.
+                case "$name" in
+                  *[!a-z0-9_-]*|"") continue ;;
+                esac
+                # Snapshot — overwrite each iteration; capped at ~256KB.
                 timeout 8 nemoclaw "$name" logs 2>&1 | head -c 262144 > "docker-logs/sandbox-${name}.log.tmp" \
                   && mv "docker-logs/sandbox-${name}.log.tmp" "docker-logs/sandbox-${name}.log" \
                   || true
