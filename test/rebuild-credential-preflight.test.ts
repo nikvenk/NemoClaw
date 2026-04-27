@@ -189,9 +189,12 @@ function createFixture(opts: {
     path.join(tmpDir, "openshell"),
     `#!/usr/bin/env node
 const a = process.argv.slice(2);
-if (a[0]==="sandbox" && a[1]==="list")       { process.stdout.write("${sandboxName}\\n"); process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="list")       { process.stdout.write("NAME           STATUS\\n${sandboxName}  Ready\\n"); process.exit(0); }
 if (a[0]==="sandbox" && a[1]==="ssh-config") { process.stdout.write("${sshConfig}\\n"); process.exit(0); }
 if (a[0]==="sandbox" && a[1]==="delete")     { process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="create")     { process.stderr.write("fake-openshell: sandbox create not supported in test\\n"); process.exit(1); }
+if (a[0]==="sandbox" && a[1]==="connect")    { process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="exec")       { process.exit(0); }
 if (a[0]==="status")                         { process.stdout.write("running\\n"); process.exit(0); }
 if (a[0]==="gateway" && a[1]==="info")       { process.stdout.write("nemoclaw\\n"); process.exit(0); }
 if (a[0]==="gateway" && a[1]==="select")     { process.exit(0); }
@@ -199,6 +202,7 @@ if (a[0]==="inference" && a[1]==="get")      { process.stdout.write('{"provider"
 if (a[0]==="inference" && a[1]==="set")      { process.exit(0); }
 if (a[0]==="provider")                       { process.exit(0); }
 if (a[0]==="forward")                        { process.exit(0); }
+if (a[0]==="policy")                         { process.exit(0); }
 process.exit(0);
 `,
     { mode: 0o755 },
@@ -233,6 +237,22 @@ process.exit(0);
   fs.writeFileSync(
     path.join(tmpDir, "ssh"),
     sshScript.replace("PLACEHOLDER", fakeRoot),
+    { mode: 0o755 },
+  );
+
+  // ── Fake docker ───────────────────────────────────────────────
+  // Minimal docker stub — pull/rmi/inspect/image all succeed silently.
+  fs.writeFileSync(
+    path.join(tmpDir, "docker"),
+    `#!/usr/bin/env node
+const a = process.argv.slice(2);
+if (a[0]==="pull")    { process.exit(0); }
+if (a[0]==="rmi")     { process.exit(0); }
+if (a[0]==="inspect") { process.stdout.write('["ghcr.io/nvidia/nemoclaw/sandbox-base@sha256:abc123"]\\n'); process.exit(0); }
+if (a[0]==="image")   { process.exit(0); }
+if (a[0]==="info")    { process.stdout.write('mock\\n'); process.exit(0); }
+process.exit(0);
+`,
     { mode: 0o755 },
   );
 
@@ -377,24 +397,43 @@ describe("Issue #2273: atomic rebuild", () => {
 
   describe("Layer 3: recovery on recreate failure", () => {
     it(
-      "prints recovery instructions when recreate fails after destroy",
+      "prints recovery instructions when recreateSandbox throws",
       { timeout: 60_000 },
       () => {
-        // Credential IS present so preflight passes, but onboard will
-        // fail because the fake openshell doesn't support full onboard.
-        // The key thing: rebuild should catch the failure and print
-        // recovery instructions instead of silently exiting.
+        // Credential IS present so preflight passes.
+        // The fake openshell handles sandbox create with exit 1 AND
+        // sandbox list returns non-Ready status, so recreateSandbox()
+        // throws RecreateError and rebuild prints recovery instructions.
         const f = createFixture({
           credentialEnv: "NVIDIA_API_KEY",
           savedCredential: {
             key: "NVIDIA_API_KEY",
             value: "nvapi-test-key-for-rebuild",
           },
-          // Force provider_selection to re-run (not resume) so onboard
-          // actually exercises the provider flow, which will fail in our
-          // fake environment.
-          providerSelectionStatus: "pending",
         });
+
+        // Overwrite the fake openshell to make sandbox list return
+        // non-Ready status (so waitForSandboxReady fails) and sandbox
+        // create exit non-zero.
+        fs.writeFileSync(
+          path.join(f.tmpDir, "openshell"),
+          `#!/usr/bin/env node
+const a = process.argv.slice(2);
+if (a[0]==="sandbox" && a[1]==="list")       { process.stdout.write("NAME STATUS\\n${f.sandboxName}  Pending\\n"); process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="ssh-config") { process.stdout.write("Host openshell-${f.sandboxName}\\n  HostName 127.0.0.1\\n  Port 2222\\n"); process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="delete")     { process.exit(0); }
+if (a[0]==="sandbox" && a[1]==="create")     { process.stderr.write("sandbox create failed in test\\n"); process.exit(1); }
+if (a[0]==="sandbox" && a[1]==="connect")    { process.exit(0); }
+if (a[0]==="status")                         { process.stdout.write("running\\n"); process.exit(0); }
+if (a[0]==="gateway" && a[1]==="info")       { process.stdout.write("nemoclaw\\n"); process.exit(0); }
+if (a[0]==="gateway" && a[1]==="select")     { process.exit(0); }
+if (a[0]==="provider")                       { process.exit(0); }
+if (a[0]==="forward")                        { process.exit(0); }
+if (a[0]==="policy")                         { process.exit(0); }
+process.exit(0);
+`,
+          { mode: 0o755 },
+        );
 
         const result = runRebuild(f);
         const output = (result.stderr || "") + (result.stdout || "");

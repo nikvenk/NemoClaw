@@ -2630,114 +2630,53 @@ async function sandboxRebuild(
   );
   console.log(`  ${G}\u2713${R} Old sandbox deleted`);
 
-  // Step 4: Recreate via onboard --resume
+  // Step 4: Recreate sandbox via focused recreateSandbox() (#2306)
+  // Replaces the old pattern of calling onboard() with a process.exit
+  // interceptor.  recreateSandbox() throws RecreateError on failure.
   console.log("");
   console.log("  Creating new sandbox with current image...");
 
-  // Force the sandbox name so onboard recreates with the same name.
-  // Mark session resumable and point at this sandbox; set env var as fallback.
-  const sessionBefore = onboardSession.loadSession();
-  log(
-    `Session before update: sandboxName=${sessionBefore?.sandboxName}, status=${sessionBefore?.status}, resumable=${sessionBefore?.resumable}, provider=${sessionBefore?.provider}, model=${sessionBefore?.model}`,
-  );
-
-  // Sync the session's agent field with the registry so onboard --resume
-  // rebuilds the correct sandbox type.  Without this, a stale session.agent
-  // from a previous onboard of a *different* agent type would be picked up
-  // by resolveAgentName() and the wrong Dockerfile would be used.  (#2201)
+  const recreateSession = onboardSession.loadSession();
   const rebuildAgent = sb.agent || null;
+  const storedFromDockerfile = recreateSession?.metadata?.fromDockerfile || null;
+
+  // Sync the session's agent field with the registry so subsequent
+  // operations (onboard --resume fallback, status checks) see the
+  // correct agent type.  Without this, a stale session.agent from a
+  // *different* sandbox would persist.  (#2201)
   onboardSession.updateSession((s: Session) => {
-    s.sandboxName = sandboxName;
-    s.resumable = true;
-    s.status = "in_progress";
     s.agent = rebuildAgent;
     return s;
   });
-  process.env.NEMOCLAW_SANDBOX_NAME = sandboxName;
-
-  const sessionAfter = onboardSession.loadSession();
   log(
-    `Session after update: sandboxName=${sessionAfter?.sandboxName}, status=${sessionAfter?.status}, resumable=${sessionAfter?.resumable}, provider=${sessionAfter?.provider}, model=${sessionAfter?.model}`,
-  );
-  log(
-    `Env: NEMOCLAW_SANDBOX_NAME=${process.env.NEMOCLAW_SANDBOX_NAME}, NEMOCLAW_RECREATE_SANDBOX=${process.env.NEMOCLAW_RECREATE_SANDBOX}`,
+    `Calling recreateSandbox({ sandboxName: ${sandboxName}, provider: ${recreateSession?.provider}, model: ${recreateSession?.model}, agent: ${rebuildAgent} })`,
   );
 
-  // Forward the stored --from Dockerfile path so onboard --resume uses the
-  // same custom image.  Without this, the conflict check rejects the resume
-  // because requestedFrom (null) !== recordedFrom (the stored path).  (#2301)
-  const storedFromDockerfile = sessionAfter?.metadata?.fromDockerfile || null;
-  log(
-    `Calling onboard({ resume: true, nonInteractive: true, recreateSandbox: true, fromDockerfile: ${storedFromDockerfile} })`,
-  );
-
-  // Intercept process.exit during onboard so we can attempt rollback
-  // instead of dying with the sandbox destroyed.  onboard() has ~87
-  // process.exit() calls that would otherwise kill the process with no
-  // chance to recover.  See #2273.
-  //
-  // NOTE: Throwing from the overridden process.exit unwinds onboard's
-  // call stack, which skips process.once("exit") listeners (lock
-  // release, build context cleanup, session failure marking).  We
-  // manually release the lock and mark the session failed in the
-  // onboardFailed block below.  Full fix is tracked in #2306 (extract
-  // rebuild-specific recreate path that throws instead of exiting).
-  const { onboard } = require("./lib/onboard");
-  let onboardFailed = false;
-  let onboardExitCode = 1;
-  const _savedExit = process.exit;
-  process.exit = ((code) => {
-    onboardFailed = true;
-    onboardExitCode = typeof code === "number" ? code : 1;
-    // Throw a sentinel to unwind the onboard call stack.
-    // The catch block below handles it.
-    const err = new Error(`onboard exited with code ${onboardExitCode}`);
-    err.name = "RebuildOnboardExit";
-    throw err;
-  }) as typeof process.exit;
-
+  const { recreateSandbox, RecreateError } = require("./lib/sandbox-recreate");
   try {
-    await onboard({
-      resume: true,
-      nonInteractive: true,
-      recreateSandbox: true,
+    await recreateSandbox({
+      sandboxName,
+      provider: recreateSession?.provider || "nvidia-prod",
+      model: recreateSession?.model || "nvidia/nemotron-3-super-120b-a12b",
+      credentialEnv: rebuildCredentialEnv,
+      endpointUrl: recreateSession?.endpointUrl || null,
+      preferredInferenceApi: recreateSession?.preferredInferenceApi || null,
       agent: rebuildAgent,
       fromDockerfile: storedFromDockerfile,
+      webSearchConfig: recreateSession?.webSearchConfig || null,
+      messagingChannels: recreateSession?.messagingChannels || [],
+      policyPresets: backup.manifest.policyPresets || [],
+      dangerouslySkipPermissions: sb.dangerouslySkipPermissions || false,
     });
-    log("onboard() returned successfully");
-  } catch (err) {
-    onboardFailed = true;
+    log("recreateSandbox() returned successfully");
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const name = err instanceof Error ? err.name : "";
-    if (name !== "RebuildOnboardExit") {
-      log(`onboard() threw: ${message}`);
-    }
-  } finally {
-    process.exit = _savedExit;
-  }
-
-  if (onboardFailed) {
-    // Clean up onboard's internal state that normally runs in
-    // process.once("exit") listeners — those never fire because we
-    // threw from the overridden process.exit instead of actually
-    // exiting.  Without this the onboard lock file stays on disk and
-    // blocks the next onboard/rebuild invocation.
-    try {
-      onboardSession.releaseOnboardLock();
-    } catch {
-      /* best effort */
-    }
-    try {
-      const failedStep = onboardSession.loadSession()?.lastStepStarted;
-      if (failedStep) {
-        onboardSession.markStepFailed(failedStep, "Rebuild recreate failed");
-      }
-    } catch {
-      /* best effort */
-    }
+    const code = err instanceof RecreateError ? (err as { code: string }).code : "unknown";
+    log(`recreateSandbox() threw: code=${code}, message=${message}`);
 
     console.error("");
     console.error(`  ${_RD}Recreate failed after sandbox was destroyed.${R}`);
+    console.error(`  Failure: ${message}`);
     console.error(`  Backup is preserved at: ${backup.manifest.backupPath}`);
     console.error("");
     console.error("  To recover manually:");
@@ -2749,7 +2688,7 @@ async function sandboxRebuild(
     console.error("");
     bail(
       `Recreate failed (sandbox destroyed). Backup: ${backup.manifest.backupPath}`,
-      onboardExitCode,
+      1,
     );
     return;
   }
@@ -2770,40 +2709,8 @@ async function sandboxRebuild(
     console.log(`  ${G}\u2713${R} State restored (${restore.restoredDirs.length} directories)`);
   }
 
-  // Step 5.5: Restore policy presets (#1952)
-  // Policy presets live in the gateway policy engine, not the sandbox filesystem.
-  // They are lost when the sandbox is destroyed and recreated. Re-apply any
-  // presets that were captured in the backup manifest.
-  const savedPresets = backup.manifest.policyPresets || [];
-  if (savedPresets.length > 0) {
-    console.log("");
-    console.log("  Restoring policy presets...");
-    log(`Policy presets to restore: [${savedPresets.join(",")}]`);
-    const restoredPresets: string[] = [];
-    const failedPresets: string[] = [];
-    for (const presetName of savedPresets) {
-      try {
-        log(`Applying preset: ${presetName}`);
-        const applied = policies.applyPreset(sandboxName, presetName);
-        if (applied) {
-          restoredPresets.push(presetName);
-        } else {
-          failedPresets.push(presetName);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        log(`Failed to apply preset '${presetName}': ${errorMessage}`);
-        failedPresets.push(presetName);
-      }
-    }
-    if (restoredPresets.length > 0) {
-      console.log(`  ${G}\u2713${R} Policy presets restored: ${restoredPresets.join(", ")}`);
-    }
-    if (failedPresets.length > 0) {
-      console.error(`  ${YW}\u26a0${R} Failed to restore presets: ${failedPresets.join(", ")}`);
-      console.error(`    Re-apply manually with: nemoclaw ${sandboxName} policy-add`);
-    }
-  }
+  // Policy presets are now applied inside recreateSandbox() (#2306).
+  // No duplicate application needed here. See applyPolicyPresetsDirect().
 
   // Step 6: Post-restore agent-specific migration
   const agentDef = agent

@@ -352,8 +352,31 @@ export async function createSandboxDirect(params: {
       ),
     ];
 
-    // Pull base image and resolve digest
-    const resolved = pullAndResolveBaseImageDigest();
+    // Pull base image and resolve digest.
+    // pullAndResolveBaseImageDigest() internally calls run(["docker","pull"]) which
+    // may call process.exit(1) if docker is missing.  We wrap in a safe fallback
+    // so the rebuild path throws RecreateError instead of exiting.
+    let resolved: { digest: string; ref: string } | null = null;
+    try {
+      const imageWithTag = `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`;
+      const pullResult = run(["docker", "pull", imageWithTag], { ignoreError: true, suppressOutput: true });
+      if (pullResult.status === 0) {
+        const inspectOutput = runCapture(
+          ["docker", "inspect", "--format", "{{json .RepoDigests}}", imageWithTag],
+          { ignoreError: true },
+        );
+        try {
+          const repoDigests = JSON.parse(inspectOutput || "[]");
+          const repoDigest = Array.isArray(repoDigests)
+            ? repoDigests.find((entry: string) => entry.startsWith(`${SANDBOX_BASE_IMAGE}@sha256:`))
+            : null;
+          if (repoDigest) {
+            const digest = repoDigest.split("@")[1];
+            resolved = { digest, ref: `${SANDBOX_BASE_IMAGE}@${digest}` };
+          }
+        } catch { /* JSON parse failed — skip pinning */ }
+      }
+    } catch { /* docker pull failed — continue without pinning */ }
     if (resolved) {
       console.log(`  Pinning base image to ${resolved.digest.slice(0, 19)}...`);
     }
