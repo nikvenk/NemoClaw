@@ -117,7 +117,7 @@ describe("credential exposure in process arguments", () => {
       "utf-8",
     );
     // Extract the TLS array from both files and compare
-    const extractTLS = (src) => {
+    const extractTLS = (src: string) => {
       const match = src.match(/const TLS = \[([\s\S]*?)\];/);
       if (!match) return "";
       const entries = match[1].match(/"[^"]+"/g) ?? [];
