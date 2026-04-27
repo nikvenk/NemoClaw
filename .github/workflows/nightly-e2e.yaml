@@ -279,11 +279,16 @@ jobs:
                 ssh_cfg="/tmp/sshcfg-${name}.tmp"
                 if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
                    && [ -s "$ssh_cfg" ]; then
+                  # tail -F follows /tmp/gateway.log from the start. grep -v
+                  # filters the ciao mDNS noise so the file stays manageable.
+                  # No `head -c` cap: it blocks waiting for N bytes that may
+                  # never arrive (most lines are mDNS that grep drops), and
+                  # the streamer is killed when the job ends anyway.
                   nohup ssh -F "$ssh_cfg" \
                        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                        -o ConnectTimeout=10 -o LogLevel=ERROR -o ServerAliveInterval=30 \
                        "openshell-${name}" \
-                       "tail -n +1 -F /tmp/gateway.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses | head -c 524288" \
+                       "tail -n +1 -F /tmp/gateway.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
                     > "docker-logs/sandbox-${name}.log" 2>&1 &
                   streamer_pids[$name]=$!
                 fi
@@ -309,6 +314,16 @@ jobs:
           pkill -f 'tail -n \+1 -F /tmp/gateway.log' 2>/dev/null || true
           pkill -f 'ssh.*openshell-' 2>/dev/null || true
           sleep 2
+          # Cap each log file at 5MB by keeping only the last 5MB — useful
+          # content (real gateway events) is mixed throughout, so tail-trim
+          # is fine for diagnostic purposes.
+          for f in docker-logs/*.log; do
+            [ -f "$f" ] || continue
+            sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+            if [ "$sz" -gt 5242880 ]; then
+              tail -c 5242880 "$f" > "${f}.tail" && mv "${f}.tail" "$f"
+            fi
+          done
           ls -la docker-logs/ 2>&1 | head -20 || true
           du -sh docker-logs/ 2>&1 || true
 
