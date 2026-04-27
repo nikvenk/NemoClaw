@@ -305,6 +305,13 @@ jobs:
           NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE: "1"
           NEMOCLAW_POLICY_TIER: "open"
           GITHUB_TOKEN: ${{ github.token }}
+          # Override the 1800s default in test/e2e/e2e-timeout.sh. Sandbox
+          # creation alone is ~14 min per sandbox in current CI conditions
+          # (build+upload to k3s gateway), and the test creates two — leaving
+          # the default 30-min budget completely consumed by setup with no
+          # room for the actual TC-SBX cases. The job-level timeout (60 min,
+          # set in `timeout-minutes` above) is the real upper bound.
+          NEMOCLAW_E2E_TIMEOUT_SECONDS: "2700"
         run: bash test/e2e/test-sandbox-operations.sh
 
       - name: Stop gateway log streamer
