@@ -31,11 +31,16 @@ const {
 } = require("./lib/runner");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
+  fetchGatewayAuthTokenFromSandbox,
   startGatewayForRecovery,
   pruneKnownHostsEntries,
   ensureOllamaAuthProxy,
   isNonInteractive,
 } = require("./lib/onboard");
+const {
+  parseGatewayTokenArgs,
+  runGatewayTokenCommand,
+} = require("./lib/gateway-token-command");
 const {
   getCredential,
   deleteCredential,
@@ -3694,6 +3699,25 @@ const [cmd, ...args] = process.argv.slice(2);
       case "destroy":
         await sandboxDestroy(cmd, actionArgs);
         break;
+      case "gateway-token": {
+        const { options: gatewayTokenOpts, unknown: gatewayTokenUnknown } =
+          parseGatewayTokenArgs(actionArgs);
+        if (gatewayTokenUnknown.length > 0) {
+          console.error(`  Unknown flag: ${gatewayTokenUnknown[0]}`);
+          console.error("  Usage: nemoclaw <name> gateway-token [--quiet|-q]");
+          process.exit(1);
+        }
+        // Suppress EPIPE traces when the consumer closes the pipe early
+        // (e.g. `... | head -c 0`). The token has already been written.
+        process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+          if (err.code === "EPIPE") process.exit(0);
+        });
+        const exitCode = runGatewayTokenCommand(cmd, gatewayTokenOpts, {
+          fetchToken: fetchGatewayAuthTokenFromSandbox,
+        });
+        if (exitCode !== 0) process.exit(exitCode);
+        break;
+      }
       case "skill":
         await sandboxSkillInstall(cmd, actionArgs);
         break;
@@ -3806,17 +3830,24 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "set": {
-            const setOpts: { key: string | null; value: string | null; restart: boolean } = {
+            const setOpts: {
+              key: string | null;
+              value: string | null;
+              restart: boolean;
+              acceptNewPath: boolean;
+            } = {
               key: null,
               value: null,
               restart: false,
+              acceptNewPath: false,
             };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") setOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--value") setOpts.value = actionArgs[++i];
               else if (actionArgs[i] === "--restart") setOpts.restart = true;
+              else if (actionArgs[i] === "--config-accept-new-path") setOpts.acceptNewPath = true;
             }
-            sandboxConfig.configSet(cmd, setOpts);
+            await sandboxConfig.configSet(cmd, setOpts);
             break;
           }
           case "rotate-token": {
@@ -3834,7 +3865,9 @@ const [cmd, ...args] = process.argv.slice(2);
           default:
             console.error("  Usage: nemoclaw <name> config <get|set|rotate-token>");
             console.error("    get           [--key dotpath] [--format json|yaml]");
-            console.error("    set           --key <dotpath> --value <value> [--restart]");
+            console.error(
+              "    set           --key <dotpath> --value <value> [--restart] [--config-accept-new-path]",
+            );
             console.error("    rotate-token  [--from-env <VAR>] [--from-stdin]");
             process.exit(1);
         }
@@ -3843,7 +3876,7 @@ const [cmd, ...args] = process.argv.slice(2);
       default:
         console.error(`  Unknown action: ${action}`);
         console.error(
-          `  Valid actions: connect, status, logs, policy-add, policy-remove, policy-list, skill, snapshot, rebuild, shields, config, channels, destroy`,
+          `  Valid actions: connect, status, logs, policy-add, policy-remove, policy-list, skill, snapshot, rebuild, shields, config, channels, gateway-token, destroy`,
         );
         process.exit(1);
     }

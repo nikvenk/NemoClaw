@@ -225,15 +225,23 @@ describe("nemoclaw-start runtime gateway token injection (#2480)", () => {
       "..",
       "Dockerfile",
     );
-    const dockerfile = fs.readFileSync(dockerfilePath, "utf-8");
-    expect(dockerfile).toContain("'auth': {'token': ''}");
-    // secrets.token_hex should not be used in the config generation RUN
-    // (it may still appear in comments or the token-clearing RUN)
-    const configRun = dockerfile.match(
-      /RUN.*python3 -c.*import base64.*json\.dump/s,
+    const configScriptPath = path.join(
+      path.dirname(START_SCRIPT),
+      "generate-openclaw-config.py",
     );
-    expect(configRun).toBeTruthy();
-    expect(configRun[0]).not.toContain("secrets.token_hex");
+    const dockerfile = fs.readFileSync(dockerfilePath, "utf-8");
+    const configScript = fs.readFileSync(configScriptPath, "utf-8");
+    // Config generation lives in the extracted Python script — it must
+    // emit an empty token (the runtime entrypoint injects the real one).
+    expect(configScript).toMatch(/["']auth["']: \{["']token["']: ["']{2}\}/);
+    expect(configScript).not.toContain("secrets.token_hex");
+    // Dockerfile must invoke that script and must not bake in a real token.
+    expect(dockerfile).toMatch(
+      /RUN[^\n]*python3 \/usr\/local\/lib\/nemoclaw\/generate-openclaw-config\.py/,
+    );
+    expect(dockerfile).not.toMatch(
+      /token['"]\] = secrets\.token_hex/,
+    );
   });
 });
 
