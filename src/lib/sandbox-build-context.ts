@@ -58,17 +58,22 @@ function stageOptimizedSandboxBuildContext(rootDir, tmpDir = os.tmpdir()) {
     recursive: true,
   });
 
-  fs.mkdirSync(stagedScriptsDir, { recursive: true });
-  fs.copyFileSync(
-    path.join(rootDir, "scripts", "nemoclaw-start.sh"),
-    path.join(stagedScriptsDir, "nemoclaw-start.sh"),
-  );
-  // Shared sandbox initialisation library sourced by the entrypoint (#2277)
-  fs.mkdirSync(path.join(stagedScriptsDir, "lib"), { recursive: true });
-  fs.copyFileSync(
-    path.join(rootDir, "scripts", "lib", "sandbox-init.sh"),
-    path.join(stagedScriptsDir, "lib", "sandbox-init.sh"),
-  );
+  // Derive the scripts to stage directly from the Dockerfile so this function
+  // never drifts out of sync with it.  Every `COPY scripts/<src> <dest>` line
+  // (excluding multi-stage `--from=` copies) is extracted and the source path
+  // is copied into the build context at the same relative location.
+  const dockerfileContent = fs.readFileSync(stagedDockerfile, "utf8");
+  const copyPattern = /^COPY(?:\s+--\w+[^\s]*)*\s+(scripts\/\S+)\s+\S/gm;
+  let match;
+  while ((match = copyPattern.exec(dockerfileContent)) !== null) {
+    // Skip --from=<stage> copies — those are inter-stage, not host → context.
+    if (/--from=/i.test(match[0])) continue;
+    const relSrc = match[1]; // e.g. "scripts/nemoclaw-start.sh"
+    const srcPath = path.join(rootDir, relSrc);
+    const destPath = path.join(buildCtx, relSrc);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(srcPath, destPath);
+  }
 
   return { buildCtx, stagedDockerfile };
 }

@@ -14,6 +14,36 @@ import {
 } from "../dist/lib/sandbox-build-context";
 
 describe("sandbox build context staging", () => {
+  it("staged build context includes every file referenced by COPY scripts/ in the Dockerfile", () => {
+    const repoRoot = path.join(import.meta.dirname, "..");
+    const dockerfilePath = path.join(repoRoot, "Dockerfile");
+    const dockerfileContent = fs.readFileSync(dockerfilePath, "utf8");
+
+    // Extract source paths from every "COPY scripts/<path>" line in the Dockerfile.
+    // Skips multi-source COPY forms (multiple sources before dest) for simplicity.
+    const copyPattern = /^COPY\s+(scripts\/\S+)\s+\S/gm;
+    const scriptSources: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = copyPattern.exec(dockerfileContent)) !== null) {
+      scriptSources.push(match[1]);
+    }
+
+    expect(scriptSources.length, "expected at least one COPY scripts/ line in Dockerfile").toBeGreaterThan(0);
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-build-context-scripts-"));
+    try {
+      const { buildCtx } = stageOptimizedSandboxBuildContext(repoRoot, tmpDir);
+      for (const src of scriptSources) {
+        expect(
+          fs.existsSync(path.join(buildCtx, src)),
+          `"${src}" is referenced by a COPY in the Dockerfile but is missing from the staged build context — update stageOptimizedSandboxBuildContext in src/lib/sandbox-build-context.ts`,
+        ).toBe(true);
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("optimized staging excludes blueprint .venv and extra scripts while preserving required files", () => {
     const repoRoot = path.join(import.meta.dirname, "..");
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-build-context-opt-"));
