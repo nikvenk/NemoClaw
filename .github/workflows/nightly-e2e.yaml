@@ -279,16 +279,17 @@ jobs:
                 ssh_cfg="/tmp/sshcfg-${name}.tmp"
                 if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
                    && [ -s "$ssh_cfg" ]; then
-                  # tail -F follows /tmp/gateway.log from the start. grep -v
-                  # filters the ciao mDNS noise so the file stays manageable.
-                  # No `head -c` cap: it blocks waiting for N bytes that may
-                  # never arrive (most lines are mDNS that grep drops), and
-                  # the streamer is killed when the job ends anyway.
+                  # tail -F follows BOTH /tmp/gateway.log (gateway stdout/stderr
+                  # capture from nemoclaw-start.sh) AND the openclaw structured
+                  # log /tmp/openclaw-*/openclaw-*.log. The structured log
+                  # captures detailed event tracing (agent calls, plugin
+                  # registrations, etc.) that the stdout capture misses.
+                  # grep -v filters ciao mDNS noise so the file stays useful.
                   nohup ssh -F "$ssh_cfg" \
                        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                        -o ConnectTimeout=10 -o LogLevel=ERROR -o ServerAliveInterval=30 \
                        "openshell-${name}" \
-                       "tail -n +1 -F /tmp/gateway.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
+                       "tail -n +1 -F /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
                     > "docker-logs/sandbox-${name}.log" 2>&1 &
                   streamer_pids[$name]=$!
                 fi
