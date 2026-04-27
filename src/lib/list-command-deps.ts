@@ -31,7 +31,11 @@ export function buildListCommandDeps(): ListSandboxesCommandDeps {
   let cachedSshOutput: string | null | undefined;
   const getCachedSshOutput = () => {
     if (cachedSshOutput === undefined && sessionDeps) {
-      cachedSshOutput = sessionDeps.getSshProcesses();
+      try {
+        cachedSshOutput = sessionDeps.getSshProcesses();
+      } catch {
+        cachedSshOutput = null;
+      }
     }
     return cachedSshOutput ?? null;
   };

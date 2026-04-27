@@ -24,11 +24,13 @@ export default class ListCommand extends Command {
 
   public async run(): Promise<unknown> {
     await this.parse(ListCommand);
-    const inventory = await getSandboxInventory(buildListCommandDeps());
+    const deps = buildListCommandDeps();
+    const inventory = await getSandboxInventory(deps);
     if (this.jsonEnabled()) {
       return inventory;
     }
 
-    renderSandboxInventoryText(inventory, this.log.bind(this));
+    const liveInference = inventory.sandboxes.length > 0 ? deps.getLiveInference() : null;
+    renderSandboxInventoryText(inventory, this.log.bind(this), liveInference);
   }
 }

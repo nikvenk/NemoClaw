@@ -102,10 +102,6 @@ export async function getSandboxInventory(
   const defaultSandbox = recovery.defaultSandbox || null;
   const lastSession = deps.loadLastSession();
 
-  if (recovery.sandboxes.length > 0) {
-    deps.getLiveInference();
-  }
-
   return {
     schemaVersion: 1,
     defaultSandbox,
@@ -120,9 +116,21 @@ export async function getSandboxInventory(
   };
 }
 
+/**
+ * Render the `nemoclaw list` output. For the default sandbox (the one the
+ * cluster-wide gateway is currently serving) the live gateway `model`/
+ * `provider` take precedence over the onboarded snapshot so the CLI agrees
+ * with `openshell inference get` (#2369); when they drift from stored values
+ * a `(onboarded: …)` line is appended. Non-default sandboxes keep their
+ * stored config — the gateway only applies to one sandbox at a time, and
+ * each non-default sandbox swaps the gateway back to its stored config on
+ * its next `connect`. Falls back to stored values when `liveInference`
+ * is `null` (gateway unreachable).
+ */
 export function renderSandboxInventoryText(
   inventory: SandboxInventoryResult,
   log: (message?: string) => void = console.log,
+  liveInference: GatewayInference | null = null,
 ): void {
   if (inventory.sandboxes.length === 0) {
     log("");
@@ -154,14 +162,24 @@ export function renderSandboxInventoryText(
   }
   log("  Sandboxes:");
   for (const sandbox of inventory.sandboxes) {
+    const useLive = sandbox.isDefault && liveInference;
     const def = sandbox.isDefault ? " *" : "";
-    const model = sandbox.model || "unknown";
-    const provider = sandbox.provider || "unknown";
+    const model = (useLive && liveInference.model) || sandbox.model || "unknown";
+    const provider = (useLive && liveInference.provider) || sandbox.provider || "unknown";
+    const modelDrifted = !!(useLive && liveInference.model && liveInference.model !== sandbox.model);
+    const providerDrifted =
+      !!(useLive && liveInference.provider && liveInference.provider !== sandbox.provider);
     const gpu = sandbox.gpuEnabled ? "GPU" : "CPU";
     const presets = sandbox.policies.length > 0 ? sandbox.policies.join(", ") : "none";
     const connected = sandbox.connected ? " ●" : "";
     log(`    ${sandbox.name}${def}${connected}`);
     log(`      model: ${model}  provider: ${provider}  ${gpu}  policies: ${presets}`);
+    if (modelDrifted || providerDrifted) {
+      const parts: string[] = [];
+      if (modelDrifted) parts.push(`model=${sandbox.model || "unknown"}`);
+      if (providerDrifted) parts.push(`provider=${sandbox.provider || "unknown"}`);
+      log(`      (onboarded: ${parts.join(", ")})`);
+    }
   }
   log("");
   log("  * = default sandbox");
@@ -171,21 +189,36 @@ export function renderSandboxInventoryText(
 export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Promise<void> {
   const log = deps.log ?? console.log;
   const inventory = await getSandboxInventory(deps);
-  renderSandboxInventoryText(inventory, log);
+  const liveInference = inventory.sandboxes.length > 0 ? deps.getLiveInference() : null;
+  renderSandboxInventoryText(inventory, log, liveInference);
 }
 
+/**
+ * Render the `nemoclaw status` output (no sandbox name): a compact per-row
+ * listing followed by gateway/service status and messaging-bridge warnings.
+ * For the default sandbox the per-row `(model)` prefers the live gateway
+ * model so it agrees with `openshell inference get` (#2369); when it drifts
+ * from the stored onboarded model a `(onboarded: …)` line is appended.
+ * Non-default rows and the unreachable-gateway case fall back to stored.
+ */
 export function showStatusCommand(deps: ShowStatusCommandDeps): void {
   const log = deps.log ?? console.log;
   const { sandboxes, defaultSandbox } = deps.listSandboxes();
   if (sandboxes.length > 0) {
-    deps.getLiveInference();
+    const live = deps.getLiveInference();
     log("");
     log("  Sandboxes:");
     for (const sb of sandboxes) {
       const isDefault = sb.name === defaultSandbox;
       const def = isDefault ? " *" : "";
-      const model = sb.model;
+      // Prefer the live gateway model for the default sandbox so `status`
+      // agrees with `openshell inference get` (#2369).
+      const liveModel = isDefault && live ? live.model : null;
+      const model = liveModel || sb.model;
       log(`    ${sb.name}${def}${model ? ` (${model})` : ""}`);
+      if (isDefault && liveModel && liveModel !== sb.model) {
+        log(`      (onboarded: ${sb.model || "unknown"})`);
+      }
     }
     log("");
   }
