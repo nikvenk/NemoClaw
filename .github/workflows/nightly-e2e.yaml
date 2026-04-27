@@ -335,6 +335,14 @@ jobs:
           echo "=== final-snapshot: PATH=$PATH"
           echo "=== final-snapshot: nemoclaw=$(command -v nemoclaw)"
           echo "=== final-snapshot: openshell=$(command -v openshell)"
+          # TC-SBX-06's docker kill of the gateway pod can leave openshell
+          # without an active gateway selected; re-select before the snapshot
+          # so `nemoclaw <name> logs` and direct `openshell sandbox exec` both
+          # have a target. The select is best-effort — failure (e.g., gateway
+          # not yet recovered) just means we fall through to ssh-config-based
+          # capture below.
+          openshell gateway select nemoclaw 2>&1 | head -5 || true
+          openshell gateway list 2>&1 | head -10 || true
           if [ -f "$HOME/.nemoclaw/sandboxes.json" ]; then
             echo "=== final-snapshot: sandboxes.json contents:"
             cat "$HOME/.nemoclaw/sandboxes.json" 2>&1 | head -30
@@ -345,12 +353,29 @@ jobs:
               echo "=== final-snapshot: capturing logs for '$name'"
               {
                 printf '\n\n===== FINAL SNAPSHOT: %s =====\n' "$name"
-                # nemoclaw <name> logs handles SSH internally. Use --max-lines 5000
-                # to bound output. Drops connection-refused noise.
+                # Try nemoclaw logs first (uses openshell's active gateway).
+                # If that fails (e.g., no active gateway after TC-SBX-06),
+                # fall back to direct ssh via the per-sandbox config that
+                # the test itself uses successfully.
                 if command -v nemoclaw >/dev/null 2>&1; then
-                  # `nemoclaw <name> logs` is what TC-SBX-04 uses successfully.
-                  # No --follow so it returns once log file end is reached.
-                  nemoclaw "$name" logs 2>&1 | tail -c 500000 || echo "(nemoclaw logs failed for $name)"
+                  if ! nemoclaw "$name" logs 2>&1 | tail -c 500000; then
+                    echo "(nemoclaw logs failed; falling back to direct ssh)"
+                    ssh_cfg="/tmp/sshcfg-final-${name}.tmp"
+                    if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>&1 && [ -s "$ssh_cfg" ]; then
+                      ssh -F "$ssh_cfg" \
+                          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                          -o ConnectTimeout=10 -o LogLevel=ERROR \
+                          "openshell-${name}" \
+                          'for f in /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
+                             [ -f "$f" ] || continue
+                             printf "\n----- %s -----\n" "$f"
+                             cat -- "$f" 2>/dev/null || true
+                           done' 2>&1 | tail -c 500000 || echo "(direct ssh failed)"
+                    else
+                      echo "(openshell sandbox ssh-config failed for $name)"
+                    fi
+                    rm -f "$ssh_cfg"
+                  fi
                 else
                   echo "(nemoclaw not on PATH — install dir missing)"
                 fi
