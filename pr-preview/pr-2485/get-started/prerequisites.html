@@ -553,6 +553,13 @@
 For NemoClaw-managed environments, use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> when you need to create or recreate the OpenShell gateway or sandbox.
 Avoid <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">self-update</span></code>, <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">update</span> <span class="pre">-g</span> <span class="pre">openshell</span></code>, <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">gateway</span> <span class="pre">start</span> <span class="pre">--recreate</span></code>, or <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">create</span></code> directly unless you intend to manage OpenShell separately and then rerun <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Docker storage driver
+On Linux hosts running Docker 26 or later with the <a class="reference external" href="https://docs.docker.com/engine/storage/containerd/" rel="noreferer noopener" target="_blank">containerd image store</a> enabled (the install-time default for fresh <code class="docutils literal notranslate"><span class="pre">docker-ce</span></code> installations on Ubuntu 24.04 and similar distros), <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> transparently builds a <code class="docutils literal notranslate"><span class="pre">fuse-overlayfs</span></code>-enabled cluster image to bypass a kernel-level nested-overlay limitation in k3s.
+No manual setup is required.
+See the <a class="reference internal" href="../reference/troubleshooting.html"><span class="std std-doc">troubleshooting guide</span></a> for the override knobs and a manual <code class="docutils literal notranslate"><span class="pre">daemon.json</span></code> alternative.</p>
+</div>
 </section>
 <section id="platforms">
 <h2>Platforms<a class="headerlink" href="#platforms" title="Link to this heading">#</a></h2>

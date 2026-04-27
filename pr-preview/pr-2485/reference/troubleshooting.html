@@ -667,6 +667,43 @@ Current OpenShell releases handle that behavior themselves, so NemoClaw no longe
 <p>Podman is not a tested runtime.
 If onboarding or sandbox lifecycle fails, switch to a tested runtime (Docker Desktop, Colima, or Docker Engine) and rerun onboarding.</p>
 </section>
+<section id="cluster-fails-with-overlayfs-snapshotter-cannot-be-enabled-on-docker-26">
+<h3>Cluster fails with <code class="docutils literal notranslate"><span class="pre">overlayfs</span> <span class="pre">snapshotter</span> <span class="pre">cannot</span> <span class="pre">be</span> <span class="pre">enabled</span></code> on Docker 26+<a class="headerlink" href="#cluster-fails-with-overlayfs-snapshotter-cannot-be-enabled-on-docker-26" title="Link to this heading">#</a></h3>
+<p>Docker Engine 26 and later default fresh installations to the <a class="reference external" href="https://docs.docker.com/engine/storage/containerd/" rel="noreferer noopener" target="_blank">containerd image store</a>, which exposes its layers via the <code class="docutils literal notranslate"><span class="pre">overlayfs</span></code> snapshotter rather than the legacy <code class="docutils literal notranslate"><span class="pre">overlay2</span></code> graph driver.
+The k3s server inside the OpenShell cluster image needs to mount its own overlay filesystem on top, and the kernel rejects nesting two non-trivial overlay mounts.
+The cluster container then loops with:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&quot;overlayfs&quot; snapshotter cannot be enabled for &quot;/var/lib/rancher/k3s/agent/containerd&quot;,
+try using &quot;fuse-overlayfs&quot; or &quot;native&quot;:
+failed to mount overlay: ... err: invalid argument
+</pre></div>
+</div>
+<p>This is a Docker default-driver change, not a NemoClaw or OpenShell regression.
+The same hardware running Docker 25 or earlier — or any Docker version with the containerd image store disabled — uses the legacy <code class="docutils literal notranslate"><span class="pre">overlay2</span></code> driver and is unaffected.</p>
+<p>NemoClaw detects the Docker 26+ containerd-snapshotter overlayfs configuration during onboarding and transparently builds a small drop-in replacement for the cluster image on the local Docker engine.
+The patched image installs <code class="docutils literal notranslate"><span class="pre">fuse-overlayfs</span></code> and selects it as the k3s snapshotter, bypassing the kernel-level nested-overlay limitation.
+No host configuration changes, sudo, or Docker restart required.</p>
+<p>The auto-fix runs once per OpenShell version on the affected host.
+Subsequent onboarding runs reuse the cached patched image.
+Hosts without the conflict (<code class="docutils literal notranslate"><span class="pre">Driver:</span> <span class="pre">overlay2</span></code> in <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">info</span></code>, macOS Docker Desktop, or Linux installations that disable the containerd image store) see no change in behavior.</p>
+<p>Override knobs:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_OVERLAY_FIX=1</span></code> — skip the auto-fix and run against the unmodified upstream cluster image.
+Useful for diagnosis or when you have already applied the manual workaround below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_OVERLAY_SNAPSHOTTER=native</span></code> — build the patched image with k3s’s <code class="docutils literal notranslate"><span class="pre">native</span></code> snapshotter instead of <code class="docutils literal notranslate"><span class="pre">fuse-overlayfs</span></code>.
+The <code class="docutils literal notranslate"><span class="pre">native</span></code> snapshotter copies image layers instead of overlaying them, so it uses more disk but does not depend on FUSE.
+Default is <code class="docutils literal notranslate"><span class="pre">fuse-overlayfs</span></code>.</p></li>
+</ul>
+<p>If you prefer to disable the new Docker storage driver instead of running the patched image, edit <code class="docutils literal notranslate"><span class="pre">/etc/docker/daemon.json</span></code>:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;storage-driver&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;overlay2&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;features&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;containerd-snapshotter&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Then restart Docker (<code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">docker</span></code>) and re-run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.
+This restores the legacy <code class="docutils literal notranslate"><span class="pre">overlay2</span></code> driver host-wide, which kills any other running containers — prefer the auto-fix unless you need the change for unrelated reasons.
+Switching storage drivers also rebuilds the entire local image graph: previously-pulled images become unusable and Docker re-pulls them on first reference, so expect a cold cache and additional disk usage right after the restart.</p>
+</section>
 <section id="openshell-version-above-maximum">
 <h3>OpenShell version above maximum<a class="headerlink" href="#openshell-version-above-maximum" title="Link to this heading">#</a></h3>
 <p>Each NemoClaw release validates against a range of tested OpenShell versions.
@@ -928,6 +965,16 @@ NemoClaw’s sandbox entrypoint installs a guard that intercepts <code class="do
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">add</span></code> stores credentials under <code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/credentials.json</span></code> and <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">remove</span></code> clears them; both offer to rebuild the sandbox so the image reflects the new channel set.
 In non-interactive mode (<code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>), the commands stage the change and leave the rebuild to a follow-up <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">rebuild</span></code>.</p>
+</section>
+<section id="nemoclaw-sandbox-config-set-refuses-a-key-that-does-not-currently-exist">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">config</span> <span class="pre">set</span></code> refuses a key that does not currently exist<a class="headerlink" href="#nemoclaw-sandbox-config-set-refuses-a-key-that-does-not-currently-exist" title="Link to this heading">#</a></h3>
+<p>This is intentional.
+The host-side <code class="docutils literal notranslate"><span class="pre">config</span> <span class="pre">set</span></code> does not maintain a copy of OpenClaw’s config schema, so it cannot tell a typo’d key path apart from a schema-valid path that has not been written yet.
+To make typos visible without blocking documented first-time writes (such as <code class="docutils literal notranslate"><span class="pre">provider.compatible-endpoint.timeoutSeconds</span></code>), it asks before creating a brand-new key.</p>
+<p>In an interactive terminal, accept the prompt to proceed.</p>
+<p>In non-interactive mode (CI or <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_NON_INTERACTIVE=1</span></code>), pass <code class="docutils literal notranslate"><span class="pre">--config-accept-new-path</span></code> or set <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_CONFIG_ACCEPT_NEW_PATH=1</span></code>.
+Modifying a key that already exists in the config never triggers this gate.</p>
+<p>Numeric path segments are also refused because <code class="docutils literal notranslate"><span class="pre">config</span> <span class="pre">set</span></code> only writes plain objects and would silently overwrite array elements; replace the array as a whole with <code class="docutils literal notranslate"><span class="pre">--value</span> <span class="pre">'[...]'</span></code> instead.</p>
 </section>
 <section id="openclaw-config-set-or-unset-is-blocked-inside-the-sandbox">
 <h3><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">config</span> <span class="pre">set</span></code> or <code class="docutils literal notranslate"><span class="pre">unset</span></code> is blocked inside the sandbox<a class="headerlink" href="#openclaw-config-set-or-unset-is-blocked-inside-the-sandbox" title="Link to this heading">#</a></h3>
@@ -1252,6 +1299,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#onboarding">Onboarding</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cgroup-v2-errors-during-onboard">Cgroup v2 errors during onboard</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cluster-fails-with-overlayfs-snapshotter-cannot-be-enabled-on-docker-26">Cluster fails with <code class="docutils literal notranslate"><span class="pre">overlayfs</span> <span class="pre">snapshotter</span> <span class="pre">cannot</span> <span class="pre">be</span> <span class="pre">enabled</span></code> on Docker 26+</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openshell-version-above-maximum">OpenShell version above maximum</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#invalid-sandbox-name">Invalid sandbox name</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-creation-fails-on-dgx">Sandbox creation fails on DGX</a></li>
@@ -1272,6 +1320,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-fails-at-runtime-after-onboarding-succeeds-with-a-compatible-endpoint">Agent fails at runtime after onboarding succeeds with a compatible endpoint</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-disable-device-auth-1-does-not-change-an-existing-sandbox"><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DISABLE_DEVICE_AUTH=1</span></code> does not change an existing sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-channels-add-or-remove-is-blocked-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">channels</span> <span class="pre">add</span></code> or <code class="docutils literal notranslate"><span class="pre">remove</span></code> is blocked inside the sandbox</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-sandbox-config-set-refuses-a-key-that-does-not-currently-exist"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">config</span> <span class="pre">set</span></code> refuses a key that does not currently exist</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-config-set-or-unset-is-blocked-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">config</span> <span class="pre">set</span></code> or <code class="docutils literal notranslate"><span class="pre">unset</span></code> is blocked inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-doctor-fix-cannot-repair-discord-channel-config-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> cannot repair Discord channel config inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#discord-bot-logs-in-but-the-channel-still-does-not-work">Discord bot logs in, but the channel still does not work</a></li>

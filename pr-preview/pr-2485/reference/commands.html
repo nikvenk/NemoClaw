@@ -758,6 +758,24 @@ Use <code class="docutils literal notranslate"><span class="pre">--follow</span>
 </pre></div>
 </div>
 </section>
+<section id="nemoclaw-name-gateway-token">
+<h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">gateway-token</span></code><a class="headerlink" href="#nemoclaw-name-gateway-token" title="Link to this heading">#</a></h3>
+<p>Print the OpenClaw gateway auth token for a running sandbox to stdout.
+The token is required by <code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">tui</span></code> and the OpenClaw dashboard URL, but onboarding only prints it once.
+Pipe it into automation or capture it into an environment variable:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nv">TOKEN</span><span class="o">=</span><span class="k">$(</span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>gateway-token<span class="w"> </span>--quiet<span class="k">)</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">OPENCLAW_GATEWAY_TOKEN</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$TOKEN</span><span class="s2">&quot;</span>
+</pre></div>
+</div>
+<p>The token is written to stdout with no surrounding text.
+A one-line security warning is written to stderr; pass <code class="docutils literal notranslate"><span class="pre">--quiet</span></code> (or <code class="docutils literal notranslate"><span class="pre">-q</span></code>) to suppress it.
+The command exits non-zero with a diagnostic on stderr when the sandbox is not registered or when the token cannot be retrieved (for example, if the sandbox is not running).</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Treat the gateway token like a password.
+Do not log it, share it, or commit it to version control.</p>
+</div>
+</section>
 <section id="nemoclaw-name-destroy">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">destroy</span></code><a class="headerlink" href="#nemoclaw-name-destroy" title="Link to this heading">#</a></h3>
 <p>Stop the NIM container, remove the host-side Docker image built during onboard, and delete the sandbox.
@@ -1439,6 +1457,7 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-connect"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-status"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">status</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-logs"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">logs</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-gateway-token"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">gateway-token</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-destroy"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">destroy</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-policy-add"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-add</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#nemoclaw-name-policy-list"><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-list</span></code></a></li>
