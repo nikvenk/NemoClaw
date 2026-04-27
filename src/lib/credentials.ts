@@ -88,7 +88,8 @@ export function saveCredential(key: string, value: CredentialInput): void {
 }
 
 export function getCredential(key: string): string | null {
-  if (process.env[key]) return normalizeCredentialValue(process.env[key]);
+  const envValue = normalizeCredentialValue(process.env[key]);
+  if (envValue) return envValue;
   const creds = loadCredentials();
   const value = normalizeCredentialValue(creds[key]);
   return value || null;

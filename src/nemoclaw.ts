@@ -2637,34 +2637,44 @@ async function sandboxRebuild(
   console.log("  Creating new sandbox with current image...");
 
   const recreateSession = onboardSession.loadSession();
+  const sessionMatchesSandbox = recreateSession?.sandboxName === sandboxName;
   const rebuildAgent = sb.agent || null;
-  const storedFromDockerfile = recreateSession?.metadata?.fromDockerfile || null;
+  const storedFromDockerfile = sessionMatchesSandbox
+    ? recreateSession?.metadata?.fromDockerfile || null
+    : null;
 
   // Sync the session's agent field with the registry so subsequent
   // operations (onboard --resume fallback, status checks) see the
   // correct agent type.  Without this, a stale session.agent from a
   // *different* sandbox would persist.  (#2201)
+  // Always update the agent — onboard --resume needs this even when
+  // the session was left by a different sandbox.  But only READ config
+  // (provider, model, etc.) from the session when it matches this sandbox.
   onboardSession.updateSession((s: Session) => {
     s.agent = rebuildAgent;
     return s;
   });
   log(
-    `Calling recreateSandbox({ sandboxName: ${sandboxName}, provider: ${recreateSession?.provider}, model: ${recreateSession?.model}, agent: ${rebuildAgent} })`,
+    `Calling recreateSandbox({ sandboxName: ${sandboxName}, provider: ${sessionMatchesSandbox ? recreateSession?.provider : sb.provider}, model: ${sessionMatchesSandbox ? recreateSession?.model : sb.model}, agent: ${rebuildAgent}, sessionMatch: ${sessionMatchesSandbox} })`,
   );
 
   const { recreateSandbox, RecreateError } = require("./lib/sandbox-recreate");
   try {
     await recreateSandbox({
       sandboxName,
-      provider: recreateSession?.provider || "nvidia-prod",
-      model: recreateSession?.model || "nvidia/nemotron-3-super-120b-a12b",
+      provider: sessionMatchesSandbox
+        ? recreateSession?.provider || sb.provider || "nvidia-prod"
+        : sb.provider || "nvidia-prod",
+      model: sessionMatchesSandbox
+        ? recreateSession?.model || sb.model || "nvidia/nemotron-3-super-120b-a12b"
+        : sb.model || "nvidia/nemotron-3-super-120b-a12b",
       credentialEnv: rebuildCredentialEnv,
-      endpointUrl: recreateSession?.endpointUrl || null,
-      preferredInferenceApi: recreateSession?.preferredInferenceApi || null,
+      endpointUrl: sessionMatchesSandbox ? recreateSession?.endpointUrl || null : null,
+      preferredInferenceApi: sessionMatchesSandbox ? recreateSession?.preferredInferenceApi || null : null,
       agent: rebuildAgent,
       fromDockerfile: storedFromDockerfile,
-      webSearchConfig: recreateSession?.webSearchConfig || null,
-      messagingChannels: recreateSession?.messagingChannels || [],
+      webSearchConfig: sessionMatchesSandbox ? recreateSession?.webSearchConfig || null : null,
+      messagingChannels: sessionMatchesSandbox ? recreateSession?.messagingChannels || [] : [],
       policyPresets: backup.manifest.policyPresets || [],
       dangerouslySkipPermissions: sb.dangerouslySkipPermissions || false,
     });

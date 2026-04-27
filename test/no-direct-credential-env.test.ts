@@ -14,9 +14,11 @@
 import { describe, expect, it } from "vitest";
 import { RuleTester } from "eslint";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-// Import the rule
-const rule = require(path.join(import.meta.dirname, "..", "eslint-rules", "no-direct-credential-env.js"));
+// Import the CJS rule via dynamic import
+const rulePath = path.join(import.meta.dirname, "..", "eslint-rules", "no-direct-credential-env.js");
+const rule = (await import(pathToFileURL(rulePath).href)).default;
 
 const ruleTester = new RuleTester({
   languageOptions: {
@@ -49,6 +51,9 @@ describe("ESLint rule: nemoclaw/no-direct-credential-env", () => {
         // Correct patterns — allowed
         { code: 'const key = getCredential("NVIDIA_API_KEY");' },
         { code: 'const key = resolveProviderCredential("NVIDIA_API_KEY");' },
+
+        // Bracketed string-literal assignments — allowed
+        { code: 'process.env["NVIDIA_API_KEY"] = "test";' },
 
         // Dynamic access with non-credential variable name — allowed
         { code: "const x = process.env[someKey];" },
@@ -85,6 +90,16 @@ describe("ESLint rule: nemoclaw/no-direct-credential-env", () => {
         // Conditional check (read context)
         {
           code: "if (!process.env.NVIDIA_API_KEY) {}",
+          errors: [{ messageId: "noDirectCredentialEnv" }],
+        },
+
+        // Bracketed string-literal reads
+        {
+          code: 'const key = process.env["NVIDIA_API_KEY"];',
+          errors: [{ messageId: "noDirectCredentialEnv" }],
+        },
+        {
+          code: 'if (!process.env["OPENAI_API_KEY"]) {}',
           errors: [{ messageId: "noDirectCredentialEnv" }],
         },
 

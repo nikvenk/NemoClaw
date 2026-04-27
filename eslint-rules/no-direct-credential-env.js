@@ -56,6 +56,17 @@ module.exports = {
           return;
         }
 
+        // Static computed access: process.env["NVIDIA_API_KEY"]
+        if (node.computed && node.property.type === "Literal") {
+          if (
+            typeof node.property.value === "string" &&
+            CREDENTIAL_ENV_KEYS.has(node.property.value)
+          ) {
+            context.report({ node, messageId: "noDirectCredentialEnv" });
+          }
+          return;
+        }
+
         // Dynamic access: process.env[credentialEnv]
         if (node.computed && node.property.type === "Identifier") {
           if (/credential/i.test(node.property.name)) {
