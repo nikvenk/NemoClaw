@@ -64,6 +64,7 @@ fail() {
   ((TOTAL++))
   printf '\033[31m  FAIL: %s\033[0m\n' "$1"
 }
+# shellcheck disable=SC2329
 skip() {
   ((SKIP++))
   ((TOTAL++))
