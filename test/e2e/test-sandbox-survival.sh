@@ -715,62 +715,25 @@ if [ "$FAIL" -eq 0 ]; then
   printf '\n\033[1;32m  Sandbox survival PASSED — all state persisted, live inference verified before AND after gateway restart.\033[0m\n'
   printf '\033[1;32m  Issues validated: #486, #888, #859, #1086\033[0m\n'
 
-  # ── DIAGNOSTIC: capture process state right before exit 0 ──────────────────
-  # Investigates why bash hangs ~1-2 minutes after this point on PR #2454 CI.
-  # v2: save the ORIGINAL stdout/stderr to fds 9/8 before the redirect, so the
-  # diag can inspect what was actually on fd 1/2 before this group hijacked
-  # them. v1 saw fd 1 = the diag file (its own redirection) — useless.
-  DIAG_FILE=/tmp/nemoclaw-e2e-install.log
-  exec 9>&1 8>&2
-  ORIG_STDOUT_TGT=$(readlink "/proc/$$/fd/9" 2>/dev/null)
-  ORIG_STDERR_TGT=$(readlink "/proc/$$/fd/8" 2>/dev/null)
-  {
-    printf '\n=== EXIT-DIAG v2 bash_pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
-    printf 'ORIG_STDOUT_TGT=%s\n' "$ORIG_STDOUT_TGT"
-    printf 'ORIG_STDERR_TGT=%s\n' "$ORIG_STDERR_TGT"
-    printf -- '--- /proc/%s/fd (note: 1/2 are diag-redirected, 9/8 are saved orig) ---\n' "$$"
-    ls -la "/proc/$$/fd" 2>&1 || true
-    printf -- '--- lsof for bash %s ---\n' "$$"
-    lsof -p "$$" 2>&1 | head -200 || true
-    printf -- '--- full ps -ef ---\n'
-    ps -ef 2>&1 || true
-    printf -- '--- pstree of session ---\n'
-    pstree -p -s "$$" 2>&1 || true
-    # Find every process holding the same pipe inode as bash's ORIGINAL stdout
-    # and stderr. Anyone other than bash + timeout is what keeps the runner's
-    # pipe alive after bash tries to exit.
-    for label in stdout:$ORIG_STDOUT_TGT stderr:$ORIG_STDERR_TGT; do
-      tgt=${label#*:}
-      name=${label%%:*}
-      printf -- '--- consumers of bash %s (%s) ---\n' "$name" "$tgt"
-      case "$tgt" in
-        pipe:\[*\])
-          for pid_dir in /proc/[0-9]*; do
-            pid=${pid_dir##*/}
-            [ -d "$pid_dir/fd" ] || continue
-            for fd in "$pid_dir/fd"/*; do
-              [ -L "$fd" ] || continue
-              ftgt=$(readlink "$fd" 2>/dev/null)
-              if [ "$ftgt" = "$tgt" ]; then
-                cmd=$(tr '\0' ' ' < "$pid_dir/cmdline" 2>/dev/null)
-                comm=$(cat "$pid_dir/comm" 2>/dev/null)
-                ppid=$(awk '{print $4}' "$pid_dir/stat" 2>/dev/null)
-                printf '  pid=%s ppid=%s comm=%s fd=%s cmdline=%s\n' \
-                  "$pid" "$ppid" "$comm" "$(basename "$fd")" "$cmd"
-              fi
-            done
-          done
-          ;;
-        *) printf '  (not a pipe — nothing to scan)\n' ;;
-      esac
-    done
-    printf '=== EXIT-DIAG end ts=%s ===\n' "$(date +%s.%N)"
-  } > "$DIAG_FILE" 2>&1
-  exec 9>&- 8>&-
-  printf '  [diag] wrote %s (%s lines)\n' "$DIAG_FILE" "$(wc -l < "$DIAG_FILE" 2>/dev/null || echo 0)"
+  # ── DIAGNOSTIC v3: pinpoint where the post-printf delay actually lives ─────
+  # Hypothesis: bash exits cleanly within ms, but runner takes ~60s to detect
+  # the exit (possibly due to processing buffered stdout from k3s log spam in
+  # Phase 6). EXIT trap records the moment bash actually exits to a file the
+  # next workflow step can read; comparing that to the runner's "Process
+  # completed" timestamp tells us if the gap is bash-side or runner-side.
+  EXIT_MARKER=/tmp/nemoclaw-e2e-install.log
+  trap 'echo "TRAP_EXIT pid=$$ ts=$(date +%s.%N) exit_arg=$?" >> "$EXIT_MARKER"' EXIT
 
-  # Force the job to fail so actions/upload-artifact runs and captures the diag.
-  # Once we have the diag, revert this and fix the real cause.
+  # Quick fd dump for completeness — keep tiny so it can't affect timing.
+  {
+    printf '\n=== EXIT-DIAG v3 pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
+    ls -la "/proc/$$/fd" 2>&1 || true
+    ps -eo pid,ppid,pgid,sid,stat,comm 2>&1 | grep -E "PID|runner|test|timeout|bash|node|openshell|Runner" || true
+  } >> "$EXIT_MARKER" 2>&1
+
+  printf '  [diag v3] about to exit, ts=%s\n' "$(date +%s.%N)"
+
+  # Force failure so the artifact uploads.
   exit 99
 else
   printf '\n\033[1;31m  %d test(s) failed.\033[0m\n' "$FAIL"
