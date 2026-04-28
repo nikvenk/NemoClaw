@@ -111,8 +111,8 @@ is_onboard_import_stream_reset() {
   local output_file="$1"
   [[ -f "$output_file" ]] || return 1
 
-  grep -q "Connection reset by peer (os error 104)" "$output_file" &&
-    grep -Eq "The image appears to have reached the gateway before the stream failed|Recovery: nemoclaw onboard --resume" "$output_file"
+  grep -q "Connection reset by peer (os error 104)" "$output_file" \
+    && grep -Eq "The image appears to have reached the gateway before the stream failed|Recovery: nemoclaw onboard --resume" "$output_file"
 }
 
 is_transient_onboard_resume_error() {
