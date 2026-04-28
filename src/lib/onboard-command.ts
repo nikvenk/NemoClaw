@@ -39,7 +39,7 @@ const ONBOARD_BASE_ARGS = [
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [--control-ui-port <n>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
+    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [--control-ui-port <N>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
     "",
   ];
 }
@@ -82,12 +82,12 @@ export function parseOnboardArgs(
       exit(1);
     }
     if (!/^\d+$/.test(raw)) {
-      error(`  --control-ui-port '${raw}' must be an integer between 1024 and 65535`);
+      error(`  --control-ui-port '${raw}' must be an integer between 1024-65535`);
       exit(1);
     }
     const parsed = Number(raw);
     if (parsed < 1024 || parsed > 65535) {
-      error(`  --control-ui-port '${raw}' must be an integer between 1024 and 65535`);
+      error(`  --control-ui-port '${raw}' must be an integer between 1024-65535`);
       exit(1);
     }
     controlUiPort = parsed;

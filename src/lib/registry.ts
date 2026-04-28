@@ -32,7 +32,7 @@ export interface SandboxEntry {
   messagingChannels?: string[];
   disabledChannels?: string[];
   /** Host-side port for the openshell forward to the OpenClaw dashboard (#2174). */
-  dashboardPort?: number;
+  dashboardPort?: number | null;
 }
 
 export interface SandboxRegistry {
@@ -78,10 +78,7 @@ export function acquireLock(): void {
       }
       return;
     } catch (error) {
-      if (
-        !isErrnoException(error) ||
-        error.code !== "EEXIST"
-      ) {
+      if (!isErrnoException(error) || error.code !== "EEXIST") {
         throw error;
       }
       let ownerChecked = false;
@@ -94,10 +91,7 @@ export function acquireLock(): void {
             process.kill(ownerPid, 0);
             alive = true;
           } catch (killErr) {
-            alive =
-              isErrnoException(killErr)
-                ? killErr.code === "EPERM"
-                : false;
+            alive = isErrnoException(killErr) ? killErr.code === "EPERM" : false;
           }
           if (!alive) {
             const recheck = Number.parseInt(fs.readFileSync(LOCK_OWNER, "utf-8").trim(), 10);
@@ -131,20 +125,14 @@ export function releaseLock(): void {
   try {
     fs.unlinkSync(LOCK_OWNER);
   } catch (error) {
-    if (
-      !isErrnoException(error) ||
-      error.code !== "ENOENT"
-    ) {
+    if (!isErrnoException(error) || error.code !== "ENOENT") {
       throw error;
     }
   }
   try {
     fs.rmSync(LOCK_DIR, { recursive: true, force: true });
   } catch (error) {
-    if (
-      !isErrnoException(error) ||
-      error.code !== "ENOENT"
-    ) {
+    if (!isErrnoException(error) || error.code !== "ENOENT") {
       throw error;
     }
   }

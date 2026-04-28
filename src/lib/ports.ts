@@ -15,15 +15,11 @@ export function parsePort(envVar: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const trimmed = String(raw).trim();
   if (!/^\d+$/.test(trimmed)) {
-    throw new Error(
-      `Invalid port: ${envVar}="${raw}" — must be an integer between 1024 and 65535`,
-    );
+    throw new Error(`Invalid port: ${envVar}="${raw}" — must be an integer between 1024 and 65535`);
   }
   const parsed = Number(trimmed);
   if (parsed < 1024 || parsed > 65535) {
-    throw new Error(
-      `Invalid port: ${envVar}="${raw}" — must be an integer between 1024 and 65535`,
-    );
+    throw new Error(`Invalid port: ${envVar}="${raw}" — must be an integer between 1024 and 65535`);
   }
   return parsed;
 }
@@ -40,6 +36,10 @@ export const GATEWAY_PORT = parsePort("NEMOCLAW_GATEWAY_PORT", 8080);
 const SANDBOX_DASHBOARD_PORT = 18789;
 /** Dashboard UI port (default SANDBOX_DASHBOARD_PORT, override via NEMOCLAW_DASHBOARD_PORT). This is the host-side port. */
 export const DASHBOARD_PORT = parsePort("NEMOCLAW_DASHBOARD_PORT", SANDBOX_DASHBOARD_PORT);
+/** Start of the auto-allocation range for dashboard ports (inclusive). */
+export const DASHBOARD_PORT_RANGE_START = SANDBOX_DASHBOARD_PORT;
+/** End of the auto-allocation range for dashboard ports (inclusive). */
+export const DASHBOARD_PORT_RANGE_END = 18799;
 /** vLLM / NIM inference port (default 8000, override via NEMOCLAW_VLLM_PORT). */
 export const VLLM_PORT = parsePort("NEMOCLAW_VLLM_PORT", 8000);
 /** Ollama inference port (default 11434, override via NEMOCLAW_OLLAMA_PORT). */

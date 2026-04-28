@@ -11,7 +11,7 @@ export interface SandboxEntry {
   policies?: string[] | null;
   messagingChannels?: string[] | null;
   agent?: string | null;
-  dashboardPort?: number;
+  dashboardPort?: number | null;
 }
 
 export interface MessagingBridgeHealth {
@@ -44,10 +44,7 @@ export interface ShowStatusCommandDeps {
   listSandboxes: () => { sandboxes: SandboxEntry[]; defaultSandbox?: string | null };
   getLiveInference: () => GatewayInference | null;
   showServiceStatus: (options: { sandboxName?: string }) => void;
-  checkMessagingBridgeHealth?: (
-    sandboxName: string,
-    channels: string[],
-  ) => MessagingBridgeHealth[];
+  checkMessagingBridgeHealth?: (sandboxName: string, channels: string[]) => MessagingBridgeHealth[];
   backfillAndFindOverlaps?: () => MessagingOverlap[];
   readGatewayLog?: (sandboxName: string) => string | null;
   log?: (message?: string) => void;
@@ -95,7 +92,9 @@ export async function listSandboxesCommand(deps: ListSandboxesCommandDeps): Prom
   }
   if ((recovery.recoveredFromGateway || 0) > 0) {
     const count = recovery.recoveredFromGateway || 0;
-    log(`  Recovered ${count} sandbox entr${count === 1 ? "y" : "ies"} from the live OpenShell gateway.`);
+    log(
+      `  Recovered ${count} sandbox entr${count === 1 ? "y" : "ies"} from the live OpenShell gateway.`,
+    );
     log("");
   }
   log("  Sandboxes:");
@@ -195,9 +194,7 @@ export function showStatusCommand(deps: ShowStatusCommandDeps): void {
       if (degraded.length > 0) {
         log("");
         for (const { channel, conflicts } of degraded) {
-          log(
-            `  ⚠ ${channel} bridge: degraded (${conflicts} conflict errors in /tmp/gateway.log)`,
-          );
+          log(`  ⚠ ${channel} bridge: degraded (${conflicts} conflict errors in /tmp/gateway.log)`);
         }
         log(
           "    Another sandbox is likely polling with the same bot token. See docs/reference/troubleshooting.md.",
