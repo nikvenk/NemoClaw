@@ -962,14 +962,16 @@ export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeRes
   // platform Node supports — no dependency on a host-side `timeout`
   // binary). Child process is killed, runCapture returns "" under
   // ignoreError, and we fall through to the `no_output` branch.
+  //
+  // We funnel through `sh -c` so we can `2>&1` the docker pull progress
+  // and busybox nslookup diagnostics into stdout — both write the
+  // signatures the parser below depends on (`Error response from daemon`,
+  // `no servers could be reached`) to stderr. Every token in the script
+  // is a fixed constant, so no shell injection surface.
   const command = opts.command ?? [
-    "docker",
-    "run",
-    "--rm",
-    "--pull=missing",
-    "busybox:latest",
-    "nslookup",
-    "registry.npmjs.org",
+    "sh",
+    "-c",
+    "docker run --rm --pull=missing busybox:latest nslookup registry.npmjs.org 2>&1",
   ];
 
   let output: string | null | undefined = opts.outputOverride;

@@ -815,9 +815,14 @@ describe("probeContainerDns", () => {
     });
     expect(result.ok).toBe(true);
     expect(captured).toHaveLength(1);
-    expect(captured[0].slice(0, 3)).toEqual(["docker", "run", "--rm"]);
-    expect(captured[0]).toContain("busybox:latest");
-    expect(captured[0]).toContain("registry.npmjs.org");
+    // Probe shells out via `sh -c "<script> 2>&1"` so docker/busybox
+    // stderr lands in stdout where the parser can see it.
+    expect(captured[0].slice(0, 2)).toEqual(["sh", "-c"]);
+    const script = captured[0][2];
+    expect(script).toContain("docker run --rm");
+    expect(script).toContain("busybox:latest");
+    expect(script).toContain("registry.npmjs.org");
+    expect(script).toContain("2>&1");
   });
 
   it("allows the command to be overridden", () => {
@@ -867,7 +872,10 @@ describe("probeContainerDns", () => {
     expect(seenOpts?.timeout).toBe(20_000);
   });
 
-  it("emits a plain argv docker run command (no shell-specific wrappers)", () => {
+  it("does not depend on a host-side timeout/gtimeout binary", () => {
+    // The probe bounds itself via Node's spawn-level timeout, not a
+    // host `timeout`/`gtimeout` wrapper (the latter is missing on
+    // macOS by default).
     let captured: readonly string[] = [];
     probeContainerDns({
       runCaptureImpl: (command) => {
@@ -875,9 +883,9 @@ describe("probeContainerDns", () => {
         return BUSYBOX_SUCCESS;
       },
     });
-    expect(captured.slice(0, 2)).toEqual(["docker", "run"]);
-    expect(captured).not.toContain("timeout");
-    expect(captured).not.toContain("gtimeout");
+    const script = captured[2] ?? "";
+    expect(script).not.toMatch(/^\s*timeout\b/);
+    expect(script).not.toMatch(/^\s*gtimeout\b/);
   });
 });
 
