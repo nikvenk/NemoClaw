@@ -169,6 +169,7 @@ function printHelp(): void {
   console.log(
     "Usage: tsx scripts/list-command-helper-uses.ts [--root <dir>] [--names run,runInteractive,...] [--only-runner] [--exclude-tests] [--group-by-command] [--markdown] [--json] [path ...]\n\n" +
       "Lists AST-level callsites and assignments for command helper names such as run(), runInteractive(), runCapture(), runShell(), execFileSync(), spawnSync(), and runCommand().\n\n" +
+      "When --only-runner is set, only helpers imported or required from modules whose basename is runner are reported.\n\n" +
       "Examples:\n" +
       "  tsx scripts/list-command-helper-uses.ts\n" +
       "  tsx scripts/list-command-helper-uses.ts --only-runner\n" +
