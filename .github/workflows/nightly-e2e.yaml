@@ -316,6 +316,11 @@ jobs:
 
       - name: Stop gateway log streamer
         if: always()
+        # Diagnostic step: never let `bash -e` kill the snapshot loop on a
+        # single command failure (openshell ssh-config, nemoclaw logs, etc.
+        # all routinely fail post-test depending on TC-SBX-06's docker-kill
+        # state). We log the failures inline and continue.
+        shell: bash --noprofile --norc -uo pipefail {0}
         run: |
           [ -f /tmp/gateway-log-streamer.pid ] && kill "$(cat /tmp/gateway-log-streamer.pid)" 2>/dev/null || true
           # Kill any per-sandbox SSH+tail followers spawned by the streamer.
