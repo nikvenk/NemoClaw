@@ -268,31 +268,17 @@ jobs:
                 # If we already have a follower running for this sandbox, skip.
                 pid="${streamer_pids[$name]:-}"
                 if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
-                # Spawn a follower: SSH into the sandbox and tail
-                # /tmp/gateway.log directly so we see the FULL stream rather
-                # than nemoclaw logs deciding what fits in N lines. Filter the
-                # ciao-mDNS spam (uv_interface_addresses) inline so noise does
-                # not bury useful events. Cap each follower at 512KB.
-                # Keep ssh_cfg around for the lifetime of the SSH child:
-                # removing it before SSH connects races and trips a config
-                # not-found error inside ssh.
-                ssh_cfg="/tmp/sshcfg-${name}.tmp"
-                if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>/dev/null \
-                   && [ -s "$ssh_cfg" ]; then
-                  # tail -F follows BOTH /tmp/gateway.log (gateway stdout/stderr
-                  # capture from nemoclaw-start.sh) AND the openclaw structured
-                  # log /tmp/openclaw-*/openclaw-*.log. The structured log
-                  # captures detailed event tracing (agent calls, plugin
-                  # registrations, etc.) that the stdout capture misses.
-                  # grep -v filters ciao mDNS noise so the file stays useful.
-                  nohup ssh -F "$ssh_cfg" \
-                       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                       -o ConnectTimeout=10 -o LogLevel=ERROR -o ServerAliveInterval=30 \
-                       "openshell-${name}" \
-                       "tail -n +1 -F /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
-                    > "docker-logs/sandbox-${name}.log" 2>&1 &
-                  streamer_pids[$name]=$!
-                fi
+                # Use `openshell sandbox exec` (the same path nemoclaw logs
+                # uses internally and TC-SBX-04 proves works) instead of raw
+                # SSH. SSH was racing for test-sbx-a — sshd in the pod is not
+                # always reachable on the SSH config port, but openshell
+                # sandbox exec uses the cluster API and works reliably.
+                # Also tails the persistent log first so the final output
+                # includes data that survives TC-SBX-06's docker kill.
+                nohup openshell sandbox exec -n "$name" -- \
+                  bash -c "tail -n +1 -F /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
+                  > "docker-logs/sandbox-${name}.log" 2>&1 &
+                streamer_pids[$name]=$!
               done
             done
           ' >/dev/null 2>&1 &
