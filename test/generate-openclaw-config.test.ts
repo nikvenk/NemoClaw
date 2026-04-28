@@ -139,6 +139,11 @@ describe("generate-openclaw-config.py: config generation", () => {
     expect(config.agents.defaults.skipBootstrap).toBe(true);
   });
 
+  it("disables inferred thinking for first-turn sandbox replies", () => {
+    const config = runConfigScript();
+    expect(config.agents.defaults.thinkingDefault).toBe("off");
+  });
+
   it("sets gateway auth token to empty string", () => {
     const config = runConfigScript();
     expect(config.gateway.auth.token).toBe("");

@@ -204,6 +204,11 @@ def build_config(env: dict | None = None) -> dict:
                 # default, which redirects a fresh workspace into an identity
                 # setup conversation before normal replies.
                 "skipBootstrap": True,
+                # Keep first-turn smoke checks on the lowest-latency path.
+                # OpenClaw can infer thinking defaults from the model catalog;
+                # NemoClaw's sandbox contract is a direct CLI answer, not an
+                # interactive reasoning session.
+                "thinkingDefault": "off",
             }
         },
         "models": {"mode": "merge", "providers": providers},
