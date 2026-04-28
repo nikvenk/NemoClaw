@@ -115,6 +115,13 @@ is_onboard_import_stream_reset() {
     grep -Eq "The image appears to have reached the gateway before the stream failed|Recovery: nemoclaw onboard --resume" "$output_file"
 }
 
+is_transient_onboard_resume_error() {
+  local output_file="$1"
+  [[ -f "$output_file" ]] || return 1
+
+  grep -Eq "Connection reset by peer \(os error 104\)|transport error|gateway unavailable|No active gateway|No gateway metadata found" "$output_file"
+}
+
 resume_onboard_after_import_stream_reset() {
   local name="$1" output_file="$2"
   if ! is_onboard_import_stream_reset "$output_file"; then
@@ -122,20 +129,36 @@ resume_onboard_after_import_stream_reset() {
   fi
 
   log "  [onboard] Image reached gateway but import stream reset; retrying with nemoclaw onboard --resume..."
-  rm -f "$HOME/.nemoclaw/onboard.lock" 2>/dev/null || true
 
-  local resume_exit=0
-  NEMOCLAW_SANDBOX_NAME="$name" \
-    NEMOCLAW_NON_INTERACTIVE=1 \
-    NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
-    nemoclaw onboard --resume --non-interactive --yes-i-accept-third-party-software \
-    2>&1 | tee -a "$LOG_FILE" || resume_exit=$?
+  local attempt delay resume_exit resume_output
+  for attempt in 1 2 3; do
+    rm -f "$HOME/.nemoclaw/onboard.lock" 2>/dev/null || true
+    resume_exit=0
+    resume_output="$(mktemp)"
+    log "  [onboard] Resume attempt ${attempt}/3..."
+    NEMOCLAW_SANDBOX_NAME="$name" \
+      NEMOCLAW_NON_INTERACTIVE=1 \
+      NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+      nemoclaw onboard --resume --non-interactive --yes-i-accept-third-party-software \
+      2>&1 | tee -a "$LOG_FILE" "$resume_output" || resume_exit=$?
 
-  if [[ $resume_exit -ne 0 ]]; then
-    log "  [onboard] nemoclaw onboard --resume exited with code $resume_exit"
+    if [[ $resume_exit -eq 0 ]]; then
+      rm -f "$resume_output"
+      return 0
+    fi
+
+    log "  [onboard] nemoclaw onboard --resume attempt ${attempt}/3 exited with code $resume_exit"
+    if ((attempt < 3)) && is_transient_onboard_resume_error "$resume_output"; then
+      delay=$((attempt * 15))
+      log "  [onboard] Gateway transport still settling; retrying resume in ${delay}s..."
+      rm -f "$resume_output"
+      sleep "$delay"
+      continue
+    fi
+    rm -f "$resume_output"
     return 1
-  fi
-  return 0
+  done
+  return 1
 }
 
 # Onboard a sandbox by name. Removes stale locks, runs nemoclaw onboard in
