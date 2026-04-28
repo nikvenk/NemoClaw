@@ -426,11 +426,22 @@ function shouldRecoverRegistryEntries(
     !current.sandboxes.some((sandbox) => sandbox.name === requestedSandboxName);
   const hasRecoverySeed =
     current.sandboxes.length > 0 || hasSessionSandbox || Boolean(requestedSandboxName);
+  // `nemoclaw list` (no requested sandbox name) should reconcile the local
+  // registry with the live OpenShell inventory whenever there is already at
+  // least one entry — covers the case where a previous onboard created a
+  // sandbox in the gateway but missed registry registration (#2168). When
+  // the registry is empty the existing first-clause already triggers
+  // recovery, so this only adds coverage for the partial-registry case.
+  const listRequest = requestedSandboxName === null;
+  const shouldRefreshLiveInventory = listRequest && current.sandboxes.length > 0;
   return {
     missingRequestedSandbox,
     shouldRecover:
       hasRecoverySeed &&
-      (current.sandboxes.length === 0 || missingRequestedSandbox || missingSessionSandbox),
+      (current.sandboxes.length === 0 ||
+        missingRequestedSandbox ||
+        missingSessionSandbox ||
+        shouldRefreshLiveInventory),
   };
 }
 

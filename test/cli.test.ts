@@ -1324,6 +1324,123 @@ describe("CLI dispatch", () => {
     expect(saved.defaultSandbox).toBe("gamma");
   });
 
+  it("list backfills a live sandbox when the local registry already has another sandbox (#2168)", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-list-live-backfill-"));
+    const localBin = path.join(home, "bin");
+    const nemoclawDir = path.join(home, ".nemoclaw");
+    fs.mkdirSync(localBin, { recursive: true });
+    fs.mkdirSync(nemoclawDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(nemoclawDir, "sandboxes.json"),
+      JSON.stringify({
+        sandboxes: {
+          test21: {
+            name: "test21",
+            model: "existing-model",
+            provider: "existing-provider",
+            gpuEnabled: false,
+            policies: ["npm"],
+          },
+        },
+        defaultSandbox: "test21",
+      }),
+      { mode: 0o600 },
+    );
+    fs.writeFileSync(
+      path.join(nemoclawDir, "onboard-session.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          sessionId: "session-1",
+          resumable: true,
+          status: "complete",
+          mode: "interactive",
+          startedAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          lastStepStarted: "policies",
+          lastCompletedStep: "policies",
+          failure: null,
+          sandboxName: "test21",
+          provider: "existing-provider",
+          model: "existing-model",
+          endpointUrl: null,
+          credentialEnv: null,
+          preferredInferenceApi: null,
+          nimContainer: null,
+          policyPresets: ["npm"],
+          metadata: { gatewayName: "nemoclaw" },
+          steps: {
+            preflight: { status: "complete", startedAt: null, completedAt: null, error: null },
+            gateway: { status: "complete", startedAt: null, completedAt: null, error: null },
+            sandbox: { status: "complete", startedAt: null, completedAt: null, error: null },
+            provider_selection: {
+              status: "complete",
+              startedAt: null,
+              completedAt: null,
+              error: null,
+            },
+            inference: { status: "complete", startedAt: null, completedAt: null, error: null },
+            openclaw: { status: "complete", startedAt: null, completedAt: null, error: null },
+            policies: { status: "complete", startedAt: null, completedAt: null, error: null },
+          },
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+    fs.writeFileSync(
+      path.join(localBin, "openshell"),
+      [
+        "#!/usr/bin/env bash",
+        'if [ "$1" = "status" ]; then',
+        "  echo 'Server Status'",
+        "  echo",
+        "  echo '  Gateway: nemoclaw'",
+        "  echo '  Status: Connected'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "gateway" ] && [ "$2" = "info" ]; then',
+        "  echo 'Gateway Info'",
+        "  echo",
+        "  echo '  Gateway: nemoclaw'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "list" ]; then',
+        "  echo 'NAME        PHASE'",
+        "  echo 'test21      Ready'",
+        "  echo 'skiptest    Ready'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "inference" ] && [ "$2" = "get" ]; then',
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "--version" ]; then',
+        "  echo 'openshell 0.0.26'",
+        "  exit 0",
+        "fi",
+        "exit 0",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const r = runWithEnv("list", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
+
+    expect(r.code).toBe(0);
+    expect(
+      r.out.includes("Recovered 1 sandbox entry from the live OpenShell gateway."),
+    ).toBeTruthy();
+    expect(r.out.includes("test21")).toBeTruthy();
+    expect(r.out.includes("skiptest")).toBeTruthy();
+    const saved = JSON.parse(fs.readFileSync(path.join(nemoclawDir, "sandboxes.json"), "utf8"));
+    expect(saved.sandboxes.test21).toBeTruthy();
+    expect(saved.sandboxes.skiptest).toBeTruthy();
+    expect(saved.defaultSandbox).toBe("test21");
+  });
+
   it("imports additional live sandboxes into the registry during list recovery", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-list-live-recover-"));
     const localBin = path.join(home, "bin");
