@@ -244,11 +244,7 @@ function collectBindings(sourceFile: ts.SourceFile): {
     namespaces.set(localName, moduleSpecifier);
   }
 
-  function registerRequireBinding(
-    name: ts.BindingName,
-    moduleSpecifier: string,
-    initializer?: ts.Expression,
-  ): void {
+  function registerRequireBinding(name: ts.BindingName, moduleSpecifier: string): void {
     if (ts.isIdentifier(name)) {
       addNamespace(name.text, moduleSpecifier);
       return;
@@ -294,7 +290,7 @@ function collectBindings(sourceFile: ts.SourceFile): {
       node.initializer.arguments.length === 1 &&
       ts.isStringLiteral(node.initializer.arguments[0])
     ) {
-      registerRequireBinding(node.name, node.initializer.arguments[0].text, node.initializer);
+      registerRequireBinding(node.name, node.initializer.arguments[0].text);
     }
 
     if (
@@ -304,11 +300,7 @@ function collectBindings(sourceFile: ts.SourceFile): {
       namespaces.has(node.initializer.text) &&
       ts.isObjectBindingPattern(node.name)
     ) {
-      registerRequireBinding(
-        node.name,
-        namespaces.get(node.initializer.text) || "",
-        node.initializer,
-      );
+      registerRequireBinding(node.name, namespaces.get(node.initializer.text) || "");
     }
 
     ts.forEachChild(node, visit);
@@ -326,7 +318,10 @@ function getCallTarget(
     return {
       name: expression.text,
       expression: expression.text,
-      moduleSpecifier: bindings.named.get(expression.text)?.moduleSpecifier || null,
+      moduleSpecifier:
+        bindings.named.get(expression.text)?.moduleSpecifier ||
+        bindings.namespaces.get(expression.text) ||
+        null,
     };
   }
   if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
