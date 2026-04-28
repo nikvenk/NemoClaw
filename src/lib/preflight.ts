@@ -20,6 +20,13 @@ import { DASHBOARD_PORT } from "./ports";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { runCapture } = require("./runner");
 
+type RunCaptureFn = typeof import("./runner").runCapture;
+type RunCaptureOpts = Parameters<RunCaptureFn>[1];
+type NullableRunCaptureFn = (
+  command: Parameters<RunCaptureFn>[0],
+  options?: RunCaptureOpts,
+) => string | null;
+
 // ── Types ────────────────────────────────────────────────────────
 
 export interface PortProbeResult {
@@ -123,19 +130,18 @@ export interface AssessHostOpts {
   dockerInfoOutput?: string;
   dockerInfoError?: string;
   readFileImpl?: (filePath: string, encoding: BufferEncoding) => string;
-  runCaptureImpl?: (command: readonly string[], options?: { ignoreError?: boolean }) => string;
+  runCaptureImpl?: RunCaptureFn;
   commandExistsImpl?: (commandName: string) => boolean;
   gpuProbeImpl?: () => boolean;
 }
 
-function commandExists(
-  commandName: string,
-  runCaptureImpl: (command: readonly string[], options?: { ignoreError?: boolean }) => string,
-): boolean {
+function buildCommandVArgv(commandName: string): readonly string[] {
+  return ["sh", "-c", 'command -v "$1"', "--", commandName];
+}
+
+function commandExists(commandName: string, runCaptureImpl: RunCaptureFn): boolean {
   try {
-    const output = runCaptureImpl(["sh", "-c", 'command -v "$1"', "--", commandName], {
-      ignoreError: true,
-    });
+    const output = runCaptureImpl(buildCommandVArgv(commandName), { ignoreError: true });
     return Boolean(String(output || "").trim());
   } catch {
     return false;
@@ -227,18 +233,14 @@ function isHeadlessLikely(env: NodeJS.ProcessEnv): boolean {
   return !env.DISPLAY && !env.WAYLAND_DISPLAY && !env.TERM_PROGRAM;
 }
 
-function detectNvidiaGpu(
-  runCaptureImpl: (command: readonly string[], options?: { ignoreError?: boolean }) => string,
-): boolean {
+function detectNvidiaGpu(runCaptureImpl: RunCaptureFn): boolean {
   if (!commandExists("nvidia-smi", runCaptureImpl)) {
     return false;
   }
   return Boolean(String(runCaptureImpl(["nvidia-smi", "-L"], { ignoreError: true }) || "").trim());
 }
 
-function detectPackageManager(
-  runCaptureImpl: (command: readonly string[], options?: { ignoreError?: boolean }) => string,
-): PackageManager {
+function detectPackageManager(runCaptureImpl: RunCaptureFn): PackageManager {
   if (commandExists("apt-get", runCaptureImpl)) return "apt";
   if (commandExists("dnf", runCaptureImpl)) return "dnf";
   if (commandExists("yum", runCaptureImpl)) return "yum";
@@ -886,10 +888,7 @@ export interface ProbeContainerDnsOpts {
   /** Inject captured output (bypasses execution). */
   outputOverride?: string | null;
   /** Override runCapture. */
-  runCaptureImpl?: (
-    command: readonly string[],
-    opts?: { ignoreError?: boolean; timeout?: number },
-  ) => string | null;
+  runCaptureImpl?: NullableRunCaptureFn;
 }
 
 /**
@@ -908,10 +907,8 @@ const PROBE_TIMEOUT_MS = 20_000;
  * `172.17.0.1`.
  */
 export function getDockerBridgeGatewayIp(
-  runCaptureImpl: (
-    command: readonly string[],
-    opts?: { ignoreError?: boolean },
-  ) => string | null = (cmd, o) => runCapture(cmd, { ignoreError: o?.ignoreError ?? false }),
+  runCaptureImpl: NullableRunCaptureFn = (cmd, o) =>
+    runCapture(cmd, { ignoreError: o?.ignoreError ?? false }),
 ): string | null {
   let raw: string | null;
   try {
@@ -980,7 +977,7 @@ export function probeContainerDns(opts: ProbeContainerDnsOpts = {}): DnsProbeRes
     try {
       const runCaptureImpl =
         opts.runCaptureImpl ??
-        ((cmd: readonly string[], o?: { ignoreError?: boolean; timeout?: number }) =>
+        ((cmd: readonly string[], o?: RunCaptureOpts) =>
           runCapture(cmd, {
             ignoreError: o?.ignoreError ?? false,
             timeout: o?.timeout,

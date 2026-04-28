@@ -1838,6 +1838,22 @@ function getGatewayClusterContainerName(): string {
   return `openshell-cluster-${GATEWAY_NAME}`;
 }
 
+function buildGatewayClusterExecArgv(script: string): string[] {
+  return ["docker", "exec", getGatewayClusterContainerName(), "sh", "-lc", script];
+}
+
+function hostCommandExists(commandName: string): boolean {
+  return !!runCapture(["sh", "-c", 'command -v "$1"', "--", commandName], {
+    ignoreError: true,
+  });
+}
+
+function captureProcessArgs(pid: number): string {
+  return runCapture(["ps", "-p", String(pid), "-o", "args="], {
+    ignoreError: true,
+  }).trim();
+}
+
 function getGatewayLocalEndpoint(): string {
   return `https://127.0.0.1:${GATEWAY_PORT}`;
 }
@@ -1900,13 +1916,11 @@ fi
 }
 
 function runGatewayClusterCapture(script: string, opts: RunnerOptions = {}) {
-  const containerName = getGatewayClusterContainerName();
-  return runCapture(["docker", "exec", containerName, "sh", "-lc", script], opts);
+  return runCapture(buildGatewayClusterExecArgv(script), opts);
 }
 
 function runGatewayCluster(script: string, opts: RunnerOptions = {}) {
-  const containerName = getGatewayClusterContainerName();
-  return run(["docker", "exec", containerName, "sh", "-lc", script], opts);
+  return run(buildGatewayClusterExecArgv(script), opts);
 }
 
 function listMissingGatewayBootstrapSecrets() {
@@ -2448,9 +2462,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
       // tunnels the user may have set up on the same port. (#1950)
       if (port === DASHBOARD_PORT && portCheck.process === "ssh" && portCheck.pid) {
         // Use `ps` to get the command line — works on Linux, macOS, and WSL.
-        const cmdline = runCapture(["ps", "-p", String(portCheck.pid), "-o", "args="], {
-          ignoreError: true,
-        }).trim();
+        const cmdline = captureProcessArgs(portCheck.pid);
         if (cmdline.includes("openshell")) {
           console.log(
             `  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`,
@@ -3849,9 +3861,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
   let preferredInferenceApi: string | null = null;
 
   // Detect local inference options
-  const hasOllama = !!runCapture(["sh", "-c", 'command -v "$1"', "--", "ollama"], {
-    ignoreError: true,
-  });
+  const hasOllama = hostCommandExists("ollama");
   const ollamaRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${OLLAMA_PORT}/api/tags`], {
     ignoreError: true,
   });
@@ -6182,11 +6192,10 @@ function getWslHostAddress(
   }
   const runCaptureFn = options.runCapture || runCapture;
   const output = runCaptureFn(["hostname", "-I"], { ignoreError: true });
-  const candidates = String(output || "")
+  return String(output || "")
     .trim()
     .split(/\s+/)
-    .filter(Boolean);
-  return candidates[0] || null;
+    .filter(Boolean)[0] || null;
 }
 
 function getDashboardAccessInfo(
