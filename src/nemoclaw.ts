@@ -323,6 +323,7 @@ function recoverSandboxProcesses(sandboxName: string): boolean {
 
   const execResult = executeSandboxExecCommand(sandboxName, script, 30000);
   if (recovered(execResult)) return true;
+  if (execResult !== null) return false;
   return recovered(executeSandboxCommand(sandboxName, script));
 }
 
@@ -1447,6 +1448,11 @@ function parseSandboxConnectArgs(sandboxName: string, actionArgs: string[]): San
         printSandboxConnectHelp(sandboxName);
         process.exit(1);
     }
+  }
+  if (options.probeOnly && options.dangerouslySkipPermissions) {
+    console.error("  --probe-only cannot be combined with --dangerously-skip-permissions.");
+    printSandboxConnectHelp(sandboxName);
+    process.exit(1);
   }
   return options;
 }
@@ -3950,8 +3956,11 @@ const [cmd, ...args] = process.argv.slice(2);
   }
 
   // Sandbox-scoped commands: nemoclaw <name> <action>
-  const requestedSandboxAction = args[0] || "connect";
-  const requestedSandboxActionArgs = args[0] ? args.slice(1) : args;
+  const firstSandboxArg = args[0];
+  const implicitConnectHelp = firstSandboxArg === "--help" || firstSandboxArg === "-h";
+  const requestedSandboxAction =
+    !firstSandboxArg || implicitConnectHelp ? "connect" : firstSandboxArg;
+  const requestedSandboxActionArgs = !firstSandboxArg || implicitConnectHelp ? args : args.slice(1);
   if (
     requestedSandboxAction === "connect" &&
     requestedSandboxActionArgs.some((arg) => arg === "--help" || arg === "-h")

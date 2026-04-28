@@ -48,11 +48,14 @@ export function getHealthProbeUrl(agent: AgentDefinition | null): string {
   return agent.healthProbe?.url || `http://127.0.0.1:${DASHBOARD_PORT}/`;
 }
 
-function buildGatewayLogSetup(includeAutoPairLog = false): string[] {
+function buildGatewayLogSetup(includeAutoPairLog = false, logOwnerUser?: string): string[] {
+  const chmodGatewayLog = logOwnerUser
+    ? `if [ "$(id -u)" = "0" ] && id ${shellQuote(logOwnerUser)} >/dev/null 2>&1; then chown ${shellQuote(`${logOwnerUser}:${logOwnerUser}`)} /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;`
+    : "chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true;";
   const lines = [
     "rm -f /tmp/gateway.log 2>/dev/null || true;",
     ": > /tmp/gateway.log 2>/dev/null || touch /tmp/gateway.log 2>/dev/null || true;",
-    'if [ "$(id -u)" = "0" ] && id gateway >/dev/null 2>&1; then chown gateway:gateway /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;',
+    chmodGatewayLog,
     'if ! : >> /tmp/gateway.log 2>/dev/null; then echo "[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user $(id -un 2>/dev/null || id -u)" >&2; fi;',
   ];
   if (includeAutoPairLog) {
@@ -66,8 +69,11 @@ function buildGatewayLogSetup(includeAutoPairLog = false): string[] {
   return lines;
 }
 
-function gatewayLaunchCommand(command: string): string {
-  return `if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id gateway >/dev/null 2>&1; then nohup gosu gateway ${command} >> /tmp/gateway.log 2>&1 & else nohup ${command} >> /tmp/gateway.log 2>&1 & fi`;
+function gatewayLaunchCommand(command: string, runAsUser?: string): string {
+  if (!runAsUser) {
+    return `nohup ${command} >> /tmp/gateway.log 2>&1 &`;
+  }
+  return `if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id ${shellQuote(runAsUser)} >/dev/null 2>&1; then nohup gosu ${shellQuote(runAsUser)} ${command} >> /tmp/gateway.log 2>&1 & else nohup ${command} >> /tmp/gateway.log 2>&1 & fi`;
 }
 
 /**
@@ -80,12 +86,12 @@ export function buildOpenClawRecoveryScript(port: number): string {
     'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) _GUARDS_MISSING=0 ;; *) _GUARDS_MISSING=1 ;; esac;',
     `if curl -sf --max-time 3 http://127.0.0.1:${port}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
     "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
-    ...buildGatewayLogSetup(true),
+    ...buildGatewayLogSetup(true, "gateway"),
     '[ "$_PE_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing - gateway launching without library guards (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
     '[ "$_GUARDS_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload - gateway may crash on unhandled library errors (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
     'OPENCLAW="$(command -v openclaw)";',
     'if [ -z "$OPENCLAW" ]; then echo OPENCLAW_MISSING; exit 1; fi;',
-    gatewayLaunchCommand('"$OPENCLAW" gateway run --port ' + port),
+    gatewayLaunchCommand('"$OPENCLAW" gateway run --port ' + port, "gateway"),
     "GPID=$!; sleep 2;",
     'if kill -0 "$GPID" 2>/dev/null; then echo "GATEWAY_PID=$GPID"; else echo GATEWAY_FAILED; cat /tmp/gateway.log 2>/dev/null | tail -5; fi',
   ].join(" ");

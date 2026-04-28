@@ -1084,12 +1084,46 @@ describe("CLI dispatch", () => {
 
   it("shows connect help without opening an interactive session", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-help-"));
+    const localBin = path.join(home, "bin");
+    const markerFile = path.join(home, "openshell-calls");
+    fs.mkdirSync(localBin, { recursive: true });
+    fs.writeFileSync(
+      path.join(localBin, "openshell"),
+      [
+        "#!/usr/bin/env bash",
+        `printf '%s\\n' "$*" >> ${JSON.stringify(markerFile)}`,
+        "exit 99",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
 
-    const r = runWithEnv("alpha connect --help", { HOME: home });
+    const r = runWithEnv("alpha connect --help", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
+    const implicit = runWithEnv("alpha --help", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
 
     expect(r.code).toBe(0);
     expect(r.out).toContain("Usage: nemoclaw alpha connect");
     expect(r.out).toContain("--probe-only");
+    expect(implicit.code).toBe(0);
+    expect(implicit.out).toContain("Usage: nemoclaw alpha connect");
+    expect(fs.existsSync(markerFile)).toBe(false);
+  });
+
+  it("rejects probe-only connect when skip-permissions was also requested", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-probe-flags-"));
+    writeSandboxRegistry(home);
+
+    const r = runWithEnv("alpha connect --probe-only --dangerously-skip-permissions", {
+      HOME: home,
+    });
+
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("--probe-only cannot be combined with --dangerously-skip-permissions");
   });
 
   it("connect --probe-only recovers the gateway without opening SSH", () => {
@@ -1146,6 +1180,54 @@ describe("CLI dispatch", () => {
     expect(calls).toContain("sandbox get alpha");
     expect(calls.some((call) => call.startsWith("sandbox exec -n alpha -- sh -c"))).toBe(true);
     expect(calls).not.toContain("sandbox connect alpha");
+  });
+
+  it("connect --probe-only does not retry a failed sandbox exec recovery over SSH", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-probe-no-ssh-"));
+    const localBin = path.join(home, "bin");
+    const markerFile = path.join(home, "openshell-calls");
+    fs.mkdirSync(localBin, { recursive: true });
+    writeSandboxRegistry(home);
+    fs.writeFileSync(
+      path.join(localBin, "openshell"),
+      [
+        "#!/usr/bin/env bash",
+        `marker_file=${JSON.stringify(markerFile)}`,
+        'printf \'%s\\n\' "$*" >> "$marker_file"',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && [ "$3" = "alpha" ]; then',
+        "  echo 'Sandbox:'",
+        "  echo",
+        "  echo '  Id: abc'",
+        "  echo '  Name: alpha'",
+        "  echo '  Namespace: openshell'",
+        "  echo '  Phase: Ready'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "-n" ] && [ "$4" = "alpha" ]; then',
+        '  cmd="$8"',
+        '  if [[ "$cmd" == *"curl -sf"* ]]; then echo STOPPED; exit 0; fi',
+        "  echo RECOVERY_FAILED >&2",
+        "  exit 42",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "ssh-config" ]; then',
+        "  echo 'Host openshell-alpha'",
+        "  exit 0",
+        "fi",
+        "exit 0",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const r = runWithEnv("alpha connect --probe-only", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
+
+    expect(r.code).toBe(1);
+    const calls = fs.readFileSync(markerFile, "utf8").trim().split("\n").filter(Boolean);
+    expect(calls).toContain("sandbox get alpha");
+    expect(calls.some((call) => call.startsWith("sandbox exec -n alpha -- sh -c"))).toBe(true);
+    expect(calls).not.toContain("sandbox ssh-config alpha");
   });
 
   it("waits for sandbox readiness before connecting", () => {

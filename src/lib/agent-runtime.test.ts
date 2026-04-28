@@ -146,9 +146,17 @@ describe("buildRecoveryScript", () => {
 
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {
       const script = buildOpenClawRecoveryScript(18789);
-      expect(script).toContain("chown gateway:gateway /tmp/gateway.log");
+      expect(script).toContain("chown 'gateway:gateway' /tmp/gateway.log");
       expect(script).toContain("chmod 644 /tmp/gateway.log");
-      expect(script).toContain("gosu gateway");
+      expect(script).toContain("gosu 'gateway'");
+    });
+
+    it("does not force non-OpenClaw agents to run as the gateway user", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      expect(script).not.toContain("chown gateway:gateway /tmp/gateway.log");
+      expect(script).not.toContain("chown 'gateway:gateway' /tmp/gateway.log");
+      expect(script).not.toContain("gosu gateway");
+      expect(script).not.toContain("gosu 'gateway'");
     });
   });
 });
