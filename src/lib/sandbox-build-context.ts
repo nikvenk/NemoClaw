@@ -15,11 +15,14 @@ export interface BuildContextStats {
   totalBytes: number;
 }
 
-function createBuildContextDir(tmpDir = os.tmpdir()): string {
+function createBuildContextDir(tmpDir: string = os.tmpdir()): string {
   return fs.mkdtempSync(path.join(tmpDir, "nemoclaw-build-"));
 }
 
-function stageLegacySandboxBuildContext(rootDir: string, tmpDir = os.tmpdir()): StagedBuildContext {
+function stageLegacySandboxBuildContext(
+  rootDir: string,
+  tmpDir: string = os.tmpdir(),
+): StagedBuildContext {
   const buildCtx = createBuildContextDir(tmpDir);
   fs.copyFileSync(path.join(rootDir, "Dockerfile"), path.join(buildCtx, "Dockerfile"));
   fs.cpSync(path.join(rootDir, "nemoclaw"), path.join(buildCtx, "nemoclaw"), { recursive: true });
@@ -37,7 +40,7 @@ function stageLegacySandboxBuildContext(rootDir: string, tmpDir = os.tmpdir()): 
 
 function stageOptimizedSandboxBuildContext(
   rootDir: string,
-  tmpDir = os.tmpdir(),
+  tmpDir: string = os.tmpdir(),
 ): StagedBuildContext {
   const buildCtx = createBuildContextDir(tmpDir);
   const stagedDockerfile = path.join(buildCtx, "Dockerfile");
@@ -81,6 +84,11 @@ function stageOptimizedSandboxBuildContext(
   fs.copyFileSync(
     path.join(rootDir, "scripts", "lib", "sandbox-init.sh"),
     path.join(stagedScriptsDir, "lib", "sandbox-init.sh"),
+  );
+  // OpenClaw config generator extracted in #2449
+  fs.copyFileSync(
+    path.join(rootDir, "scripts", "generate-openclaw-config.py"),
+    path.join(stagedScriptsDir, "generate-openclaw-config.py"),
   );
 
   return { buildCtx, stagedDockerfile };
