@@ -776,6 +776,106 @@ describe("onboard helpers", () => {
     }
   });
 
+  it("regression #2421: bakes NEMOCLAW_INFERENCE_INPUTS into the staged Dockerfile when env is set", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-dockerfile-inputs-"));
+    const dockerfilePath = path.join(tmpDir, "Dockerfile");
+    fs.writeFileSync(
+      dockerfilePath,
+      [
+        "ARG NEMOCLAW_MODEL=nvidia/nemotron-3-super-120b-a12b",
+        "ARG NEMOCLAW_PROVIDER_KEY=nvidia",
+        "ARG NEMOCLAW_PRIMARY_MODEL_REF=nvidia/nemotron-3-super-120b-a12b",
+        "ARG CHAT_UI_URL=http://127.0.0.1:18789",
+        "ARG NEMOCLAW_INFERENCE_BASE_URL=https://inference.local/v1",
+        "ARG NEMOCLAW_INFERENCE_API=openai-completions",
+        "ARG NEMOCLAW_INFERENCE_COMPAT_B64=e30=",
+        "ARG NEMOCLAW_WEB_SEARCH_ENABLED=0",
+        "ARG NEMOCLAW_BUILD_ID=default",
+        "ARG NEMOCLAW_INFERENCE_INPUTS=text",
+      ].join("\n"),
+    );
+
+    const prior = process.env.NEMOCLAW_INFERENCE_INPUTS;
+    process.env.NEMOCLAW_INFERENCE_INPUTS = "text,image";
+    try {
+      patchStagedDockerfile(
+        dockerfilePath,
+        "gpt-5.4",
+        "http://127.0.0.1:18789",
+        "build-inputs",
+        "openai-api",
+      );
+      const patched = fs.readFileSync(dockerfilePath, "utf8");
+      assert.match(patched, /^ARG NEMOCLAW_INFERENCE_INPUTS=text,image$/m);
+    } finally {
+      if (prior === undefined) {
+        delete process.env.NEMOCLAW_INFERENCE_INPUTS;
+      } else {
+        process.env.NEMOCLAW_INFERENCE_INPUTS = prior;
+      }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("regression #2421: rejects malformed NEMOCLAW_INFERENCE_INPUTS and keeps default", () => {
+    const tmpDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "nemoclaw-onboard-dockerfile-inputs-bad-"),
+    );
+    const dockerfilePath = path.join(tmpDir, "Dockerfile");
+    const baseDockerfile = [
+      "ARG NEMOCLAW_MODEL=nvidia/nemotron-3-super-120b-a12b",
+      "ARG NEMOCLAW_PROVIDER_KEY=nvidia",
+      "ARG NEMOCLAW_PRIMARY_MODEL_REF=nvidia/nemotron-3-super-120b-a12b",
+      "ARG CHAT_UI_URL=http://127.0.0.1:18789",
+      "ARG NEMOCLAW_INFERENCE_BASE_URL=https://inference.local/v1",
+      "ARG NEMOCLAW_INFERENCE_API=openai-completions",
+      "ARG NEMOCLAW_INFERENCE_COMPAT_B64=e30=",
+      "ARG NEMOCLAW_WEB_SEARCH_ENABLED=0",
+      "ARG NEMOCLAW_BUILD_ID=default",
+      "ARG NEMOCLAW_INFERENCE_INPUTS=text",
+    ].join("\n");
+
+    const prior = process.env.NEMOCLAW_INFERENCE_INPUTS;
+    try {
+      // Cases that must all leave the default untouched.
+      const rejectCases = [
+        undefined,
+        "audio",
+        "text,",
+        "Text,Image",
+        "text, image",
+        'text"\nRUN rm -rf /',
+      ];
+      for (const [index, value] of rejectCases.entries()) {
+        fs.writeFileSync(dockerfilePath, baseDockerfile);
+        if (value === undefined) {
+          delete process.env.NEMOCLAW_INFERENCE_INPUTS;
+        } else {
+          process.env.NEMOCLAW_INFERENCE_INPUTS = value;
+        }
+        patchStagedDockerfile(
+          dockerfilePath,
+          "gpt-5.4",
+          "http://127.0.0.1:18789",
+          `build-inputs-reject-${index}`,
+          "openai-api",
+        );
+        assert.match(
+          fs.readFileSync(dockerfilePath, "utf8"),
+          /^ARG NEMOCLAW_INFERENCE_INPUTS=text$/m,
+          `value="${String(value)}" should not change the ARG default`,
+        );
+      }
+    } finally {
+      if (prior === undefined) {
+        delete process.env.NEMOCLAW_INFERENCE_INPUTS;
+      } else {
+        process.env.NEMOCLAW_INFERENCE_INPUTS = prior;
+      }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("regression #1409: rejects malformed NEMOCLAW_PROXY_HOST/PORT and keeps defaults", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-dockerfile-proxy-bad-"));
     const dockerfilePath = path.join(tmpDir, "Dockerfile");
@@ -2261,16 +2361,17 @@ const { setupInference } = require(${onboardPath});
   });
 
   it("checks provider existence before create/update to avoid AlreadyExists noise (#1155)", () => {
+    // upsertProvider lives in onboard-providers.ts after the refactor.
     const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", "src", "lib", "onboard.ts"),
+      path.join(import.meta.dirname, "..", "src", "lib", "onboard-providers.ts"),
       "utf-8",
     );
 
     // upsertProvider must check existence first so it never triggers AlreadyExists.
-    assert.match(source, /providerExistsInGateway\(name\)/);
+    assert.match(source, /providerExistsInGateway\(name/);
     assert.match(source, /exists \? "update" : "create"/);
     // Only one openshell call should be made (no create-then-update fallback).
-    assert.match(source, /const result = runOpenshell\(args, runOpts\)/);
+    assert.match(source, /const result = _runOpenshell\(args, runOpts\)/);
   });
 
   it("marks the unused agent_setup/openclaw sibling step as skipped (#1834)", () => {
@@ -5066,7 +5167,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
         input: "\n",
       });
       assert.equal(introspect.status, 0, introspect.stderr);
-      const introspectOut = JSON.parse(introspect.stdout.trim().split("\n").pop());
+      const introspectOut = JSON.parse(introspect.stdout.trim().split("\n").pop()!);
       const slackIdx = introspectOut.slackIndex1Based;
       assert.ok(slackIdx >= 1, `unexpected slack index: ${slackIdx}`);
 
@@ -5085,14 +5186,14 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
       });
 
       assert.equal(result.status, 0, result.stderr);
-      const out = JSON.parse(result.stdout.trim().split("\n").pop());
+      const out = JSON.parse(result.stdout.trim().split("\n").pop()!);
 
       assert.ok(
         !out.result.includes("slack"),
         `slack should have been dropped after invalid token; got ${JSON.stringify(out.result)}`,
       );
       assert.ok(
-        !out.saveCalls.some((c) => c.key === "SLACK_BOT_TOKEN"),
+        !out.saveCalls.some((c: { key: string }) => c.key === "SLACK_BOT_TOKEN"),
         `SLACK_BOT_TOKEN should NOT have been persisted; saveCalls=${JSON.stringify(out.saveCalls)}`,
       );
       assert.ok(
@@ -5177,7 +5278,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
       });
       assert.equal(introspect.status, 0, introspect.stderr);
       const slackIdx = JSON.parse(
-        introspect.stdout.trim().split("\n").pop(),
+        introspect.stdout.trim().split("\n").pop()!,
       ).slackIndex1Based;
       assert.ok(slackIdx >= 1, `unexpected slack index: ${slackIdx}`);
 
@@ -5195,7 +5296,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
       });
 
       assert.equal(result.status, 0, result.stderr);
-      const out = JSON.parse(result.stdout.trim().split("\n").pop());
+      const out = JSON.parse(result.stdout.trim().split("\n").pop()!);
 
       assert.ok(
         !out.result.includes("slack"),
@@ -5205,11 +5306,11 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
       // user can retry later and the pre-saved bot token will light up as
       // "already configured" on the next onboard.
       assert.ok(
-        out.saveCalls.some((c) => c.key === "SLACK_BOT_TOKEN"),
+        out.saveCalls.some((c: { key: string }) => c.key === "SLACK_BOT_TOKEN"),
         `SLACK_BOT_TOKEN should have been persisted (valid format); saveCalls=${JSON.stringify(out.saveCalls)}`,
       );
       assert.ok(
-        !out.saveCalls.some((c) => c.key === "SLACK_APP_TOKEN"),
+        !out.saveCalls.some((c: { key: string }) => c.key === "SLACK_APP_TOKEN"),
         `SLACK_APP_TOKEN should NOT have been persisted (invalid format); saveCalls=${JSON.stringify(out.saveCalls)}`,
       );
       assert.ok(
@@ -5225,7 +5326,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
     // Cache-bust the dynamic import so repeated test runs pick up rebuilds.
     const onboardUrl = `${pathToFileURL(onboardPath).href}?update=${Date.now()}`;
     const { MESSAGING_CHANNELS } = await import(onboardUrl);
-    const slack = MESSAGING_CHANNELS.find((c) => c.name === "slack");
+    const slack = MESSAGING_CHANNELS.find((c: { name: string }) => c.name === "slack");
 
     assert.ok(slack, "slack messaging channel definition present");
     assert.ok(slack.tokenFormat instanceof RegExp, "slack.tokenFormat is a regex");

@@ -31,11 +31,16 @@ const {
 } = require("./lib/runner");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
+  fetchGatewayAuthTokenFromSandbox,
   startGatewayForRecovery,
   pruneKnownHostsEntries,
   ensureOllamaAuthProxy,
   isNonInteractive,
 } = require("./lib/onboard");
+const {
+  parseGatewayTokenArgs,
+  runGatewayTokenCommand,
+} = require("./lib/gateway-token-command");
 const {
   getCredential,
   deleteCredential,
@@ -259,30 +264,15 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
  */
 function isSandboxGatewayRunning(sandboxName: string): boolean | null {
   const agent = agentRuntime.getSessionAgent(sandboxName);
-  // For OpenClaw (agent === null), probe /health instead of / — the root
-  // returns 401 with device auth enabled, which curl -sf treats as failure
-  // (false "Offline" in #2342). /health returns 200 even with auth.
-  // For non-OpenClaw agents, keep their configured health probe URL.
-  // Non-OpenClaw agents may override the health probe URL (e.g. custom path/port).
-  // OpenClaw agents always use /health — not / which returns 401 with device auth (#2342).
-  // The recovery path (recoverDashboardChain) also probes /health, which is the gateway-level
-  // endpoint shared by all agents — so the pre-check and recovery are consistent for OpenClaw.
-  const probeUrl = agent
-    ? agentRuntime.getHealthProbeUrl(agent)
-    : `http://127.0.0.1:${DASHBOARD_PORT}/health`;
+  const probeUrl = agentRuntime.getHealthProbeUrl(agent);
   const result = executeSandboxCommand(
     sandboxName,
-    `curl -so /dev/null -w '%{http_code}' --max-time 3 ${shellQuote(probeUrl)} 2>/dev/null || echo 000`,
+    `curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1 && echo RUNNING || echo STOPPED`,
   );
   if (!result) return null;
-  const status = result.stdout.trim();
-  // Accept 200 (healthy) and 401 (auth-gated but alive) as "running"
-  if (status === "200" || status === "401") return true;
-  if (status === "000") return false;
-  // Empty or unexpected output (e.g. sandbox exec didn't run the curl) — unknown
-  if (status === "") return null;
-  // Any other HTTP status (e.g. 500, 502) — gateway is running but unhealthy
-  return false;
+  if (result.stdout === "RUNNING") return true;
+  if (result.stdout === "STOPPED") return false;
+  return null;
 }
 
 /**
@@ -290,95 +280,50 @@ function isSandboxGatewayRunning(sandboxName: string): boolean | null {
  * Cleans stale lock/temp files, sources proxy config, and launches the gateway
  * in the background. Returns true on success.
  */
+function recoverSandboxProcesses(sandboxName: string): boolean {
+  const agent = agentRuntime.getSessionAgent(sandboxName);
+  const agentScript = agentRuntime.buildRecoveryScript(agent, agent?.forwardPort ?? DASHBOARD_PORT);
+  const script =
+    agentScript ||
+    [
+      "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
+      `if curl -sf --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
+      "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
+      "rm -f /tmp/gateway.log /tmp/auto-pair.log;",
+      "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
+      "touch /tmp/auto-pair.log; chmod 600 /tmp/auto-pair.log;",
+      'OPENCLAW="$(command -v openclaw)";',
+      'if [ -z "$OPENCLAW" ]; then echo OPENCLAW_MISSING; exit 1; fi;',
+      `nohup "$OPENCLAW" gateway run --port ${DASHBOARD_PORT} > /tmp/gateway.log 2>&1 &`,
+      "GPID=$!; sleep 2;",
+      'if kill -0 "$GPID" 2>/dev/null; then echo "GATEWAY_PID=$GPID"; else echo GATEWAY_FAILED; cat /tmp/gateway.log 2>/dev/null | tail -5; fi',
+    ].join(" ");
+
+  const result = executeSandboxCommand(sandboxName, script);
+  if (!result) return false;
+  return (
+    result.status === 0 &&
+    (result.stdout.includes("GATEWAY_PID=") || result.stdout.includes("ALREADY_RUNNING"))
+  );
+}
+
 /**
- * Build the DashboardRecoverDeps for use with recoverDashboardChain().
- * Wires the injected deps to existing nemoclaw.ts helpers.
+ * Re-establish the dashboard port forward to the sandbox.
+ * Uses the agent's forward port when a non-OpenClaw agent is active.
  */
-function buildDashboardRecoverDeps() {
-  const { recoverDashboardChain } = require("./lib/dashboard-recover");
-  const { buildChain } = require("./lib/dashboard-contract");
-  return {
-    recoverDashboardChain,
-    buildChain,
-    makeDeps: () => ({
-      executeSandboxCommand: (name: string, script: string) => executeSandboxCommand(name, script),
-      captureForwardList: () => {
-        const fwdResult = captureOpenshell(["forward", "list"], { ignoreError: true });
-        return fwdResult ? fwdResult.output : null;
-      },
-      downloadSandboxConfig: (name: string) => {
-        try {
-          // Use the same download-and-parse pattern as fetchGatewayAuthTokenFromSandbox
-          const tmpDir = require("fs").mkdtempSync(
-            require("path").join(require("os").tmpdir(), "nemoclaw-health-"),
-          );
-          try {
-            const destDir = `${tmpDir}${require("path").sep}`;
-            const dlResult = runOpenshell(
-              ["sandbox", "download", name, "/sandbox/.openclaw/openclaw.json", destDir],
-              { ignoreError: true, stdio: ["ignore", "ignore", "ignore"] },
-            );
-            if (dlResult.status !== 0) return null;
-            const files: string[] = require("fs").readdirSync(tmpDir, { recursive: true });
-            const jsonFile = files.find((f: string) => f.endsWith("openclaw.json"));
-            if (!jsonFile) return null;
-            return JSON.parse(
-              require("fs").readFileSync(require("path").join(tmpDir, jsonFile), "utf-8"),
-            );
-          } finally {
-            try {
-              require("fs").rmSync(tmpDir, { recursive: true, force: true });
-            } catch {}
-          }
-        } catch {
-          return null;
-        }
-      },
-      restartGateway: (
-        name: string,
-        port: number,
-        agent: ReturnType<typeof agentRuntime.getSessionAgent>,
-      ) => {
-        const agentScript = agentRuntime.buildRecoveryScript(agent, port);
-        const script =
-          agentScript ||
-          [
-            "[ -f ~/.bashrc ] && . ~/.bashrc 2>/dev/null;",
-            `if curl -so /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:${port}/health 2>/dev/null | grep -qE '^(200|401)$'; then echo ALREADY_RUNNING; exit 0; fi;`,
-            "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
-            "rm -f /tmp/gateway.log /tmp/auto-pair.log;",
-            "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
-            "touch /tmp/auto-pair.log; chmod 600 /tmp/auto-pair.log;",
-            'OPENCLAW="$(command -v openclaw)";',
-            'if [ -z "$OPENCLAW" ]; then echo OPENCLAW_MISSING; exit 1; fi;',
-            `nohup "$OPENCLAW" gateway run --port ${port} > /tmp/gateway.log 2>&1 &`,
-            "GPID=$!; sleep 2;",
-            'if kill -0 "$GPID" 2>/dev/null; then echo "GATEWAY_PID=$GPID"; else echo GATEWAY_FAILED; cat /tmp/gateway.log 2>/dev/null | tail -5; fi',
-          ].join(" ");
-        const result = executeSandboxCommand(name, script);
-        if (!result) return false;
-        return (
-          result.status === 0 &&
-          (result.stdout.includes("GATEWAY_PID=") || result.stdout.includes("ALREADY_RUNNING"))
-        );
-      },
-      stopForward: (port: number) =>
-        runOpenshell(["forward", "stop", String(port)], { ignoreError: true }),
-      startForward: (target: string, name: string) =>
-        runOpenshell(["forward", "start", "--background", target, name], {
-          ignoreError: true,
-        }),
-      getSessionAgent: (name: string) => agentRuntime.getSessionAgent(name),
-    }),
-  };
+function ensureSandboxPortForward(sandboxName: string): void {
+  const agent = agentRuntime.getSessionAgent(sandboxName);
+  const port = agent ? String(agent.forwardPort) : DASHBOARD_FORWARD_PORT;
+  runOpenshell(["forward", "stop", port], { ignoreError: true });
+  runOpenshell(["forward", "start", "--background", port, sandboxName], {
+    ignoreError: true,
+  });
 }
 
 /**
  * Detect and recover from a sandbox that survived a gateway restart but
  * whose OpenClaw processes are not running. Returns an object describing
  * the outcome: { checked, wasRunning, recovered }.
- *
- * Delegates to recoverDashboardChain() for link-aware recovery.
  */
 function checkAndRecoverSandboxProcesses(
   sandboxName: string,
@@ -392,7 +337,7 @@ function checkAndRecoverSandboxProcesses(
     return { checked: true, wasRunning: true, recovered: false };
   }
 
-  // Gateway not running — attempt recovery via dashboard chain
+  // Gateway not running — attempt recovery
   const _recoveryAgent = agentRuntime.getSessionAgent(sandboxName);
   if (!quiet) {
     console.log("");
@@ -402,35 +347,33 @@ function checkAndRecoverSandboxProcesses(
     console.log("  Recovering...");
   }
 
-  const { recoverDashboardChain, buildChain, makeDeps } = buildDashboardRecoverDeps();
-  const agent = agentRuntime.getSessionAgent(sandboxName);
-  const chatUiUrl = process.env.CHAT_UI_URL || `http://127.0.0.1:${agent?.forwardPort ?? DASHBOARD_PORT}`;
-  const chain = buildChain({ chatUiUrl, port: agent?.forwardPort ?? DASHBOARD_PORT });
-  const deps = makeDeps();
-  const result = recoverDashboardChain(sandboxName, chain, deps);
-
-  if (result.attempted && result.after && result.after.healthy) {
-    if (!quiet) {
-      for (const action of result.actions) {
-        console.log(`  ${G}✓${R} ${action}`);
+  const recovered = recoverSandboxProcesses(sandboxName);
+  if (recovered) {
+    // Wait for gateway to bind its HTTP port before declaring success
+    sleepSeconds(3);
+    if (isSandboxGatewayRunning(sandboxName) !== true) {
+      if (!quiet) {
+        console.error("  Gateway process started but is not responding.");
+        console.error("  Check /tmp/gateway.log inside the sandbox for details.");
       }
+      return { checked: true, wasRunning: false, recovered: false };
     }
-    return { checked: true, wasRunning: false, recovered: true };
-  } else if (result.attempted) {
+    ensureSandboxPortForward(sandboxName);
     if (!quiet) {
-      console.error(
-        `  Could not fully recover ${agentRuntime.getAgentDisplayName(_recoveryAgent)} dashboard chain.`,
+      console.log(
+        `  ${G}✓${R} ${agentRuntime.getAgentDisplayName(_recoveryAgent)} gateway restarted inside sandbox.`,
       );
-      if (result.after) {
-        console.error(`  Diagnosis: ${result.after.diagnosis}`);
-      }
-      console.error("  Connect to the sandbox and run manually:");
-      console.error(`    ${agentRuntime.getGatewayCommand(_recoveryAgent)}`);
+      console.log(`  ${G}✓${R} Dashboard port forward re-established.`);
     }
-    return { checked: true, wasRunning: false, recovered: false };
+  } else if (!quiet) {
+    console.error(
+      `  Could not restart ${agentRuntime.getAgentDisplayName(_recoveryAgent)} gateway automatically.`,
+    );
+    console.error("  Connect to the sandbox and run manually:");
+    console.error(`    ${agentRuntime.getGatewayCommand(_recoveryAgent)}`);
   }
 
-  return { checked: true, wasRunning: false, recovered: false };
+  return { checked: true, wasRunning: false, recovered };
 }
 
 function buildRecoveredSandboxEntry(
@@ -1871,12 +1814,73 @@ function buildSandboxLogsArgs(sandboxName: string, follow: boolean): string[] {
   return args;
 }
 
+/**
+ * Handle `nemoclaw <sandbox> policy-add [flags]`. Supports three mutually
+ * exclusive modes: interactive preset picker (default), `--from-file <path>`
+ * for a single custom preset YAML, and `--from-dir <path>` for every
+ * `.yaml`/`.yml` file in a directory. `--dry-run` previews without applying,
+ * `--yes`/`-y`/`--force` (or `NEMOCLAW_NON_INTERACTIVE=1`) skips the
+ * confirmation prompt. `--from-dir` applies files in lexicographic order
+ * and aborts at the first failure (already-applied presets are not rolled
+ * back).
+ */
 async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
     args.includes("--yes") ||
+    args.includes("-y") ||
     args.includes("--force") ||
     process.env.NEMOCLAW_NON_INTERACTIVE === "1";
+
+  const fromFileIdx = args.indexOf("--from-file");
+  const fromDirIdx = args.indexOf("--from-dir");
+
+  if (fromFileIdx >= 0 && fromDirIdx >= 0) {
+    console.error("  --from-file and --from-dir are mutually exclusive.");
+    process.exit(1);
+  }
+
+  if (fromFileIdx >= 0) {
+    const filePath = args[fromFileIdx + 1];
+    if (!filePath || filePath.startsWith("--")) {
+      console.error("  --from-file requires a path argument.");
+      process.exit(1);
+    }
+    const ok = await applyExternalPreset(sandboxName, filePath, { dryRun, yes: skipConfirm });
+    if (!ok) process.exit(1);
+    return;
+  }
+
+  if (fromDirIdx >= 0) {
+    const dirPath = args[fromDirIdx + 1];
+    if (!dirPath || dirPath.startsWith("--")) {
+      console.error("  --from-dir requires a directory path.");
+      process.exit(1);
+    }
+    const absDir = path.resolve(dirPath);
+    if (!fs.existsSync(absDir) || !fs.statSync(absDir).isDirectory()) {
+      console.error(`  Directory not found: ${dirPath}`);
+      process.exit(1);
+    }
+    const files = fs
+      .readdirSync(absDir, { withFileTypes: true })
+      .filter((ent: { name: string; isFile(): boolean }) => ent.isFile() && /\.ya?ml$/i.test(ent.name))
+      .map((ent: { name: string }) => path.join(absDir, ent.name))
+      .sort();
+    if (files.length === 0) {
+      console.error(`  No .yaml/.yml preset files in ${dirPath}`);
+      process.exit(1);
+    }
+    for (const f of files) {
+      const ok = await applyExternalPreset(sandboxName, f, { dryRun, yes: skipConfirm });
+      if (!ok) {
+        console.error(`  Aborting --from-dir: ${f} failed. Remaining presets not applied.`);
+        process.exit(1);
+      }
+    }
+    return;
+  }
+
   const allPresets = policies.listPresets();
   const applied = policies.getAppliedPresets(sandboxName);
 
@@ -1922,14 +1926,71 @@ async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promi
 
   if (!skipConfirm) {
     const confirm = await askPrompt(`  Apply '${answer}' to sandbox '${sandboxName}'? [Y/n]: `);
-    if (confirm.toLowerCase() === "n") return;
+    if (confirm.trim().toLowerCase().startsWith("n")) return;
   }
 
   policies.applyPreset(sandboxName, answer);
 }
 
+/**
+ * Apply one custom preset file (`--from-file`, or one entry of `--from-dir`)
+ * to a sandbox. Loads and validates the file via `policies.loadPresetFromFile`,
+ * prints the egress endpoints with a warning that custom targets are not
+ * vetted, honors `dryRun` and `yes`, and delegates to
+ * `policies.applyPresetContent`. Returns `true` on success, `false` on any
+ * load/apply failure so the caller can decide whether to abort.
+ */
+async function applyExternalPreset(
+  sandboxName: string,
+  filePath: string,
+  { dryRun, yes }: { dryRun: boolean; yes: boolean },
+): Promise<boolean> {
+  let loaded;
+  try {
+    loaded = policies.loadPresetFromFile(filePath);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  Failed to load preset ${filePath}: ${message}`);
+    return false;
+  }
+  if (!loaded) return false;
+
+  const endpoints = policies.getPresetEndpoints(loaded.content);
+  if (endpoints.length > 0) {
+    console.log(`  [${loaded.presetName}] Endpoints that would be opened: ${endpoints.join(", ")}`);
+    console.log(
+      `  ${YW}Warning: custom preset targets are not vetted. Review hosts before applying.${R}`,
+    );
+  }
+
+  if (dryRun) {
+    console.log(`  --dry-run: '${loaded.presetName}' not applied.`);
+    return true;
+  }
+
+  if (!yes) {
+    const confirm = await askPrompt(
+      `  Apply '${loaded.presetName}' from ${filePath} to sandbox '${sandboxName}'? [Y/n]: `,
+    );
+    if (confirm.trim().toLowerCase().startsWith("n")) return true; // user-cancel counts as success (no abort)
+  }
+
+  try {
+    const result = policies.applyPresetContent(sandboxName, loaded.presetName, loaded.content, {
+      custom: { sourcePath: path.resolve(filePath) },
+    });
+    return result !== false;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  Failed to apply preset '${loaded.presetName}': ${message}`);
+    return false;
+  }
+}
+
 function sandboxPolicyList(sandboxName: string) {
-  const allPresets = policies.listPresets();
+  const builtin = policies.listPresets();
+  const custom = policies.listCustomPresets(sandboxName);
+  const allPresets = [...builtin, ...custom];
   const registryPresets = policies.getAppliedPresets(sandboxName);
 
   // getGatewayPresets returns null when gateway is unreachable, or an
@@ -2289,9 +2350,15 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
   const dryRun = args.includes("--dry-run");
   const skipConfirm =
     args.includes("--yes") ||
+    args.includes("-y") ||
     args.includes("--force") ||
     process.env.NEMOCLAW_NON_INTERACTIVE === "1";
-  const allPresets = policies.listPresets();
+
+  // Remove-able presets = built-in presets + custom presets applied via
+  // --from-file / --from-dir (tracked in registry.customPolicies).
+  const builtinPresets = policies.listPresets();
+  const customPresets = policies.listCustomPresets(sandboxName);
+  const allPresets = [...builtinPresets, ...customPresets];
   const applied = policies.getAppliedPresets(sandboxName);
 
   const presetArg = args.find((arg) => !arg.startsWith("-"));
@@ -2302,7 +2369,7 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
     if (!preset) {
       console.error(`  Unknown preset '${presetArg}'.`);
       console.error(
-        `  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ")}`,
+        `  Valid presets: ${allPresets.map((item: { name: string }) => item.name).join(", ") || "(none)"}`,
       );
       process.exit(1);
     }
@@ -2321,7 +2388,19 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
   }
   if (!answer) return;
 
-  const presetContent = policies.loadPreset(answer);
+  // Resolve preset content: built-in first, then custom (persisted in
+  // registry). Needed only for the endpoint preview below — removePreset()
+  // itself re-resolves on the library side.
+  let presetContent: string | null = policies.loadPreset(answer);
+  if (!presetContent) {
+    const entry = customPresets.find((p: { name: string }) => p.name === answer);
+    if (entry) {
+      const persisted = registry
+        .getCustomPolicies(sandboxName)
+        .find((p: { name: string }) => p.name === answer);
+      presetContent = persisted ? persisted.content : null;
+    }
+  }
   if (!presetContent) return;
 
   const endpoints = policies.getPresetEndpoints(presetContent);
@@ -2336,7 +2415,7 @@ async function sandboxPolicyRemove(sandboxName: string, args: string[] = []): Pr
 
   if (!skipConfirm) {
     const confirm = await askPrompt(`  Remove '${answer}' from sandbox '${sandboxName}'? [Y/n]: `);
-    if (confirm.toLowerCase() === "n") return;
+    if (confirm.trim().toLowerCase().startsWith("n")) return;
   }
 
   if (!policies.removePreset(sandboxName, answer)) {
@@ -3759,6 +3838,25 @@ const [cmd, ...args] = process.argv.slice(2);
       case "destroy":
         await sandboxDestroy(cmd, actionArgs);
         break;
+      case "gateway-token": {
+        const { options: gatewayTokenOpts, unknown: gatewayTokenUnknown } =
+          parseGatewayTokenArgs(actionArgs);
+        if (gatewayTokenUnknown.length > 0) {
+          console.error(`  Unknown flag: ${gatewayTokenUnknown[0]}`);
+          console.error("  Usage: nemoclaw <name> gateway-token [--quiet|-q]");
+          process.exit(1);
+        }
+        // Suppress EPIPE traces when the consumer closes the pipe early
+        // (e.g. `... | head -c 0`). The token has already been written.
+        process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+          if (err.code === "EPIPE") process.exit(0);
+        });
+        const exitCode = runGatewayTokenCommand(cmd, gatewayTokenOpts, {
+          fetchToken: fetchGatewayAuthTokenFromSandbox,
+        });
+        if (exitCode !== 0) process.exit(exitCode);
+        break;
+      }
       case "skill":
         await sandboxSkillInstall(cmd, actionArgs);
         break;
@@ -3871,17 +3969,24 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           }
           case "set": {
-            const setOpts: { key: string | null; value: string | null; restart: boolean } = {
+            const setOpts: {
+              key: string | null;
+              value: string | null;
+              restart: boolean;
+              acceptNewPath: boolean;
+            } = {
               key: null,
               value: null,
               restart: false,
+              acceptNewPath: false,
             };
             for (let i = 1; i < actionArgs.length; i++) {
               if (actionArgs[i] === "--key") setOpts.key = actionArgs[++i];
               else if (actionArgs[i] === "--value") setOpts.value = actionArgs[++i];
               else if (actionArgs[i] === "--restart") setOpts.restart = true;
+              else if (actionArgs[i] === "--config-accept-new-path") setOpts.acceptNewPath = true;
             }
-            sandboxConfig.configSet(cmd, setOpts);
+            await sandboxConfig.configSet(cmd, setOpts);
             break;
           }
           case "rotate-token": {
@@ -3899,7 +4004,9 @@ const [cmd, ...args] = process.argv.slice(2);
           default:
             console.error("  Usage: nemoclaw <name> config <get|set|rotate-token>");
             console.error("    get           [--key dotpath] [--format json|yaml]");
-            console.error("    set           --key <dotpath> --value <value> [--restart]");
+            console.error(
+              "    set           --key <dotpath> --value <value> [--restart] [--config-accept-new-path]",
+            );
             console.error("    rotate-token  [--from-env <VAR>] [--from-stdin]");
             process.exit(1);
         }
@@ -3908,7 +4015,7 @@ const [cmd, ...args] = process.argv.slice(2);
       default:
         console.error(`  Unknown action: ${action}`);
         console.error(
-          `  Valid actions: connect, status, logs, policy-add, policy-remove, policy-list, skill, snapshot, rebuild, shields, config, channels, destroy`,
+          `  Valid actions: connect, status, logs, policy-add, policy-remove, policy-list, skill, snapshot, rebuild, shields, config, channels, gateway-token, destroy`,
         );
         process.exit(1);
     }

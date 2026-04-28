@@ -33,6 +33,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: true,
       resume: true,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: true,
@@ -57,6 +58,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: false,
       resume: false,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: true,
@@ -80,6 +82,7 @@ describe("onboard command", () => {
     expect(runOnboard).toHaveBeenCalledWith({
       nonInteractive: false,
       resume: true,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: false,
@@ -124,6 +127,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: false,
       resume: true,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: "/tmp/Custom.Dockerfile",
       acceptThirdPartySoftware: false,
@@ -141,9 +145,7 @@ describe("onboard command", () => {
       {
         env: {},
         error: () => {},
-        exit: ((code: number) => {
-          throw new Error(String(code));
-        }) as never,
+        exit: exitWithCode,
       },
     );
     expect(result.controlUiPort).toBe(18795);
@@ -158,12 +160,52 @@ describe("onboard command", () => {
         {
           env: {},
           error: () => {},
-          exit: ((code: number) => {
-            throw new Error(`exit:${code}`);
-          }) as never,
+          exit: exitWithPrefixedCode,
         },
       ),
     ).toThrow("exit:1");
+  });
+
+  it("parses --fresh and surfaces it as fresh=true", () => {
+    expect(
+      parseOnboardArgs(
+        ["--fresh"],
+        "--yes-i-accept-third-party-software",
+        "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+        {
+          env: {},
+          error: () => {},
+          exit: exitWithCode,
+        },
+      ),
+    ).toEqual({
+      nonInteractive: false,
+      resume: false,
+      fresh: true,
+      recreateSandbox: false,
+      fromDockerfile: null,
+      acceptThirdPartySoftware: false,
+      agent: null,
+      dangerouslySkipPermissions: false,
+      controlUiPort: null,
+    });
+  });
+
+  it("rejects --resume and --fresh together", () => {
+    const errors: string[] = [];
+    expect(() =>
+      parseOnboardArgs(
+        ["--resume", "--fresh"],
+        "--yes-i-accept-third-party-software",
+        "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+        {
+          env: {},
+          error: (message = "") => errors.push(message),
+          exit: exitWithPrefixedCode,
+        },
+      ),
+    ).toThrow("exit:1");
+    expect(errors.join("\n")).toContain("--resume and --fresh are mutually exclusive");
   });
 
   it("exits when --from is missing its Dockerfile path", () => {
@@ -215,6 +257,7 @@ describe("onboard command", () => {
     ).toEqual({
       nonInteractive: false,
       resume: false,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: false,
@@ -263,6 +306,7 @@ describe("onboard command", () => {
     expect(runOnboard).toHaveBeenCalledWith({
       nonInteractive: false,
       resume: false,
+      fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
       acceptThirdPartySoftware: false,
