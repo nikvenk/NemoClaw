@@ -131,8 +131,17 @@ describe("buildRecoveryScript", () => {
       // freshly touched/chmod'd, otherwise the redirect targets a stale
       // file that gets removed seconds later.
       const touchIdx = script!.indexOf("touch /tmp/gateway.log");
-      const warnIdx = script!.indexOf('>> /tmp/gateway.log');
+      const warnIdx = script!.indexOf('echo "$_W" >> /tmp/gateway.log');
       expect(touchIdx).toBeLessThan(warnIdx);
+    });
+
+    it("appends (not truncates) gateway.log on launch so warnings survive", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      // Truncating with `>` wipes the [gateway-recovery] WARNING that the
+      // recovery script wrote moments earlier — meaning a sysadmin tailing
+      // gateway.log would see the eventual crash without the explanation.
+      expect(script).toContain(">> /tmp/gateway.log 2>&1 &");
+      expect(script).not.toMatch(/[^>]> \/tmp\/gateway\.log 2>&1 &/);
     });
   });
 });

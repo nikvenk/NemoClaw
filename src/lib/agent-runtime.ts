@@ -72,9 +72,14 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
         `GATEWAY_CMD_BIN=${shellQuote(customGatewayExecutable)};`,
         'case "$GATEWAY_CMD_BIN" in */*) [ -x "$GATEWAY_CMD_BIN" ] || { echo AGENT_MISSING; exit 1; } ;; *) command -v "$GATEWAY_CMD_BIN" >/dev/null 2>&1 || { echo AGENT_MISSING; exit 1; } ;; esac;',
       ];
+  // Append (>>) rather than truncate (>) so the [gateway-recovery] WARNING
+  // lines that the recovery script writes to gateway.log moments earlier
+  // survive past the gateway launch — otherwise the warning explaining
+  // *why* the gateway is about to crash gets wiped by the same launch
+  // that's about to crash on a missing guard. (#2478)
   const launchCommand = usesValidatedBinary
-    ? `nohup "$AGENT_BIN" gateway run --port ${port} > /tmp/gateway.log 2>&1 &`
-    : `nohup ${configuredGatewayCommand} --port ${port} > /tmp/gateway.log 2>&1 &`;
+    ? `nohup "$AGENT_BIN" gateway run --port ${port} >> /tmp/gateway.log 2>&1 &`
+    : `nohup ${configuredGatewayCommand} --port ${port} >> /tmp/gateway.log 2>&1 &`;
   const isHermes = agent.name === "hermes";
   const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes-data; " : "";
 

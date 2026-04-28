@@ -394,15 +394,14 @@ else
   gateway_log_tail 100
 fi
 
-# Restore proxy-env.sh by base64-injecting the snapshot. `openshell sandbox
-# exec` does not pipe stdin from the caller through to the subshell, so the
-# previous `printf | sandbox_exec sh -c 'cat > file'` approach left an empty
+# Restore proxy-env.sh by base64-injecting the snapshot via argv. `openshell
+# sandbox exec` does not pipe stdin from the caller through to the subshell,
+# so the previous `printf | sandbox_exec sh -c 'cat > file'` left an empty
 # file. Encoding into the command argv sidesteps the stdin gap entirely.
 SNAPSHOT_B64="$(printf '%s' "$SNAPSHOT" | base64 | tr -d '\n')"
-sandbox_exec sh -c "
-  echo '$SNAPSHOT_B64' | base64 -d > /tmp/nemoclaw-proxy-env.sh
-  chmod 444 /tmp/nemoclaw-proxy-env.sh
-" >/dev/null
+info "restore: ${#SNAPSHOT_B64}-char base64 payload (decoded ${#SNAPSHOT} bytes)"
+restore_out="$(sandbox_exec sh -c "echo '$SNAPSHOT_B64' | base64 -d > /tmp/nemoclaw-proxy-env.sh && chmod 444 /tmp/nemoclaw-proxy-env.sh && wc -c < /tmp/nemoclaw-proxy-env.sh" | tr -d '[:space:]')"
+info "restore: result='$restore_out'"
 
 # Verify restore actually landed before continuing — otherwise the soak
 # is pointless because the gateway will keep crashing.
