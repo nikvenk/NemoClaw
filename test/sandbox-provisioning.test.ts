@@ -19,6 +19,7 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DOCKERFILE = path.join(ROOT, "Dockerfile");
 const DOCKERFILE_BASE = path.join(ROOT, "Dockerfile.base");
+const DOCKERFILE_SANDBOX = path.join(ROOT, "test", "Dockerfile.sandbox");
 
 describe("sandbox provisioning: exec-approvals / update-check symlinks (#1027, #1519)", () => {
   const src = fs.readFileSync(DOCKERFILE_BASE, "utf-8");
@@ -87,5 +88,15 @@ describe("sandbox provisioning: root-owned read-only config (#514)", () => {
   it(".openclaw directory stays root:root 0755 (agent cannot add or replace symlinks)", () => {
     expect(src).toContain("chown root:root /sandbox/.openclaw");
     expect(src).toContain("chmod 755 /sandbox/.openclaw");
+  });
+});
+
+describe("sandbox test image fixtures", () => {
+  const src = fs.readFileSync(DOCKERFILE_SANDBOX, "utf-8");
+
+  it("clears production config recovery artifacts after writing the legacy fixture", () => {
+    expect(src).toContain("/sandbox/.openclaw/openclaw.json.bak*");
+    expect(src).toContain("/sandbox/.openclaw/openclaw.json.last-good");
+    expect(src).toContain("/sandbox/.openclaw-data/logs/config-health.json");
   });
 });
