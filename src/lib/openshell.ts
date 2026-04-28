@@ -25,10 +25,12 @@ interface OpenshellSpawnOptions {
 export interface RunOpenshellOptions extends OpenshellSpawnOptions {
   stdio?: SpawnSyncOptions["stdio"];
   ignoreError?: boolean;
+  timeout?: number;
 }
 
 export interface CaptureOpenshellOptions extends OpenshellSpawnOptions {
   ignoreError?: boolean;
+  timeout?: number;
 }
 
 export interface CaptureOpenshellResult {
@@ -87,8 +89,12 @@ export function runOpenshellCommand(
     env: { ...process.env, ...opts.env },
     encoding: "utf-8",
     stdio: opts.stdio ?? "inherit",
+    timeout: opts.timeout,
   });
   if (result.error) {
+    if (opts.ignoreError) {
+      return result;
+    }
     return handleSpawnError(binary, args, result.error, opts);
   }
   if (result.status !== 0 && !opts.ignoreError) {
@@ -111,8 +117,15 @@ export function captureOpenshellCommand(
     env: { ...process.env, ...opts.env },
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
+    timeout: opts.timeout,
   });
   if (result.error) {
+    if (opts.ignoreError || opts.timeout !== undefined) {
+      return {
+        status: result.status ?? 1,
+        output: `${result.stdout || ""}${opts.ignoreError ? "" : result.stderr || ""}`.trim(),
+      };
+    }
     return handleSpawnError(binary, args, result.error, opts);
   }
   return {

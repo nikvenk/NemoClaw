@@ -135,6 +135,7 @@ const REMOTE_UNINSTALL_URL = buildVersionedUninstallUrl(getVersion());
 let OPENSHELL_BIN: string | null = null;
 const NEMOCLAW_GATEWAY_NAME = "nemoclaw";
 const DASHBOARD_FORWARD_PORT = String(DASHBOARD_PORT);
+const OPENSHELL_PROBE_TIMEOUT_MS = 15_000;
 
 function getOpenshellBinary(): string {
   if (!OPENSHELL_BIN) {
@@ -180,7 +181,10 @@ function cleanupGatewayAfterLastSandbox() {
 }
 
 function hasNoLiveSandboxes() {
-  const liveList = captureOpenshell(["sandbox", "list"], { ignoreError: true });
+  const liveList = captureOpenshell(["sandbox", "list"], {
+    ignoreError: true,
+    timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+  });
   if (liveList.status !== 0) {
     return false;
   }
@@ -489,7 +493,10 @@ async function recoverRegistryFromLiveGateway(
   }
 
   let recoveredFromGateway = 0;
-  const liveList = captureOpenshell(["sandbox", "list"], { ignoreError: true });
+  const liveList = captureOpenshell(["sandbox", "list"], {
+    ignoreError: true,
+    timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+  });
   const liveNames = Array.from<string>(parseLiveSandboxNames(liveList.output));
   for (const name of liveNames) {
     const metadata = metadataByName.get(name) || undefined;
@@ -551,8 +558,10 @@ function getActiveGatewayName(output = ""): string | null {
 }
 
 function getNamedGatewayLifecycleState() {
-  const status = captureOpenshell(["status"]);
-  const gatewayInfo = captureOpenshell(["gateway", "info", "-g", "nemoclaw"]);
+  const status = captureOpenshell(["status"], { timeout: OPENSHELL_PROBE_TIMEOUT_MS });
+  const gatewayInfo = captureOpenshell(["gateway", "info", "-g", "nemoclaw"], {
+    timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+  });
   const cleanStatus = stripAnsi(status.output);
   const activeGateway = getActiveGatewayName(status.output);
   const connected = /^\s*Status:\s*Connected\b/im.test(cleanStatus);
@@ -607,7 +616,10 @@ async function recoverNamedGatewayRuntime() {
     return { recovered: true, before, after: before, attempted: false };
   }
 
-  runOpenshell(["gateway", "select", "nemoclaw"], { ignoreError: true });
+  runOpenshell(["gateway", "select", "nemoclaw"], {
+    ignoreError: true,
+    timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+  });
   let after = getNamedGatewayLifecycleState();
   if (after.state === "healthy_named") {
     process.env.OPENSHELL_GATEWAY = "nemoclaw";
@@ -625,7 +637,10 @@ async function recoverNamedGatewayRuntime() {
       // Fall through to the lifecycle re-check below so we preserve the
       // existing recovery result shape and emit the correct classification.
     }
-    runOpenshell(["gateway", "select", "nemoclaw"], { ignoreError: true });
+    runOpenshell(["gateway", "select", "nemoclaw"], {
+      ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+    });
     after = getNamedGatewayLifecycleState();
     if (after.state === "healthy_named") {
       process.env.OPENSHELL_GATEWAY = "nemoclaw";
@@ -638,7 +653,9 @@ async function recoverNamedGatewayRuntime() {
 
 /** Query sandbox presence and return its output with the live enforced policy. */
 function getSandboxGatewayState(sandboxName: string) {
-  const result = captureOpenshell(["sandbox", "get", sandboxName]);
+  const result = captureOpenshell(["sandbox", "get", sandboxName], {
+    timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+  });
   let output = result.output;
   if (result.status === 0) {
     // `openshell sandbox get` returns the immutable baseline policy from sandbox
@@ -648,6 +665,7 @@ function getSandboxGatewayState(sandboxName: string) {
     // Sandbox info above it. (#1132)
     const livePolicy = captureOpenshell(["policy", "get", "--full", sandboxName], {
       ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
     });
     if (livePolicy.status === 0 && livePolicy.output.trim()) {
       const rawLines = String(output).split("\n");
@@ -709,7 +727,10 @@ function reconcileMissingAgainstNamedGateway(
 ) {
   const lifecycle = getNamedGatewayLifecycleState();
   if (lifecycle.state === "connected_other") {
-    runOpenshell(["gateway", "select", "nemoclaw"], { ignoreError: true });
+    runOpenshell(["gateway", "select", "nemoclaw"], {
+      ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+    });
     const retry = getSandboxGatewayState(sandboxName);
     if (retry.state === "present") {
       return { ...retry, recoveredGateway: true, recoveryVia: "select" };
@@ -1340,7 +1361,12 @@ function showStatus() {
   showStatusCommand({
     listSandboxes: () => registry.listSandboxes(),
     getLiveInference: () =>
-      parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
+      parseGatewayInference(
+        captureOpenshell(["inference", "get"], {
+          ignoreError: true,
+          timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+        }).output,
+      ),
     showServiceStatus,
     checkMessagingBridgeHealth,
     backfillAndFindOverlaps,
@@ -1366,7 +1392,12 @@ async function listSandboxes(): Promise<void> {
   await listSandboxesCommand({
     recoverRegistryEntries: () => recoverRegistryEntries(),
     getLiveInference: () =>
-      parseGatewayInference(captureOpenshell(["inference", "get"], { ignoreError: true }).output),
+      parseGatewayInference(
+        captureOpenshell(["inference", "get"], {
+          ignoreError: true,
+          timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+        }).output,
+      ),
     loadLastSession: () => onboardSession.loadSession(),
     getActiveSessionCount: sessionDeps
       ? (name: string) => {
@@ -1582,7 +1613,10 @@ async function sandboxConnect(
 async function sandboxStatus(sandboxName: string) {
   const sb = registry.getSandbox(sandboxName);
   const live = parseGatewayInference(
-    captureOpenshell(["inference", "get"], { ignoreError: true }).output,
+    captureOpenshell(["inference", "get"], {
+      ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+    }).output,
   );
   const currentModel = (live && live.model) || (sb && sb.model) || "unknown";
   const currentProvider = (live && live.provider) || (sb && sb.provider) || "unknown";
@@ -2462,6 +2496,26 @@ function removeSandboxImage(sandboxName: string) {
 
 async function sandboxDestroy(sandboxName: string, args: string[] = []): Promise<void> {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
+  const sb = registry.getSandbox(sandboxName);
+
+  if (!sb) {
+    const liveList = captureOpenshell(["sandbox", "list"], {
+      ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+    });
+    if (liveList.status !== 0 || !parseLiveSandboxNames(liveList.output).has(sandboxName)) {
+      const session = onboardSession.loadSession();
+      if (session && session.sandboxName === sandboxName) {
+        onboardSession.updateSession((s: Session) => {
+          s.sandboxName = null;
+          return s;
+        });
+      }
+      console.log(`  Sandbox '${sandboxName}' is not registered locally or live in OpenShell.`);
+      console.log(`  ${G}✓${R} Sandbox '${sandboxName}' destroyed`);
+      return;
+    }
+  }
 
   // Active session detection — enrich the confirmation prompt if sessions are active
   let activeSessionCount = 0;
@@ -2497,7 +2551,6 @@ async function sandboxDestroy(sandboxName: string, args: string[] = []): Promise
     }
   }
 
-  const sb = registry.getSandbox(sandboxName);
   if (sb && sb.nimContainer) {
     console.log(`  Stopping NIM for '${sandboxName}'...`);
     nim.stopNimContainerByName(sb.nimContainer);

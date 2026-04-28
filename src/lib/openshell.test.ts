@@ -39,6 +39,16 @@ function stubSpawnSync(spec: SpawnResultSpec): OpenshellSpawnSync {
   return () => makeSpawnResult(spec);
 }
 
+function stubSpawnSyncWithOptions(
+  spec: SpawnResultSpec,
+  onOptions: (options: Parameters<OpenshellSpawnSync>[2]) => void,
+): OpenshellSpawnSync {
+  return (_command, _args, options) => {
+    onOptions(options);
+    return makeSpawnResult(spec);
+  };
+}
+
 function exitWithCode(code: number): never {
   throw new Error(`exit:${code}`);
 }
@@ -94,6 +104,25 @@ describe("openshell helpers", () => {
     expect(result.status).toBe(0);
   });
 
+  it("passes timeout through to run and capture calls", () => {
+    const seen: number[] = [];
+    runOpenshellCommand("openshell", ["status"], {
+      timeout: 1234,
+      spawnSyncImpl: stubSpawnSyncWithOptions(
+        { status: 0, stdout: "ok\n", stderr: "" },
+        (options) => seen.push(options.timeout as number),
+      ),
+    });
+    captureOpenshellCommand("openshell", ["status"], {
+      timeout: 5678,
+      spawnSyncImpl: stubSpawnSyncWithOptions(
+        { status: 0, stdout: "ok\n", stderr: "" },
+        (options) => seen.push(options.timeout as number),
+      ),
+    });
+    expect(seen).toEqual([1234, 5678]);
+  });
+
   it("uses the injected exit handler on failure", () => {
     expect(() =>
       runOpenshellCommand("openshell", ["status"], {
@@ -140,6 +169,32 @@ describe("openshell helpers", () => {
       }),
     ).toThrow("exit:1");
     expect(errors).toEqual(["  Failed to start openshell status: spawn ENOENT"]);
+  });
+
+  it("returns timed-out capture output when a timeout was requested", () => {
+    const result = captureOpenshellCommand("openshell", ["status"], {
+      timeout: 100,
+      spawnSyncImpl: stubSpawnSync({
+        status: null,
+        stdout: "",
+        stderr: "timed out\n",
+        error: new Error("ETIMEDOUT"),
+      }),
+    });
+    expect(result).toEqual({ status: 1, output: "timed out" });
+  });
+
+  it("returns ignored run spawn failures instead of exiting", () => {
+    const result = runOpenshellCommand("openshell", ["status"], {
+      ignoreError: true,
+      spawnSyncImpl: stubSpawnSync({
+        status: null,
+        stdout: "",
+        stderr: "",
+        error: new Error("ETIMEDOUT"),
+      }),
+    });
+    expect(result.error?.message).toBe("ETIMEDOUT");
   });
 
   it("reads the installed openshell version through the capture helper", () => {
