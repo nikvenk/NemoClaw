@@ -4749,9 +4749,6 @@ async function setupInference(
       baseUrl,
       { [VLLM_LOCAL_CREDENTIAL_ENV]: "dummy" },
     );
-    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
-    // vllm-local is confirmed.
-    deleteCredential("OPENAI_API_KEY");
     if (!providerResult.ok) {
       console.error(`  ${providerResult.message}`);
       process.exit(providerResult.status || 1);
@@ -4767,6 +4764,11 @@ async function setupInference(
       "--timeout",
       String(LOCAL_INFERENCE_TIMEOUT_SECS),
     ]);
+    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
+    // vllm-local is fully confirmed. Done last so a failed registration
+    // does not delete a credential the user may still need for a remote
+    // provider.
+    deleteCredential("OPENAI_API_KEY");
   } else if (provider === "ollama-local") {
     const validation = validateLocalProvider(provider);
     if (!validation.ok) {
@@ -4805,11 +4807,6 @@ async function setupInference(
       baseUrl,
       { [OLLAMA_PROXY_CREDENTIAL_ENV]: ollamaCredential },
     );
-    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
-    // ollama-local is confirmed. Without this, an invalid OpenAI key cached
-    // by an earlier onboard would still be hit by `getCredential` callers,
-    // and `unset OPENAI_API_KEY; nemoclaw onboard` would not clear it.
-    deleteCredential("OPENAI_API_KEY");
     if (!providerResult.ok) {
       console.error(`  ${providerResult.message}`);
       process.exit(providerResult.status || 1);
@@ -4832,6 +4829,14 @@ async function setupInference(
       console.error(`  ${probe.message}`);
       process.exit(1);
     }
+    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
+    // ollama-local is fully confirmed (provider registered, inference set,
+    // model warm). Done last so a failed onboard does not delete a credential
+    // the user may still need for a remote provider. Without this, an
+    // invalid OpenAI key cached by an earlier onboard would still be hit by
+    // `getCredential` callers, and `unset OPENAI_API_KEY; nemoclaw onboard`
+    // would not clear it.
+    deleteCredential("OPENAI_API_KEY");
   }
 
   verifyInferenceRoute(provider, model);
