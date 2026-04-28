@@ -674,9 +674,11 @@ inject_gateway_token() {
     return 1
   fi
 
-  # Atomic write: temp file in same dir → fsync → os.replace, so an
-  # interrupt mid-write can't leave the integrity-pinned config truncated
-  # (which would brick the next boot via verify_config_integrity).
+  # Atomic write: temp file in same dir → fsync file → os.replace →
+  # fsync parent dir, so an interrupt mid-write can't leave the
+  # integrity-pinned config truncated, AND a crash between the rename
+  # and the next sha256sum can't leave a stale directory entry
+  # alongside a fresh hash file (which would brick verify_config_integrity).
   python3 - "$config_file" "$token" <<'PYINJECT'
 import json, os, sys, tempfile
 
@@ -688,20 +690,27 @@ with open(config_file) as f:
 cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = token
 
 dir_name = os.path.dirname(config_file) or "."
-fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".openclaw.json.")
+dir_fd = os.open(dir_name, os.O_RDONLY)
 try:
-    with os.fdopen(fd, "w") as f:
-        json.dump(cfg, f, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(tmp_path, 0o444)
-    os.replace(tmp_path, config_file)
-except Exception:
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".openclaw.json.")
     try:
-        os.unlink(tmp_path)
-    except FileNotFoundError:
-        pass
-    raise
+        with os.fdopen(fd, "w") as f:
+            json.dump(cfg, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp_path, 0o444)
+        os.replace(tmp_path, config_file)
+        # Persist the directory entry so the rename survives a crash
+        # before the subsequent .config-hash write.
+        os.fsync(dir_fd)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise
+finally:
+    os.close(dir_fd)
 PYINJECT
 
   # Recompute config hash after the atomic replace lands.
