@@ -175,6 +175,34 @@ gateway_log_tail() {
   sandbox_exec sh -c "tail -n ${1:-50} /tmp/gateway.log 2>/dev/null"
 }
 
+# Verify the gateway is actually serving its inference API, not just alive
+# as a process. A NemoClaw user reported on #2478 that pre-fix the ciao
+# crash left `https://inference.local/v1/models` returning empty — i.e.
+# their deployed model "disappeared" from the user's perspective. This
+# helper closes that loop so we prove the recovery preserves the
+# user-visible service surface, not just the OS process. Polls up to $1
+# seconds (default 30) since the new gateway needs ~1-3s to bind after
+# launch.
+gateway_serves_inference() {
+  local timeout="${1:-30}"
+  local elapsed=0
+  local out=""
+  while [ "$elapsed" -lt "$timeout" ]; do
+    out="$(sandbox_exec sh -c 'curl -sf --max-time 5 https://inference.local/v1/models 2>/dev/null')"
+    # OpenAI-compatible /v1/models response — top-level "data" array, plus
+    # entries with "object" or "id". Match any of the three to be tolerant
+    # of provider-specific shapes (NVIDIA Endpoints vs. local Ollama).
+    case "$out" in
+      *'"data"'*|*'"object"'*|*'"id"'*) return 0 ;;
+    esac
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  echo "  [inference] /v1/models did not return a usable response within ${timeout}s"
+  echo "  [inference] last response: ${out:0:200}"
+  return 1
+}
+
 # Dump diagnostic snapshot for triage when an environ read or guard
 # assertion fails. Helps distinguish wrong-PID matching, gateway-not-running,
 # and cross-namespace /proc visibility issues.
@@ -316,6 +344,14 @@ else
   exit 1
 fi
 
+if gateway_serves_inference 30; then
+  pass "Initial gateway serves inference API (https://inference.local/v1/models responds)"
+else
+  fail "Initial gateway alive but not serving inference — recovery is incomplete from user POV"
+  gateway_diagnostics "$INIT_PID"
+  exit 1
+fi
+
 # ══════════════════════════════════════════════════════════════════
 # Phase 3: Crash-recovery loop ($CRASH_CYCLES cycles)
 # ══════════════════════════════════════════════════════════════════
@@ -348,6 +384,15 @@ for cycle in $(seq 1 "$CRASH_CYCLES"); do
     pass "Cycle $cycle: respawned gateway retains guard chain (proxy-env + ciao preload firing)"
   else
     fail "Cycle $cycle: respawned gateway LOST guard chain — recovery hardening regressed"
+    gateway_diagnostics "$new_pid"
+    gateway_log_tail 80
+    exit 1
+  fi
+
+  if gateway_serves_inference 30; then
+    pass "Cycle $cycle: respawned gateway serves inference API"
+  else
+    fail "Cycle $cycle: gateway up + guards active but inference API not serving"
     gateway_diagnostics "$new_pid"
     gateway_log_tail 80
     exit 1
@@ -428,7 +473,12 @@ if ! gateway_guards_active "$SOAK_START_PID" 30; then
   gateway_diagnostics "$SOAK_START_PID"
   exit 1
 fi
-pass "Gateway healthy with guards active entering soak (pid=$SOAK_START_PID)"
+if ! gateway_serves_inference 30; then
+  fail "Gateway alive + guards active but inference API not serving entering soak"
+  gateway_diagnostics "$SOAK_START_PID"
+  exit 1
+fi
+pass "Gateway healthy with guards active and inference API serving (pid=$SOAK_START_PID)"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 5: Soak — verify no crash-loop over $SOAK_SECONDS
@@ -438,16 +488,27 @@ section "Phase 5: Soak ($SOAK_SECONDS s) — detect crash-loop regression"
 info "Sleeping ${SOAK_SECONDS}s while observing gateway. Health-monitor restart"
 info "cadence is ~240s in prod, so a $SOAK_SECONDS s window catches at least one cycle."
 
-# Sample PID every 15s. Count distinct PIDs observed and any windows where
-# pid was empty (gateway down).
+# Sample PID every 15s + probe the inference endpoint every 60s. Count
+# distinct PIDs, empty PID samples (gateway down), and inference-endpoint
+# failures. The endpoint probe is the user-facing signal — pre-fix the
+# ciao crash made `inference.local/v1/models` go silent for the user
+# even though the underlying OS process state was variously alive/dead.
 declare -a SAMPLES=()
 empty_samples=0
+inference_probes=0
+inference_failures=0
 elapsed=0
 INTERVAL=15
 while [ "$elapsed" -lt "$SOAK_SECONDS" ]; do
   cur="$(gateway_pid)"
   SAMPLES+=("$cur")
   [ -z "$cur" ] && empty_samples=$((empty_samples + 1))
+  if [ $((elapsed % 60)) -eq 0 ]; then
+    inference_probes=$((inference_probes + 1))
+    if ! gateway_serves_inference 5; then
+      inference_failures=$((inference_failures + 1))
+    fi
+  fi
   sleep "$INTERVAL"
   elapsed=$((elapsed + INTERVAL))
 done
@@ -456,7 +517,7 @@ done
 distinct=$(printf '%s\n' "${SAMPLES[@]}" | grep -v '^$' | sort -u | wc -l | tr -d ' ')
 total_samples=${#SAMPLES[@]}
 
-info "Soak summary: ${total_samples} samples, ${distinct} distinct PID(s), ${empty_samples} empty observations"
+info "Soak summary: ${total_samples} samples, ${distinct} distinct PID(s), ${empty_samples} empty observations, ${inference_failures}/${inference_probes} inference probes failed"
 
 # Crash-loop signature: many distinct PIDs (>2 over 5min = bad). One respawn
 # (distinct=2) is acceptable if health-monitor fires once. Empty samples >1
@@ -466,6 +527,17 @@ if [ "$distinct" -le 2 ] && [ "$empty_samples" -le 1 ]; then
 else
   fail "Crash-loop signature: $distinct distinct PIDs and $empty_samples empty samples in ${SOAK_SECONDS}s"
   printf '  PID samples: %s\n' "${SAMPLES[*]}"
+  gateway_log_tail 120
+fi
+
+# Inference-API availability: this is the user-facing failure surface from
+# the #2478 comment ("deployed model not available because curl returns
+# nothing"). Zero failures across the soak proves recovery preserves the
+# user-visible service, not just the OS process.
+if [ "$inference_failures" -eq 0 ]; then
+  pass "Inference API available throughout soak ($inference_probes/$inference_probes probes succeeded)"
+else
+  fail "Inference API unavailable during soak ($inference_failures/$inference_probes probes failed)"
   gateway_log_tail 120
 fi
 
