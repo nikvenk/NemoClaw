@@ -158,7 +158,7 @@ jobs:
         run: bash test/e2e/test-sandbox-survival.sh
 
       - name: Upload install log on failure
-        if: failure()
+        if: always()  # diag v4: capture artifact on exit 0 too
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-survival-install-log

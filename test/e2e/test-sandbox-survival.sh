@@ -733,8 +733,13 @@ if [ "$FAIL" -eq 0 ]; then
 
   printf '  [diag v3] about to exit, ts=%s\n' "$(date +%s.%N)"
 
-  # Force failure so the artifact uploads.
-  exit 99
+  # v4: exit 0 (the actual code path on real success). EXIT trap will record
+  # the moment bash invokes exit. If trap timestamp == diag timestamp, bash
+  # exits immediately and the 50s+ PR-specific extra tail is runner-side.
+  # If trap fires 50s+ after diag, bash is hanging in fflush() before exit.
+  # Keep the artifact path populated by the trap so this still uploads even
+  # without forced failure: failing post-step covers it on the SIGTERM path.
+  exit 0
 else
   printf '\n\033[1;31m  %d test(s) failed.\033[0m\n' "$FAIL"
   exit 1
