@@ -274,10 +274,9 @@ jobs:
                 # always reachable on the SSH config port, but openshell
                 # sandbox exec uses the cluster API and works reliably.
                 # Also tails the persistent log first so the final output
-                # includes data that survives TC-SBX-06's docker kill.
-                nohup openshell sandbox exec -n "$name" -- \
-                  bash -c "tail -n +1 -F /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses" \
-                  > "docker-logs/sandbox-${name}.log" 2>&1 &
+                # includes data that survives TC-SBX-06s docker kill.
+                exec_cmd="tail -n +1 -F /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses"
+                nohup openshell sandbox exec -n "$name" -- bash -c "$exec_cmd" > "docker-logs/sandbox-${name}.log" 2>&1 &
                 streamer_pids[$name]=$!
               done
             done
