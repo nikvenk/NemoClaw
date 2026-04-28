@@ -253,11 +253,29 @@ jobs:
           mkdir -p docker-logs
           nohup bash -c '
             export PATH="$HOME/.local/bin:$PATH"
-            # Track which sandboxes are currently being streamed (via openshell ssh
-            # tail), keyed by name. Killed when the sandbox disappears.
-            declare -A streamer_pids=()
+            # Strategy: every 5s, snapshot each live sandbox via
+            # `docker exec openshell-cluster-nemoclaw kubectl ...`. This
+            # bypasses both per-pod networking (which has had connection-
+            # refused races for some sandboxes) and the host openshell
+            # client (which loses gateway metadata after TC-SBX-06s
+            # docker-kill). kubectl talks directly to k3s in the cluster
+            # container.
+            #
+            # Snapshot mode (overwrite per iteration), not live tail-F:
+            # the gateway-persistent.log file accumulates everything since
+            # boot (mirrored from /tmp/gateway.log by nemoclaw-start.sh),
+            # so a single full-cat at any point gives us complete history.
+            # Each iteration is short-lived so transient connection issues
+            # do not cause us to lose the entire stream.
+            #
+            # Also snapshot kubectl pod listing per iteration so we have
+            # the actual pod naming convention even if the cluster is
+            # destroyed by teardown later.
             while sleep 5; do
-              command -v openshell >/dev/null 2>&1 || continue
+              if ! docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^openshell-cluster-nemoclaw$"; then
+                continue
+              fi
+              docker exec openshell-cluster-nemoclaw kubectl get pods -A --no-headers >docker-logs/_pods.txt 2>&1
               registry="$HOME/.nemoclaw/sandboxes.json"
               [ -f "$registry" ] || continue
               live=$(jq -r ".sandboxes // {} | keys[]?" "$registry" 2>/dev/null)
@@ -265,19 +283,24 @@ jobs:
                 case "$name" in
                   *[!a-z0-9_-]*|"") continue ;;
                 esac
-                # If we already have a follower running for this sandbox, skip.
-                pid="${streamer_pids[$name]:-}"
-                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
-                # Use `openshell sandbox exec` (the same path nemoclaw logs
-                # uses internally and TC-SBX-04 proves works) instead of raw
-                # SSH. SSH was racing for test-sbx-a — sshd in the pod is not
-                # always reachable on the SSH config port, but openshell
-                # sandbox exec uses the cluster API and works reliably.
-                # Also tails the persistent log first so the final output
-                # includes data that survives TC-SBX-06s docker kill.
-                exec_cmd="tail -n +1 -F /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log 2>/dev/null | grep -v --line-buffered uv_interface_addresses"
-                nohup openshell sandbox exec -n "$name" -- bash -c "$exec_cmd" > "docker-logs/sandbox-${name}.log" 2>&1 &
-                streamer_pids[$name]=$!
+                # Find pod by sandbox name. openshell uses the sandbox
+                # name as the namespace and "agent" as the pod name.
+                # Try a few common patterns.
+                pod_match=$(awk -v n="$name" "\$1==n || \$2==n || \$1==\"sandbox-\" n || \$2==\"sandbox-\" n {print \$1\"/\"\$2; exit}" docker-logs/_pods.txt)
+                if [ -z "$pod_match" ]; then
+                  # Fallback: any pod whose name contains the sandbox name
+                  pod_match=$(awk -v n="$name" "index(\$2,n)>0 {print \$1\"/\"\$2; exit}" docker-logs/_pods.txt)
+                fi
+                if [ -z "$pod_match" ]; then continue; fi
+                pod_ns="${pod_match%%/*}"
+                pod_name="${pod_match##*/}"
+                docker exec openshell-cluster-nemoclaw kubectl exec -n "$pod_ns" "$pod_name" -- bash -c "
+                  for f in /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
+                    [ -f \"\$f\" ] || continue
+                    printf \"\\n----- %s (size=%s) -----\\n\" \"\$f\" \"\$(stat -c%s \"\$f\" 2>/dev/null || echo ?)\"
+                    cat -- \"\$f\" 2>/dev/null
+                  done
+                " > "docker-logs/sandbox-${name}.log" 2>&1
               done
             done
           ' >/dev/null 2>&1 &
