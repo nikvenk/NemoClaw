@@ -1712,7 +1712,7 @@ if [ "$(id -u)" -ne 0 ]; then
   GATEWAY_LOG_TAIL_PID=$!
   # Persistent mirror: see root-mode block for rationale.
   mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
-  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >> /sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
   GATEWAY_LOG_PERSIST_PID=$!
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
@@ -1876,7 +1876,7 @@ GATEWAY_LOG_TAIL_PID=$!
 # streamer in the e2e workflow snapshots this file post-test.
 mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
 chown gateway:gateway /sandbox/.openclaw-data/logs 2>/dev/null || true
-{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >> /sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
 GATEWAY_LOG_PERSIST_PID=$!
 
 start_auto_pair
