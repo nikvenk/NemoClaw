@@ -1693,12 +1693,18 @@ if [ "$(id -u)" -ne 0 ]; then
   # below for rationale (NVIDIA/NemoClaw#2484).
   { tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
   GATEWAY_LOG_TAIL_PID=$!
+  # Persistent mirror: see root-mode block for rationale.
+  mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >> /sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+  GATEWAY_LOG_PERSIST_PID=$!
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
   # registration and the final append is a small race window (same as before
   # the shared-library refactor). Acceptable for entrypoint-level cleanup.
   SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
   [ -n "${AUTO_PAIR_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$AUTO_PAIR_PID")
+  [ -n "${GATEWAY_LOG_TAIL_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_TAIL_PID")
+  [ -n "${GATEWAY_LOG_PERSIST_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_PERSIST_PID")
   # shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
   SANDBOX_WAIT_PID="$GATEWAY_PID"
   trap cleanup_on_signal SIGTERM SIGINT
@@ -1845,6 +1851,17 @@ echo "[gateway] openclaw gateway launched as 'gateway' user (pid $GATEWAY_PID)" 
 { tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
 GATEWAY_LOG_TAIL_PID=$!
 
+# Persistent mirror: append /tmp/gateway.log content to a file under
+# /sandbox/.openclaw-data/logs which is volume-mounted by openshell and
+# survives pod restarts. /tmp/gateway.log itself is wiped when the pod
+# restarts (TC-SBX-06 docker-kills the gateway container), so the
+# only durable record of pre-restart events lives here. The diag
+# streamer in the e2e workflow snapshots this file post-test.
+mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
+chown gateway:gateway /sandbox/.openclaw-data/logs 2>/dev/null || true
+{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >> /sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+GATEWAY_LOG_PERSIST_PID=$!
+
 start_auto_pair
 # NOTE: PIDs are collected after launch; a signal arriving between trap
 # registration and the final append is a small race window (same as before
@@ -1852,6 +1869,7 @@ start_auto_pair
 SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
 [ -n "${AUTO_PAIR_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$AUTO_PAIR_PID")
 [ -n "${GATEWAY_LOG_TAIL_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_TAIL_PID")
+[ -n "${GATEWAY_LOG_PERSIST_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_PERSIST_PID")
 # shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
 SANDBOX_WAIT_PID="$GATEWAY_PID"
 trap cleanup_on_signal SIGTERM SIGINT

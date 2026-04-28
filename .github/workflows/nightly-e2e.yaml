@@ -371,11 +371,18 @@ jobs:
                     ssh_cfg="/tmp/sshcfg-final-${name}.tmp"
                     if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>&1 && [ -s "$ssh_cfg" ]; then
                       ssh_out=$(mktemp)
+                      # Read /sandbox/.openclaw-data/logs/gateway-persistent.log
+                      # FIRST: it survives docker-kill of the gateway pod (via
+                      # the volume mount) so it's the only durable record of
+                      # pre-restart events. Fall back to /tmp/gateway.log and
+                      # the per-uid structured log dirs.
                       ssh -F "$ssh_cfg" \
                           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                           -o ConnectTimeout=10 -o LogLevel=ERROR \
                           "openshell-${name}" \
-                          'for f in /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
+                          'for f in /sandbox/.openclaw-data/logs/gateway-persistent.log \
+                                   /tmp/gateway.log \
+                                   /tmp/openclaw-*/openclaw-*.log; do
                              [ -f "$f" ] || continue
                              printf "\n----- %s -----\n" "$f"
                              cat -- "$f" 2>/dev/null || true
