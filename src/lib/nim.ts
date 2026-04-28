@@ -7,13 +7,14 @@
 const { runCapture } = require("./runner");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
+  dockerContainerInspectFormat,
   dockerForceRm,
+  dockerLoginPasswordStdin,
   dockerPort,
   dockerPull,
   dockerRm,
   dockerRunDetached,
   dockerStop,
-  dockerContainerInspectFormat,
 } = require("./docker");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { sleepSeconds } = require("./wait");
@@ -213,12 +214,7 @@ export function isNgcLoggedIn(): boolean {
 
 // NGC expects literal "$oauthtoken" as the username for API key authentication.
 export function dockerLoginNgc(apiKey: string): boolean {
-  const { spawnSync } = require("child_process");
-  const result = spawnSync("docker", ["login", "nvcr.io", "-u", "$oauthtoken", "--password-stdin"], {
-    input: apiKey,
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const result = dockerLoginPasswordStdin("nvcr.io", "$oauthtoken", apiKey);
   if (result.error) {
     console.error(`  Docker error: ${result.error.message}`);
     return false;

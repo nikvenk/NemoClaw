@@ -21,15 +21,13 @@ const R = _useColor ? "\x1b[0m" : "";
 const _RD = _useColor ? "\x1b[1;31m" : "";
 const YW = _useColor ? "\x1b[1;33m" : "";
 
+const { ROOT, run, runInteractive, shellQuote, validateName } = require("./lib/runner");
 const {
-  ROOT,
-  run,
-  runCapture: _runCapture,
-  runInteractive,
-  shellQuote,
-  validateName,
-} = require("./lib/runner");
-const { dockerRemoveVolumesByPrefix, dockerRmi } = require("./lib/docker");
+  dockerCapture,
+  dockerListImagesFormat,
+  dockerRemoveVolumesByPrefix,
+  dockerRmi,
+} = require("./lib/docker");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
   fetchGatewayAuthTokenFromSandbox,
@@ -3163,8 +3161,7 @@ function renderSnapshotTable(
 function resolveSrcPodImage(srcName: string): string | null {
   const gatewayContainer = `openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`;
   try {
-    const result = spawnSync(
-      "docker",
+    const output = dockerCapture(
       [
         "exec",
         gatewayContainer,
@@ -3177,10 +3174,9 @@ function resolveSrcPodImage(srcName: string): string | null {
         "-o",
         'jsonpath={.spec.containers[?(@.name=="agent")].image}',
       ],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000 },
+      { ignoreError: true, timeout: 10000 },
     );
-    if (result.status !== 0) return null;
-    const img = (result.stdout || "").trim().split(/\s+/)[0];
+    const img = output.trim().split(/\s+/)[0];
     return img || null;
   } catch {
     return null;
@@ -3540,23 +3536,18 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   const skipConfirm = args.includes("--yes") || args.includes("--force");
 
   // 1. List all openshell/sandbox-from images on the host
-  const imagesResult = spawnSync(
-    "docker",
-    [
-      "images",
-      "--filter",
-      "reference=openshell/sandbox-from",
-      "--format",
+  let imagesOutput = "";
+  try {
+    imagesOutput = dockerListImagesFormat(
+      "openshell/sandbox-from",
       "{{.Repository}}:{{.Tag}}\t{{.Size}}",
-    ],
-    { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-  );
-  if (imagesResult.status !== 0) {
+    );
+  } catch {
     console.error("  Failed to query Docker images. Is Docker running?");
     process.exit(1);
   }
 
-  const allImages = (imagesResult.stdout || "")
+  const allImages = imagesOutput
     .split("\n")
     .map((line: string) => line.trim())
     .filter(Boolean)
@@ -3612,9 +3603,11 @@ async function garbageCollectImages(args: string[] = []): Promise<void> {
   let removed = 0;
   let failed = 0;
   for (const img of orphans) {
-    const rmiResult = spawnSync("docker", ["rmi", img.tag], {
+    const rmiResult = dockerRmi(img.tag, {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
+      ignoreError: true,
+      suppressOutput: true,
     });
     if (rmiResult.status === 0) {
       console.log(`  ${G}✓${R} Removed ${img.tag}`);
