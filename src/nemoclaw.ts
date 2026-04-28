@@ -80,6 +80,7 @@ const { parseRestoreArgs } = sandboxState;
 const skillInstall = require("./lib/skill-install");
 const { sleepSeconds } = require("./lib/wait");
 const { parseSandboxPhase } = require("./lib/gateway-state");
+const { runOllamaCommand } = require("./lib/ollama-cmd");
 const {
   getActiveSandboxSessions,
   createSystemDeps: createSessionDeps,
@@ -3771,6 +3772,9 @@ const [cmd, ...args] = process.argv.slice(2);
         break;
       case "gc":
         await garbageCollectImages(args);
+        break;
+      case "ollama":
+        await runOllamaCommand(args);
         break;
       case "--version":
       case "-v": {

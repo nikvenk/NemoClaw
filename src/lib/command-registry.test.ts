@@ -17,10 +17,10 @@ import type { CommandDef } from "./command-registry";
 
 describe("command-registry", () => {
   describe("COMMANDS array", () => {
-    it("should contain exactly 47 commands", () => {
-      // 23 global (18 visible + 5 hidden help/version aliases)
-      // 24 sandbox (18 visible + 6 hidden shields/config)
-      expect(COMMANDS).toHaveLength(47);
+    it("should contain exactly 56 commands", () => {
+      // 32 global (27 visible + 5 hidden help/version aliases) + 24 sandbox (18 visible + 6 hidden)
+      // 9 ollama subcommands added in PR 1
+      expect(COMMANDS).toHaveLength(56);
     });
 
     it("should have no duplicate usage strings", () => {
@@ -39,9 +39,9 @@ describe("command-registry", () => {
   });
 
   describe("globalCommands()", () => {
-    it("should return exactly 23 entries", () => {
-      // 18 visible + 5 hidden (help, --help, -h, --version, -v)
-      expect(globalCommands()).toHaveLength(23);
+    it("should return exactly 32 entries", () => {
+      // 27 visible (18 original + 9 ollama) + 5 hidden (help, --help, -h, --version, -v)
+      expect(globalCommands()).toHaveLength(32);
     });
 
     it("every entry has scope global", () => {
@@ -65,10 +65,11 @@ describe("command-registry", () => {
   });
 
   describe("visibleCommands()", () => {
-    it("should exclude 11 hidden commands (36 visible)", () => {
+    it("should exclude 11 hidden commands (45 visible)", () => {
       // 5 hidden global (help, --help, -h, --version, -v) +
       // 6 hidden sandbox (shields×3, config×3)
-      expect(visibleCommands()).toHaveLength(36);
+      // 9 new visible ollama global commands
+      expect(visibleCommands()).toHaveLength(45);
     });
 
     it("no visible command has hidden=true", () => {
@@ -138,7 +139,7 @@ describe("command-registry", () => {
   });
 
   describe("globalCommandTokens()", () => {
-    it("returns the exact set of 20 tokens matching the old GLOBAL_COMMANDS", () => {
+    it("returns the exact set of 21 tokens including ollama", () => {
       const tokens = globalCommandTokens();
       const expected = new Set([
         "onboard",
@@ -156,6 +157,7 @@ describe("command-registry", () => {
         "backup-all",
         "upgrade-sandboxes",
         "gc",
+        "ollama",
         "help",
         "--help",
         "-h",

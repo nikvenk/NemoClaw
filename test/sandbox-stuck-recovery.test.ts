@@ -89,6 +89,10 @@ if (args[0] === "forward") {
   process.exit(0);
 }
 
+if (args[0] === "sandbox" && args[1] === "ssh-config") {
+  process.exit(1);
+}
+
 process.exit(0);
 `,
     { mode: 0o755 },

@@ -350,6 +350,64 @@ export const COMMANDS: readonly CommandDef[] = [
     scope: "global",
   },
 
+  // ── Ollama VRAM control ──
+  {
+    usage: "nemoclaw ollama vram=N%",
+    description: "Cap Ollama GPU VRAM usage (1..100%; or vram=off to clear)",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama ctx=N",
+    description: "Set per-request context window size (or ctx=off to clear)",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama batch=N",
+    description: "Set per-request batch size (or batch=off to clear)",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama flash=on|off",
+    description: "Enable/disable OLLAMA_FLASH_ATTENTION (requires daemon restart)",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama kv-cache=f16|q8_0|q4_0",
+    description: "Set OLLAMA_KV_CACHE_TYPE (requires daemon restart)",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama optimize",
+    description: "Auto-tune Ollama GPU settings for the active model",
+    flags: "[--ctx N] [--vram P%] [--apply [--sudo]]",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama apply",
+    description: "Apply pending daemon-level Ollama recommendations",
+    flags: "[--sudo] [--yes]",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama status",
+    description: "Show current Ollama VRAM tuning and GPU budget",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+  {
+    usage: "nemoclaw ollama reset",
+    description: "Clear all Ollama tuning overrides and revert daemon env",
+    group: "Sandbox Management",
+    scope: "global",
+  },
+
   // ── Cleanup ──
   {
     usage: "nemoclaw gc",

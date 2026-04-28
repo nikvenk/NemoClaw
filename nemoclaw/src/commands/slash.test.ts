@@ -134,6 +134,51 @@ describe("commands/slash", () => {
   });
 
   // -------------------------------------------------------------------------
+  // ollama (routing)
+  // -------------------------------------------------------------------------
+
+  describe("ollama", () => {
+    it("routes to ollama status handler and shows no-overrides message when unconfigured", () => {
+      mockedLoadOnboardConfig.mockReturnValue(null);
+      const result = handleSlashCommand(makeCtx("ollama"), makeApi());
+      expect(result.text).toContain("Ollama VRAM Tuning");
+      expect(result.text).toContain("No overrides configured");
+    });
+
+    it("shows tuning details when ollamaTuning is configured", () => {
+      mockedLoadOnboardConfig.mockReturnValue({
+        endpointType: "ollama",
+        endpointUrl: "http://localhost:11434/v1",
+        ncpPartner: null,
+        model: "gemma4:e4b",
+        profile: "default",
+        credentialEnv: "NONE",
+        onboardedAt: "2026-04-27T00:00:00.000Z",
+        ollamaTuning: {
+          vramPercent: 80,
+          numGpuLayers: -1,
+          numCtx: 32768,
+          kvCacheType: "q8_0",
+          flashAttention: true,
+          appliedAt: "2026-04-27T00:00:00.000Z",
+          appliedFor: "gemma4:e4b",
+        },
+      });
+      const result = handleSlashCommand(makeCtx("ollama"), makeApi());
+      expect(result.text).toContain("Ollama VRAM Tuning");
+      expect(result.text).toContain("80%");
+      expect(result.text).toContain("all layers");
+      expect(result.text).toContain("32768");
+      expect(result.text).toContain("q8_0");
+    });
+
+    it("ollama subcommand appears in help text", () => {
+      const result = handleSlashCommand(makeCtx(), makeApi());
+      expect(result.text).toContain("ollama");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // status
   // -------------------------------------------------------------------------
 

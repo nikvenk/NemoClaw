@@ -39,6 +39,8 @@ export function handleSlashCommand(
       return slashShieldsStatus();
     case "config":
       return slashConfigShow();
+    case "ollama":
+      return slashOllamaStatus();
     default:
       return slashHelp();
   }
@@ -55,6 +57,7 @@ function slashHelp(): PluginCommandResult {
       "  `status`  - Show sandbox, blueprint, and inference state",
       "  `shields` - Show shields status (up/down, timeout, policy)",
       "  `config`  - Show sandbox configuration (credentials redacted)",
+      "  `ollama`  - Show Ollama VRAM tuning status (read-only)",
       "  `eject`   - Show rollback instructions",
       "  `onboard` - Show onboarding status and instructions",
       "",
@@ -65,8 +68,46 @@ function slashHelp(): PluginCommandResult {
       "  `nemoclaw <name> connect`",
       "  `nemoclaw <name> logs`",
       "  `nemoclaw <name> destroy`",
+      "  `nemoclaw ollama status`",
     ].join("\n"),
   };
+}
+
+function slashOllamaStatus(): PluginCommandResult {
+  const config = loadOnboardConfig();
+  const tuning = config?.ollamaTuning;
+
+  if (!tuning) {
+    return {
+      text: [
+        "**Ollama VRAM Tuning**",
+        "",
+        "No overrides configured — using model defaults.",
+        "",
+        "Run `nemoclaw ollama optimize` to auto-tune for your GPU.",
+        "Run `nemoclaw ollama status` for full details.",
+      ].join("\n"),
+    };
+  }
+
+  const lines = ["**Ollama VRAM Tuning**", ""];
+  if (tuning.vramPercent !== undefined)
+    lines.push(`  VRAM cap      ${String(tuning.vramPercent)}%`);
+  if (tuning.numGpuLayers !== undefined)
+    lines.push(
+      `  num_gpu       ${tuning.numGpuLayers === -1 ? "all layers" : String(tuning.numGpuLayers)}`,
+    );
+  if (tuning.numCtx !== undefined) lines.push(`  num_ctx       ${String(tuning.numCtx)}`);
+  if (tuning.numBatch !== undefined) lines.push(`  num_batch     ${String(tuning.numBatch)}`);
+  if (tuning.flashAttention !== undefined)
+    lines.push(`  flash_attn    ${tuning.flashAttention ? "on" : "off"}`);
+  if (tuning.kvCacheType !== undefined) lines.push(`  kv_cache      ${tuning.kvCacheType}`);
+  lines.push(`  applied_at    ${tuning.appliedAt}`);
+  if (tuning.appliedFor) lines.push(`  applied_for   ${tuning.appliedFor}`);
+  lines.push("");
+  lines.push("Run `nemoclaw ollama status` for full GPU budget breakdown.");
+
+  return { text: lines.join("\n") };
 }
 
 function slashStatus(): PluginCommandResult {
