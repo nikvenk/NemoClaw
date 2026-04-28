@@ -905,10 +905,23 @@ while time.time() < DEADLINE:
             break
     elif APPROVED > 0:
         QUIET_POLLS += 1
+        # Once we approved at least one device and the registry has been
+        # quiet for 4 polls, exit. Without this, the watcher polls
+        # `openclaw devices list` every second for 10 minutes, which can
+        # saturate the gateway's connect handler and starve concurrent
+        # `openclaw agent` invocations of WS connect timeslots
+        # (NemoClaw#2484: gateway WS handshake times out under load).
+        if QUIET_POLLS >= 4:
+            print(f'[auto-pair] non-browser pairing converged approvals={APPROVED}')
+            break
     else:
         QUIET_POLLS = 0
 
-    time.sleep(1)
+    # Back off polling once we've made any progress: 1s when actively
+    # processing pending requests, 5s once we've approved anything. The
+    # 5s cadence avoids the connect-handler pile-up that the 1s cadence
+    # produces under high gateway connect latency.
+    time.sleep(5 if APPROVED > 0 else 1)
 else:
     print(f'[auto-pair] watcher timed out approvals={APPROVED}')
 PYAUTOPAIR
