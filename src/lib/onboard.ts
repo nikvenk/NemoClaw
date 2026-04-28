@@ -6194,6 +6194,31 @@ function findAvailableDashboardPort(sandboxName: string, preferredPort: number, 
  * sandbox" half of #2174). Mirrors the not-ready rollback pattern in
  * createSandbox.
  */
+/**
+ * Build the actionable error lines printed when the just-created openshell
+ * sandbox is rolled back after a dashboard port-allocation failure. Pure
+ * function over (sandboxName, alloc-error, delete-result) so the rollback path
+ * is testable without spawning subprocesses or exiting the process (#2174).
+ */
+function buildOrphanedSandboxRollbackMessage(
+  sandboxName: string,
+  err: unknown,
+  deleteSucceeded: boolean,
+): string[] {
+  const lines = [
+    "",
+    `  Could not allocate a dashboard port for '${sandboxName}'.`,
+    `  ${err instanceof Error ? err.message : String(err)}`,
+  ];
+  if (deleteSucceeded) {
+    lines.push("  The orphaned sandbox has been removed — you can safely retry.");
+  } else {
+    lines.push("  Could not remove the orphaned sandbox. Manual cleanup:");
+    lines.push(`    openshell sandbox delete "${sandboxName}"`);
+  }
+  return lines;
+}
+
 function ensureDashboardForward(
   sandboxName: string,
   chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
@@ -6208,14 +6233,8 @@ function ensureDashboardForward(
   } catch (err) {
     if (!rollbackSandboxOnFailure) throw err;
     const delResult = runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
-    console.error("");
-    console.error(`  Could not allocate a dashboard port for '${sandboxName}'.`);
-    console.error(`  ${err instanceof Error ? err.message : String(err)}`);
-    if (delResult.status === 0) {
-      console.error("  The orphaned sandbox has been removed — you can safely retry.");
-    } else {
-      console.error("  Could not remove the orphaned sandbox. Manual cleanup:");
-      console.error(`    openshell sandbox delete "${sandboxName}"`);
+    for (const line of buildOrphanedSandboxRollbackMessage(sandboxName, err, delResult.status === 0)) {
+      console.error(line);
     }
     process.exit(1);
   }
@@ -7185,6 +7204,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
 }
 
 module.exports = {
+  buildOrphanedSandboxRollbackMessage,
   buildProviderArgs,
   buildGatewayBootstrapSecretsScript,
   buildSandboxConfigSyncScript,
