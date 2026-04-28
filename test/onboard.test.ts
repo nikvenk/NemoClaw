@@ -1510,14 +1510,26 @@ startGateway(null).catch(() => {});
   });
 
   it("detects resume conflicts when a different sandbox is requested", () => {
+    expect(
+      getResumeSandboxConflict({ sandboxName: "my-assistant" }, { sandboxName: "other-sandbox" }),
+    ).toEqual({
+      requestedSandboxName: "other-sandbox",
+      recordedSandboxName: "my-assistant",
+    });
+    expect(
+      getResumeSandboxConflict({ sandboxName: "other-sandbox" }, { sandboxName: "other-sandbox" }),
+    ).toBe(null);
+  });
+
+  it("does not fire a resume conflict from NEMOCLAW_SANDBOX_NAME alone", () => {
+    // Interactive resume runs never consult the env var (sandbox creation
+    // is already complete in the session, so promptOrDefault is skipped).
+    // Reading it here would surface a spurious conflict whenever a user
+    // happens to export NEMOCLAW_SANDBOX_NAME in their shell rc.
     const previous = process.env.NEMOCLAW_SANDBOX_NAME;
     process.env.NEMOCLAW_SANDBOX_NAME = "other-sandbox";
     try {
-      expect(getResumeSandboxConflict({ sandboxName: "my-assistant" })).toEqual({
-        requestedSandboxName: "other-sandbox",
-        recordedSandboxName: "my-assistant",
-      });
-      expect(getResumeSandboxConflict({ sandboxName: "other-sandbox" })).toBe(null);
+      expect(getResumeSandboxConflict({ sandboxName: "my-assistant" })).toBe(null);
     } finally {
       if (previous === undefined) {
         delete process.env.NEMOCLAW_SANDBOX_NAME;
