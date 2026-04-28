@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, it, expect } from "vitest";
 
 const START_SCRIPT = path.join(import.meta.dirname, "..", "scripts", "nemoclaw-start.sh");
@@ -755,7 +757,24 @@ describe("Slack token rewriter (#2085)", () => {
     // Negative lookahead: matches xoxb-/xapp- only when NOT followed by the
     // placeholder marker. exit 78 is EX_CONFIG (sysexits.h).
     expect(fn[1]).toContain("OPENSHELL-RESOLVE-ENV-");
-    expect(fn[1]).toMatch(/\bxoxb\b.*\bxapp\b/);
+    expect(fn[1]).toMatch(/xoxb.*xapp/);
     expect(fn[1]).toContain("exit 78");
+
+    const python = fn[1].match(
+      /python3 - "\$config" <<'PYSLACKSECRET'(?:; then)?\n([\s\S]*?)\nPYSLACKSECRET/,
+    );
+    expect(python).toBeTruthy();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-slack-secret-"));
+    const run = (input: string) => {
+      const config = path.join(tmpDir, "openclaw.json");
+      fs.writeFileSync(config, input);
+      return spawnSync("python3", ["-c", python[1], config], { encoding: "utf-8" }).status;
+    };
+
+    expect(run('{"botToken":"xoxb-real-token"}\n')).toBe(0);
+    expect(run('{"botToken":"prefixxoxb-real-token"}\n')).toBe(0);
+    expect(run('{"appToken":"xapp-real-token"}\n')).toBe(0);
+    expect(run('{"botToken":"xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN"}\n')).toBe(1);
+    expect(run('{"token":"openshell:resolve:env:SLACK_BOT_TOKEN"}\n')).toBe(1);
   });
 });

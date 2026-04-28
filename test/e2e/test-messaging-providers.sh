@@ -515,10 +515,19 @@ fi
 
 # M-S5d: Same checks for the xapp- Socket Mode token.
 if [ -n "$SLACK_APP" ]; then
-  if [ -n "$sandbox_env_all" ] && echo "$sandbox_env_all" | grep -qF "$SLACK_APP"; then
+  if [ -z "$sandbox_env_all" ]; then
+    skip "M-S5d: Environment variable list is empty"
+  elif echo "$sandbox_env_all" | grep -qF "$SLACK_APP"; then
     fail "M-S5d: Real Slack app token found in full sandbox environment dump"
   else
     pass "M-S5d: Real Slack app token absent from sandbox environment"
+  fi
+  if [ -z "$sandbox_ps" ]; then
+    skip "M-S5d2: Process list is empty"
+  elif echo "$sandbox_ps" | grep -qF "$SLACK_APP"; then
+    fail "M-S5d2: Real Slack app token found in sandbox process list"
+  else
+    pass "M-S5d2: Real Slack app token absent from sandbox process list"
   fi
   sandbox_fs_sapp=$(printf '%s' "$SLACK_APP" | sandbox_exec_stdin "grep -rFlm1 -f - /sandbox /home /etc /tmp /var 2>/dev/null || true")
   if [ -n "$sandbox_fs_sapp" ]; then
@@ -532,10 +541,15 @@ fi
 # real token. The placeholder is what nemoclaw-slack-token-rewriter.js
 # translates to the canonical openshell:resolve:env:VAR form on egress.
 config_slack=$(sandbox_exec "cat /sandbox/.openclaw/openclaw.json 2>/dev/null | grep -E '\"(bot|app)Token\"'" 2>/dev/null || true)
-if [ -n "$config_slack" ] && echo "$config_slack" | grep -qF "$SLACK_TOKEN"; then
-  fail "M-S5f: Real Slack token spliced into openclaw.json — apply_slack_token_override regression?"
-elif [ -n "$config_slack" ] && echo "$config_slack" | grep -q 'OPENSHELL-RESOLVE-ENV-SLACK_'; then
-  pass "M-S5f: openclaw.json holds the Bolt-shape placeholder (no real token on disk)"
+if [ -n "$config_slack" ] && {
+  echo "$config_slack" | grep -qF "$SLACK_TOKEN" \
+    || echo "$config_slack" | grep -qF "$SLACK_APP"
+}; then
+  fail "M-S5f: Real Slack bot/app token spliced into openclaw.json — apply_slack_token_override regression?"
+elif [ -n "$config_slack" ] \
+  && echo "$config_slack" | grep -q 'xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN' \
+  && echo "$config_slack" | grep -q 'xapp-OPENSHELL-RESOLVE-ENV-SLACK_APP_TOKEN'; then
+  pass "M-S5f: openclaw.json holds both Bolt-shape Slack placeholders (no real token on disk)"
 else
   skip "M-S5f: Could not extract Slack token fields from openclaw.json"
 fi
@@ -555,27 +569,37 @@ fi
 # invalid_auth (because the un-translated Bolt-shape token is not a valid
 # Slack token either) — so the slack.com 200 invalid_auth in M-S15/M-S16
 # alone doesn't prove the rewriter ran. This loopback probe forces a
-# definitive answer: send a Bolt-shape Authorization header to a
-# 127.0.0.1 listener (loopback bypasses the L7 proxy), have the listener
-# echo the headers it actually received, then assert the placeholder is
-# gone. If the rewriter is loaded and wrapping http.request, the listener
-# sees the canonical openshell:resolve:env:VAR form. If the rewriter is
-# a no-op, the listener sees the raw Bolt-shape placeholder.
+# definitive answer: send a Bolt-shape Authorization header and urlencoded
+# token body to a 127.0.0.1 listener (loopback bypasses the L7 proxy), have
+# the listener echo what it actually received, then assert the placeholder is
+# gone. If the rewriter is loaded and wrapping http.request/write/end, the
+# listener sees the canonical openshell:resolve:env:VAR form. If the rewriter
+# is a no-op, the listener sees the raw Bolt-shape placeholder.
 info "Probing rewriter via loopback listener (proves http.request is wrapped)..."
 sl_loopback=$(sandbox_exec 'node -e "
 const http = require(\"http\");
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { \"Content-Type\": \"application/json\" });
-  res.end(JSON.stringify({ headers: req.headers }));
+  let body = \"\";
+  req.setEncoding(\"utf8\");
+  req.on(\"data\", (d) => body += d);
+  req.on(\"end\", () => {
+    res.writeHead(200, { \"Content-Type\": \"application/json\" });
+    res.end(JSON.stringify({ headers: req.headers, body }));
+  });
 });
 server.listen(0, \"127.0.0.1\", () => {
   const port = server.address().port;
+  const data = \"token=xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN\";
   const r = http.request({
     hostname: \"127.0.0.1\",
     port: port,
     path: \"/probe\",
-    method: \"GET\",
-    headers: { \"Authorization\": \"Bearer xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN\" },
+    method: \"POST\",
+    headers: {
+      \"Authorization\": \"Bearer xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN\",
+      \"Content-Type\": \"application/x-www-form-urlencoded\",
+      \"Content-Length\": Buffer.byteLength(data),
+    },
   }, (res) => {
     let body = \"\";
     res.on(\"data\", (d) => body += d);
@@ -583,15 +607,17 @@ server.listen(0, \"127.0.0.1\", () => {
   });
   r.on(\"error\", (e) => { console.log(\"ERROR: \" + e.message); server.close(); });
   r.setTimeout(10000, () => { r.destroy(); console.log(\"TIMEOUT\"); server.close(); });
+  r.write(data);
   r.end();
 });
 "' 2>/dev/null || true)
 
-info "Loopback echoed headers: ${sl_loopback:0:300}"
+info "Loopback echoed request: ${sl_loopback:0:300}"
 if echo "$sl_loopback" | grep -qF 'OPENSHELL-RESOLVE-ENV-'; then
-  fail "M-S5h: rewriter did NOT translate Bolt-shape on http.request — the preload is loaded but not wrapping (no-op file?)"
-elif echo "$sl_loopback" | grep -qE '"authorization"\s*:\s*"Bearer (openshell:resolve:env:SLACK_BOT_TOKEN|xoxb-)'; then
-  pass "M-S5h: rewriter wraps http.request — Bolt-shape was translated before egress"
+  fail "M-S5h: rewriter did NOT translate Bolt-shape on http.request/write/end — the preload is loaded but incomplete or a no-op"
+elif echo "$sl_loopback" | grep -qE '"authorization"\s*:\s*"Bearer openshell:resolve:env:SLACK_BOT_TOKEN' \
+  && echo "$sl_loopback" | grep -qE '"body"\s*:\s*"token=openshell:resolve:env:SLACK_BOT_TOKEN'; then
+  pass "M-S5h: rewriter wraps http.request/write/end — Bolt-shape header and body were translated before egress"
 elif echo "$sl_loopback" | grep -q "ERROR"; then
   fail "M-S5h: loopback probe errored: ${sl_loopback:0:200}"
 elif echo "$sl_loopback" | grep -q "TIMEOUT"; then
@@ -1437,8 +1463,42 @@ req.end();
 info "Slack apps.connections.open (canonical) response: ${sl_app_canonical:0:300}"
 sl_app_canon_status=$(echo "$sl_app_canonical" | grep -E '^[0-9]' | head -1 | awk '{print $1}')
 
+info "Probing L7 proxy substitution for an unset app-token env var (negative control)..."
+sl_app_unset=$(sandbox_exec 'node -e "
+const https = require(\"https\");
+const data = \"\";
+const options = {
+  hostname: \"slack.com\",
+  path: \"/api/apps.connections.open\",
+  method: \"POST\",
+  headers: {
+    \"Authorization\": \"Bearer openshell:resolve:env:DEFINITELY_NOT_SET_SLACK_APP_TOKEN\",
+    \"Content-Type\": \"application/x-www-form-urlencoded\",
+    \"Content-Length\": data.length,
+  },
+};
+const req = https.request(options, (res) => {
+  let body = \"\";
+  res.on(\"data\", (d) => body += d);
+  res.on(\"end\", () => console.log(res.statusCode + \" \" + body.slice(0, 300)));
+});
+req.on(\"error\", (e) => console.log(\"ERROR: \" + e.message));
+req.setTimeout(30000, () => { req.destroy(); console.log(\"TIMEOUT\"); });
+req.write(data);
+req.end();
+"' 2>/dev/null || true)
+
+info "Slack apps.connections.open (unset env) response: ${sl_app_unset:0:300}"
 if [ "$sl_app_canon_status" = "200" ] && echo "$sl_app_canonical" | grep -qE 'invalid_auth|not_authed|not_allowed_token_type'; then
-  pass "M-S16b: L7 proxy substitutes openshell:resolve:env:SLACK_APP_TOKEN at egress"
+  if echo "$sl_app_unset" | grep -qE 'ERROR:.*(socket hang up|ECONNRESET|EPIPE|hang up|reset)'; then
+    pass "M-S16b: L7 proxy substitutes openshell:resolve:env:SLACK_APP_TOKEN at egress (unset-var control diverged)"
+  elif echo "$sl_app_unset" | grep -qE '^200\b'; then
+    fail "M-S16b: unset app-token env returned HTTP 200 — proxy may be passing canonical placeholders through unchanged"
+  elif [ -z "$sl_app_unset" ] || echo "$sl_app_unset" | grep -q "TIMEOUT"; then
+    skip "M-S16b: unset app-token control timed out or returned no output"
+  else
+    skip "M-S16b: unset app-token control produced an unclassified result: ${sl_app_unset:0:200}"
+  fi
 elif echo "$sl_app_canonical" | grep -q "TIMEOUT"; then
   skip "M-S16b: canonical-placeholder probe timed out"
 elif echo "$sl_app_canonical" | grep -qF 'openshell:resolve:env:'; then

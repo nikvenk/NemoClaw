@@ -427,6 +427,8 @@ install_slack_token_rewriter() {
 // Also wraps http.get / https.get because they call the module-local
 // `request` function, not module.exports.request — wrapping `request`
 // alone would miss any `get` caller.
+// Request body chunks are wrapped too: Bolt's auth.test path can put the
+// token in both Authorization and the urlencoded body.
 //
 // Invariants:
 //   - No env reads. Translation is purely structural.
@@ -485,6 +487,100 @@ install_slack_token_rewriter() {
     return options;
   }
 
+  function adjustContentLength(req, beforeLength, afterLength) {
+    var delta = afterLength - beforeLength;
+    if (!delta || !req || typeof req.getHeader !== 'function' || typeof req.setHeader !== 'function') {
+      return;
+    }
+    // Once Node has built/sent the header block, changing Content-Length would
+    // be too late. Axios writes the urlencoded Slack body in one chunk before
+    // headers are flushed, which is the path this adjustment is for.
+    if (req.headersSent || req._header) return;
+    var current = req.getHeader('content-length');
+    if (Array.isArray(current)) current = current[0];
+    if (current === undefined || current === null || current === '') return;
+    var n = Number(current);
+    if (!isFinite(n)) return;
+    req.setHeader('Content-Length', String(n + delta));
+  }
+
+  function rewriteBodyChunk(req, chunk, encoding) {
+    if (typeof chunk === 'string') {
+      var rewritten = rewriteString(chunk);
+      if (rewritten !== chunk) {
+        adjustContentLength(
+          req,
+          Buffer.byteLength(chunk, encoding),
+          Buffer.byteLength(rewritten, encoding)
+        );
+      }
+      return rewritten;
+    }
+
+    if (!chunk || typeof chunk !== 'object') return chunk;
+    var isBuffer = Buffer.isBuffer(chunk);
+    if (!isBuffer && !(chunk instanceof Uint8Array)) return chunk;
+
+    var buf = isBuffer
+      ? chunk
+      : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    if (buf.indexOf(FAST_PATH) === -1) return chunk;
+    var s = buf.toString('utf8');
+    if (s.indexOf(FAST_PATH) === -1) return chunk;
+    // Do not rewrite arbitrary binary data. Slack's urlencoded bodies are
+    // valid UTF-8 and round-trip exactly.
+    if (!Buffer.from(s, 'utf8').equals(buf)) return chunk;
+    var rs = rewriteString(s);
+    if (rs === s) return chunk;
+    var out = Buffer.from(rs, 'utf8');
+    adjustContentLength(req, buf.length, out.length);
+    return out;
+  }
+
+  function wrapClientRequest(req) {
+    if (!req || typeof req !== 'object') return req;
+    if (req.__nemoclawSlackTokenRewriter) return req;
+    try {
+      Object.defineProperty(req, '__nemoclawSlackTokenRewriter', { value: true });
+    } catch (_e) {
+      req.__nemoclawSlackTokenRewriter = true;
+    }
+
+    var origWrite = req.write;
+    if (typeof origWrite === 'function') {
+      req.write = function (chunk, encoding, cb) {
+        if (typeof encoding === 'function') {
+          cb = encoding;
+          encoding = undefined;
+        }
+        chunk = rewriteBodyChunk(this, chunk, encoding);
+        if (cb) return origWrite.call(this, chunk, encoding, cb);
+        if (encoding !== undefined) return origWrite.call(this, chunk, encoding);
+        return origWrite.call(this, chunk);
+      };
+    }
+
+    var origEnd = req.end;
+    if (typeof origEnd === 'function') {
+      req.end = function (chunk, encoding, cb) {
+        if (arguments.length === 0) return origEnd.call(this);
+        if (typeof chunk === 'function') return origEnd.call(this, chunk);
+        if (typeof encoding === 'function') {
+          cb = encoding;
+          encoding = undefined;
+        }
+        if (chunk !== undefined && chunk !== null) {
+          chunk = rewriteBodyChunk(this, chunk, encoding);
+        }
+        if (cb) return origEnd.call(this, chunk, encoding, cb);
+        if (encoding !== undefined) return origEnd.call(this, chunk, encoding);
+        return origEnd.call(this, chunk);
+      };
+    }
+
+    return req;
+  }
+
   function wrap(mod, methodName) {
     var orig = mod[methodName];
     if (typeof orig !== 'function') return;
@@ -506,7 +602,7 @@ install_slack_token_rewriter() {
       } else {
         rewriteOptions(arg1);
       }
-      return orig.call(this, arg1, arg2, arg3);
+      return wrapClientRequest(orig.call(this, arg1, arg2, arg3));
     };
   }
 
@@ -533,7 +629,14 @@ SLACK_REWRITER_EOF
 verify_no_slack_secrets_on_disk() {
   local config="/sandbox/.openclaw/openclaw.json"
   [ -f "$config" ] || return 0
-  if perl -ne 'exit 0 if /\b(?:xoxb|xapp)-(?!OPENSHELL-RESOLVE-ENV-)/; END { exit 1 }' "$config"; then
+  if python3 - "$config" <<'PYSLACKSECRET'; then
+import re
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8", errors="ignore") as f:
+    content = f.read()
+sys.exit(0 if re.search(r"(?:xoxb|xapp)-(?!OPENSHELL-RESOLVE-ENV-)", content) else 1)
+PYSLACKSECRET
     printf '[SECURITY] Slack token leaked into %s — refusing to serve\n' "$config" >&2
     exit 78 # EX_CONFIG
   fi

@@ -28,16 +28,50 @@ const CANONICAL_REWRITER = path.join(
 // passed to the underlying (un-rewritten) implementation.
 function loadRewriter() {
   const src = fs.readFileSync(CANONICAL_REWRITER, "utf-8");
-  const captured: { method: string; args: unknown[] }[] = [];
+  const captured: { method: string; args: unknown[]; req: ReturnType<typeof makeRequest> }[] = [];
+
+  const makeRequest = (args: unknown[]) => {
+    const headers = new Map<string, string>();
+    const calls: { method: string; args: unknown[] }[] = [];
+    const opts = args.find(
+      (arg) => arg && typeof arg === "object" && !Array.isArray(arg) && !(arg instanceof URL),
+    ) as { headers?: Record<string, string> } | undefined;
+    if (opts?.headers) {
+      for (const [k, v] of Object.entries(opts.headers)) {
+        headers.set(k.toLowerCase(), String(v));
+      }
+    }
+    return {
+      calls,
+      _header: null as string | null,
+      headersSent: false,
+      getHeader(name: string) {
+        return headers.get(name.toLowerCase());
+      },
+      setHeader(name: string, value: string) {
+        headers.set(name.toLowerCase(), String(value));
+      },
+      write(...writeArgs: unknown[]) {
+        calls.push({ method: "write", args: writeArgs });
+        return true;
+      },
+      end(...endArgs: unknown[]) {
+        calls.push({ method: "end", args: endArgs });
+        return this;
+      },
+    };
+  };
 
   const make = (label: string) => ({
     request(...args: unknown[]) {
-      captured.push({ method: `${label}.request`, args });
-      return { _captured: true };
+      const req = makeRequest(args);
+      captured.push({ method: `${label}.request`, args, req });
+      return req;
     },
     get(...args: unknown[]) {
-      captured.push({ method: `${label}.get`, args });
-      return { _captured: true };
+      const req = makeRequest(args);
+      captured.push({ method: `${label}.get`, args, req });
+      return req;
     },
   });
 
@@ -159,6 +193,54 @@ describe("slack-token-rewriter: identity and idempotence", () => {
     mod.https.request(opts);
     expect(opts.headers.Authorization).toBe(firstPass);
     expect(opts.headers.Authorization).toBe("Bearer openshell:resolve:env:SLACK_BOT_TOKEN");
+  });
+});
+
+describe("slack-token-rewriter: request bodies", () => {
+  it("rewrites Buffer body chunks and adjusts Content-Length", () => {
+    const mod = loadRewriter();
+    const original = Buffer.from("token=xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN");
+    const expected = "token=openshell:resolve:env:SLACK_BOT_TOKEN";
+    const req = mod.https.request({
+      headers: { "Content-Length": String(original.length) },
+    });
+
+    req.write(original);
+
+    const written = req.calls[0].args[0] as Buffer;
+    expect(Buffer.isBuffer(written)).toBe(true);
+    expect(written.toString("utf-8")).toBe(expected);
+    expect(req.getHeader("content-length")).toBe(String(Buffer.byteLength(expected)));
+  });
+
+  it("rewrites string body chunks passed to end()", () => {
+    const mod = loadRewriter();
+    const original = "token=xapp-OPENSHELL-RESOLVE-ENV-SLACK_APP_TOKEN";
+    const expected = "token=openshell:resolve:env:SLACK_APP_TOKEN";
+    const req = mod.https.request({
+      headers: { "content-length": String(Buffer.byteLength(original)) },
+    });
+
+    req.end(original, "utf8");
+
+    expect(req.calls[0].args[0]).toBe(expected);
+    expect(req.getHeader("content-length")).toBe(String(Buffer.byteLength(expected)));
+  });
+
+  it("does not rewrite non-UTF-8 body chunks even if the marker bytes appear", () => {
+    const mod = loadRewriter();
+    const original = Buffer.concat([
+      Buffer.from([0xff, 0xfe, 0xfd]),
+      Buffer.from("xoxb-OPENSHELL-RESOLVE-ENV-SLACK_BOT_TOKEN"),
+    ]);
+    const req = mod.https.request({
+      headers: { "content-length": String(original.length) },
+    });
+
+    req.write(original);
+
+    expect(req.calls[0].args[0]).toBe(original);
+    expect(req.getHeader("content-length")).toBe(String(original.length));
   });
 });
 

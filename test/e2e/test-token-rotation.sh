@@ -132,6 +132,11 @@ if [ -n "${SLACK_BOT_TOKEN_A:-}" ] && [ "${SLACK_BOT_TOKEN_A}" = "${SLACK_BOT_TO
   PREREQS_OK=0
 fi
 
+if [ -n "${SLACK_APP_TOKEN_A:-}" ] && [ "${SLACK_APP_TOKEN_A}" = "${SLACK_APP_TOKEN_B:-}" ]; then
+  skip "SLACK_APP_TOKEN_A and SLACK_APP_TOKEN_B must be different"
+  PREREQS_OK=0
+fi
+
 # Bail to summary if any prereq failed (no phases run, but Summary still prints)
 if [ "$PREREQS_OK" != "1" ]; then
   print_summary
