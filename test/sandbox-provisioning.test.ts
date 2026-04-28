@@ -119,3 +119,16 @@ describe("sandbox test image fixtures", () => {
     expect(src).toContain("/sandbox/.openclaw-data/logs/config-health.json");
   });
 });
+
+describe("sandbox operations E2E harness", () => {
+  const src = fs.readFileSync(
+    path.join(ROOT, "test", "e2e", "test-sandbox-operations.sh"),
+    "utf-8",
+  );
+
+  it("resumes onboard when OpenShell resets after importing the image", () => {
+    expect(src).toContain("is_onboard_import_stream_reset");
+    expect(src).toContain("Connection reset by peer (os error 104)");
+    expect(src).toContain("nemoclaw onboard --resume --non-interactive");
+  });
+});

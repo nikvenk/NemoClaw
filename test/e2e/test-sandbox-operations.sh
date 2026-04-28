@@ -107,6 +107,37 @@ sandbox_exec() {
   sandbox_exec_for "$SANDBOX_A" "$1"
 }
 
+is_onboard_import_stream_reset() {
+  local output_file="$1"
+  [[ -f "$output_file" ]] || return 1
+
+  grep -q "Connection reset by peer (os error 104)" "$output_file" &&
+    grep -Eq "The image appears to have reached the gateway before the stream failed|Recovery: nemoclaw onboard --resume" "$output_file"
+}
+
+resume_onboard_after_import_stream_reset() {
+  local name="$1" output_file="$2"
+  if ! is_onboard_import_stream_reset "$output_file"; then
+    return 1
+  fi
+
+  log "  [onboard] Image reached gateway but import stream reset; retrying with nemoclaw onboard --resume..."
+  rm -f "$HOME/.nemoclaw/onboard.lock" 2>/dev/null || true
+
+  local resume_exit=0
+  NEMOCLAW_SANDBOX_NAME="$name" \
+    NEMOCLAW_NON_INTERACTIVE=1 \
+    NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+    nemoclaw onboard --resume --non-interactive --yes-i-accept-third-party-software \
+    2>&1 | tee -a "$LOG_FILE" || resume_exit=$?
+
+  if [[ $resume_exit -ne 0 ]]; then
+    log "  [onboard] nemoclaw onboard --resume exited with code $resume_exit"
+    return 1
+  fi
+  return 0
+}
+
 # Onboard a sandbox by name. Removes stale locks, runs nemoclaw onboard in
 # non-interactive mode, and returns 0 if the sandbox appears in nemoclaw list.
 onboard_sandbox() {
@@ -116,18 +147,25 @@ onboard_sandbox() {
   # Remove stale lock from previous crashed runs
   rm -f "$HOME/.nemoclaw/onboard.lock" 2>/dev/null || true
 
-  local onboard_exit=0
+  local onboard_exit=0 onboard_output
+  onboard_output="$(mktemp)"
   NEMOCLAW_SANDBOX_NAME="$name" \
     NEMOCLAW_NON_INTERACTIVE=1 \
     NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
     NEMOCLAW_RECREATE_SANDBOX=1 \
     nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
-    2>&1 | tee -a "$LOG_FILE" || onboard_exit=$?
+    2>&1 | tee -a "$LOG_FILE" "$onboard_output" || onboard_exit=$?
 
   if [[ $onboard_exit -ne 0 ]]; then
     log "  [onboard_sandbox] nemoclaw onboard exited with code $onboard_exit"
-    return 1
+    if resume_onboard_after_import_stream_reset "$name" "$onboard_output"; then
+      onboard_exit=0
+    else
+      rm -f "$onboard_output"
+      return 1
+    fi
   fi
+  rm -f "$onboard_output"
 
   if ! nemoclaw list 2>/dev/null | grep -q "$name"; then
     log "  [onboard_sandbox] Sandbox '$name' not found in nemoclaw list after onboard"
@@ -158,9 +196,10 @@ install_nemoclaw() {
 
   log "=== Installing NemoClaw via install.sh ==="
 
-  local install_exit=0
+  local install_exit=0 install_output
+  install_output="$(mktemp)"
   bash "$REPO_ROOT/install.sh" --non-interactive --yes-i-accept-third-party-software \
-    2>&1 | tee -a "$LOG_FILE" || install_exit=$?
+    2>&1 | tee -a "$LOG_FILE" "$install_output" || install_exit=$?
 
   # Source shell profile to pick up PATH changes from install.sh
   if [ -f "$HOME/.bashrc" ]; then
@@ -175,6 +214,15 @@ install_nemoclaw() {
   if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin:$PATH"
   fi
+
+  if [[ $install_exit -ne 0 ]]; then
+    local install_sandbox
+    install_sandbox="${NEMOCLAW_SANDBOX_NAME:-my-assistant}"
+    if resume_onboard_after_import_stream_reset "$install_sandbox" "$install_output"; then
+      install_exit=0
+    fi
+  fi
+  rm -f "$install_output"
 
   if [[ $install_exit -ne 0 ]]; then
     echo -e "${RED}FATAL: install.sh failed (exit $install_exit)${NC}"
