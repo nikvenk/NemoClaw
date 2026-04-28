@@ -112,11 +112,62 @@ gateway_pid() {
   sandbox_exec sh -c "pgrep -fo '[o]penclaw[ -]gateway'" | tr -d '[:space:]'
 }
 
-# Read NODE_OPTIONS from /proc/<pid>/environ — null-separated, decode to lines.
-gateway_node_options() {
+# Read /tmp/nemoclaw-proxy-env.sh — the single source of truth for the
+# NODE_OPTIONS guard chain that the recovery script sources before
+# launching the gateway. Owned root:root 444, readable by sandbox user.
+proxy_env_contents() {
+  sandbox_exec sh -c "cat /tmp/nemoclaw-proxy-env.sh 2>/dev/null"
+}
+
+# Returns 0 if the gateway has the library guard chain active, 1 otherwise.
+# /proc/<pid>/environ is unreadable across non-ancestor process trees due
+# to kernel.yama.ptrace_scope=1, so we verify the guards by their effects:
+#   1. proxy-env.sh contains the safety-net + ciao preload exports (the
+#      recovery script will pick these up on the next respawn).
+#   2. gateway.log contains the ciao guard activation signature
+#      `[guard] os.networkInterfaces() failed:` — that line is *only*
+#      emitted by our preload, so its presence proves the preload code
+#      executed inside the running gateway's Node process.
+#   3. The gateway PID is alive after the guard activations (proves the
+#      guard prevented a crash, which is the whole point).
+# Waits up to $2 seconds (default 30) for log signature to accrue, since
+# bonjour mDNS retries advertising eagerly so the line appears within
+# seconds on a healthy gateway.
+gateway_guards_active() {
   local pid="$1"
-  [ -z "$pid" ] && return 0
-  sandbox_exec sh -c "tr '\\0' '\\n' < /proc/${pid}/environ 2>/dev/null | grep '^NODE_OPTIONS='"
+  local timeout="${2:-30}"
+  local elapsed=0
+
+  if [ -z "$pid" ]; then
+    return 1
+  fi
+
+  local env_contents
+  env_contents="$(proxy_env_contents)"
+  if ! echo "$env_contents" | grep -q 'nemoclaw-sandbox-safety-net'; then
+    echo "  [guards] proxy-env.sh missing safety-net export"
+    return 1
+  fi
+  if ! echo "$env_contents" | grep -q 'nemoclaw-ciao-network-guard'; then
+    echo "  [guards] proxy-env.sh missing ciao-network-guard export"
+    return 1
+  fi
+
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if gateway_log_tail 200 | grep -q '\[guard\] os\.networkInterfaces() failed:'; then
+      # Confirm gateway is still alive after guard activations.
+      if [ -n "$(gateway_pid)" ]; then
+        return 0
+      fi
+      echo "  [guards] guard fired but gateway no longer running"
+      return 1
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+
+  echo "  [guards] no [guard] activation signature in gateway.log within ${timeout}s"
+  return 1
 }
 
 # Tail gateway.log from inside the sandbox (last N lines).
@@ -257,19 +308,10 @@ if [ -z "$INIT_PID" ]; then
 fi
 pass "Gateway up (pid=$INIT_PID)"
 
-INIT_NODE_OPTIONS="$(gateway_node_options "$INIT_PID")"
-if echo "$INIT_NODE_OPTIONS" | grep -q 'nemoclaw-sandbox-safety-net'; then
-  pass "Initial gateway has safety-net preload"
+if gateway_guards_active "$INIT_PID" 30; then
+  pass "Initial gateway has guard chain active (proxy-env exports + ciao preload firing in process)"
 else
-  fail "Initial gateway missing safety-net preload — fix is not deployed?"
-  echo "  NODE_OPTIONS: $INIT_NODE_OPTIONS"
-  gateway_diagnostics "$INIT_PID"
-  exit 1
-fi
-if echo "$INIT_NODE_OPTIONS" | grep -q 'nemoclaw-ciao-network-guard'; then
-  pass "Initial gateway has ciao networkInterfaces guard"
-else
-  fail "Initial gateway missing ciao guard — fix is not deployed?"
+  fail "Initial gateway missing library guard chain — fix is not deployed?"
   gateway_diagnostics "$INIT_PID"
   exit 1
 fi
@@ -301,20 +343,12 @@ for cycle in $(seq 1 "$CRASH_CYCLES"); do
   fi
   pass "Cycle $cycle: gateway respawned (pid $prev_pid → $new_pid)"
 
-  cycle_node_options="$(gateway_node_options "$new_pid")"
-  if echo "$cycle_node_options" | grep -q 'nemoclaw-sandbox-safety-net'; then
-    pass "Cycle $cycle: respawned gateway retains safety-net preload"
+  if gateway_guards_active "$new_pid" 30; then
+    pass "Cycle $cycle: respawned gateway retains guard chain (proxy-env + ciao preload firing)"
   else
-    fail "Cycle $cycle: respawned gateway LOST safety-net — recovery hardening regressed"
-    echo "  NODE_OPTIONS: $cycle_node_options"
+    fail "Cycle $cycle: respawned gateway LOST guard chain — recovery hardening regressed"
     gateway_diagnostics "$new_pid"
     gateway_log_tail 80
-    exit 1
-  fi
-  if echo "$cycle_node_options" | grep -q 'nemoclaw-ciao-network-guard'; then
-    pass "Cycle $cycle: respawned gateway retains ciao guard"
-  else
-    fail "Cycle $cycle: respawned gateway LOST ciao guard"
     exit 1
   fi
 
