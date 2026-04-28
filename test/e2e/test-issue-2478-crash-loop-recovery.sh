@@ -102,11 +102,14 @@ sandbox_exec() {
 }
 
 # Get the current openclaw gateway PID inside the sandbox, or empty string.
-# Pattern uses a bracket trick (`[o]penclaw`) so pgrep doesn't match its own
-# `sh -c pgrep -f ...` wrapper argv. Use -o to pick the OLDEST match — the
-# long-lived gateway, not a transient launcher process.
+# The gateway re-execs to argv `openclaw-gateway` after startup (it spawns
+# from the launcher whose argv is `openclaw gateway run`). Match either form
+# via `[o]penclaw[ -]gateway` — bracket trick prevents pgrep self-match,
+# `[ -]` accepts both the launcher (space) and the post-rename (dash). `-o`
+# returns the OLDEST match (the long-lived launcher 262 in the typical
+# parent/child tree); env is inherited so NODE_OPTIONS reads the same.
 gateway_pid() {
-  sandbox_exec sh -c "pgrep -fo '[o]penclaw gateway run'" | tr -d '[:space:]'
+  sandbox_exec sh -c "pgrep -fo '[o]penclaw[ -]gateway'" | tr -d '[:space:]'
 }
 
 # Read NODE_OPTIONS from /proc/<pid>/environ — null-separated, decode to lines.
