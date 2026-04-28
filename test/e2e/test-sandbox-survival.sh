@@ -717,24 +717,32 @@ if [ "$FAIL" -eq 0 ]; then
 
   # ── DIAGNOSTIC: capture process state right before exit 0 ──────────────────
   # Investigates why bash hangs ~1-2 minutes after this point on PR #2454 CI.
-  # Writes to /tmp/nemoclaw-e2e-install.log (path the upload-artifact step grabs).
+  # v2: save the ORIGINAL stdout/stderr to fds 9/8 before the redirect, so the
+  # diag can inspect what was actually on fd 1/2 before this group hijacked
+  # them. v1 saw fd 1 = the diag file (its own redirection) — useless.
   DIAG_FILE=/tmp/nemoclaw-e2e-install.log
+  exec 9>&1 8>&2
+  ORIG_STDOUT_TGT=$(readlink "/proc/$$/fd/9" 2>/dev/null)
+  ORIG_STDERR_TGT=$(readlink "/proc/$$/fd/8" 2>/dev/null)
   {
-    printf '\n=== EXIT-DIAG bash_pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
-    printf -- '--- /proc/%s/fd ---\n' "$$"
+    printf '\n=== EXIT-DIAG v2 bash_pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
+    printf 'ORIG_STDOUT_TGT=%s\n' "$ORIG_STDOUT_TGT"
+    printf 'ORIG_STDERR_TGT=%s\n' "$ORIG_STDERR_TGT"
+    printf -- '--- /proc/%s/fd (note: 1/2 are diag-redirected, 9/8 are saved orig) ---\n' "$$"
     ls -la "/proc/$$/fd" 2>&1 || true
     printf -- '--- lsof for bash %s ---\n' "$$"
-    lsof -p "$$" 2>&1 | head -100 || true
+    lsof -p "$$" 2>&1 | head -200 || true
     printf -- '--- full ps -ef ---\n'
     ps -ef 2>&1 || true
     printf -- '--- pstree of session ---\n'
     pstree -p -s "$$" 2>&1 || true
-    # Find every process holding the same pipe FDs as bash (stdout, stderr).
-    # If anyone other than bash + timeout has these open, that process is what
-    # keeps the runner's pipe alive after bash tries to exit.
-    for which in 1 2; do
-      tgt=$(readlink "/proc/$$/fd/$which" 2>/dev/null)
-      printf -- '--- consumers of bash fd %s -> %s ---\n' "$which" "$tgt"
+    # Find every process holding the same pipe inode as bash's ORIGINAL stdout
+    # and stderr. Anyone other than bash + timeout is what keeps the runner's
+    # pipe alive after bash tries to exit.
+    for label in stdout:$ORIG_STDOUT_TGT stderr:$ORIG_STDERR_TGT; do
+      tgt=${label#*:}
+      name=${label%%:*}
+      printf -- '--- consumers of bash %s (%s) ---\n' "$name" "$tgt"
       case "$tgt" in
         pipe:\[*\])
           for pid_dir in /proc/[0-9]*; do
@@ -746,15 +754,19 @@ if [ "$FAIL" -eq 0 ]; then
               if [ "$ftgt" = "$tgt" ]; then
                 cmd=$(tr '\0' ' ' < "$pid_dir/cmdline" 2>/dev/null)
                 comm=$(cat "$pid_dir/comm" 2>/dev/null)
-                printf '  pid=%s comm=%s fd=%s cmdline=%s\n' "$pid" "$comm" "$(basename "$fd")" "$cmd"
+                ppid=$(awk '{print $4}' "$pid_dir/stat" 2>/dev/null)
+                printf '  pid=%s ppid=%s comm=%s fd=%s cmdline=%s\n' \
+                  "$pid" "$ppid" "$comm" "$(basename "$fd")" "$cmd"
               fi
             done
           done
           ;;
+        *) printf '  (not a pipe — nothing to scan)\n' ;;
       esac
     done
     printf '=== EXIT-DIAG end ts=%s ===\n' "$(date +%s.%N)"
   } > "$DIAG_FILE" 2>&1
+  exec 9>&- 8>&-
   printf '  [diag] wrote %s (%s lines)\n' "$DIAG_FILE" "$(wc -l < "$DIAG_FILE" 2>/dev/null || echo 0)"
 
   # Force the job to fail so actions/upload-artifact runs and captures the diag.
