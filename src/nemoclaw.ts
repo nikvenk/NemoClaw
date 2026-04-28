@@ -29,6 +29,7 @@ const {
   shellQuote,
   validateName,
 } = require("./lib/runner");
+const { dockerRemoveVolumesByPrefix, dockerRmi } = require("./lib/docker");
 const { resolveOpenshell } = require("./lib/resolve-openshell");
 const {
   fetchGatewayAuthTokenFromSandbox,
@@ -173,10 +174,9 @@ function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
 function cleanupGatewayAfterLastSandbox() {
   runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], { ignoreError: true });
   runOpenshell(["gateway", "destroy", "-g", NEMOCLAW_GATEWAY_NAME], { ignoreError: true });
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+  dockerRemoveVolumesByPrefix(`openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`, {
+    ignoreError: true,
+  });
 }
 
 function hasNoLiveSandboxes() {
@@ -2448,7 +2448,7 @@ function cleanupSandboxServices(
 function removeSandboxImage(sandboxName: string) {
   const sb = registry.getSandbox(sandboxName);
   if (!sb?.imageTag) return;
-  const result = run(["docker", "rmi", sb.imageTag], { ignoreError: true });
+  const result = dockerRmi(sb.imageTag, { ignoreError: true });
   if (result.status === 0) {
     console.log(`  Removed Docker image ${sb.imageTag}`);
   } else {

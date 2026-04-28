@@ -19,8 +19,8 @@ describe("gateway liveness probe (#2020)", () => {
 
   it("verifyGatewayContainerRunning() helper exists and checks Docker state", () => {
     expect(content).toContain("function verifyGatewayContainerRunning()");
-    // Must use docker inspect to probe container state
-    expect(content).toContain("docker inspect --type container");
+    // Must use a Docker inspect helper to probe container state
+    expect(content).toMatch(/docker(?:Inspect|ContainerInspectFormat)\(/);
     // Must check .State.Running, not just container existence
     expect(content).toContain("{{.State.Running}}");
   });

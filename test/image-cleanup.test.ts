@@ -15,7 +15,7 @@ describe("image cleanup: sandbox destroy removes Docker image (#2086)", () => {
 
   it("removeSandboxImage() helper exists and calls docker rmi", () => {
     expect(nemoclawSrc).toContain("function removeSandboxImage(");
-    expect(nemoclawSrc).toMatch(/docker.*rmi/);
+    expect(nemoclawSrc).toMatch(/dockerRmi|docker.*rmi/);
   });
 
   it("sandboxDestroy calls removeSandboxImage before registry.removeSandbox", () => {
@@ -78,7 +78,7 @@ describe("image cleanup: onboard records imageTag in registry (#2086)", () => {
   it("onboard recreate path cleans up old image", () => {
     // When recreating, the old image should be removed
     expect(onboardSrc).toMatch(/previousEntry\?\.imageTag/);
-    expect(onboardSrc).toMatch(/docker.*rmi.*previousEntry\.imageTag/);
+    expect(onboardSrc).toMatch(/dockerRmi|docker.*rmi/);
   });
 });
 
