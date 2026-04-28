@@ -156,6 +156,21 @@ describe("generate-openclaw-config.py: config generation", () => {
     );
   });
 
+  it("disables unused bundled provider plugins with staged runtime deps", () => {
+    const config = runConfigScript({ NEMOCLAW_PROVIDER_KEY: "inference" });
+    expect(config.plugins.entries["amazon-bedrock"].enabled).toBe(false);
+    expect(config.plugins.entries["amazon-bedrock-mantle"].enabled).toBe(false);
+    expect(config.plugins.entries.anthropic.enabled).toBe(false);
+    expect(config.plugins.entries["anthropic-vertex"].enabled).toBe(false);
+    expect(config.plugins.entries.google.enabled).toBe(false);
+  });
+
+  it("keeps the selected bundled provider plugin available", () => {
+    const config = runConfigScript({ NEMOCLAW_PROVIDER_KEY: "anthropic" });
+    expect(config.plugins.entries.anthropic).toBeUndefined();
+    expect(config.plugins.entries.google.enabled).toBe(false);
+  });
+
   it("creates file with 0600 permissions", () => {
     runConfigScript();
     const configPath = path.join(tmpDir, ".openclaw", "openclaw.json");

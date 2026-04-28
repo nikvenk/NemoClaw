@@ -193,6 +193,33 @@ def build_config(env: dict | None = None) -> dict:
         }
     }
 
+    # OpenClaw 2026.4.24 stages runtime dependencies for every bundled
+    # enabledByDefault provider plugin during `openclaw doctor --fix`.
+    # NemoClaw bakes one model provider into openclaw.json, so keeping unused
+    # default providers enabled bloats the sandbox image and can exhaust the
+    # CI k3s/containerd import volume before tests even start.
+    plugin_entries = {
+        "acpx": {
+            "config": {
+                "agents": {
+                    "codex": {"command": "/usr/local/bin/nemoclaw-codex-acp"},
+                }
+            }
+        },
+        "bonjour": {"enabled": False},
+        "qqbot": {"enabled": False},
+    }
+    _bundled_provider_plugins = {
+        "amazon-bedrock": {"amazon-bedrock", "bedrock"},
+        "amazon-bedrock-mantle": {"amazon-bedrock-mantle"},
+        "anthropic": {"anthropic"},
+        "anthropic-vertex": {"anthropic-vertex"},
+        "google": {"google", "google-gemini-cli"},
+    }
+    for _plugin_id, _provider_keys in _bundled_provider_plugins.items():
+        if provider_key not in _provider_keys:
+            plugin_entries[_plugin_id] = {"enabled": False}
+
     config = {
         "agents": {
             "defaults": {
@@ -238,23 +265,10 @@ def build_config(env: dict | None = None) -> dict:
         # state so the gateway user does not try to write under /sandbox or
         # the sandbox user's redirected /tmp directories.
         #
-        # Other bundled extensions with stageRuntimeDependencies=true
-        # (anthropic, google, etc.) either pre-stage their deps or gracefully
-        # degrade when the install is denied. Add to this map only when we
-        # observe a runtime hang/crash, not preemptively.
-        "plugins": {
-            "entries": {
-                "acpx": {
-                    "config": {
-                        "agents": {
-                            "codex": {"command": "/usr/local/bin/nemoclaw-codex-acp"},
-                        }
-                    }
-                },
-                "bonjour": {"enabled": False},
-                "qqbot": {"enabled": False},
-            }
-        },
+        # Provider plugins with staged runtime dependencies are disabled above
+        # unless they match NEMOCLAW_PROVIDER_KEY. That keeps the baked image
+        # limited to the provider selected during onboard.
+        "plugins": {"entries": plugin_entries},
         "gateway": {
             "mode": "local",
             "controlUi": {

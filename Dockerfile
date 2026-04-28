@@ -329,9 +329,21 @@ USER sandbox
 # list of env vars and derivation rules.
 RUN python3 /usr/local/lib/nemoclaw/generate-openclaw-config.py
 
-# Install NemoClaw plugin into OpenClaw
-RUN openclaw doctor --fix > /dev/null 2>&1 || true \
-    && openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
+# Install NemoClaw plugin into OpenClaw. Prune non-runtime metadata from
+# staged bundled plugin dependencies before this layer is committed; deleting
+# it in a later layer would not reduce the OCI image imported by k3s.
+RUN (openclaw doctor --fix > /dev/null 2>&1 || true) \
+    && (openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true) \
+    && if [ -d /sandbox/.openclaw-data/plugin-runtime-deps ]; then \
+        find /sandbox/.openclaw-data/plugin-runtime-deps -type f \( \
+            -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o \
+            -name '*.map' -o -name '*.tsbuildinfo' \
+        \) -delete; \
+        find /sandbox/.openclaw-data/plugin-runtime-deps -type d \( \
+            -name __tests__ -o -name test -o -name tests -o -name docs -o \
+            -name examples \
+        \) -prune -exec rm -rf {} +; \
+    fi
 
 # Inject gateway auth token into openclaw.json.
 # NEMOCLAW_BUILD_ID busts the Docker cache so each image gets a unique token.
