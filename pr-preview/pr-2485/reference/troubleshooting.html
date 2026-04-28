@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=349eaea7"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.29';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -892,6 +892,20 @@ When checking status inside an active sandbox, host-side sandbox state and infer
 The status command detects the sandbox context and reports “active (inside sandbox)” instead.</p>
 <p>Run <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">list</span></code> on the host to check the underlying sandbox state.</p>
 </section>
+<section id="git-clone-fails-with-a-certificate-verification-error">
+<h3>Git clone fails with a certificate verification error<a class="headerlink" href="#git-clone-fails-with-a-certificate-verification-error" title="Link to this heading">#</a></h3>
+<p>In networks that inspect TLS, OpenShell injects a proxy CA bundle into the sandbox.
+Current NemoClaw exports that bundle as <code class="docutils literal notranslate"><span class="pre">GIT_SSL_CAINFO</span></code> during sandbox startup and persists it for <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">connect</span></code> sessions, so Git can trust the proxy CA.
+It also forwards standard CA bundle variables for subprocesses, including <code class="docutils literal notranslate"><span class="pre">GIT_SSL_CAPATH</span></code>, <code class="docutils literal notranslate"><span class="pre">CURL_CA_BUNDLE</span></code>, and <code class="docutils literal notranslate"><span class="pre">REQUESTS_CA_BUNDLE</span></code>.</p>
+<p>If Git still reports <code class="docutils literal notranslate"><span class="pre">server</span> <span class="pre">certificate</span> <span class="pre">verification</span> <span class="pre">failed</span></code>, reconnect to the sandbox and check that the CA variables are present:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>env<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;SSL_CERT_FILE|GIT_SSL_CAINFO|CURL_CA_BUNDLE|REQUESTS_CA_BUNDLE&#39;</span>
+</pre></div>
+</div>
+<p>If they are missing on an older sandbox, upgrade NemoClaw and run:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>&lt;name&gt;<span class="w"> </span>rebuild
+</pre></div>
+</div>
+</section>
 <section id="openclaw-update-hangs-or-times-out-inside-the-sandbox">
 <h3><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">update</span></code> hangs or times out inside the sandbox<a class="headerlink" href="#openclaw-update-hangs-or-times-out-inside-the-sandbox" title="Link to this heading">#</a></h3>
 <p>This is expected for the current NemoClaw deployment model.
@@ -1315,6 +1329,7 @@ If you encounter issues with Podman, switch to a tested runtime (Docker Engine, 
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-is-running-an-outdated-agent-version">Sandbox is running an outdated agent version</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-shows-as-stopped">Sandbox shows as stopped</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#status-shows-not-running-inside-the-sandbox">Status shows “not running” inside the sandbox</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#git-clone-fails-with-a-certificate-verification-error">Git clone fails with a certificate verification error</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#openclaw-update-hangs-or-times-out-inside-the-sandbox"><code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">update</span></code> hangs or times out inside the sandbox</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-requests-time-out">Inference requests time out</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-fails-at-runtime-after-onboarding-succeeds-with-a-compatible-endpoint">Agent fails at runtime after onboarding succeeds with a compatible endpoint</a></li>
