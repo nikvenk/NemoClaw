@@ -102,8 +102,11 @@ sandbox_exec() {
 }
 
 # Get the current openclaw gateway PID inside the sandbox, or empty string.
+# Pattern uses a bracket trick (`[o]penclaw`) so pgrep doesn't match its own
+# `sh -c pgrep -f ...` wrapper argv. Use -o to pick the OLDEST match — the
+# long-lived gateway, not a transient launcher process.
 gateway_pid() {
-  sandbox_exec sh -c "pgrep -f 'openclaw gateway run' | head -1" | tr -d '[:space:]'
+  sandbox_exec sh -c "pgrep -fo '[o]penclaw gateway run'" | tr -d '[:space:]'
 }
 
 # Read NODE_OPTIONS from /proc/<pid>/environ — null-separated, decode to lines.
@@ -119,17 +122,26 @@ gateway_log_tail() {
 }
 
 # Dump diagnostic snapshot for triage when an environ read or guard
-# assertion fails. Helps distinguish wrong-PID matching from missing
-# preloads from cross-namespace /proc visibility issues.
+# assertion fails. Helps distinguish wrong-PID matching, gateway-not-running,
+# and cross-namespace /proc visibility issues.
 gateway_diagnostics() {
   local pid="${1:-}"
   echo "  --- gateway diagnostics ---"
-  echo "  [pgrep -f 'openclaw gateway run' (all matches)]"
-  sandbox_exec sh -c "pgrep -af 'openclaw gateway run' || echo '(no matches)'" | sed 's/^/    /'
-  echo "  [pgrep -fo 'openclaw gateway run' (oldest)]"
-  sandbox_exec sh -c "pgrep -fo 'openclaw gateway run' || echo '(no matches)'" | sed 's/^/    /'
-  echo "  [ps -ef | grep -i openclaw | grep -v grep]"
-  sandbox_exec sh -c "ps -ef 2>/dev/null | grep -i openclaw | grep -v grep || echo '(no openclaw processes)'" | sed 's/^/    /'
+  echo "  [exec context: whoami / hostname / pwd / pid namespace]"
+  # shellcheck disable=SC2016  # intentional: expand inside sandbox, not host
+  sandbox_exec sh -c 'echo "user=$(whoami) host=$(hostname) pwd=$(pwd) pid_ns=$(readlink /proc/self/ns/pid 2>/dev/null)"' | sed 's/^/    /'
+  echo "  [pgrep -af '[o]penclaw' (any openclaw process)]"
+  sandbox_exec sh -c "pgrep -af '[o]penclaw' || echo '(no matches)'" | sed 's/^/    /'
+  echo "  [ps auxf (full tree, top 40 lines)]"
+  sandbox_exec sh -c "ps auxf 2>/dev/null | head -40 || ps -ef 2>/dev/null | head -40" | sed 's/^/    /'
+  echo "  [ls /tmp (gateway.log presence + size)]"
+  sandbox_exec sh -c "ls -la /tmp/gateway.log /tmp/auto-pair.log /tmp/openclaw-* 2>&1 | head -20" | sed 's/^/    /'
+  echo "  [tail /tmp/gateway.log -n 60]"
+  sandbox_exec sh -c "tail -n 60 /tmp/gateway.log 2>&1 || echo '(no gateway.log)'" | sed 's/^/    /'
+  echo "  [nemoclaw status]"
+  nemoclaw "$SANDBOX_NAME" status 2>&1 | head -30 | sed 's/^/    /'
+  echo "  [openshell sandbox containers / pod]"
+  openshell sandbox info --name "$SANDBOX_NAME" 2>&1 | head -20 | sed 's/^/    /' || true
   if [ -n "$pid" ]; then
     echo "  [reported pid: $pid]"
     echo "  [/proc/${pid} listing]"
@@ -237,7 +249,7 @@ section "Phase 2: Initial gateway has guard chain"
 INIT_PID="$(wait_for_gateway_up 60)"
 if [ -z "$INIT_PID" ]; then
   fail "Gateway never came up after onboard"
-  gateway_log_tail 80
+  gateway_diagnostics ""
   exit 1
 fi
 pass "Gateway up (pid=$INIT_PID)"
