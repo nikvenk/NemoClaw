@@ -170,13 +170,22 @@ function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
   });
 }
 
+function removeGatewayClusterVolumes(): void {
+  const names = _runCapture(
+    ["docker", "volume", "ls", "-q", "--filter", `name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`],
+    { ignoreError: true },
+  )
+    .split(/\r?\n/)
+    .map((line: string) => line.trim())
+    .filter(Boolean);
+  if (names.length === 0) return;
+  run(["docker", "volume", "rm", ...names], { ignoreError: true });
+}
+
 function cleanupGatewayAfterLastSandbox() {
   runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], { ignoreError: true });
   runOpenshell(["gateway", "destroy", "-g", NEMOCLAW_GATEWAY_NAME], { ignoreError: true });
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+  removeGatewayClusterVolumes();
 }
 
 function hasNoLiveSandboxes() {

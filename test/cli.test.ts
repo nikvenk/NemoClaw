@@ -539,7 +539,7 @@ describe("CLI dispatch", () => {
       { mode: 0o755 },
     );
     fs.writeFileSync(
-      path.join(localBin, "bash"),
+      path.join(localBin, "docker"),
       [
         "#!/bin/sh",
         `log_file=${JSON.stringify(bashLog)}`,
@@ -559,7 +559,7 @@ describe("CLI dispatch", () => {
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("NAME STATUS");
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("forward stop 18789");
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("gateway destroy -g nemoclaw");
-    expect(fs.readFileSync(bashLog, "utf8")).toContain("docker volume ls -q --filter");
+    expect(fs.readFileSync(bashLog, "utf8")).toContain("volume ls -q --filter");
   });
 
   it("keeps the gateway runtime when other sandboxes still exist", () => {
@@ -609,7 +609,7 @@ describe("CLI dispatch", () => {
       { mode: 0o755 },
     );
     fs.writeFileSync(
-      path.join(localBin, "bash"),
+      path.join(localBin, "docker"),
       [
         "#!/bin/sh",
         `log_file=${JSON.stringify(bashLog)}`,
@@ -629,7 +629,7 @@ describe("CLI dispatch", () => {
     expect(fs.readFileSync(openshellLog, "utf8")).not.toContain("forward stop 18789");
     expect(fs.readFileSync(openshellLog, "utf8")).not.toContain("gateway destroy -g nemoclaw");
     if (fs.existsSync(bashLog)) {
-      expect(fs.readFileSync(bashLog, "utf8")).not.toContain("docker volume ls -q --filter");
+      expect(fs.readFileSync(bashLog, "utf8")).not.toContain("volume ls -q --filter");
     }
   });
 
@@ -673,7 +673,7 @@ describe("CLI dispatch", () => {
       { mode: 0o755 },
     );
     fs.writeFileSync(
-      path.join(localBin, "bash"),
+      path.join(localBin, "docker"),
       [
         "#!/bin/sh",
         `log_file=${JSON.stringify(bashLog)}`,
@@ -694,7 +694,7 @@ describe("CLI dispatch", () => {
     expect(fs.readFileSync(openshellLog, "utf8")).not.toContain("forward stop 18789");
     expect(fs.readFileSync(openshellLog, "utf8")).not.toContain("gateway destroy -g nemoclaw");
     if (fs.existsSync(bashLog)) {
-      expect(fs.readFileSync(bashLog, "utf8")).not.toContain("docker volume ls -q --filter");
+      expect(fs.readFileSync(bashLog, "utf8")).not.toContain("volume ls -q --filter");
     }
   });
 
@@ -799,7 +799,7 @@ describe("CLI dispatch", () => {
       { mode: 0o755 },
     );
     fs.writeFileSync(
-      path.join(localBin, "bash"),
+      path.join(localBin, "docker"),
       [
         "#!/bin/sh",
         `log_file=${JSON.stringify(bashLog)}`,
@@ -825,7 +825,7 @@ describe("CLI dispatch", () => {
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("sandbox delete alpha");
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("forward stop 18789");
     expect(fs.readFileSync(openshellLog, "utf8")).toContain("gateway destroy -g nemoclaw");
-    expect(fs.readFileSync(bashLog, "utf8")).toContain("docker volume ls -q --filter");
+    expect(fs.readFileSync(bashLog, "utf8")).toContain("volume ls -q --filter");
   });
 
   it("deletes messaging providers when destroying a sandbox", () => {
@@ -867,7 +867,7 @@ describe("CLI dispatch", () => {
       { mode: 0o755 },
     );
     fs.writeFileSync(
-      path.join(localBin, "bash"),
+      path.join(localBin, "docker"),
       [
         "#!/bin/sh",
         `log_file=${JSON.stringify(bashLog)}`,
