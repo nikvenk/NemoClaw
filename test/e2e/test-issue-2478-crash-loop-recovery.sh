@@ -362,12 +362,17 @@ done
 section "Phase 4: Negative case — proxy-env.sh missing surfaces a warning"
 
 # Snapshot proxy-env.sh contents so we can restore after the test.
-SNAPSHOT="$(sandbox_exec sh -c 'cat /tmp/nemoclaw-proxy-env.sh 2>/dev/null')"
-if [ -z "$SNAPSHOT" ]; then
+# Capture as base64 from inside the sandbox so the round-trip is byte-
+# faithful — `$(cat ...)` would strip trailing newlines and break the
+# eventual size verification by ~2 bytes. We also pull the original size
+# separately so the post-restore wc -c can be compared exactly.
+SNAPSHOT_B64="$(sandbox_exec sh -c 'base64 < /tmp/nemoclaw-proxy-env.sh' | tr -d '[:space:]')"
+SNAPSHOT_SIZE="$(sandbox_exec sh -c 'wc -c < /tmp/nemoclaw-proxy-env.sh' | tr -d '[:space:]')"
+if [ -z "$SNAPSHOT_B64" ] || [ -z "$SNAPSHOT_SIZE" ] || [ "$SNAPSHOT_SIZE" -eq 0 ]; then
   fail "proxy-env.sh is empty/missing already — cannot run negative case"
   exit 1
 fi
-info "Snapshotted proxy-env.sh (${#SNAPSHOT} bytes)"
+info "Snapshotted proxy-env.sh ($SNAPSHOT_SIZE bytes, ${#SNAPSHOT_B64}-char base64)"
 
 # Remove proxy-env.sh, kill the entire openclaw process tree, trigger
 # recovery, expect WARNING. We must kill the launcher AND the gateway —
@@ -396,18 +401,14 @@ fi
 
 # Restore proxy-env.sh by base64-injecting the snapshot via argv. `openshell
 # sandbox exec` does not pipe stdin from the caller through to the subshell,
-# so the previous `printf | sandbox_exec sh -c 'cat > file'` left an empty
-# file. Encoding into the command argv sidesteps the stdin gap entirely.
-SNAPSHOT_B64="$(printf '%s' "$SNAPSHOT" | base64 | tr -d '\n')"
-info "restore: ${#SNAPSHOT_B64}-char base64 payload (decoded ${#SNAPSHOT} bytes)"
-restore_out="$(sandbox_exec sh -c "echo '$SNAPSHOT_B64' | base64 -d > /tmp/nemoclaw-proxy-env.sh && chmod 444 /tmp/nemoclaw-proxy-env.sh && wc -c < /tmp/nemoclaw-proxy-env.sh" | tr -d '[:space:]')"
-info "restore: result='$restore_out'"
+# so a `printf | sandbox_exec sh -c 'cat > file'` would leave an empty file.
+# Encoding into the command argv sidesteps the stdin gap entirely.
+sandbox_exec sh -c "echo '$SNAPSHOT_B64' | base64 -d > /tmp/nemoclaw-proxy-env.sh && chmod 444 /tmp/nemoclaw-proxy-env.sh" >/dev/null
 
-# Verify restore actually landed before continuing — otherwise the soak
-# is pointless because the gateway will keep crashing.
+# Verify restore is byte-identical to the snapshot.
 restored_size="$(sandbox_exec sh -c 'wc -c < /tmp/nemoclaw-proxy-env.sh' | tr -d '[:space:]')"
-if [ "$restored_size" != "${#SNAPSHOT}" ]; then
-  fail "proxy-env.sh restore failed: expected ${#SNAPSHOT} bytes, got '${restored_size}'"
+if [ "$restored_size" != "$SNAPSHOT_SIZE" ]; then
+  fail "proxy-env.sh restore failed: expected $SNAPSHOT_SIZE bytes, got '${restored_size}'"
   exit 1
 fi
 info "proxy-env.sh restored (${restored_size} bytes verified)"
