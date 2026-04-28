@@ -3827,7 +3827,11 @@ async function createSandbox(
   // A previous onboard run may have left the port forwarded to a different sandbox,
   // which would silently prevent the new sandbox's dashboard from being reachable.
   // Auto-allocates the next free port if the preferred one is taken (Fixes #2174).
-  const actualDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl);
+  // Roll back the just-created openshell sandbox on unrecoverable allocation
+  // failure so the registry and `openshell sandbox list` don't drift (#2174).
+  const actualDashboardPort = ensureDashboardForward(sandboxName, chatUiUrl, {
+    rollbackSandboxOnFailure: true,
+  });
   // Update chatUiUrl and CHAT_UI_URL env so printDashboard / getDashboardAccessInfo
   // see the final port (they re-read process.env.CHAT_UI_URL independently).
   if (actualDashboardPort !== Number(getDashboardForwardPort(chatUiUrl))) {
@@ -6182,11 +6186,39 @@ function findAvailableDashboardPort(sandboxName: string, preferredPort: number, 
  * Set up the dashboard forward for a sandbox. Auto-allocates the next free
  * port if the preferred port is taken by a different sandbox (Fixes #2174).
  * Returns the actual port number used.
+ *
+ * When `rollbackSandboxOnFailure` is true, deletes the just-created openshell
+ * sandbox before exiting on unrecoverable port-allocation failure. This keeps
+ * `openshell sandbox list` and the NemoClaw registry from drifting when the
+ * range is exhausted between sandbox-create and forward-setup ("leaks ghost
+ * sandbox" half of #2174). Mirrors the not-ready rollback pattern in
+ * createSandbox.
  */
-function ensureDashboardForward(sandboxName: string, chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`): number {
+function ensureDashboardForward(
+  sandboxName: string,
+  chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`,
+  options: { rollbackSandboxOnFailure?: boolean } = {},
+): number {
+  const { rollbackSandboxOnFailure = false } = options;
   const preferredPort = Number(getDashboardForwardPort(chatUiUrl));
   const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
-  const actualPort = findAvailableDashboardPort(sandboxName, preferredPort, existingForwards);
+  let actualPort: number;
+  try {
+    actualPort = findAvailableDashboardPort(sandboxName, preferredPort, existingForwards);
+  } catch (err) {
+    if (!rollbackSandboxOnFailure) throw err;
+    const delResult = runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
+    console.error("");
+    console.error(`  Could not allocate a dashboard port for '${sandboxName}'.`);
+    console.error(`  ${err instanceof Error ? err.message : String(err)}`);
+    if (delResult.status === 0) {
+      console.error("  The orphaned sandbox has been removed — you can safely retry.");
+    } else {
+      console.error("  Could not remove the orphaned sandbox. Manual cleanup:");
+      console.error(`    openshell sandbox delete "${sandboxName}"`);
+    }
+    process.exit(1);
+  }
 
   if (actualPort !== preferredPort) {
     console.warn(`  ! Port ${preferredPort} is taken. Using port ${actualPort} instead.`);
