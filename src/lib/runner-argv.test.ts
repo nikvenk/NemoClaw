@@ -73,6 +73,15 @@ describe("runCapture with argv array", () => {
     expect(output).toBe("trimmed");
   });
 
+  it("trims trailing blank lines so callers can safely parse the last line", () => {
+    const output = runner.runCapture([
+      process.execPath,
+      "-e",
+      'process.stdout.write("2048\\n\\n")',
+    ]);
+    expect(output).toBe("2048");
+  });
+
   it("throws when argv array is empty", () => {
     expect(() => runner.runCapture([])).toThrow(/must not be empty/);
   });
