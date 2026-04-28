@@ -28,7 +28,8 @@ The sandbox policy is defined in a declarative YAML file in the NemoClaw reposit
 NemoClaw supports both static policy changes that persist across restarts and dynamic updates applied to a running sandbox through the OpenShell CLI.
 
 :::{note}
-If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach and apply a custom NemoClaw preset with `nemoclaw <sandbox> policy-add --from-file`.
+If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach.
+Apply a custom NemoClaw preset with `nemoclaw <sandbox> policy-add --from-file`.
 Do not rely on `host.docker.internal` as a general host-service path because it bypasses the OpenShell policy path and may not be reachable in every sandbox runtime.
 See [Agent cannot reach a host-side HTTP service](../reference/troubleshooting.md#agent-cannot-reach-a-host-side-http-service).
 :::

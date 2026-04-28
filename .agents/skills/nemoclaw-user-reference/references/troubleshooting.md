@@ -736,7 +736,7 @@ Apply the preset to the running sandbox with the NemoClaw CLI:
 $ nemoclaw my-assistant policy-add --from-file ./host-memory-api.yaml
 ```
 
-After the policy is applied, retry the request from inside the sandbox without disabling the proxy:
+After you apply the policy, retry the request from inside the sandbox without disabling the proxy:
 
 ```console
 $ curl -s http://10.0.0.5:50001/health
