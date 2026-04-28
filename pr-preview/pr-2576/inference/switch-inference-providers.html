@@ -597,7 +597,7 @@ This variable is only needed when switching between provider families.</p>
 </section>
 <section id="tune-model-metadata">
 <h2>Tune Model Metadata<a class="headerlink" href="#tune-model-metadata" title="Link to this heading">#</a></h2>
-<p>The sandbox image bakes model metadata (context window, max output tokens, and reasoning mode) into <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at build time.
+<p>The sandbox image bakes model metadata (context window, max output tokens, reasoning mode, and accepted input modalities) into <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at build time.
 To change these values, set the corresponding environment variables before running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> so they patch into the Dockerfile before the image builds.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
@@ -619,17 +619,23 @@ To change these values, set the corresponding environment variables before runni
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_AGENT_TIMEOUT</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_INPUTS</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">text</span></code> or <code class="docutils literal notranslate"><span class="pre">text,image</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">text</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_AGENT_TIMEOUT</span></code></p></td>
 <td><p>Positive integer (seconds)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">600</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Invalid values are ignored, and the default bakes into the image.</p>
+<p>Invalid values are ignored, and the default bakes into the image.
+Use <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_INPUTS=text,image</span></code> only for a model that accepts image input through the selected provider.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_CONTEXT_WINDOW</span><span class="o">=</span><span class="m">65536</span>
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_MAX_TOKENS</span><span class="o">=</span><span class="m">8192</span>
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_REASONING</span><span class="o">=</span><span class="nb">true</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_INFERENCE_INPUTS</span><span class="o">=</span>text,image
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_AGENT_TIMEOUT</span><span class="o">=</span><span class="m">1800</span>
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
 </pre></div>
