@@ -43,6 +43,7 @@ fail() {
   ((TOTAL++))
   printf '\033[31m  FAIL: %s\033[0m\n' "$1"
 }
+# shellcheck disable=SC2329
 skip() {
   ((SKIP++))
   ((TOTAL++))
@@ -140,7 +141,10 @@ pass "CLIs on PATH"
 section "Phase 2: Inject skill fixture"
 
 info "Injecting ${SKILL_ID} into sandbox '${SANDBOX_NAME}'..."
-if ! SANDBOX_NAME="$SANDBOX_NAME" SKILL_ID="$SKILL_ID" bash "$E2E_DIR/e2e-cloud-experimental/features/skill/add-sandbox-skill.sh"; then
+if ! SANDBOX_NAME="$SANDBOX_NAME" \
+     SKILL_ID="$SKILL_ID" \
+     SKILL_DESCRIPTION="E2E smoke skill injected for agent verification" \
+     bash "$E2E_DIR/e2e-cloud-experimental/features/skill/add-sandbox-skill.sh"; then
   fail "Failed to inject ${SKILL_ID}"
   exit 1
 fi
@@ -175,15 +179,21 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     break
   fi
 
-  # Check if the token appears in the output even though the script exited non-zero
-  # (e.g., wrapped in quotes or explanation text that the strict grep missed)
-  collapsed=$(printf '%s' "$agent_out" | tr -d '\n\r' | tr -d '`"'\''' | tr '[:upper:]' '[:lower:]')
-  token_lower=$(printf '%s' "$VERIFY_TOKEN" | tr '[:upper:]' '[:lower:]')
-  if printf '%s' "$collapsed" | grep -Fq "$token_lower"; then
-    info "Token found in output (fuzzy match — script exited ${agent_rc} but token present)"
-    pass "Agent returned ${VERIFY_TOKEN} via fuzzy match (attempt ${attempt}/${MAX_ATTEMPTS})"
-    agent_ok=1
-    break
+  # Fuzzy fallback: check if the token appears in the *agent output section only*,
+  # not in helper diagnostic/error lines. The helper delimits agent output with
+  # "--- agent stdout/stderr" / "--- end ---" markers. We extract only that
+  # section to avoid false positives from error messages that echo the token
+  # (see Brandon's review on #2647).
+  agent_section=$(printf '%s' "$agent_out" | sed -n '/--- agent stdout\/stderr/,/--- end ---/p')
+  if [ -n "$agent_section" ]; then
+    collapsed=$(printf '%s' "$agent_section" | tr -d '\n\r' | tr -d '`"'\''' | tr '[:upper:]' '[:lower:]')
+    token_lower=$(printf '%s' "$VERIFY_TOKEN" | tr '[:upper:]' '[:lower:]')
+    if printf '%s' "$collapsed" | grep -Fq "$token_lower"; then
+      info "Token found in agent output section (fuzzy match — script exited ${agent_rc} but token present in delimited output)"
+      pass "Agent returned ${VERIFY_TOKEN} via fuzzy match (attempt ${attempt}/${MAX_ATTEMPTS})"
+      agent_ok=1
+      break
+    fi
   fi
 
   last_fail="Agent verification failed (exit ${agent_rc}): ${agent_out:0:400}"

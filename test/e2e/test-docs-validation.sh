@@ -40,6 +40,7 @@ fail() {
   ((TOTAL++))
   printf '\033[31m  FAIL: %s\033[0m\n' "$1"
 }
+# shellcheck disable=SC2329
 skip() {
   ((SKIP++))
   ((TOTAL++))
@@ -57,12 +58,13 @@ _candidate="$(cd "${_script_dir}/../.." && pwd)"
 if [ -d /workspace ] && [ -f /workspace/package.json ] && [ -d /workspace/test/e2e ]; then
   REPO="/workspace"
 elif [ -f "${_candidate}/package.json" ] && [ -d "${_candidate}/test/e2e" ]; then
-  REPO="${_candidate}"
+  REPO="${_candidate}"  # exported for child scripts
 else
   echo "ERROR: Cannot find repo root."
   exit 1
 fi
 unset _script_dir _candidate
+export REPO
 
 E2E_DIR="$(cd "$(dirname "$0")" && pwd)"
 

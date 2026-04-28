@@ -130,11 +130,7 @@ if [ "$INTERACTIVE_INSTALL" != "1" ]; then
   fi
   pass "Non-interactive mode configured"
 else
-  if ! command -v expect >/dev/null 2>&1; then
-    fail "expect not on PATH (required for interactive install)"
-    exit 1
-  fi
-  pass "Interactive install mode (expect available)"
+  skip "Interactive install mode not supported in split tests (use non-interactive)"
 fi
 
 if [[ "$(uname -s)" == "Linux" ]]; then
@@ -160,17 +156,26 @@ export NEMOCLAW_POLICY_PRESETS="${NEMOCLAW_POLICY_PRESETS:-npm,pypi}"
 NEMOCLAW_INSTALL_SCRIPT_URL="${NEMOCLAW_INSTALL_SCRIPT_URL:-https://www.nvidia.com/nemoclaw.sh}"
 export NEMOCLAW_INSTALL_SCRIPT_URL
 
-info "Installing: curl -fsSL ${NEMOCLAW_INSTALL_SCRIPT_URL} | bash"
 info "Model: ${CLOUD_MODEL}, Policy: ${NEMOCLAW_POLICY_MODE} ${NEMOCLAW_POLICY_PRESETS}"
 
-curl -fsSL "$NEMOCLAW_INSTALL_SCRIPT_URL" | bash >"$INSTALL_LOG" 2>&1 &
-install_pid=$!
-tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
-tail_pid=$!
-wait "$install_pid"
-install_exit=$?
-kill "$tail_pid" 2>/dev/null || true
-wait "$tail_pid" 2>/dev/null || true
+if [ "$INTERACTIVE_INSTALL" = "1" ]; then
+  # Interactive install via expect is not currently supported in the split
+  # tests. The original monolith inlined the expect heredoc; the standalone
+  # wrapper (expect-interactive-install.sh) was never self-contained.
+  # TODO(#2644): re-implement interactive install if needed.
+  fail "Interactive install (RUN_E2E_CLOUD_ONBOARD_INTERACTIVE_INSTALL=1) is not yet supported — use non-interactive mode"
+  exit 1
+else
+  info "Installing (non-interactive): curl -fsSL ${NEMOCLAW_INSTALL_SCRIPT_URL} | bash"
+  curl -fsSL "$NEMOCLAW_INSTALL_SCRIPT_URL" | bash >"$INSTALL_LOG" 2>&1 &
+  install_pid=$!
+  tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
+  tail_pid=$!
+  wait "$install_pid"
+  install_exit=$?
+  kill "$tail_pid" 2>/dev/null || true
+  wait "$tail_pid" 2>/dev/null || true
+fi
 
 # Source shell profile to pick up nvm/PATH changes
 if [ -f "$HOME/.bashrc" ]; then
