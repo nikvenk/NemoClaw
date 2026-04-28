@@ -94,8 +94,8 @@ function parseArgs(argv: string[]): Options {
   const names = new Set(DEFAULT_NAMES);
   const roots: string[] = [];
   let rootDir = process.cwd();
-  let excludeTests = false;
-  let groupByCommand = false;
+  let excludeTests = true;
+  let groupByCommand = true;
   let markdown = false;
   let json = false;
 
@@ -125,8 +125,16 @@ function parseArgs(argv: string[]): Options {
       excludeTests = true;
       continue;
     }
+    if (arg === "--include-tests") {
+      excludeTests = false;
+      continue;
+    }
     if (arg === "--group-by-command") {
       groupByCommand = true;
+      continue;
+    }
+    if (arg === "--list-calls") {
+      groupByCommand = false;
       continue;
     }
     if (arg === "--markdown") {
@@ -160,11 +168,12 @@ function parseArgs(argv: string[]): Options {
 
 function printHelp(): void {
   console.log(
-    "Usage: tsx scripts/list-command-helper-uses.ts [--root <dir>] [--names run,runInteractive,...] [--exclude-tests] [--group-by-command] [--markdown] [--json] [path ...]\n\n" +
-      "Lists AST-level callsites and assignments for command helper names such as run(), runInteractive(), runCapture(), runShell(), execFileSync(), spawnSync(), and runCommand().\n\n" +
+    "Usage: tsx scripts/list-command-helper-uses.ts [--root <dir>] [--names run,runInteractive,...] [--include-tests] [--list-calls] [--markdown] [--json] [path ...]\n\n" +
+      "Lists AST-level callsites and assignments for command helper names such as run(), runInteractive(), runCapture(), runShell(), execFileSync(), spawnSync(), and runCommand(). By default it excludes test files and groups results by inferred command head.\n\n" +
       "Examples:\n" +
       "  tsx scripts/list-command-helper-uses.ts\n" +
-      "  tsx scripts/list-command-helper-uses.ts --group-by-command --exclude-tests --markdown src\n" +
+      "  tsx scripts/list-command-helper-uses.ts --markdown src\n" +
+      "  tsx scripts/list-command-helper-uses.ts --include-tests --list-calls --json src test\n" +
       "  tsx scripts/list-command-helper-uses.ts --names run,runInteractive src test\n",
   );
 }
