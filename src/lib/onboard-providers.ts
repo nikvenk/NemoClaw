@@ -86,6 +86,16 @@ const REMOTE_PROVIDER_CONFIG = {
 // Providers that run on the host and need the local-inference policy preset.
 const LOCAL_INFERENCE_PROVIDERS = ["ollama-local", "vllm-local"];
 
+// Internal credential env names for local inference providers. Decoupled
+// from OPENAI_API_KEY so the gateway plumbing for local Ollama / vLLM (incl.
+// NIM, which is vLLM under the hood) never reads or caches the user's host
+// OpenAI key. See GH #2519: a stale host OPENAI_API_KEY was leaking into
+// inference.local and producing HTTP 401s on every prompt. vLLM-local does
+// not enforce the bearer at the runtime, but using a dedicated env name
+// prevents the same hijacking.
+const OLLAMA_PROXY_CREDENTIAL_ENV = "NEMOCLAW_OLLAMA_PROXY_TOKEN";
+const VLLM_LOCAL_CREDENTIAL_ENV = "NEMOCLAW_VLLM_LOCAL_TOKEN";
+
 const DISCORD_SNOWFLAKE_RE = /^[0-9]{17,19}$/;
 
 // ── Provider label ───────────────────────────────────────────────
@@ -332,6 +342,8 @@ module.exports = {
   GEMINI_ENDPOINT_URL,
   REMOTE_PROVIDER_CONFIG,
   LOCAL_INFERENCE_PROVIDERS,
+  OLLAMA_PROXY_CREDENTIAL_ENV,
+  VLLM_LOCAL_CREDENTIAL_ENV,
   DISCORD_SNOWFLAKE_RE,
   getProviderLabel,
   getEffectiveProviderName,
