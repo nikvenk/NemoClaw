@@ -37,10 +37,7 @@ const {
   ensureOllamaAuthProxy,
   isNonInteractive,
 } = require("./lib/onboard");
-const {
-  parseGatewayTokenArgs,
-  runGatewayTokenCommand,
-} = require("./lib/gateway-token-command");
+const { parseGatewayTokenArgs, runGatewayTokenCommand } = require("./lib/gateway-token-command");
 const {
   getCredential,
   deleteCredential,
@@ -183,7 +180,10 @@ function removeGatewayClusterVolumes(): void {
 }
 
 function cleanupGatewayAfterLastSandbox() {
-  runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], { ignoreError: true });
+  runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], {
+    ignoreError: true,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
   runOpenshell(["gateway", "destroy", "-g", NEMOCLAW_GATEWAY_NAME], { ignoreError: true });
   removeGatewayClusterVolumes();
 }
@@ -1786,14 +1786,15 @@ async function sandboxStatus(sandboxName: string) {
     }
   }
 
-  // NIM health
   const nimStat =
     sb && sb.nimContainer ? nim.nimStatusByName(sb.nimContainer) : nim.nimStatus(sandboxName);
-  console.log(
-    `    NIM:      ${nimStat.running ? `running (${nimStat.container})` : "not running"}`,
-  );
-  if (nimStat.running) {
-    console.log(`    Healthy:  ${nimStat.healthy ? "yes" : "no"}`);
+  if (nim.shouldShowNimLine(sb && sb.nimContainer, nimStat.running)) {
+    console.log(
+      `    NIM:      ${nimStat.running ? `running (${nimStat.container})` : "not running"}`,
+    );
+    if (nimStat.running) {
+      console.log(`    Healthy:  ${nimStat.healthy ? "yes" : "no"}`);
+    }
   }
   console.log("");
 }
@@ -1870,7 +1871,9 @@ async function sandboxPolicyAdd(sandboxName: string, args: string[] = []): Promi
     }
     const files = fs
       .readdirSync(absDir, { withFileTypes: true })
-      .filter((ent: { name: string; isFile(): boolean }) => ent.isFile() && /\.ya?ml$/i.test(ent.name))
+      .filter(
+        (ent: { name: string; isFile(): boolean }) => ent.isFile() && /\.ya?ml$/i.test(ent.name),
+      )
       .map((ent: { name: string }) => path.join(absDir, ent.name))
       .sort();
     if (files.length === 0) {
@@ -2197,6 +2200,56 @@ async function sandboxChannelsStart(sandboxName: string, args: string[] = []): P
   await sandboxChannelsSetEnabled(sandboxName, args, false);
 }
 
+function printSkillInstallUsage(): void {
+  console.log("");
+  console.log("  Usage: nemoclaw <sandbox> skill install <path>");
+  console.log("");
+  console.log("  Deploy a skill directory to a running sandbox.");
+  console.log(
+    "  <path> must be a skill directory containing a SKILL.md (with 'name:' frontmatter),",
+  );
+  console.log(
+    "  or a direct path to a SKILL.md file. All non-dot files in the directory are uploaded.",
+  );
+  console.log("");
+}
+
+function looksLikeOpenClawPlugin(candidatePath: string): boolean {
+  const dir =
+    fs.existsSync(candidatePath) && fs.statSync(candidatePath).isDirectory()
+      ? candidatePath
+      : path.dirname(candidatePath);
+  if (!fs.existsSync(dir)) return false;
+  if (fs.existsSync(path.join(dir, "openclaw.plugin.json"))) return true;
+
+  const packageJsonPath = path.join(dir, "package.json");
+  if (!fs.existsSync(packageJsonPath)) return false;
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+    const openclawBlock = packageJson?.openclaw;
+    return Boolean(
+      packageJson?.["openclaw.plugin"] === true ||
+      openclawBlock === true ||
+      (typeof openclawBlock === "object" &&
+        openclawBlock !== null &&
+        (openclawBlock.plugin === true ||
+          typeof openclawBlock.entry === "string" ||
+          typeof openclawBlock.main === "string" ||
+          (Array.isArray(openclawBlock.extensions) && openclawBlock.extensions.length > 0))),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function printPluginInstallHint(): void {
+  console.error("  This looks like an OpenClaw plugin, not a SKILL.md agent skill.");
+  console.error("  `skill install` only accepts skill directories or direct SKILL.md paths.");
+  console.error(
+    "  To use an OpenClaw plugin today, bake it into a custom sandbox image with `nemoclaw onboard --from <Dockerfile>`.",
+  );
+}
+
 /**
  * Install or update a local skill directory into a live sandbox and perform
  * any agent-specific post-install refresh needed for the new content to load.
@@ -2204,17 +2257,7 @@ async function sandboxChannelsStart(sandboxName: string, args: string[] = []): P
 async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Promise<void> {
   const sub = args[0];
   if (!sub || sub === "help" || sub === "--help" || sub === "-h") {
-    console.log("");
-    console.log("  Usage: nemoclaw <sandbox> skill install <path>");
-    console.log("");
-    console.log("  Deploy a skill directory to a running sandbox.");
-    console.log(
-      "  <path> must be a skill directory containing a SKILL.md (with 'name:' frontmatter),",
-    );
-    console.log(
-      "  or a direct path to a SKILL.md file. All non-dot files in the directory are uploaded.",
-    );
-    console.log("");
+    printSkillInstallUsage();
     return;
   }
 
@@ -2226,6 +2269,10 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
 
   const skillPath = args[1];
   const extraArgs = args.slice(2);
+  if (skillPath === "--help" || skillPath === "-h" || skillPath === "help") {
+    printSkillInstallUsage();
+    return;
+  }
   if (extraArgs.length > 0) {
     console.error(`  Unknown argument(s) for skill install: ${extraArgs.join(", ")}`);
     console.error("  Usage: nemoclaw <sandbox> skill install <path>");
@@ -2251,12 +2298,18 @@ async function sandboxSkillInstall(sandboxName: string, args: string[] = []): Pr
   } else {
     console.error(`  No SKILL.md found at '${resolvedPath}'.`);
     console.error("  <path> must be a skill directory or a direct path to SKILL.md.");
+    if (looksLikeOpenClawPlugin(resolvedPath)) {
+      printPluginInstallHint();
+    }
     process.exit(1);
   }
 
   if (!fs.existsSync(skillMdPath)) {
     console.error(`  No SKILL.md found in '${skillDir}'.`);
     console.error("  The skill directory must contain a SKILL.md file.");
+    if (looksLikeOpenClawPlugin(skillDir)) {
+      printPluginInstallHint();
+    }
     process.exit(1);
   }
 
@@ -2443,9 +2496,13 @@ function cleanupSandboxServices(
     // PID directory may not exist — ignore.
   }
 
-  // Delete messaging providers created during onboard.
+  // Delete messaging providers created during onboard. Suppress stderr so
+  // "! Provider not found" noise doesn't appear when messaging was never configured.
   for (const suffix of ["telegram-bridge", "discord-bridge", "slack-bridge"]) {
-    runOpenshell(["provider", "delete", `${sandboxName}-${suffix}`], { ignoreError: true });
+    runOpenshell(["provider", "delete", `${sandboxName}-${suffix}`], {
+      ignoreError: true,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
   }
 }
 
@@ -2782,8 +2839,9 @@ async function sandboxRebuild(
   // Force the sandbox name so onboard recreates with the same name.
   // Mark session resumable and point at this sandbox; set env var as fallback.
   const sessionBefore = onboardSession.loadSession();
+  const sessionMatchesSandbox = sessionBefore?.sandboxName === sandboxName;
   log(
-    `Session before update: sandboxName=${sessionBefore?.sandboxName}, status=${sessionBefore?.status}, resumable=${sessionBefore?.resumable}, provider=${sessionBefore?.provider}, model=${sessionBefore?.model}`,
+    `Session before update: sandboxName=${sessionBefore?.sandboxName}, status=${sessionBefore?.status}, resumable=${sessionBefore?.resumable}, provider=${sessionBefore?.provider}, model=${sessionBefore?.model}, sessionMatch=${sessionMatchesSandbox}`,
   );
 
   // Sync the session's agent field with the registry so onboard --resume
@@ -2811,7 +2869,11 @@ async function sandboxRebuild(
   // Forward the stored --from Dockerfile path so onboard --resume uses the
   // same custom image.  Without this, the conflict check rejects the resume
   // because requestedFrom (null) !== recordedFrom (the stored path).  (#2301)
-  const storedFromDockerfile = sessionAfter?.metadata?.fromDockerfile || null;
+  // Only read from the session when it belongs to this sandbox to avoid
+  // using config from a different sandbox's onboard run.
+  const storedFromDockerfile = sessionMatchesSandbox
+    ? sessionAfter?.metadata?.fromDockerfile || null
+    : null;
   log(
     `Calling onboard({ resume: true, nonInteractive: true, recreateSandbox: true, fromDockerfile: ${storedFromDockerfile} })`,
   );
@@ -2825,8 +2887,7 @@ async function sandboxRebuild(
   // call stack, which skips process.once("exit") listeners (lock
   // release, build context cleanup, session failure marking).  We
   // manually release the lock and mark the session failed in the
-  // onboardFailed block below.  Full fix is tracked in #2306 (extract
-  // rebuild-specific recreate path that throws instead of exiting).
+  // onboardFailed block below.
   const { onboard } = require("./lib/onboard");
   let onboardFailed = false;
   let onboardExitCode = 1;
