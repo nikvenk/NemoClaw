@@ -86,6 +86,12 @@ RUN set -eu; \
     # which makes the probe fail and degrades the agent CLI fallback path
     # (NemoClaw#2484 / TC-SBX-02). Installing globally at build time is
     # safe because the build phase has open internet access.
+    #
+    # Set npm config prefer-offline=true so the runtime npx invocation
+    # uses the cached + globally-installed package without re-fetching
+    # metadata from the registry (which would hit the L7 proxy 403).
+    npm config --global set prefer-offline true; \
+    npm config --global set fetch-retries 1; \
     npm install -g --no-audit --no-fund --no-progress \
         '@zed-industries/codex-acp@^0.11.1' || \
         echo "WARN: codex-acp pre-install failed (non-fatal — runtime probe will retry)" >&2
