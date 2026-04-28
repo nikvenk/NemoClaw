@@ -171,13 +171,13 @@ function captureOpenshell(args: CommandArgs, opts: RunnerOptions = {}) {
 }
 
 function removeGatewayClusterVolumes(): void {
-  const names = _runCapture(
-    ["docker", "volume", "ls", "-q", "--filter", `name=openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`],
-    { ignoreError: true },
-  )
+  const prefix = `openshell-cluster-${NEMOCLAW_GATEWAY_NAME}`;
+  const names = _runCapture(["docker", "volume", "ls", "-q", "--filter", `name=${prefix}`], {
+    ignoreError: true,
+  })
     .split(/\r?\n/)
     .map((line: string) => line.trim())
-    .filter(Boolean);
+    .filter((line: string) => line.startsWith(prefix));
   if (names.length === 0) return;
   run(["docker", "volume", "rm", ...names], { ignoreError: true });
 }

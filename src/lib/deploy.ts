@@ -426,7 +426,7 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
       "-e",
       `ssh ${sshOpts}`,
       `${rootDir}/`,
-      `${name}:${shellQuote(`${remoteDir}/`)}`,
+      `${name}:${remoteDir}/`,
     ]);
 
     const envLines = buildDeployEnvLines({
@@ -440,7 +440,7 @@ export async function executeDeploy(opts: DeployExecutionOptions): Promise<void>
     const envTmp = path.join(envDir, "env");
     fs.writeFileSync(envTmp, envLines.join("\n") + "\n", { mode: 0o600 });
     try {
-      run(["scp", "-q", ...sshArgs, envTmp, `${name}:${shellQuote(`${remoteDir}/.env`)}`]);
+      run(["scp", "-q", ...sshArgs, envTmp, `${name}:${remoteDir}/.env`]);
       run(["ssh", "-q", ...sshArgs, name, `chmod 600 ${shellQuote(`${remoteDir}/.env`)}`]);
     } finally {
       try {
