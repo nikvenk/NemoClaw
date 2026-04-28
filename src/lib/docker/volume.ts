@@ -10,15 +10,24 @@ function splitNonEmptyLines(output: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeVolumePrefix(prefix: string): string {
+  const normalized = prefix.trim();
+  if (!normalized) {
+    throw new Error("prefix must be a non-empty string");
+  }
+  return normalized;
+}
+
 export function dockerListVolumesByPrefix(
   prefix: string,
   opts: DockerCaptureOptions = {},
 ): string[] {
-  const output = dockerCapture(["volume", "ls", "-q", "--filter", `name=${prefix}`], {
+  const normalized = normalizeVolumePrefix(prefix);
+  const output = dockerCapture(["volume", "ls", "-q", "--filter", `name=${normalized}`], {
     ignoreError: true,
     ...opts,
   });
-  return splitNonEmptyLines(output).filter((name) => name.startsWith(prefix));
+  return splitNonEmptyLines(output).filter((name) => name.startsWith(normalized));
 }
 
 export function dockerRemoveVolumes(names: readonly string[], opts: DockerRunOptions = {}) {
@@ -30,7 +39,16 @@ export function dockerRemoveVolumesByPrefix(
   prefix: string,
   opts: DockerRunOptions = {},
 ): string[] {
-  const names = dockerListVolumesByPrefix(prefix);
+  const normalized = normalizeVolumePrefix(prefix);
+  let names: string[];
+  try {
+    names = dockerListVolumesByPrefix(normalized, {
+      ignoreError: opts.ignoreError,
+    });
+  } catch (error) {
+    if (opts.ignoreError) return [];
+    throw error;
+  }
   if (names.length === 0) return names;
   dockerRemoveVolumes(names, opts);
   return names;

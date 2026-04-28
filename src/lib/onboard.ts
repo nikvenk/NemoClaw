@@ -602,21 +602,16 @@ const SANDBOX_BASE_TAG = "latest";
  */
 function pullAndResolveBaseImageDigest(): { digest: string; ref: string } | null {
   const imageWithTag = `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`;
-  try {
-    dockerPull(imageWithTag, { suppressOutput: true });
-  } catch {
+  const pullResult = dockerPull(imageWithTag, { ignoreError: true, suppressOutput: true });
+  if (pullResult.status !== 0) {
     // Pull failed — caller should fall back to unpin :latest
     return null;
   }
 
-  let inspectOutput;
-  try {
-    inspectOutput = dockerImageInspectFormat("{{json .RepoDigests}}", imageWithTag, {
-      ignoreError: false,
-    });
-  } catch {
-    return null;
-  }
+  const inspectOutput = dockerImageInspectFormat("{{json .RepoDigests}}", imageWithTag, {
+    ignoreError: true,
+  });
+  if (!inspectOutput) return null;
 
   // RepoDigests is a JSON array like ["ghcr.io/nvidia/nemoclaw/sandbox-base@sha256:abc..."].
   // Filter to the entry matching our registry — index ordering is not guaranteed.

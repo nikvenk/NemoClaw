@@ -91,7 +91,7 @@ describe("docker helpers", () => {
   it("removes only volumes returned by the prefix probe", () => {
     runCaptureMock.mockReturnValue("openshell-cluster-nemoclaw\nopenshell-cluster-nemoclaw-cache\n");
 
-    const removed = dockerRemoveVolumesByPrefix("openshell-cluster-nemoclaw", {
+    const removed = dockerRemoveVolumesByPrefix("  openshell-cluster-nemoclaw  ", {
       ignoreError: true,
     });
 
@@ -109,6 +109,22 @@ describe("docker helpers", () => {
       ],
       { ignoreError: true },
     );
+  });
+
+  it("rejects empty volume prefixes", () => {
+    expect(() => dockerListVolumesByPrefix("   ")).toThrow(/prefix must be a non-empty string/);
+    expect(() => dockerRemoveVolumesByPrefix("\t")).toThrow(/prefix must be a non-empty string/);
+  });
+
+  it("treats failed volume probes as empty when ignoreError is set", () => {
+    runCaptureMock.mockImplementation(() => {
+      throw new Error("docker unavailable");
+    });
+
+    expect(dockerRemoveVolumesByPrefix("openshell-cluster-nemoclaw", { ignoreError: true })).toEqual(
+      [],
+    );
+    expect(runMock).not.toHaveBeenCalled();
   });
 
   it("skips volume removal when the probe finds no matches", () => {

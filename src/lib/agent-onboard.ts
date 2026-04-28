@@ -9,7 +9,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { ROOT } from "./runner";
+import { ROOT, run } from "./runner";
 import { dockerBuild, dockerImageInspect } from "./docker";
 import { loadAgent, resolveAgentName, type AgentDefinition } from "./agent-defs";
 import { getProviderSelectionConfig } from "./inference-config";
