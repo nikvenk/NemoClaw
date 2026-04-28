@@ -198,6 +198,12 @@ def build_config(env: dict | None = None) -> dict:
             "defaults": {
                 "model": {"primary": primary_model_ref},
                 "timeoutSeconds": agent_timeout,
+                # NemoClaw sandboxes are provisioned non-interactively and the
+                # E2E CLI contract expects the first agent turn to answer the
+                # caller's prompt. OpenClaw 2026.4.24 seeds BOOTSTRAP.md by
+                # default, which redirects a fresh workspace into an identity
+                # setup conversation before normal replies.
+                "skipBootstrap": True,
             }
         },
         "models": {"mode": "merge", "providers": providers},

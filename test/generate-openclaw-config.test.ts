@@ -134,6 +134,11 @@ describe("generate-openclaw-config.py: config generation", () => {
     expect(config.agents.defaults.timeoutSeconds).toBe(300);
   });
 
+  it("disables OpenClaw first-run workspace bootstrap", () => {
+    const config = runConfigScript();
+    expect(config.agents.defaults.skipBootstrap).toBe(true);
+  });
+
   it("sets gateway auth token to empty string", () => {
     const config = runConfigScript();
     expect(config.gateway.auth.token).toBe("");
