@@ -3,6 +3,12 @@
 
 import { describe, it, expect } from "vitest";
 
+// Internals are reached via require() (matching credential-rotation.test.ts,
+// gemini-probe-auth.test.ts, ssh-known-hosts.test.ts, wsl2-probe-timeout.test.ts):
+// dist/lib/onboard uses bottom-of-file `module.exports = {...}` instead of
+// per-function `export` keywords, and several tests rely on the d.ts staying
+// `unknown`-shaped so their runtime guards type-narrow correctly. Switching to
+// a named ESM import would break those neighbouring tests' narrowing.
 type OnboardRollbackInternals = {
   buildOrphanedSandboxRollbackMessage: (
     sandboxName: string,
