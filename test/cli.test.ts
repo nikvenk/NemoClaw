@@ -1852,7 +1852,7 @@ describe("CLI dispatch", () => {
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
 
-      expect(r.code).toBe(0);
+      expect(r.code).toBe(1);
       expect(r.out.includes("Could not verify sandbox 'alpha'")).toBeTruthy();
       expect(r.out.includes("gateway identity drift after restart")).toBeTruthy();
       const saved = JSON.parse(fs.readFileSync(path.join(registryDir, "sandboxes.json"), "utf8"));
@@ -2078,7 +2078,7 @@ describe("CLI dispatch", () => {
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
 
-      expect(r.code).toBe(0);
+      expect(r.code).toBe(1);
       expect(r.out.includes("Recovered NemoClaw gateway runtime")).toBeFalsy();
       expect(r.out.includes("Could not verify sandbox 'alpha'")).toBeTruthy();
       expect(r.out.includes("verify the active gateway")).toBeTruthy();
@@ -2146,7 +2146,7 @@ describe("CLI dispatch", () => {
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
 
-      expect(r.code).toBe(0);
+      expect(r.code).toBe(1);
       expect(r.out.includes("current gateway/runtime is not reachable")).toBeTruthy();
     },
     Number(process.env.NEMOCLAW_TEST_TIMEOUT || 10000),
@@ -2212,7 +2212,7 @@ describe("CLI dispatch", () => {
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
 
-      expect(r.code).toBe(0);
+      expect(r.code).toBe(1);
       expect(
         r.out.includes("Verify the active gateway and retry after re-establishing the runtime."),
       ).toBeTruthy();
@@ -2276,7 +2276,7 @@ describe("CLI dispatch", () => {
       },
       Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
     );
-    expect(statusResult.code).toBe(0);
+    expect(statusResult.code).toBe(1);
     expect(statusResult.out.includes("gateway trust material rotated after restart")).toBeTruthy();
     expect(statusResult.out.includes("cannot be reattached safely")).toBeTruthy();
 
@@ -2357,7 +2357,8 @@ describe("CLI dispatch", () => {
         },
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
-      expect(statusResult.code).toBe(0);
+      expect(statusResult.code).toBe(1);
+      expect(statusResult.out).not.toContain("Inference: healthy");
       expect(
         statusResult.out.includes("gateway is still refusing connections after restart"),
       ).toBeTruthy();
@@ -2438,11 +2439,80 @@ describe("CLI dispatch", () => {
         },
         Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
       );
-      expect(statusResult.code).toBe(0);
+      expect(statusResult.code).toBe(1);
       expect(
         statusResult.out.includes("gateway is no longer configured after restart/rebuild"),
       ).toBeTruthy();
       expect(statusResult.out.includes("Start the gateway again")).toBeTruthy();
+    },
+    Number(process.env.NEMOCLAW_TEST_TIMEOUT || 10000),
+  );
+
+  it(
+    "auto-cleans an orphan registry entry on status when the named gateway is healthy",
+    () => {
+      // exit 1 (not 0) matches connect's long-standing contract; #2595 unifies
+      // status's exit code across all non-present states, including this self-heal.
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-status-orphan-"));
+      const localBin = path.join(home, "bin");
+      const registryDir = path.join(home, ".nemoclaw");
+      fs.mkdirSync(localBin, { recursive: true });
+      fs.mkdirSync(registryDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(registryDir, "sandboxes.json"),
+        JSON.stringify({
+          sandboxes: {
+            alpha: {
+              name: "alpha",
+              model: "test-model",
+              provider: "nvidia-prod",
+              gpuEnabled: false,
+              policies: [],
+            },
+          },
+          defaultSandbox: "alpha",
+        }),
+        { mode: 0o600 },
+      );
+      fs.writeFileSync(
+        path.join(localBin, "openshell"),
+        [
+          "#!/usr/bin/env bash",
+          'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && [ "$3" = "alpha" ]; then',
+          "  echo 'Error: status: NotFound, message: \"sandbox not found\"' >&2",
+          "  exit 1",
+          "fi",
+          'if [ "$1" = "status" ]; then',
+          "  printf 'Server Status\\n\\n  Gateway: nemoclaw\\n  Status: Connected\\n'",
+          "  exit 0",
+          "fi",
+          'if [ "$1" = "gateway" ] && [ "$2" = "info" ]; then',
+          "  printf 'Gateway: nemoclaw\\n'",
+          "  exit 0",
+          "fi",
+          "exit 0",
+        ].join("\n"),
+        { mode: 0o755 },
+      );
+
+      const statusResult = runWithEnv(
+        "alpha status",
+        {
+          HOME: home,
+          PATH: `${localBin}:${process.env.PATH || ""}`,
+        },
+        Number(process.env.NEMOCLAW_EXEC_TIMEOUT || 10000),
+      );
+      expect(statusResult.code).toBe(1);
+      expect(statusResult.out).not.toContain("Inference: healthy");
+      expect(
+        statusResult.out.includes("is not present in the live OpenShell gateway"),
+      ).toBeTruthy();
+      expect(statusResult.out.includes("Removed stale local registry entry")).toBeTruthy();
+
+      const saved = JSON.parse(fs.readFileSync(path.join(registryDir, "sandboxes.json"), "utf8"));
+      expect(saved.sandboxes.alpha).toBeUndefined();
+      expect(saved.defaultSandbox).toBeNull();
     },
     Number(process.env.NEMOCLAW_TEST_TIMEOUT || 10000),
   );
