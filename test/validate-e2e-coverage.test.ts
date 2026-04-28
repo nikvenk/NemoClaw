@@ -35,12 +35,14 @@ function loadYaml(relPath: string): Record<string, unknown> {
 
 /**
  * Extract all E2E job names from the nightly-e2e.yaml workflow.
- * A job is any top-level key under `jobs:` except `notify-on-failure`.
+ * A job is any top-level key under `jobs:` except infrastructure jobs
+ * (`notify-on-failure`, `report-to-pr`).
  */
 function getNightlyJobNames(workflow: Record<string, unknown>): string[] {
   const jobs = workflow.jobs as Record<string, unknown> | undefined;
   if (!jobs) return [];
-  return Object.keys(jobs).filter((name) => name !== "notify-on-failure");
+  const infra = new Set(["notify-on-failure", "report-to-pr"]);
+  return Object.keys(jobs).filter((name) => !infra.has(name));
 }
 
 /**
