@@ -133,7 +133,6 @@ const {
   getCredential,
   normalizeCredentialValue,
   saveCredential,
-  deleteCredential,
   resolveProviderCredential,
 } = credentials;
 const registry: typeof import("./registry") = require("./registry");
@@ -4995,11 +4994,9 @@ async function setupInference(
       "--timeout",
       String(LOCAL_INFERENCE_TIMEOUT_SECS),
     ]);
-    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
-    // vllm-local is fully confirmed. Done last so a failed registration
-    // does not delete a credential the user may still need for a remote
-    // provider.
-    deleteCredential("OPENAI_API_KEY");
+    // Do not mutate ~/.nemoclaw/credentials.json here: local vLLM now uses
+    // VLLM_LOCAL_CREDENTIAL_ENV, so any saved OPENAI_API_KEY remains available
+    // to unrelated OpenAI-backed sandboxes.
   } else if (provider === "ollama-local") {
     const validation = validateLocalProvider(provider);
     if (!validation.ok) {
@@ -5060,14 +5057,9 @@ async function setupInference(
       console.error(`  ${probe.message}`);
       process.exit(1);
     }
-    // Prune any pre-fix OPENAI_API_KEY entry from credentials.json now that
-    // ollama-local is fully confirmed (provider registered, inference set,
-    // model warm). Done last so a failed onboard does not delete a credential
-    // the user may still need for a remote provider. Without this, an
-    // invalid OpenAI key cached by an earlier onboard would still be hit by
-    // `getCredential` callers, and `unset OPENAI_API_KEY; nemoclaw onboard`
-    // would not clear it.
-    deleteCredential("OPENAI_API_KEY");
+    // Do not mutate ~/.nemoclaw/credentials.json here: local Ollama now uses
+    // OLLAMA_PROXY_CREDENTIAL_ENV, so any saved OPENAI_API_KEY remains available
+    // to unrelated OpenAI-backed sandboxes.
   }
 
   verifyInferenceRoute(provider, model);
