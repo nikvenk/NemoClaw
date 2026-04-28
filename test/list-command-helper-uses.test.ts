@@ -49,14 +49,14 @@ function parseJsonOutput(result: ReturnType<typeof spawnSync>): HelperMatch[] {
 }
 
 describe("list-command-helper-uses", () => {
-  it("finds default-import runner helpers in --only-runner mode", () => {
+  it("finds default-import runner helpers", () => {
     const rootDir = makeFixture("nemoclaw-cmd-helper-", {
       "src/runner.ts": "export default function run(cmd: readonly string[]) { return cmd; }\n",
       "src/app.ts": 'import run from "./runner";\nrun(["podman", "ps"]);\n',
     });
 
     const matches = parseJsonOutput(
-      runScript(["--root", rootDir, "--json", "--only-runner", path.join(rootDir, "src")]),
+      runScript(["--root", rootDir, "--json", path.join(rootDir, "src")]),
     );
 
     expect(matches).toHaveLength(1);
@@ -66,14 +66,14 @@ describe("list-command-helper-uses", () => {
     expect(matches[0].commandHead).toBe("podman");
   });
 
-  it("finds identifier calls bound from require(\"./runner\") in --only-runner mode", () => {
+  it('finds identifier calls bound from require("./runner")', () => {
     const rootDir = makeFixture("nemoclaw-cmd-helper-", {
       "src/runner.js": "module.exports = function run(cmd) { return cmd; };\n",
       "src/app.js": 'const run = require("./runner");\nrun(["docker", "ps"]);\n',
     });
 
     const matches = parseJsonOutput(
-      runScript(["--root", rootDir, "--json", "--only-runner", path.join(rootDir, "src")]),
+      runScript(["--root", rootDir, "--json", path.join(rootDir, "src")]),
     );
 
     expect(matches).toHaveLength(1);
@@ -83,9 +83,10 @@ describe("list-command-helper-uses", () => {
     expect(matches[0].commandHead).toBe("docker");
   });
 
-  it("documents that --only-runner filters by modules named runner", () => {
+  it("documents grouped reporting options in help output", () => {
     const result = runScript(["--help"]);
     expect(result.status).toBe(0);
-    expect(String(result.stdout)).toContain("modules whose basename is runner");
+    expect(String(result.stdout)).toContain("--group-by-command");
+    expect(String(result.stdout)).toContain("--exclude-tests");
   });
 });

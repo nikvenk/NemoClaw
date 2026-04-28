@@ -31,7 +31,6 @@ type Options = {
   rootDir: string;
   roots: string[];
   names: Set<string>;
-  onlyRunner: boolean;
   excludeTests: boolean;
   groupByCommand: boolean;
   markdown: boolean;
@@ -95,7 +94,6 @@ function parseArgs(argv: string[]): Options {
   const names = new Set(DEFAULT_NAMES);
   const roots: string[] = [];
   let rootDir = process.cwd();
-  let onlyRunner = false;
   let excludeTests = false;
   let groupByCommand = false;
   let markdown = false;
@@ -121,10 +119,6 @@ function parseArgs(argv: string[]): Options {
         names.add(name);
       }
       i += 1;
-      continue;
-    }
-    if (arg === "--only-runner") {
-      onlyRunner = true;
       continue;
     }
     if (arg === "--exclude-tests") {
@@ -157,7 +151,6 @@ function parseArgs(argv: string[]): Options {
     rootDir,
     roots: roots.length > 0 ? roots : [...DEFAULT_ROOTS],
     names,
-    onlyRunner,
     excludeTests,
     groupByCommand,
     markdown,
@@ -167,12 +160,10 @@ function parseArgs(argv: string[]): Options {
 
 function printHelp(): void {
   console.log(
-    "Usage: tsx scripts/list-command-helper-uses.ts [--root <dir>] [--names run,runInteractive,...] [--only-runner] [--exclude-tests] [--group-by-command] [--markdown] [--json] [path ...]\n\n" +
+    "Usage: tsx scripts/list-command-helper-uses.ts [--root <dir>] [--names run,runInteractive,...] [--exclude-tests] [--group-by-command] [--markdown] [--json] [path ...]\n\n" +
       "Lists AST-level callsites and assignments for command helper names such as run(), runInteractive(), runCapture(), runShell(), execFileSync(), spawnSync(), and runCommand().\n\n" +
-      "When --only-runner is set, only helpers imported or required from modules whose basename is runner are reported.\n\n" +
       "Examples:\n" +
       "  tsx scripts/list-command-helper-uses.ts\n" +
-      "  tsx scripts/list-command-helper-uses.ts --only-runner\n" +
       "  tsx scripts/list-command-helper-uses.ts --group-by-command --exclude-tests --markdown src\n" +
       "  tsx scripts/list-command-helper-uses.ts --names run,runInteractive src test\n",
   );
@@ -409,8 +400,7 @@ function lineSnippet(sourceFile: ts.SourceFile, line: number): string {
 function shouldKeepMatch(match: Match, options: Options): boolean {
   if (!options.names.has(match.name)) return false;
   if (EXTERNAL_ONLY_NAMES.has(match.name) && match.moduleSpecifier === null) return false;
-  if (!options.onlyRunner) return true;
-  return match.runnerBound;
+  return true;
 }
 
 function scanFile(filePath: string, options: Options): Match[] {
