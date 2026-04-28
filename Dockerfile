@@ -79,7 +79,16 @@ RUN set -eu; \
         # rmdir failure inside npm's own install path.
         rm -rf /usr/local/lib/node_modules/openclaw /usr/local/bin/openclaw; \
         npm install -g --no-audit --no-fund --no-progress "openclaw@${MIN_VER}"; \
-    fi
+    fi; \
+    # Pre-install the codex-acp package so the embedded ACPx runtime's
+    # health probe doesn't have to npm-fetch it at runtime. The sandbox's
+    # L7 proxy denies @zed-industries/* package URLs (403 policy_denied),
+    # which makes the probe fail and degrades the agent CLI fallback path
+    # (NemoClaw#2484 / TC-SBX-02). Installing globally at build time is
+    # safe because the build phase has open internet access.
+    npm install -g --no-audit --no-fund --no-progress \
+        '@zed-industries/codex-acp@^0.11.1' || \
+        echo "WARN: codex-acp pre-install failed (non-fatal — runtime probe will retry)" >&2
 
 # Patch OpenClaw media fetch for proxy-only sandbox (NVIDIA/NemoClaw#1755).
 #
