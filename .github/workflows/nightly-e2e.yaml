@@ -15,9 +15,8 @@
 #                            probe → live inference. Validates the multi-agent architecture.
 #   skip-permissions-e2e     Validates --dangerously-skip-permissions activates the permissive
 #                            policy (not stuck in Pending) and sandbox egress works (not 403).
-#   gpu-e2e                  Local Ollama inference on a GPU self-hosted runner.
-#                            Controlled by the GPU_E2E_ENABLED repository variable.
-#                            Set vars.GPU_E2E_ENABLED to "true" in repo settings to enable.
+#   gpu-e2e                  Local Ollama inference on an NVKS ephemeral GPU runner.
+#   gpu-double-onboard-e2e   Ollama proxy token consistency after re-onboard (#2553).
 #   notify-on-failure        Auto-creates a GitHub issue when any E2E job fails.
 #
 # Runs directly on the runner (not inside Docker) because OpenShell bootstraps
@@ -626,11 +625,8 @@ jobs:
           if-no-files-found: ignore
 
   # ── GPU E2E (Ollama local inference) ──────────────────────────
-  # Enable by setting repository variable GPU_E2E_ENABLED=true
-  # (Settings → Secrets and variables → Actions → Variables)
-  #
-  # Runner labels: using 'self-hosted' for now. Refine to
-  # [self-hosted, linux, x64, gpu] once NVIDIA runner labels are confirmed.
+  # Runs on an NVKS ephemeral GPU runner (RTX Pro 6000, 36 GB VRAM).
+  # Each job gets a fresh VM — no state leakage between runs.
   gpu-e2e:
     if: >-
       github.repository == 'NVIDIA/NemoClaw' &&
@@ -638,8 +634,8 @@ jobs:
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
        contains(format(',{0},', inputs.jobs), ',gpu-e2e,'))
-    runs-on: self-hosted
-    timeout-minutes: 60
+    runs-on: linux-amd64-gpu-rtxpro6000-latest-1
+    timeout-minutes: 30
     env:
       NEMOCLAW_NON_INTERACTIVE: "1"
       NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE: "1"
@@ -680,6 +676,67 @@ jobs:
           path: /tmp/nemoclaw-gpu-e2e-test.log
           if-no-files-found: ignore
 
+  # ── GPU Double-Onboard E2E (Ollama token consistency) ────────
+  # Reproduces issue #2553: re-onboard with Ollama must not leave the
+  # proxy running with a different token than what's persisted to disk.
+  # Runs on its own ephemeral VM — no dependency on gpu-e2e.
+  gpu-double-onboard-e2e:
+    if: >-
+      github.repository == 'NVIDIA/NemoClaw' &&
+      vars.GPU_E2E_ENABLED == 'true' &&
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.jobs == '' ||
+       contains(format(',{0},', inputs.jobs), ',gpu-double-onboard-e2e,'))
+    runs-on: linux-amd64-gpu-rtxpro6000-latest-1
+    timeout-minutes: 30
+    env:
+      NEMOCLAW_NON_INTERACTIVE: "1"
+      NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE: "1"
+      NEMOCLAW_SANDBOX_NAME: "e2e-gpu-double-onboard"
+      NEMOCLAW_RECREATE_SANDBOX: "1"
+      NEMOCLAW_PROVIDER: "ollama"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify GPU availability
+        run: |
+          echo "=== GPU Info ==="
+          nvidia-smi
+          echo ""
+          echo "=== VRAM ==="
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+          echo ""
+          echo "=== Docker ==="
+          docker info --format '{{.ServerVersion}}'
+
+      - name: Run GPU double-onboard E2E test
+        run: bash test/e2e/test-gpu-double-onboard.sh
+
+      - name: Upload install log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-double-onboard-install-log
+          path: /tmp/nemoclaw-gpu-double-onboard-install.log
+          if-no-files-found: ignore
+
+      - name: Upload re-onboard log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-double-onboard-reonboard-log
+          path: /tmp/nemoclaw-gpu-double-onboard-reonboard.log
+          if-no-files-found: ignore
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-double-onboard-test-log
+          path: /tmp/nemoclaw-gpu-double-onboard-test.log
+          if-no-files-found: ignore
+
   notify-on-failure:
     runs-on: ubuntu-latest
     needs:
@@ -702,6 +759,7 @@ jobs:
         rebuild-hermes-e2e,
         overlayfs-autofix-e2e,
         gpu-e2e,
+        gpu-double-onboard-e2e,
       ]
     if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     permissions:
@@ -782,7 +840,7 @@ jobs:
             const needs = ${{ toJSON(needs) }};
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const branch = context.ref.replace('refs/heads/', '');
-            const requestedJobs = '${{ inputs.jobs }}';
+            const requestedJobs = ${{ toJSON(inputs.jobs) }} || "";
 
             // Find open PR for this branch
             const { data: prs } = await github.rest.pulls.list({
