@@ -714,31 +714,6 @@ echo "========================================"
 if [ "$FAIL" -eq 0 ]; then
   printf '\n\033[1;32m  Sandbox survival PASSED — all state persisted, live inference verified before AND after gateway restart.\033[0m\n'
   printf '\033[1;32m  Issues validated: #486, #888, #859, #1086\033[0m\n'
-
-  # ── DIAGNOSTIC v3: pinpoint where the post-printf delay actually lives ─────
-  # Hypothesis: bash exits cleanly within ms, but runner takes ~60s to detect
-  # the exit (possibly due to processing buffered stdout from k3s log spam in
-  # Phase 6). EXIT trap records the moment bash actually exits to a file the
-  # next workflow step can read; comparing that to the runner's "Process
-  # completed" timestamp tells us if the gap is bash-side or runner-side.
-  EXIT_MARKER=/tmp/nemoclaw-e2e-install.log
-  trap 'echo "TRAP_EXIT pid=$$ ts=$(date +%s.%N) exit_arg=$?" >> "$EXIT_MARKER"' EXIT
-
-  # Quick fd dump for completeness — keep tiny so it can't affect timing.
-  {
-    printf '\n=== EXIT-DIAG v3 pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
-    ls -la "/proc/$$/fd" 2>&1 || true
-    ps -eo pid,ppid,pgid,sid,stat,comm 2>&1 | grep -E "PID|runner|test|timeout|bash|node|openshell|Runner" || true
-  } >> "$EXIT_MARKER" 2>&1
-
-  printf '  [diag v3] about to exit, ts=%s\n' "$(date +%s.%N)"
-
-  # v4: exit 0 (the actual code path on real success). EXIT trap will record
-  # the moment bash invokes exit. If trap timestamp == diag timestamp, bash
-  # exits immediately and the 50s+ PR-specific extra tail is runner-side.
-  # If trap fires 50s+ after diag, bash is hanging in fflush() before exit.
-  # Keep the artifact path populated by the trap so this still uploads even
-  # without forced failure: failing post-step covers it on the SIGTERM path.
   exit 0
 else
   printf '\n\033[1;31m  %d test(s) failed.\033[0m\n' "$FAIL"

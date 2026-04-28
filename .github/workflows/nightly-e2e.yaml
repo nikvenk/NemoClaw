@@ -158,7 +158,13 @@ jobs:
         run: bash test/e2e/test-sandbox-survival.sh
 
       - name: Upload install log on failure
-        if: always()  # diag v4: capture artifact on exit 0 too
+        # if: always() (not failure()) so the runner has a guaranteed follow-up
+        # step to dispatch on success. Without one, the runner sits in its
+        # log-batch flush window (~60s) before reporting the test step's exit
+        # code, eating into the 900s wall-clock budget and causing flakes.
+        # if-no-files-found: ignore makes the upload a no-op when the log
+        # doesn't exist (the typical success path).
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-survival-install-log
