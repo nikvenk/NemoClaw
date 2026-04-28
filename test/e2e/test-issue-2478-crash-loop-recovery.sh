@@ -324,12 +324,13 @@ section "Phase 3: Crash-recovery loop ($CRASH_CYCLES cycles)"
 prev_pid="$INIT_PID"
 for cycle in $(seq 1 "$CRASH_CYCLES"); do
   info "Cycle $cycle/$CRASH_CYCLES — killing gateway pid=$prev_pid"
-  sandbox_exec sh -c "kill -9 $prev_pid 2>/dev/null; sleep 1; pgrep -f 'openclaw gateway run' || echo DEAD" >/dev/null
+  sandbox_exec sh -c "kill -9 $prev_pid 2>/dev/null; sleep 1; pgrep -fo '[o]penclaw[ -]gateway' || echo DEAD" >/dev/null
 
-  # Trigger recovery via the same code path the health-monitor uses.
-  if ! nemoclaw "$SANDBOX_NAME" connect --probe-only >/dev/null 2>&1; then
-    nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
-  fi
+  # Trigger recovery via the actual code path: `nemoclaw <name> status`
+  # calls checkAndRecoverSandboxProcesses() → recoverSandboxProcesses(),
+  # which is the hardened path #2478 changes. Bound it with `timeout`
+  # so a hang in CLI internals cannot eat the whole 30-min job budget.
+  timeout 60 nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
 
   new_pid="$(wait_for_gateway_up 45)"
   if [ -z "$new_pid" ]; then
@@ -371,7 +372,7 @@ info "Snapshotted proxy-env.sh (${#SNAPSHOT} bytes)"
 # Remove proxy-env.sh, kill gateway, trigger recovery, expect WARNING.
 sandbox_exec sh -c 'rm -f /tmp/nemoclaw-proxy-env.sh' >/dev/null
 sandbox_exec sh -c "kill -9 $prev_pid 2>/dev/null" >/dev/null
-nemoclaw "$SANDBOX_NAME" connect --probe-only >/dev/null 2>&1 || true
+timeout 60 nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
 
 # The new gateway.log should contain the [gateway-recovery] WARNING line.
 warn_seen=false
@@ -403,7 +404,7 @@ info "proxy-env.sh restored (best-effort; soak phase will tolerate degraded stat
 
 # Bring the gateway back to a healthy state for the soak.
 sandbox_exec sh -c "$(pgrep -f 'openclaw gateway run' >/dev/null 2>&1 && echo true || echo true)" >/dev/null
-nemoclaw "$SANDBOX_NAME" connect --probe-only >/dev/null 2>&1 || true
+timeout 60 nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
 SOAK_START_PID="$(wait_for_gateway_up 30)"
 if [ -z "$SOAK_START_PID" ]; then
   fail "Gateway not up entering soak phase"
