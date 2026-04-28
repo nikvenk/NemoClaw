@@ -53,7 +53,6 @@ function buildGatewayLogSetup(includeAutoPairLog = false, logOwnerUser?: string)
     ? `if [ "$(id -u)" = "0" ] && id ${shellQuote(logOwnerUser)} >/dev/null 2>&1; then chown ${shellQuote(`${logOwnerUser}:${logOwnerUser}`)} /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;`
     : "chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true;";
   const lines = [
-    "rm -f /tmp/gateway.log 2>/dev/null || true;",
     ": > /tmp/gateway.log 2>/dev/null || touch /tmp/gateway.log 2>/dev/null || true;",
     chmodGatewayLog,
     'if ! : >> /tmp/gateway.log 2>/dev/null; then echo "[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user $(id -un 2>/dev/null || id -u)" >&2; fi;',
@@ -70,10 +69,11 @@ function buildGatewayLogSetup(includeAutoPairLog = false, logOwnerUser?: string)
 }
 
 function gatewayLaunchCommand(command: string, runAsUser?: string): string {
+  const userLaunch = `_GATEWAY_LOG=/tmp/gateway.log; if ! : >> "$_GATEWAY_LOG" 2>/dev/null; then _GATEWAY_LOG=/tmp/gateway-recovery.log; : > "$_GATEWAY_LOG" 2>/dev/null || true; fi; nohup ${command} >> "$_GATEWAY_LOG" 2>&1 &`;
   if (!runAsUser) {
-    return `nohup ${command} >> /tmp/gateway.log 2>&1 &`;
+    return userLaunch;
   }
-  return `if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id ${shellQuote(runAsUser)} >/dev/null 2>&1; then nohup gosu ${shellQuote(runAsUser)} ${command} >> /tmp/gateway.log 2>&1 & else nohup ${command} >> /tmp/gateway.log 2>&1 & fi`;
+  return `if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id ${shellQuote(runAsUser)} >/dev/null 2>&1; then nohup gosu ${shellQuote(runAsUser)} ${command} >> /tmp/gateway.log 2>&1 & else ${userLaunch} fi`;
 }
 
 /**

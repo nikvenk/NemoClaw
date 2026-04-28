@@ -368,7 +368,21 @@ for cycle in $(seq 1 "$CRASH_CYCLES"); do
   # checkAndRecoverSandboxProcesses() -> recoverSandboxProcesses() without
   # opening an interactive SSH session. Bound it with `timeout` so a hang in
   # CLI internals cannot eat the whole 30-min job budget.
-  timeout 60 nemoclaw "$SANDBOX_NAME" connect --probe-only >/dev/null 2>&1 || true
+  PROBE_OUT="$(mktemp)"
+  if ! timeout 60 nemoclaw "$SANDBOX_NAME" connect --probe-only >"$PROBE_OUT" 2>&1; then
+    fail "Cycle $cycle: connect --probe-only exited nonzero after gateway kill"
+    sed 's/^/    /' "$PROBE_OUT"
+    rm -f "$PROBE_OUT"
+    gateway_diagnostics ""
+    exit 1
+  fi
+  rm -f "$PROBE_OUT"
+
+  if ! sandbox_exec sh -c 'test -s /tmp/gateway.log'; then
+    fail "Cycle $cycle: connect --probe-only did not leave /tmp/gateway.log evidence"
+    gateway_diagnostics ""
+    exit 1
+  fi
 
   new_pid="$(wait_for_gateway_up 45)"
   if [ -z "$new_pid" ]; then

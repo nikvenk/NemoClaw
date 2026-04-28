@@ -1150,15 +1150,17 @@ describe("CLI dispatch", () => {
         "  echo '  Phase: Ready'",
         "  exit 0",
         "fi",
-        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "-n" ] && [ "$4" = "alpha" ]; then',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "--name" ] && [ "$4" = "alpha" ]; then',
         '  cmd="$8"',
         '  case "$cmd" in',
-        "    *'OPENCLAW=\"$(command -v openclaw)\"'*)",
+        '    *"OPENCLAW="*)',
         '      echo recovered > "$state_file"',
+        "      echo '__NEMOCLAW_SANDBOX_EXEC_STARTED__'",
         "      echo 'GATEWAY_PID=123'",
         "      exit 0",
         "      ;;",
         "    *'curl -sf'*)",
+        "      echo '__NEMOCLAW_SANDBOX_EXEC_STARTED__'",
         '      if [ "$(cat "$state_file")" = recovered ]; then echo RUNNING; else echo STOPPED; fi',
         "      exit 0",
         "      ;;",
@@ -1178,7 +1180,7 @@ describe("CLI dispatch", () => {
     expect(r.out).toContain("Probe complete: recovered OpenClaw gateway");
     const calls = fs.readFileSync(markerFile, "utf8").trim().split("\n").filter(Boolean);
     expect(calls).toContain("sandbox get alpha");
-    expect(calls.some((call) => call.startsWith("sandbox exec -n alpha -- sh -c"))).toBe(true);
+    expect(calls.some((call) => call.startsWith("sandbox exec --name alpha -- sh -c"))).toBe(true);
     expect(calls).not.toContain("sandbox connect alpha");
   });
 
@@ -1203,11 +1205,10 @@ describe("CLI dispatch", () => {
         "  echo '  Phase: Ready'",
         "  exit 0",
         "fi",
-        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "-n" ] && [ "$4" = "alpha" ]; then',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "--name" ] && [ "$4" = "alpha" ]; then',
         '  cmd="$8"',
-        '  if [[ "$cmd" == *"curl -sf"* ]]; then echo STOPPED; exit 0; fi',
-        "  echo RECOVERY_FAILED >&2",
-        "  exit 42",
+        '  if [[ "$cmd" == *"OPENCLAW="* ]]; then echo "__NEMOCLAW_SANDBOX_EXEC_STARTED__"; echo RECOVERY_FAILED >&2; exit 42; fi',
+        '  if [[ "$cmd" == *"curl -sf"* ]]; then echo "__NEMOCLAW_SANDBOX_EXEC_STARTED__"; echo STOPPED; exit 0; fi',
         "fi",
         'if [ "$1" = "sandbox" ] && [ "$2" = "ssh-config" ]; then',
         "  echo 'Host openshell-alpha'",
@@ -1226,8 +1227,84 @@ describe("CLI dispatch", () => {
     expect(r.code).toBe(1);
     const calls = fs.readFileSync(markerFile, "utf8").trim().split("\n").filter(Boolean);
     expect(calls).toContain("sandbox get alpha");
-    expect(calls.some((call) => call.startsWith("sandbox exec -n alpha -- sh -c"))).toBe(true);
+    expect(calls.some((call) => call.startsWith("sandbox exec --name alpha -- sh -c"))).toBe(true);
     expect(calls).not.toContain("sandbox ssh-config alpha");
+  });
+
+  it("connect --probe-only falls back to SSH when sandbox exec never starts", () => {
+    const home = fs.mkdtempSync(
+      path.join(os.tmpdir(), "nemoclaw-cli-connect-probe-exec-fallback-"),
+    );
+    const localBin = path.join(home, "bin");
+    const openshellCalls = path.join(home, "openshell-calls");
+    const sshCalls = path.join(home, "ssh-calls");
+    const stateFile = path.join(home, "probe-state");
+    fs.mkdirSync(localBin, { recursive: true });
+    writeSandboxRegistry(home);
+    fs.writeFileSync(stateFile, "stopped");
+    fs.writeFileSync(
+      path.join(localBin, "openshell"),
+      [
+        "#!/usr/bin/env bash",
+        `calls=${JSON.stringify(openshellCalls)}`,
+        'printf \'%s\\n\' "$*" >> "$calls"',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && [ "$3" = "alpha" ]; then',
+        "  echo 'Sandbox:'",
+        "  echo",
+        "  echo '  Id: abc'",
+        "  echo '  Name: alpha'",
+        "  echo '  Namespace: openshell'",
+        "  echo '  Phase: Ready'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ]; then',
+        "  echo 'error: sandbox exec transport failed before command start' >&2",
+        "  exit 2",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "ssh-config" ] && [ "$3" = "alpha" ]; then',
+        "  echo 'Host openshell-alpha'",
+        "  echo '  HostName 127.0.0.1'",
+        "  echo '  User sandbox'",
+        "  exit 0",
+        "fi",
+        "exit 0",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(
+      path.join(localBin, "ssh"),
+      [
+        "#!/usr/bin/env bash",
+        `calls=${JSON.stringify(sshCalls)}`,
+        `state_file=${JSON.stringify(stateFile)}`,
+        'cmd="${@: -1}"',
+        'printf \'%s\\n\' "$cmd" >> "$calls"',
+        'if [[ "$cmd" == *"OPENCLAW="* ]]; then',
+        '  echo recovered > "$state_file"',
+        "  echo 'GATEWAY_PID=456'",
+        "  exit 0",
+        "fi",
+        'if [[ "$cmd" == *"curl -sf"* ]]; then',
+        '  if [ "$(cat "$state_file")" = recovered ]; then echo RUNNING; else echo STOPPED; fi',
+        "  exit 0",
+        "fi",
+        "exit 1",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const r = runWithEnv("alpha connect --probe-only", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
+
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Probe complete: recovered OpenClaw gateway");
+    const openshellLog = fs.readFileSync(openshellCalls, "utf8");
+    const sshLog = fs.readFileSync(sshCalls, "utf8");
+    expect(openshellLog).toContain("sandbox exec --name alpha -- sh -c");
+    expect(openshellLog).toContain("sandbox ssh-config alpha");
+    expect(sshLog).toContain('OPENCLAW="$(command -v openclaw)"');
   });
 
   it("waits for sandbox readiness before connecting", () => {

@@ -140,8 +140,15 @@ describe("buildRecoveryScript", () => {
       // Truncating with `>` wipes the [gateway-recovery] WARNING that the
       // recovery script wrote moments earlier — meaning a sysadmin tailing
       // gateway.log would see the eventual crash without the explanation.
-      expect(script).toContain(">> /tmp/gateway.log 2>&1 &");
+      expect(script).toContain('>> "$_GATEWAY_LOG" 2>&1 &');
       expect(script).not.toMatch(/[^>]> \/tmp\/gateway\.log 2>&1 &/);
+    });
+
+    it("preserves an existing gateway.log and has a writable fallback log", () => {
+      const script = buildOpenClawRecoveryScript(18789);
+      expect(script).not.toContain("rm -f /tmp/gateway.log");
+      expect(script).toContain("_GATEWAY_LOG=/tmp/gateway.log");
+      expect(script).toContain("_GATEWAY_LOG=/tmp/gateway-recovery.log");
     });
 
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {

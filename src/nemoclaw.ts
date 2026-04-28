@@ -121,6 +121,8 @@ type SandboxCommandResult = {
   stderr: string;
 };
 
+const SANDBOX_EXEC_STARTED_MARKER = "__NEMOCLAW_SANDBOX_EXEC_STARTED__";
+
 type RecoveredSandboxMetadata = Partial<
   Pick<SandboxEntry, "model" | "provider" | "gpuEnabled" | "policies" | "nimContainer" | "agent">
 > & {
@@ -260,10 +262,11 @@ function executeSandboxExecCommand(
   command: string,
   timeout = 15000,
 ): SandboxCommandResult | null {
+  const markedCommand = `printf '%s\\n' '${SANDBOX_EXEC_STARTED_MARKER}'; ${command}`;
   try {
     const result = spawnSync(
       getOpenshellBinary(),
-      ["sandbox", "exec", "-n", sandboxName, "--", "sh", "-c", command],
+      ["sandbox", "exec", "--name", sandboxName, "--", "sh", "-c", markedCommand],
       {
         cwd: ROOT,
         encoding: "utf-8",
@@ -273,9 +276,14 @@ function executeSandboxExecCommand(
       },
     );
     if (result.error) return null;
+    const stdout = (result.stdout || "").trim();
+    const stdoutLines = stdout.split(/\r?\n/);
+    const markerIndex = stdoutLines.indexOf(SANDBOX_EXEC_STARTED_MARKER);
+    if (markerIndex === -1) return null;
+    const commandStdoutLines = stdoutLines.slice(markerIndex + 1);
     return {
       status: result.status ?? 1,
-      stdout: (result.stdout || "").trim(),
+      stdout: commandStdoutLines.join("\n").trim(),
       stderr: (result.stderr || "").trim(),
     };
   } catch {
