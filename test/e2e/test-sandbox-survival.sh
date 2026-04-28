@@ -714,7 +714,52 @@ echo "========================================"
 if [ "$FAIL" -eq 0 ]; then
   printf '\n\033[1;32m  Sandbox survival PASSED — all state persisted, live inference verified before AND after gateway restart.\033[0m\n'
   printf '\033[1;32m  Issues validated: #486, #888, #859, #1086\033[0m\n'
-  exit 0
+
+  # ── DIAGNOSTIC: capture process state right before exit 0 ──────────────────
+  # Investigates why bash hangs ~1-2 minutes after this point on PR #2454 CI.
+  # Writes to /tmp/nemoclaw-e2e-install.log (path the upload-artifact step grabs).
+  DIAG_FILE=/tmp/nemoclaw-e2e-install.log
+  {
+    printf '\n=== EXIT-DIAG bash_pid=%s ts=%s ===\n' "$$" "$(date +%s.%N)"
+    printf -- '--- /proc/%s/fd ---\n' "$$"
+    ls -la "/proc/$$/fd" 2>&1 || true
+    printf -- '--- lsof for bash %s ---\n' "$$"
+    lsof -p "$$" 2>&1 | head -100 || true
+    printf -- '--- full ps -ef ---\n'
+    ps -ef 2>&1 || true
+    printf -- '--- pstree of session ---\n'
+    pstree -p -s "$$" 2>&1 || true
+    # Find every process holding the same pipe FDs as bash (stdout, stderr).
+    # If anyone other than bash + timeout has these open, that process is what
+    # keeps the runner's pipe alive after bash tries to exit.
+    for which in 1 2; do
+      tgt=$(readlink "/proc/$$/fd/$which" 2>/dev/null)
+      printf -- '--- consumers of bash fd %s -> %s ---\n' "$which" "$tgt"
+      case "$tgt" in
+        pipe:\[*\])
+          for pid_dir in /proc/[0-9]*; do
+            pid=${pid_dir##*/}
+            [ -d "$pid_dir/fd" ] || continue
+            for fd in "$pid_dir/fd"/*; do
+              [ -L "$fd" ] || continue
+              ftgt=$(readlink "$fd" 2>/dev/null)
+              if [ "$ftgt" = "$tgt" ]; then
+                cmd=$(tr '\0' ' ' < "$pid_dir/cmdline" 2>/dev/null)
+                comm=$(cat "$pid_dir/comm" 2>/dev/null)
+                printf '  pid=%s comm=%s fd=%s cmdline=%s\n' "$pid" "$comm" "$(basename "$fd")" "$cmd"
+              fi
+            done
+          done
+          ;;
+      esac
+    done
+    printf '=== EXIT-DIAG end ts=%s ===\n' "$(date +%s.%N)"
+  } > "$DIAG_FILE" 2>&1
+  printf '  [diag] wrote %s (%s lines)\n' "$DIAG_FILE" "$(wc -l < "$DIAG_FILE" 2>/dev/null || echo 0)"
+
+  # Force the job to fail so actions/upload-artifact runs and captures the diag.
+  # Once we have the diag, revert this and fix the real cause.
+  exit 99
 else
   printf '\n\033[1;31m  %d test(s) failed.\033[0m\n' "$FAIL"
   exit 1
