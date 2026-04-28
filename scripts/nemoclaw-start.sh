@@ -898,30 +898,34 @@ while time.time() < DEADLINE:
         time.sleep(1)
         continue
 
-    if has_browser:
-        QUIET_POLLS += 1
-        if QUIET_POLLS >= 4:
+    QUIET_POLLS += 1
+    # Exit-on-quiet conditions, checked in order of strength:
+    #   1. Browser device paired — original control-UI workflow
+    #   2. Any paired device — covers dangerouslyDisableDeviceAuth setups
+    #      where the gateway auto-pairs CLI clients directly without the
+    #      watcher running `openclaw devices approve` (so APPROVED stays
+    #      0 forever in those configurations)
+    #   3. We approved at least one device explicitly
+    # Without these, the watcher polled `openclaw devices list --json`
+    # every 1 second for 10 minutes whenever no browser device joined,
+    # saturating the gateway connect handler and starving concurrent
+    # `openclaw agent` connects (NemoClaw#2484: WS handshake-timeout).
+    if QUIET_POLLS >= 4:
+        if has_browser:
             print(f'[auto-pair] browser pairing converged approvals={APPROVED}')
             break
-    elif APPROVED > 0:
-        QUIET_POLLS += 1
-        # Once we approved at least one device and the registry has been
-        # quiet for 4 polls, exit. Without this, the watcher polls
-        # `openclaw devices list` every second for 10 minutes, which can
-        # saturate the gateway's connect handler and starve concurrent
-        # `openclaw agent` invocations of WS connect timeslots
-        # (NemoClaw#2484: gateway WS handshake times out under load).
-        if QUIET_POLLS >= 4:
+        if paired:
+            print(f'[auto-pair] devices paired ({len(paired)}); exiting approvals={APPROVED}')
+            break
+        if APPROVED > 0:
             print(f'[auto-pair] non-browser pairing converged approvals={APPROVED}')
             break
-    else:
-        QUIET_POLLS = 0
 
-    # Back off polling once we've made any progress: 1s when actively
-    # processing pending requests, 5s once we've approved anything. The
-    # 5s cadence avoids the connect-handler pile-up that the 1s cadence
-    # produces under high gateway connect latency.
-    time.sleep(5 if APPROVED > 0 else 1)
+    # Back off polling once anything is paired or approved: 1s when
+    # actively processing pending requests / waiting for first pairing,
+    # 5s thereafter. The 5s cadence avoids connect-handler pile-up under
+    # high gateway connect latency.
+    time.sleep(5 if (APPROVED > 0 or paired) else 1)
 else:
     print(f'[auto-pair] watcher timed out approvals={APPROVED}')
 PYAUTOPAIR
