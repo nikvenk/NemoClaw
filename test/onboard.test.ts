@@ -4720,6 +4720,110 @@ const { createSandbox } = require(${onboardPath});
     );
   });
 
+  it("reuses the stored dashboard port when OpenShell reports the existing forward as active", async () => {
+    const repoRoot = path.join(import.meta.dirname, "..");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-reuse-active-port-"));
+    const fakeBin = path.join(tmpDir, "bin");
+    const scriptPath = path.join(tmpDir, "reuse-active-dashboard-port.js");
+    const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
+    const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
+    const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "registry.js"));
+
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
+      mode: 0o755,
+    });
+
+    const script = String.raw`
+const runner = require(${runnerPath});
+const _n = (c) => (Array.isArray(c) ? c.join(" ") : String(c)).replace(/'/g, "");
+const registry = require(${registryPath});
+
+const commands = [];
+const updates = [];
+runner.run = (command, opts = {}) => {
+  commands.push({ command: _n(command), env: opts.env || null });
+  return { status: 0 };
+};
+runner.runCapture = (command) => {
+  const text = _n(command);
+  if (text.includes("sandbox get my-assistant")) return "my-assistant";
+  if (text.includes("sandbox list")) return "my-assistant Ready";
+  if (text.includes("forward list")) return [
+    "SANDBOX     BIND             PORT   PID     STATUS",
+    "install     127.0.0.1        18789  11111   active",
+    "other       127.0.0.1        18790  11112   active",
+    "third       127.0.0.1        18791  11113   active",
+    "my-assistant 127.0.0.1       18795  12345   active",
+  ].join("\n");
+  if (text.includes("lsof -i :18789") || text.includes("lsof -i :18790") || text.includes("lsof -i :18791") || text.includes("lsof -i :18795")) {
+    return "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\nopenshell 12345 runner 10u IPv4 TCP 127.0.0.1:18795 (LISTEN)";
+  }
+  return "";
+};
+registry.getSandbox = () => ({
+  name: "my-assistant",
+  model: "gpt-5.4",
+  provider: "nvidia-prod",
+  gpuEnabled: false,
+  dashboardPort: 18795,
+});
+registry.updateSandbox = (_name, patch) => {
+  updates.push(patch);
+  return true;
+};
+
+const { createSandbox } = require(${onboardPath});
+
+(async () => {
+  process.env.OPENSHELL_GATEWAY = "nemoclaw";
+  delete process.env.CHAT_UI_URL;
+  const sandboxName = await createSandbox(null, "gpt-5.4", "nvidia-prod", null, "my-assistant");
+  console.log(JSON.stringify({ sandboxName, commands, updates, chatUiUrl: process.env.CHAT_UI_URL }));
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+    fs.writeFileSync(scriptPath, script);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        HOME: tmpDir,
+        PATH: `${fakeBin}:${process.env.PATH || ""}`,
+        NEMOCLAW_NON_INTERACTIVE: "1",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(
+      !result.stderr.includes("Port 18795 is taken"),
+      `stored port should not be reported as taken:\n${result.stderr}`,
+    );
+    const payload = parseStdoutJson<{
+      sandboxName: string;
+      commands: CommandEntry[];
+      updates: Array<{ dashboardPort?: number }>;
+      chatUiUrl: string;
+    }>(result.stdout);
+    assert.equal(payload.sandboxName, "my-assistant");
+    assert.equal(payload.chatUiUrl, "http://127.0.0.1:18795");
+    assert.ok(
+      payload.commands.some((entry: CommandEntry) =>
+        entry.command.includes("forward start --background 18795 my-assistant"),
+      ),
+      "expected reused sandbox to keep its stored dashboard port 18795",
+    );
+    assert.ok(
+      payload.commands.every((entry: CommandEntry) => !entry.command.includes("18792")),
+      "did not expect dashboard port ratcheting to a different port",
+    );
+    assert.deepEqual(payload.updates.at(-1), { dashboardPort: 18795 });
+  });
+
   it("prints resume guidance when sandbox image upload times out", () => {
     const errors: string[] = [];
     const originalError = console.error;

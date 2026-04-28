@@ -6280,7 +6280,7 @@ function findDashboardForwardOwner(
 
 /**
  * Parse `openshell forward list` output into a Map<port, sandboxName>.
- * Only includes running forwards — stopped/stale entries are ignored so
+ * Only includes active/running forwards — stopped/stale entries are ignored so
  * they don't block port allocation or cause false "range exhausted" errors.
  *
  * Output format (columns separated by whitespace):
@@ -6295,7 +6295,7 @@ function getOccupiedPorts(forwardListOutput: string | null): Map<string, string>
     // parts: [sandbox, bind, port, pid, status...]
     if (parts.length < 3 || !/^\d+$/.test(parts[2])) continue;
     const status = (parts[4] || "").toLowerCase();
-    if (status !== "running") continue;
+    if (status !== "running" && status !== "active") continue;
     occupied.set(parts[2], parts[0]);
   }
   return occupied;
