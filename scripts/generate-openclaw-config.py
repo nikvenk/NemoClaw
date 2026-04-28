@@ -222,8 +222,10 @@ def build_config(env: dict | None = None) -> dict:
         # `npx @zed-industries/codex-acp@^0.11.1`. npm refreshes registry
         # metadata for that package spec even when codex-acp is globally
         # installed, which hits the L7 proxy deny path during gateway startup.
-        # The sandbox image pre-installs /usr/local/bin/codex-acp, so point
-        # acpx at the binary directly.
+        # The sandbox image pre-installs /usr/local/bin/codex-acp. The wrapper
+        # below points ACPx at that binary with writable per-UID Codex/XDG
+        # state so the gateway user does not try to write under /sandbox or
+        # the sandbox user's redirected /tmp directories.
         #
         # Other bundled extensions with stageRuntimeDependencies=true
         # (anthropic, google, etc.) either pre-stage their deps or gracefully
@@ -234,7 +236,7 @@ def build_config(env: dict | None = None) -> dict:
                 "acpx": {
                     "config": {
                         "agents": {
-                            "codex": {"command": "codex-acp"},
+                            "codex": {"command": "/usr/local/bin/nemoclaw-codex-acp"},
                         }
                     }
                 },

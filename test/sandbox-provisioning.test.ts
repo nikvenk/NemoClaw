@@ -91,6 +91,25 @@ describe("sandbox provisioning: root-owned read-only config (#514)", () => {
   });
 });
 
+describe("sandbox provisioning: codex-acp wrapper (#2484)", () => {
+  const dockerSrc = fs.readFileSync(DOCKERFILE, "utf-8");
+  const wrapperSrc = fs.readFileSync(path.join(ROOT, "scripts", "codex-acp-wrapper.sh"), "utf-8");
+
+  it("copies the wrapper into the sandbox image", () => {
+    expect(dockerSrc).toContain(
+      "COPY scripts/codex-acp-wrapper.sh /usr/local/bin/nemoclaw-codex-acp",
+    );
+    expect(dockerSrc).toContain("/usr/local/bin/nemoclaw-codex-acp");
+  });
+
+  it("runs codex-acp with writable Codex and XDG state", () => {
+    expect(wrapperSrc).toContain("export CODEX_HOME=");
+    expect(wrapperSrc).toContain("export XDG_CONFIG_HOME=");
+    expect(wrapperSrc).toContain("export HOME=");
+    expect(wrapperSrc).toContain("exec /usr/local/bin/codex-acp");
+  });
+});
+
 describe("sandbox test image fixtures", () => {
   const src = fs.readFileSync(DOCKERFILE_SANDBOX, "utf-8");
 
