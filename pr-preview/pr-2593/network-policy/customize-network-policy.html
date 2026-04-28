@@ -503,7 +503,8 @@
 NemoClaw supports both static policy changes that persist across restarts and dynamic updates applied to a running sandbox through the OpenShell CLI.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach and apply a custom NemoClaw preset with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">policy-add</span> <span class="pre">--from-file</span></code>.
+<p>If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach.
+Apply a custom NemoClaw preset with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">policy-add</span> <span class="pre">--from-file</span></code>.
 Do not rely on <code class="docutils literal notranslate"><span class="pre">host.docker.internal</span></code> as a general host-service path because it bypasses the OpenShell policy path and may not be reachable in every sandbox runtime.
 See <a class="reference internal" href="../reference/troubleshooting.html#agent-cannot-reach-a-host-side-http-service"><span class="std std-ref">Agent cannot reach a host-side HTTP service</span></a>.</p>
 </div>
