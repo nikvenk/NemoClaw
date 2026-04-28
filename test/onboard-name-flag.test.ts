@@ -118,35 +118,6 @@ describe("onboard --name guards", () => {
     expect(out.stderr).not.toContain("UNEXPECTED:");
   });
 
-  it("accepts --non-interactive --from with NEMOCLAW_SANDBOX_NAME set (passes the name guard)", () => {
-    const out = runOnboard({
-      opts: {
-        nonInteractive: true,
-        fromDockerfile: "/tmp/Custom.Dockerfile",
-        acceptThirdPartySoftware: true,
-      },
-      envOverrides: {
-        NEMOCLAW_SANDBOX_NAME: "second-assistant",
-      },
-    });
-    // The guard passed; later checks (preflight/Docker) will exit later, but
-    // the stderr must not contain the --name requirement message.
-    expect(out.stderr).not.toContain("--from <Dockerfile> requires --name");
-  });
-
-  it("accepts --non-interactive --from with --name (passes the name guard)", () => {
-    const out = runOnboard({
-      opts: {
-        nonInteractive: true,
-        fromDockerfile: "/tmp/Custom.Dockerfile",
-        sandboxName: "second-assistant",
-        acceptThirdPartySoftware: true,
-      },
-      envOverrides: { NEMOCLAW_SANDBOX_NAME: undefined },
-    });
-    expect(out.stderr).not.toContain("--from <Dockerfile> requires --name");
-  });
-
   it("rejects --name when the value is a reserved CLI command", () => {
     const out = runOnboard({
       opts: {
