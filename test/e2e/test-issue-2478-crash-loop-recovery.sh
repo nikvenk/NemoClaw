@@ -118,6 +118,30 @@ gateway_log_tail() {
   sandbox_exec sh -c "tail -n ${1:-50} /tmp/gateway.log 2>/dev/null"
 }
 
+# Dump diagnostic snapshot for triage when an environ read or guard
+# assertion fails. Helps distinguish wrong-PID matching from missing
+# preloads from cross-namespace /proc visibility issues.
+gateway_diagnostics() {
+  local pid="${1:-}"
+  echo "  --- gateway diagnostics ---"
+  echo "  [pgrep -f 'openclaw gateway run' (all matches)]"
+  sandbox_exec sh -c "pgrep -af 'openclaw gateway run' || echo '(no matches)'" | sed 's/^/    /'
+  echo "  [pgrep -fo 'openclaw gateway run' (oldest)]"
+  sandbox_exec sh -c "pgrep -fo 'openclaw gateway run' || echo '(no matches)'" | sed 's/^/    /'
+  echo "  [ps -ef | grep -i openclaw | grep -v grep]"
+  sandbox_exec sh -c "ps -ef 2>/dev/null | grep -i openclaw | grep -v grep || echo '(no openclaw processes)'" | sed 's/^/    /'
+  if [ -n "$pid" ]; then
+    echo "  [reported pid: $pid]"
+    echo "  [/proc/${pid} listing]"
+    sandbox_exec sh -c "ls -la /proc/${pid}/ 2>&1 | head -8 || echo '(cannot list)'" | sed 's/^/    /'
+    echo "  [/proc/${pid}/cmdline]"
+    sandbox_exec sh -c "cat /proc/${pid}/cmdline 2>&1 | tr '\\0' ' '; echo" | sed 's/^/    /'
+    echo "  [/proc/${pid}/status (uid/state)]"
+    sandbox_exec sh -c "grep -E '^(Name|State|Uid|Pid|PPid):' /proc/${pid}/status 2>&1" | sed 's/^/    /'
+  fi
+  echo "  ---------------------------"
+}
+
 # Wait until gateway PID is non-empty (or timeout). Echoes pid, returns 0/1.
 wait_for_gateway_up() {
   local timeout="${1:-30}"
@@ -224,12 +248,14 @@ if echo "$INIT_NODE_OPTIONS" | grep -q 'nemoclaw-sandbox-safety-net'; then
 else
   fail "Initial gateway missing safety-net preload — fix is not deployed?"
   echo "  NODE_OPTIONS: $INIT_NODE_OPTIONS"
+  gateway_diagnostics "$INIT_PID"
   exit 1
 fi
 if echo "$INIT_NODE_OPTIONS" | grep -q 'nemoclaw-ciao-network-guard'; then
   pass "Initial gateway has ciao networkInterfaces guard"
 else
   fail "Initial gateway missing ciao guard — fix is not deployed?"
+  gateway_diagnostics "$INIT_PID"
   exit 1
 fi
 
@@ -266,6 +292,7 @@ for cycle in $(seq 1 "$CRASH_CYCLES"); do
   else
     fail "Cycle $cycle: respawned gateway LOST safety-net — recovery hardening regressed"
     echo "  NODE_OPTIONS: $cycle_node_options"
+    gateway_diagnostics "$new_pid"
     gateway_log_tail 80
     exit 1
   fi
