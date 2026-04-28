@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from "vitest";
 // Import from compiled dist/ so coverage is attributed correctly.
-import { buildRecoveryScript } from "../../dist/lib/agent-runtime";
+import { buildOpenClawRecoveryScript, buildRecoveryScript } from "../../dist/lib/agent-runtime";
 import type { AgentDefinition } from "./agent-defs";
 
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
@@ -61,13 +61,13 @@ describe("buildRecoveryScript", () => {
   it("launches the default gateway command through the validated agent binary", () => {
     const script = buildRecoveryScript(minimalAgent, 19000);
     expect(script).toContain("command -v 'test-agent'");
-    expect(script).toContain('nohup "$AGENT_BIN" gateway run --port 19000');
+    expect(script).toContain('"$AGENT_BIN" gateway run --port 19000');
   });
 
   it("falls back to openclaw gateway run when gateway_command is absent", () => {
     const agent = makeAgent({ gateway_command: undefined });
     const script = buildRecoveryScript(agent, 19000);
-    expect(script).toContain('nohup "$AGENT_BIN" gateway run --port 19000');
+    expect(script).toContain('"$AGENT_BIN" gateway run --port 19000');
   });
 
   it("validates and launches custom gateway commands explicitly", () => {
@@ -142,6 +142,13 @@ describe("buildRecoveryScript", () => {
       // gateway.log would see the eventual crash without the explanation.
       expect(script).toContain(">> /tmp/gateway.log 2>&1 &");
       expect(script).not.toMatch(/[^>]> \/tmp\/gateway\.log 2>&1 &/);
+    });
+
+    it("prepares gateway.log for the real gateway-owned sandbox log", () => {
+      const script = buildOpenClawRecoveryScript(18789);
+      expect(script).toContain("chown gateway:gateway /tmp/gateway.log");
+      expect(script).toContain("chmod 644 /tmp/gateway.log");
+      expect(script).toContain("gosu gateway");
     });
   });
 });

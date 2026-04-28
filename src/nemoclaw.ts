@@ -216,6 +216,7 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
     ignoreError: true,
   });
   if (sshConfigResult.status !== 0) return null;
+  if (!sshConfigResult.output.trim()) return null;
 
   const tmpFile = path.join(os.tmpdir(), `nemoclaw-ssh-${process.pid}-${Date.now()}.conf`);
   fs.writeFileSync(tmpFile, sshConfigResult.output, { mode: 0o600 });
@@ -254,6 +255,41 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
   }
 }
 
+function executeSandboxExecCommand(
+  sandboxName: string,
+  command: string,
+  timeout = 15000,
+): SandboxCommandResult | null {
+  try {
+    const result = spawnSync(
+      getOpenshellBinary(),
+      ["sandbox", "exec", "-n", sandboxName, "--", "sh", "-c", command],
+      {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout,
+      },
+    );
+    if (result.error) return null;
+    return {
+      status: result.status ?? 1,
+      stdout: (result.stdout || "").trim(),
+      stderr: (result.stderr || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseSandboxGatewayProbe(result: SandboxCommandResult | null): boolean | null {
+  if (!result) return null;
+  if (result.stdout === "RUNNING") return true;
+  if (result.stdout === "STOPPED") return false;
+  return null;
+}
+
 /**
  * Check whether the OpenClaw gateway process is running inside the sandbox.
  * Uses the gateway's HTTP endpoint (dashboard port) as the source of truth,
@@ -263,14 +299,10 @@ function executeSandboxCommand(sandboxName: string, command: string): SandboxCom
 function isSandboxGatewayRunning(sandboxName: string): boolean | null {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const probeUrl = agentRuntime.getHealthProbeUrl(agent);
-  const result = executeSandboxCommand(
-    sandboxName,
-    `curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1 && echo RUNNING || echo STOPPED`,
-  );
-  if (!result) return null;
-  if (result.stdout === "RUNNING") return true;
-  if (result.stdout === "STOPPED") return false;
-  return null;
+  const command = `curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1 && echo RUNNING || echo STOPPED`;
+  const execProbe = parseSandboxGatewayProbe(executeSandboxExecCommand(sandboxName, command));
+  if (execProbe !== null) return execProbe;
+  return parseSandboxGatewayProbe(executeSandboxCommand(sandboxName, command));
 }
 
 /**
@@ -281,44 +313,17 @@ function isSandboxGatewayRunning(sandboxName: string): boolean | null {
 function recoverSandboxProcesses(sandboxName: string): boolean {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const agentScript = agentRuntime.buildRecoveryScript(agent, agent?.forwardPort ?? DASHBOARD_PORT);
-  const script =
-    agentScript ||
-    [
-      // Source /tmp/nemoclaw-proxy-env.sh explicitly so NODE_OPTIONS preload
-      // guards (safety-net, ciao, slack, …) survive gateway respawn. Without
-      // this, library errors crash-loop the gateway because the original
-      // .bashrc-only path silently failed when the env file was unreadable
-      // or the shell did not source ~/.bashrc. See #2478. Mirrors the
-      // hardened block in src/lib/agent-runtime.ts:buildRecoveryScript.
-      // Defer warning emission until AFTER touch+chmod gateway.log so
-      // warnings land in the persistent log a sysadmin would tail. Stderr
-      // alone hides them because executeSandboxCommand captures stderr
-      // without surfacing it. Mirrors src/lib/agent-runtime.ts.
-      "if [ -r /tmp/nemoclaw-proxy-env.sh ]; then . /tmp/nemoclaw-proxy-env.sh; _PE_MISSING=0; else _PE_MISSING=1; fi;",
-      "[ -f ~/.bashrc ] && . ~/.bashrc;",
-      'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) _GUARDS_MISSING=0 ;; *) _GUARDS_MISSING=1 ;; esac;',
-      `if curl -sf --max-time 3 http://127.0.0.1:${DASHBOARD_PORT}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
-      "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
-      "rm -f /tmp/gateway.log /tmp/auto-pair.log;",
-      "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
-      "touch /tmp/auto-pair.log; chmod 600 /tmp/auto-pair.log;",
-      '[ "$_PE_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing — gateway launching without library guards (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
-      '[ "$_GUARDS_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload — gateway may crash on unhandled library errors (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
-      'OPENCLAW="$(command -v openclaw)";',
-      'if [ -z "$OPENCLAW" ]; then echo OPENCLAW_MISSING; exit 1; fi;',
-      // Append rather than truncate so [gateway-recovery] WARNING lines
-      // written above survive past the launch. (#2478)
-      `nohup "$OPENCLAW" gateway run --port ${DASHBOARD_PORT} >> /tmp/gateway.log 2>&1 &`,
-      "GPID=$!; sleep 2;",
-      'if kill -0 "$GPID" 2>/dev/null; then echo "GATEWAY_PID=$GPID"; else echo GATEWAY_FAILED; cat /tmp/gateway.log 2>/dev/null | tail -5; fi',
-    ].join(" ");
+  const script = agentScript || agentRuntime.buildOpenClawRecoveryScript(DASHBOARD_PORT);
+  const recovered = (result: SandboxCommandResult | null) =>
+    !!(
+      result &&
+      result.status === 0 &&
+      (result.stdout.includes("GATEWAY_PID=") || result.stdout.includes("ALREADY_RUNNING"))
+    );
 
-  const result = executeSandboxCommand(sandboxName, script);
-  if (!result) return false;
-  return (
-    result.status === 0 &&
-    (result.stdout.includes("GATEWAY_PID=") || result.stdout.includes("ALREADY_RUNNING"))
-  );
+  const execResult = executeSandboxExecCommand(sandboxName, script, 30000);
+  if (recovered(execResult)) return true;
+  return recovered(executeSandboxCommand(sandboxName, script));
 }
 
 /**
@@ -1400,12 +1405,83 @@ async function listSandboxes(): Promise<void> {
 
 // ── Sandbox-scoped actions ───────────────────────────────────────
 
+type SandboxConnectOptions = {
+  dangerouslySkipPermissions?: boolean;
+  probeOnly?: boolean;
+};
+
+function printSandboxConnectHelp(sandboxName = "<name>") {
+  console.log("");
+  console.log(
+    `  Usage: nemoclaw ${sandboxName} connect [--probe-only] [--dangerously-skip-permissions]`,
+  );
+  console.log("");
+  console.log("  Options:");
+  console.log(
+    "    --probe-only                    Run recovery checks and exit without opening SSH",
+  );
+  console.log(
+    "    --dangerously-skip-permissions  Disable sandbox security restrictions before connect",
+  );
+  console.log("    -h, --help                      Show this help");
+  console.log("");
+}
+
+function parseSandboxConnectArgs(sandboxName: string, actionArgs: string[]): SandboxConnectOptions {
+  const options: SandboxConnectOptions = {};
+  for (const arg of actionArgs) {
+    switch (arg) {
+      case "--dangerously-skip-permissions":
+        options.dangerouslySkipPermissions = true;
+        break;
+      case "--probe-only":
+        options.probeOnly = true;
+        break;
+      case "--help":
+      case "-h":
+        printSandboxConnectHelp(sandboxName);
+        process.exit(0);
+        break;
+      default:
+        console.error(`  Unknown flag for connect: ${arg}`);
+        printSandboxConnectHelp(sandboxName);
+        process.exit(1);
+    }
+  }
+  return options;
+}
+
 async function sandboxConnect(
   sandboxName: string,
-  { dangerouslySkipPermissions = false }: { dangerouslySkipPermissions?: boolean } = {},
+  { dangerouslySkipPermissions = false, probeOnly = false }: SandboxConnectOptions = {},
 ) {
   const { isSandboxReady, parseSandboxStatus } = require("./lib/onboard");
   await ensureLiveSandboxOrExit(sandboxName, { allowNonReadyPhase: true });
+
+  if (probeOnly) {
+    const processCheck = checkAndRecoverSandboxProcesses(sandboxName, { quiet: true });
+    const agent = agentRuntime.getSessionAgent(sandboxName);
+    const agentName = agentRuntime.getAgentDisplayName(agent);
+    if (!processCheck.checked) {
+      console.error(
+        `  Probe failed: could not inspect the ${agentName} gateway inside sandbox '${sandboxName}'.`,
+      );
+      process.exit(1);
+    }
+    if (processCheck.wasRunning) {
+      console.log(`  Probe complete: ${agentName} gateway is running in '${sandboxName}'.`);
+      return;
+    }
+    if (processCheck.recovered) {
+      console.log(`  Probe complete: recovered ${agentName} gateway in '${sandboxName}'.`);
+      return;
+    }
+    console.error(
+      `  Probe failed: ${agentName} gateway is not running in '${sandboxName}' and automatic recovery failed.`,
+    );
+    console.error("  Check /tmp/gateway.log inside the sandbox for details.");
+    process.exit(1);
+  }
 
   // Version staleness check — warn but don't block
   try {
@@ -3874,6 +3950,17 @@ const [cmd, ...args] = process.argv.slice(2);
   }
 
   // Sandbox-scoped commands: nemoclaw <name> <action>
+  const requestedSandboxAction = args[0] || "connect";
+  const requestedSandboxActionArgs = args[0] ? args.slice(1) : args;
+  if (
+    requestedSandboxAction === "connect" &&
+    requestedSandboxActionArgs.some((arg) => arg === "--help" || arg === "-h")
+  ) {
+    validateName(cmd, "sandbox name");
+    printSandboxConnectHelp(cmd);
+    return;
+  }
+
   // If the registry doesn't know this name but the action is a sandbox-scoped
   // command, attempt recovery — the sandbox may still be live with a stale registry.
   // Derived from command registry — single source of truth
@@ -3902,9 +3989,7 @@ const [cmd, ...args] = process.argv.slice(2);
 
     switch (action) {
       case "connect":
-        await sandboxConnect(cmd, {
-          dangerouslySkipPermissions: actionArgs.includes("--dangerously-skip-permissions"),
-        });
+        await sandboxConnect(cmd, parseSandboxConnectArgs(cmd, actionArgs));
         break;
       case "status":
         await sandboxStatus(cmd);

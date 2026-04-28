@@ -48,6 +48,49 @@ export function getHealthProbeUrl(agent: AgentDefinition | null): string {
   return agent.healthProbe?.url || `http://127.0.0.1:${DASHBOARD_PORT}/`;
 }
 
+function buildGatewayLogSetup(includeAutoPairLog = false): string[] {
+  const lines = [
+    "rm -f /tmp/gateway.log 2>/dev/null || true;",
+    ": > /tmp/gateway.log 2>/dev/null || touch /tmp/gateway.log 2>/dev/null || true;",
+    'if [ "$(id -u)" = "0" ] && id gateway >/dev/null 2>&1; then chown gateway:gateway /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;',
+    'if ! : >> /tmp/gateway.log 2>/dev/null; then echo "[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user $(id -un 2>/dev/null || id -u)" >&2; fi;',
+  ];
+  if (includeAutoPairLog) {
+    lines.push(
+      "rm -f /tmp/auto-pair.log 2>/dev/null || true;",
+      ": > /tmp/auto-pair.log 2>/dev/null || touch /tmp/auto-pair.log 2>/dev/null || true;",
+      'if [ "$(id -u)" = "0" ] && id sandbox >/dev/null 2>&1; then chown sandbox:sandbox /tmp/auto-pair.log 2>/dev/null || true; fi;',
+      "chmod 600 /tmp/auto-pair.log 2>/dev/null || true;",
+    );
+  }
+  return lines;
+}
+
+function gatewayLaunchCommand(command: string): string {
+  return `if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id gateway >/dev/null 2>&1; then nohup gosu gateway ${command} >> /tmp/gateway.log 2>&1 & else nohup ${command} >> /tmp/gateway.log 2>&1 & fi`;
+}
+
+/**
+ * Build the OpenClaw recovery shell script used by the default sandbox.
+ */
+export function buildOpenClawRecoveryScript(port: number): string {
+  return [
+    "if [ -r /tmp/nemoclaw-proxy-env.sh ]; then . /tmp/nemoclaw-proxy-env.sh; _PE_MISSING=0; else _PE_MISSING=1; fi;",
+    "[ -f ~/.bashrc ] && . ~/.bashrc;",
+    'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) _GUARDS_MISSING=0 ;; *) _GUARDS_MISSING=1 ;; esac;',
+    `if curl -sf --max-time 3 http://127.0.0.1:${port}/ > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
+    "rm -rf /tmp/openclaw-*/gateway.*.lock 2>/dev/null;",
+    ...buildGatewayLogSetup(true),
+    '[ "$_PE_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing - gateway launching without library guards (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
+    '[ "$_GUARDS_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload - gateway may crash on unhandled library errors (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
+    'OPENCLAW="$(command -v openclaw)";',
+    'if [ -z "$OPENCLAW" ]; then echo OPENCLAW_MISSING; exit 1; fi;',
+    gatewayLaunchCommand('"$OPENCLAW" gateway run --port ' + port),
+    "GPID=$!; sleep 2;",
+    'if kill -0 "$GPID" 2>/dev/null; then echo "GATEWAY_PID=$GPID"; else echo GATEWAY_FAILED; cat /tmp/gateway.log 2>/dev/null | tail -5; fi',
+  ].join(" ");
+}
+
 /**
  * Build the recovery shell script for a non-OpenClaw agent.
  * Returns the script string, or null if agent is null (use existing inline
@@ -78,8 +121,8 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
   // *why* the gateway is about to crash gets wiped by the same launch
   // that's about to crash on a missing guard. (#2478)
   const launchCommand = usesValidatedBinary
-    ? `nohup "$AGENT_BIN" gateway run --port ${port} >> /tmp/gateway.log 2>&1 &`
-    : `nohup ${configuredGatewayCommand} --port ${port} >> /tmp/gateway.log 2>&1 &`;
+    ? gatewayLaunchCommand(`"$AGENT_BIN" gateway run --port ${port}`)
+    : gatewayLaunchCommand(`${configuredGatewayCommand} --port ${port}`);
   const isHermes = agent.name === "hermes";
   const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes-data; " : "";
 
@@ -106,10 +149,9 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
     'case "${NODE_OPTIONS:-}" in *nemoclaw-sandbox-safety-net*) _GUARDS_MISSING=0 ;; *) _GUARDS_MISSING=1 ;; esac;',
     hermesHome,
     `if curl -sf --max-time 3 ${shellQuote(probeUrl)} > /dev/null 2>&1; then echo ALREADY_RUNNING; exit 0; fi;`,
-    "rm -f /tmp/gateway.log;",
-    "touch /tmp/gateway.log; chmod 600 /tmp/gateway.log;",
-    '[ "$_PE_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing — gateway launching without library guards (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
-    '[ "$_GUARDS_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload — gateway may crash on unhandled library errors (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
+    ...buildGatewayLogSetup(false),
+    '[ "$_PE_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: /tmp/nemoclaw-proxy-env.sh missing - gateway launching without library guards (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
+    '[ "$_GUARDS_MISSING" = "1" ] && { _W="[gateway-recovery] WARNING: NODE_OPTIONS missing safety-net preload - gateway may crash on unhandled library errors (#2478)"; echo "$_W" >&2; echo "$_W" >> /tmp/gateway.log; };',
     ...validationSteps,
     launchCommand,
     "GPID=$!; sleep 2;",

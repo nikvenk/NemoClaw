@@ -1082,6 +1082,72 @@ describe("CLI dispatch", () => {
     expect(calls.some((call) => call.startsWith("forward start --background 18789"))).toBe(false);
   });
 
+  it("shows connect help without opening an interactive session", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-help-"));
+
+    const r = runWithEnv("alpha connect --help", { HOME: home });
+
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Usage: nemoclaw alpha connect");
+    expect(r.out).toContain("--probe-only");
+  });
+
+  it("connect --probe-only recovers the gateway without opening SSH", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-probe-"));
+    const localBin = path.join(home, "bin");
+    const markerFile = path.join(home, "openshell-calls");
+    const stateFile = path.join(home, "probe-state");
+    fs.mkdirSync(localBin, { recursive: true });
+    writeSandboxRegistry(home);
+    fs.writeFileSync(stateFile, "stopped");
+    fs.writeFileSync(
+      path.join(localBin, "openshell"),
+      [
+        "#!/usr/bin/env bash",
+        `marker_file=${JSON.stringify(markerFile)}`,
+        `state_file=${JSON.stringify(stateFile)}`,
+        'printf \'%s\\n\' "$*" >> "$marker_file"',
+        'if [ "$1" = "sandbox" ] && [ "$2" = "get" ] && [ "$3" = "alpha" ]; then',
+        "  echo 'Sandbox:'",
+        "  echo",
+        "  echo '  Id: abc'",
+        "  echo '  Name: alpha'",
+        "  echo '  Namespace: openshell'",
+        "  echo '  Phase: Ready'",
+        "  exit 0",
+        "fi",
+        'if [ "$1" = "sandbox" ] && [ "$2" = "exec" ] && [ "$3" = "-n" ] && [ "$4" = "alpha" ]; then',
+        '  cmd="$8"',
+        '  case "$cmd" in',
+        "    *'OPENCLAW=\"$(command -v openclaw)\"'*)",
+        '      echo recovered > "$state_file"',
+        "      echo 'GATEWAY_PID=123'",
+        "      exit 0",
+        "      ;;",
+        "    *'curl -sf'*)",
+        '      if [ "$(cat "$state_file")" = recovered ]; then echo RUNNING; else echo STOPPED; fi',
+        "      exit 0",
+        "      ;;",
+        "  esac",
+        "fi",
+        "exit 0",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const r = runWithEnv("alpha connect --probe-only", {
+      HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ""}`,
+    });
+
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Probe complete: recovered OpenClaw gateway");
+    const calls = fs.readFileSync(markerFile, "utf8").trim().split("\n").filter(Boolean);
+    expect(calls).toContain("sandbox get alpha");
+    expect(calls.some((call) => call.startsWith("sandbox exec -n alpha -- sh -c"))).toBe(true);
+    expect(calls).not.toContain("sandbox connect alpha");
+  });
+
   it("waits for sandbox readiness before connecting", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-wait-"));
     const localBin = path.join(home, "bin");
