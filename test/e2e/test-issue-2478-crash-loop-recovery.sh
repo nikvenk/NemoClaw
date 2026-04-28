@@ -390,27 +390,44 @@ else
   gateway_log_tail 100
 fi
 
-# Restore proxy-env.sh so subsequent recoveries are healthy again. /tmp is
-# sticky and the file was root-owned 444, so we restore via a privileged
-# write. openshell sandbox exec runs as the sandbox user; we use a heredoc
-# into the sandbox-side root via the agent container's privileged path.
-sandbox_exec sh -c "cat > /tmp/nemoclaw-proxy-env.sh.restore <<'REPL'
-$SNAPSHOT
-REPL
-chmod 444 /tmp/nemoclaw-proxy-env.sh.restore 2>/dev/null || true
-mv /tmp/nemoclaw-proxy-env.sh.restore /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true
-" >/dev/null
-info "proxy-env.sh restored (best-effort; soak phase will tolerate degraded state)"
+# Restore proxy-env.sh so subsequent recoveries are healthy again.
+# Pipe the snapshot via stdin to avoid heredoc-with-shell-injection issues,
+# and use `cp -f --no-preserve=mode` semantics by writing through a temp file
+# that we then move with `install` (force-overwrites mode-444 destination).
+# `openshell sandbox exec` runs as the sandbox user; /tmp is sandbox-writable
+# (sticky, but we own the original file so the sandbox user can replace it).
+printf '%s' "$SNAPSHOT" | sandbox_exec sh -c '
+  cat > /tmp/nemoclaw-proxy-env.sh.new
+  chmod 644 /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true
+  mv -f /tmp/nemoclaw-proxy-env.sh.new /tmp/nemoclaw-proxy-env.sh
+  chmod 444 /tmp/nemoclaw-proxy-env.sh
+' >/dev/null
 
-# Bring the gateway back to a healthy state for the soak.
-sandbox_exec sh -c "$(pgrep -f 'openclaw gateway run' >/dev/null 2>&1 && echo true || echo true)" >/dev/null
+# Verify restore actually landed before continuing — otherwise the soak
+# is pointless because the gateway will keep crashing.
+restored_size="$(sandbox_exec sh -c 'wc -c < /tmp/nemoclaw-proxy-env.sh' | tr -d '[:space:]')"
+if [ "$restored_size" != "${#SNAPSHOT}" ]; then
+  fail "proxy-env.sh restore failed: expected ${#SNAPSHOT} bytes, got '${restored_size}'"
+  exit 1
+fi
+info "proxy-env.sh restored (${restored_size} bytes verified)"
+
+# Trigger recovery to bring the gateway back with guards intact.
 timeout 60 nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
 SOAK_START_PID="$(wait_for_gateway_up 30)"
 if [ -z "$SOAK_START_PID" ]; then
   fail "Gateway not up entering soak phase"
+  gateway_diagnostics ""
   exit 1
 fi
-pass "Gateway healthy entering soak (pid=$SOAK_START_PID)"
+# Confirm the restored gateway has guards back in place — otherwise the
+# soak measures a crash-looping gateway, not steady-state recovery.
+if ! gateway_guards_active "$SOAK_START_PID" 30; then
+  fail "Gateway up but guards not active entering soak — restore did not take"
+  gateway_diagnostics "$SOAK_START_PID"
+  exit 1
+fi
+pass "Gateway healthy with guards active entering soak (pid=$SOAK_START_PID)"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 5: Soak — verify no crash-loop over $SOAK_SECONDS

@@ -119,5 +119,20 @@ describe("buildRecoveryScript", () => {
       expect(launchIdx).toBeGreaterThanOrEqual(0);
       expect(sourceIdx).toBeLessThan(launchIdx);
     });
+
+    it("writes the warning to gateway.log so it persists for sysadmin tail", () => {
+      const script = buildRecoveryScript(minimalAgent, 19000);
+      // Both warnings must end up in /tmp/gateway.log, not just stderr —
+      // executeSandboxCommand silently discards stderr from the recovery
+      // script, so a warning that only goes to stderr is invisible to
+      // anyone debugging a crash-loop. (#2478)
+      expect(script).toContain('echo "$_W" >> /tmp/gateway.log');
+      // And the warning must be deferred until AFTER gateway.log is
+      // freshly touched/chmod'd, otherwise the redirect targets a stale
+      // file that gets removed seconds later.
+      const touchIdx = script!.indexOf("touch /tmp/gateway.log");
+      const warnIdx = script!.indexOf('>> /tmp/gateway.log');
+      expect(touchIdx).toBeLessThan(warnIdx);
+    });
   });
 });
