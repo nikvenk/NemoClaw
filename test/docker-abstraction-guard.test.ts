@@ -53,8 +53,8 @@ describe("Docker command abstraction guard", () => {
         .join("\n");
       throw new Error(
         `Direct docker process launches must use the src/lib/docker abstractions.\n` +
-          `Do not add calls like run([\"docker\", ...]), runCapture([\"docker\", ...]), ` +
-          `spawnSync(\"docker\", ...), or execFileSync(\"docker\", ...) outside ${DOCKER_ABSTRACTION_PREFIX}.\n` +
+          `Do not add calls like run(["docker", ...]), runCapture(["docker", ...]), ` +
+          `spawnSync("docker", ...), or execFileSync("docker", ...) outside ${DOCKER_ABSTRACTION_PREFIX}.\n` +
           `Add or reuse a helper under ${DOCKER_ABSTRACTION_PREFIX} (for example dockerRun(), dockerCapture(), dockerPull(), dockerRmi(), dockerExecFileSync(), or dockerSpawnSync()) and call that instead.\n` +
           `Violations:\n${formatted}`,
       );
