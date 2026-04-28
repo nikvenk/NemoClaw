@@ -369,9 +369,13 @@ if [ -z "$SNAPSHOT" ]; then
 fi
 info "Snapshotted proxy-env.sh (${#SNAPSHOT} bytes)"
 
-# Remove proxy-env.sh, kill gateway, trigger recovery, expect WARNING.
+# Remove proxy-env.sh, kill the entire openclaw process tree, trigger
+# recovery, expect WARNING. We must kill the launcher AND the gateway —
+# pkill -9 -f '[o]penclaw' takes them all out so the launcher's watchdog
+# can't silently respawn the gateway before nemoclaw status runs the
+# recovery script (which is the only path that emits the warning).
 sandbox_exec sh -c 'rm -f /tmp/nemoclaw-proxy-env.sh' >/dev/null
-sandbox_exec sh -c "kill -9 $prev_pid 2>/dev/null" >/dev/null
+sandbox_exec sh -c "pkill -9 -f '[o]penclaw' 2>/dev/null; sleep 2; pgrep -af '[o]penclaw' || echo ALL_DEAD" >/dev/null
 timeout 60 nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1 || true
 
 # The new gateway.log should contain the [gateway-recovery] WARNING line.
@@ -390,18 +394,15 @@ else
   gateway_log_tail 100
 fi
 
-# Restore proxy-env.sh so subsequent recoveries are healthy again.
-# Pipe the snapshot via stdin to avoid heredoc-with-shell-injection issues,
-# and use `cp -f --no-preserve=mode` semantics by writing through a temp file
-# that we then move with `install` (force-overwrites mode-444 destination).
-# `openshell sandbox exec` runs as the sandbox user; /tmp is sandbox-writable
-# (sticky, but we own the original file so the sandbox user can replace it).
-printf '%s' "$SNAPSHOT" | sandbox_exec sh -c '
-  cat > /tmp/nemoclaw-proxy-env.sh.new
-  chmod 644 /tmp/nemoclaw-proxy-env.sh 2>/dev/null || true
-  mv -f /tmp/nemoclaw-proxy-env.sh.new /tmp/nemoclaw-proxy-env.sh
+# Restore proxy-env.sh by base64-injecting the snapshot. `openshell sandbox
+# exec` does not pipe stdin from the caller through to the subshell, so the
+# previous `printf | sandbox_exec sh -c 'cat > file'` approach left an empty
+# file. Encoding into the command argv sidesteps the stdin gap entirely.
+SNAPSHOT_B64="$(printf '%s' "$SNAPSHOT" | base64 | tr -d '\n')"
+sandbox_exec sh -c "
+  echo '$SNAPSHOT_B64' | base64 -d > /tmp/nemoclaw-proxy-env.sh
   chmod 444 /tmp/nemoclaw-proxy-env.sh
-' >/dev/null
+" >/dev/null
 
 # Verify restore actually landed before continuing — otherwise the soak
 # is pointless because the gateway will keep crashing.
