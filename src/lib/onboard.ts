@@ -26,7 +26,7 @@ const LOCAL_INFERENCE_TIMEOUT_SECS = envInt("NEMOCLAW_LOCAL_INFERENCE_TIMEOUT", 
  *  Covers CSI (color, erase, cursor), OSC, and C1 two-byte escapes per ECMA-48. */
 const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|[@-_])/g;
 const runner: typeof import("./runner") = require("./runner");
-const { ROOT, SCRIPTS, redact, run, runCapture, runFile, shellQuote, validateName } = runner;
+const { ROOT, SCRIPTS, redact, run, runShell, runCapture, runFile, shellQuote, validateName } = runner;
 const docker: typeof import("./docker") = require("./docker");
 const {
   dockerContainerInspectFormat,
@@ -2595,7 +2595,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
           console.log(
             `  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`,
           );
-          run(`kill ${portCheck.pid} 2>/dev/null || true`, { ignoreError: true });
+          run(["kill", String(portCheck.pid)], { ignoreError: true });
           sleep(1);
           portCheck = await checkPortAvailable(port);
           if (portCheck.ok) {
@@ -4619,7 +4619,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           // because WSL2 relays IPv4-only sockets to the Windows host.
           // Shell required: backgrounding (&), env var prefix, output redirection.
           const ollamaEnv = isWsl() ? "" : `OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} `;
-          run(`${ollamaEnv}ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
+          runShell(`${ollamaEnv}ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
           sleep(2);
           if (!isWsl()) printOllamaExposureWarning();
         }
@@ -4700,11 +4700,11 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           run(["brew", "install", "ollama"], { ignoreError: true });
         } else {
           console.log("  Installing Ollama via official installer...");
-          run("set -o pipefail; curl -fsSL https://ollama.com/install.sh | sh");
+          runShell("set -o pipefail; curl -fsSL https://ollama.com/install.sh | sh");
         }
         console.log("  Starting Ollama...");
         // Shell required: backgrounding (&), env var prefix, output redirection.
-        run(`OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
+        runShell(`OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
           ignoreError: true,
         });
         sleep(2);
