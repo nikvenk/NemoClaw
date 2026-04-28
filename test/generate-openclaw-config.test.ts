@@ -139,6 +139,11 @@ describe("generate-openclaw-config.py: config generation", () => {
     expect(config.gateway.auth.token).toBe("");
   });
 
+  it("configures acpx codex to use the preinstalled binary", () => {
+    const config = runConfigScript();
+    expect(config.plugins.entries.acpx.config.agents.codex.command).toBe("codex-acp");
+  });
+
   it("creates file with 0600 permissions", () => {
     runConfigScript();
     const configPath = path.join(tmpDir, ".openclaw", "openclaw.json");

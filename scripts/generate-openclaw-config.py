@@ -218,12 +218,26 @@ def build_config(env: dict | None = None) -> dict:
         #     gateway can't service openclaw-agent requests — that's the
         #     TC-SBX-02 hang in 2026.4.24.
         #
+        # acpx stays enabled, but its default codex adapter command is
+        # `npx @zed-industries/codex-acp@^0.11.1`. npm refreshes registry
+        # metadata for that package spec even when codex-acp is globally
+        # installed, which hits the L7 proxy deny path during gateway startup.
+        # The sandbox image pre-installs /usr/local/bin/codex-acp, so point
+        # acpx at the binary directly.
+        #
         # Other bundled extensions with stageRuntimeDependencies=true
-        # (acpx, anthropic, google, etc.) either pre-stage their deps or
-        # gracefully degrade when the install is denied. Add to this map
-        # only when we observe a runtime hang/crash, not preemptively.
+        # (anthropic, google, etc.) either pre-stage their deps or gracefully
+        # degrade when the install is denied. Add to this map only when we
+        # observe a runtime hang/crash, not preemptively.
         "plugins": {
             "entries": {
+                "acpx": {
+                    "config": {
+                        "agents": {
+                            "codex": {"command": "codex-acp"},
+                        }
+                    }
+                },
                 "bonjour": {"enabled": False},
                 "qqbot": {"enabled": False},
             }

@@ -80,21 +80,16 @@ RUN set -eu; \
         rm -rf /usr/local/lib/node_modules/openclaw /usr/local/bin/openclaw; \
         npm install -g --no-audit --no-fund --no-progress "openclaw@${MIN_VER}"; \
     fi; \
-    # Pre-install the codex-acp package so the embedded ACPx runtime's
-    # health probe doesn't have to npm-fetch it at runtime. The sandbox's
-    # L7 proxy denies @zed-industries/* package URLs (403 policy_denied),
-    # which makes the probe fail and degrades the agent CLI fallback path
-    # (NemoClaw#2484 / TC-SBX-02). Installing globally at build time is
-    # safe because the build phase has open internet access.
-    #
-    # Set npm config prefer-offline=true so the runtime npx invocation
-    # uses the cached + globally-installed package without re-fetching
-    # metadata from the registry (which would hit the L7 proxy 403).
-    npm config --global set prefer-offline true; \
-    npm config --global set fetch-retries 1; \
+    # Pre-install the codex-acp package so the embedded ACPx runtime can
+    # call the local binary instead of `npx @zed-industries/codex-acp`.
+    # The sandbox's L7 proxy denies @zed-industries/* package URLs
+    # (403 policy_denied), and npm still refreshes registry metadata for
+    # versioned npx package specs even when the package is globally installed.
+    # Installing the binary at build time and configuring ACPx to use it
+    # directly keeps TC-SBX-02 off the runtime npm path.
     npm install -g --no-audit --no-fund --no-progress \
-        '@zed-industries/codex-acp@^0.11.1' || \
-        echo "WARN: codex-acp pre-install failed (non-fatal — runtime probe will retry)" >&2
+        '@zed-industries/codex-acp@0.11.1'; \
+    command -v codex-acp >/dev/null
 
 # Patch OpenClaw media fetch for proxy-only sandbox (NVIDIA/NemoClaw#1755).
 #
