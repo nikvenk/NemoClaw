@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Sandbox Image Hardening &#8212; NVIDIA NemoClaw Developer Guide</title>
+    <title>Install OpenClaw Plugins &#8212; NVIDIA NemoClaw Developer Guide</title>
   
   
   
@@ -52,7 +52,7 @@
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
     <script src="../_static/search-assets.bundle.js?v=099b119e"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'deployment/sandbox-hardening';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'deployment/install-openclaw-plugins';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
@@ -61,12 +61,12 @@
             false;
         </script>
 
-    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/deployment/sandbox-hardening.html" />
+    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/deployment/install-openclaw-plugins.html" />
     <link rel="icon" href="../_static/favicon.png"/>
 
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Workspace Files" href="../workspace/workspace-files.html" />
-    <link rel="prev" title="Install OpenClaw Plugins" href="install-openclaw-plugins.html" />
+    <link rel="next" title="Sandbox Image Hardening" href="sandbox-hardening.html" />
+    <link rel="prev" title="Set Up Telegram" href="set-up-telegram-bridge.html" />
 
 
 
@@ -417,8 +417,8 @@
 <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="set-up-telegram-bridge.html">Set Up Telegram</a></li>
-<li class="toctree-l1"><a class="reference internal" href="install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Sandbox Hardening</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Install OpenClaw Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
 <ul class="nav bd-sidenav">
@@ -476,7 +476,7 @@
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Sandbox Image Hardening</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Install OpenClaw Plugins</span></li>
   </ul>
 </nav>
 </div>
@@ -494,134 +494,95 @@
                 <article class="bd-article">
                   
   <!--
-  SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
   SPDX-License-Identifier: Apache-2.0
 -->
-<section class="tex2jax_ignore mathjax_ignore" id="sandbox-image-hardening">
-<h1>Sandbox Image Hardening<a class="headerlink" href="#sandbox-image-hardening" title="Link to this heading">#</a></h1>
-<p>The NemoClaw sandbox image applies several security measures to reduce attack
-surface and limit the blast radius of untrusted workloads.</p>
-<section id="removed-unnecessary-tools">
-<h2>Removed Unnecessary Tools<a class="headerlink" href="#removed-unnecessary-tools" title="Link to this heading">#</a></h2>
-<p>Build toolchains (<code class="docutils literal notranslate"><span class="pre">gcc</span></code>, <code class="docutils literal notranslate"><span class="pre">g++</span></code>, <code class="docutils literal notranslate"><span class="pre">make</span></code>) and network probes (<code class="docutils literal notranslate"><span class="pre">netcat</span></code>) are
-explicitly purged from the runtime image. These tools are not needed at runtime
-and would unnecessarily widen the attack surface.</p>
-<p>If you need a compiler during build, use the existing multi-stage build
-(the <code class="docutils literal notranslate"><span class="pre">builder</span></code> stage has full Node.js tooling) and copy only artifacts into the
-runtime stage.</p>
-</section>
-<section id="process-limits">
-<h2>Process Limits<a class="headerlink" href="#process-limits" title="Link to this heading">#</a></h2>
-<p>The container ENTRYPOINT sets <code class="docutils literal notranslate"><span class="pre">ulimit</span> <span class="pre">-u</span> <span class="pre">512</span></code> to cap the number of processes
-a sandbox user can spawn. This mitigates fork-bomb attacks. The startup script
-(<code class="docutils literal notranslate"><span class="pre">nemoclaw-start.sh</span></code>) applies the same limit.</p>
-<p>Adjust the value via the <code class="docutils literal notranslate"><span class="pre">--ulimit</span> <span class="pre">nproc=512:512</span></code> flag if launching with
-<code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">run</span></code> directly.</p>
-</section>
-<section id="dropping-linux-capabilities">
-<h2>Dropping Linux Capabilities<a class="headerlink" href="#dropping-linux-capabilities" title="Link to this heading">#</a></h2>
-<p>When running the sandbox container, drop all Linux capabilities and re-add only
-what is strictly required:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--cap-drop<span class="o">=</span>ALL<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--ulimit<span class="w"> </span><span class="nv">nproc</span><span class="o">=</span><span class="m">512</span>:512<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>nemoclaw-sandbox
-</pre></div>
-</div>
-<section id="docker-compose-example">
-<h3>Docker Compose Example<a class="headerlink" href="#docker-compose-example" title="Link to this heading">#</a></h3>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">services</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">nemoclaw-sandbox</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nemoclaw-sandbox:latest</span>
-<span class="w">    </span><span class="nt">cap_drop</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ALL</span>
-<span class="w">    </span><span class="nt">cap_add</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NET_BIND_SERVICE</span>
-<span class="w">    </span><span class="nt">ulimits</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">nproc</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">soft</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
-<span class="w">        </span><span class="nt">hard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
-<span class="w">    </span><span class="nt">security_opt</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">no-new-privileges:true</span>
-<span class="w">    </span><span class="nt">read_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="nt">tmpfs</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/tmp:size=64m</span>
-</pre></div>
-</div>
-<blockquote>
-<div><p><strong>Note:</strong> The <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code> itself cannot enforce <code class="docutils literal notranslate"><span class="pre">--cap-drop</span></code>. That is a
-runtime concern controlled by the container orchestrator. Always configure
-capability dropping in your <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">run</span></code> flags, Compose file, or Kubernetes
-<code class="docutils literal notranslate"><span class="pre">securityContext</span></code>.</p>
-</div></blockquote>
-</section>
-</section>
-<section id="read-only-home-directory">
-<h2>Read-Only Home Directory<a class="headerlink" href="#read-only-home-directory" title="Link to this heading">#</a></h2>
-<p>The sandbox Landlock policy restricts <code class="docutils literal notranslate"><span class="pre">/sandbox</span></code> (the agent’s home directory) to read-only access.
-Only explicitly declared directories are writable:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Path</p></th>
-<th class="head"><p>Access</p></th>
-<th class="head"><p>Purpose</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox</span></code></p></td>
-<td><p>read-only</p></td>
-<td><p>Home directory — agents cannot create arbitrary files</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code></p></td>
-<td><p>read-only</p></td>
-<td><p>Immutable gateway config (auth tokens, CORS)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code></p></td>
-<td><p>read-write</p></td>
-<td><p>Agent state, workspace, plugins (via symlinks)</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.nemoclaw</span></code></p></td>
-<td><p>read-write</p></td>
-<td><p>Plugin state and config; blueprints within are DAC-protected (root-owned)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/tmp</span></code></p></td>
-<td><p>read-write</p></td>
-<td><p>Temporary files and logs</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>This prevents agents from:</p>
+<section class="tex2jax_ignore mathjax_ignore" id="install-openclaw-plugins">
+<h1>Install OpenClaw Plugins<a class="headerlink" href="#install-openclaw-plugins" title="Link to this heading">#</a></h1>
+<p>OpenClaw plugins extend the OpenClaw runtime with hooks, services, tools, or
+provider integrations. They are different from NemoClaw-managed agent skills:</p>
 <ul class="simple">
-<li><p>Writing scripts and executing them later</p></li>
-<li><p>Modifying their own runtime environment</p></li>
-<li><p>Creating hidden files that persist across invocations</p></li>
-<li><p>Using writable space for data staging before exfiltration</p></li>
+<li><p><strong>Plugins</strong> are code packages loaded by OpenClaw.</p></li>
+<li><p><strong>Skills</strong> are <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> directories that teach an agent how to perform a task.</p></li>
+<li><p><strong>Policy presets</strong> are network-egress rules that control what sandboxed code can reach.</p></li>
 </ul>
-<p>The image build pre-creates shell init files <code class="docutils literal notranslate"><span class="pre">.bashrc</span></code> and <code class="docutils literal notranslate"><span class="pre">.profile</span></code>.
-These files source runtime proxy configuration from <code class="docutils literal notranslate"><span class="pre">/tmp/nemoclaw-proxy-env.sh</span></code>.</p>
-<section id="landlock-kernel-requirements">
-<h3>Landlock Kernel Requirements<a class="headerlink" href="#landlock-kernel-requirements" title="Link to this heading">#</a></h3>
-<p>Landlock LSM requires Linux kernel 5.13 or later with <code class="docutils literal notranslate"><span class="pre">CONFIG_SECURITY_LANDLOCK=y</span></code>.
-The NemoClaw sandbox policy uses <code class="docutils literal notranslate"><span class="pre">compatibility:</span> <span class="pre">best_effort</span></code>, which means Landlock enforcement is silently skipped on kernels that do not support it.</p>
-<p>On such kernels, protection falls back to DAC (file ownership and permissions) only.
-Files owned by the sandbox user (e.g., <code class="docutils literal notranslate"><span class="pre">.bashrc</span></code>, <code class="docutils literal notranslate"><span class="pre">.profile</span></code>) would be writable by the agent despite the Landlock read-only policy.</p>
-<p>Operators should verify Landlock availability:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ls<span class="w"> </span>/sys/kernel/security/landlock
+<p>Today, the supported NemoClaw path for OpenClaw plugins is to bake the plugin
+into a custom sandbox image and onboard from that Dockerfile.</p>
+<section id="prepare-a-build-directory">
+<h2>Prepare a Build Directory<a class="headerlink" href="#prepare-a-build-directory" title="Link to this heading">#</a></h2>
+<p>Put the Dockerfile and everything it needs to <code class="docutils literal notranslate"><span class="pre">COPY</span></code> in one directory.
+<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span> <span class="pre">&lt;Dockerfile&gt;</span></code> uses the Dockerfile’s parent directory as
+the Docker build context.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>my-plugin-sandbox/
+├── Dockerfile
+└── my-plugin/
+    ├── package.json
+    └── src/
 </pre></div>
 </div>
-<p>For production deployments, kernel 5.13+ with Landlock enabled is strongly recommended.
-The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cloud-experimental/checks/04-landlock-readonly.sh</span></code> script validates enforcement at runtime.</p>
 </section>
+<section id="example-dockerfile">
+<h2>Example Dockerfile<a class="headerlink" href="#example-dockerfile" title="Link to this heading">#</a></h2>
+<p>Use the custom image to copy the plugin into the OpenClaw extensions directory
+and let OpenClaw refresh its config before NemoClaw starts the sandbox.</p>
+<div class="highlight-dockerfile notranslate"><div class="highlight"><pre><span></span><span class="k">ARG</span><span class="w"> </span><span class="nv">SANDBOX_BASE</span><span class="o">=</span>ghcr.io/nvidia/nemoclaw/sandbox-base:latest
+<span class="k">FROM</span><span class="w"> </span><span class="s">${SANDBOX_BASE}</span>
+
+<span class="k">COPY</span><span class="w"> </span>my-plugin/<span class="w"> </span>/opt/my-plugin/
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/my-plugin</span>
+<span class="k">RUN</span><span class="w"> </span>npm<span class="w"> </span>ci<span class="w"> </span>--no-audit<span class="w"> </span>--no-fund<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build
+
+<span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/sandbox/.openclaw-data/extensions<span class="w"> </span><span class="se">\</span>
+<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cp<span class="w"> </span>-a<span class="w"> </span>/opt/my-plugin<span class="w"> </span>/sandbox/.openclaw-data/extensions/my-plugin<span class="w"> </span><span class="se">\</span>
+<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>openclaw<span class="w"> </span>doctor<span class="w"> </span>--fix
+
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/nemoclaw</span>
+</pre></div>
+</div>
+<p>If the plugin needs configuration in <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>, apply it after
+<code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> so the base config exists first.</p>
 </section>
-<section id="references">
-<h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+<section id="create-the-sandbox">
+<h2>Create the Sandbox<a class="headerlink" href="#create-the-sandbox" title="Link to this heading">#</a></h2>
+<p>Point <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span></code> at the Dockerfile in the build directory.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--from<span class="w"> </span>./my-plugin-sandbox/Dockerfile
+</pre></div>
+</div>
+<p>If you need a second sandbox alongside an existing one, use a dedicated build
+directory and rerun onboarding with the sandbox name and ports you intend to
+use.</p>
+</section>
+<section id="network-access">
+<h2>Network Access<a class="headerlink" href="#network-access" title="Link to this heading">#</a></h2>
+<p>Plugins still run inside the sandbox policy boundary. If a plugin needs network
+egress, add or update a policy preset for the required hostnames and binaries
+before rebuilding the sandbox.</p>
+<p>For example, see <a class="reference internal" href="../reference/network-policies.html"><span class="std std-doc">Network Policies</span></a> for
+policy concepts and <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize Network Policy</span></a>
+for custom preset workflows.</p>
+</section>
+<section id="common-mistakes">
+<h2>Common Mistakes<a class="headerlink" href="#common-mistakes" title="Link to this heading">#</a></h2>
+<p>These are the most common places where plugin installation gets mixed up with
+other NemoClaw extension paths.</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/804" rel="noreferer noopener" target="_blank">#804</a>: Read-only home directory</p></li>
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/807" rel="noreferer noopener" target="_blank">#807</a>: gcc in sandbox image</p></li>
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/808" rel="noreferer noopener" target="_blank">#808</a>: netcat in sandbox image</p></li>
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/809" rel="noreferer noopener" target="_blank">#809</a>: No process limit</p></li>
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/797" rel="noreferer noopener" target="_blank">#797</a>: Drop Linux capabilities</p></li>
+<li><p>Do not use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">skill</span> <span class="pre">install</span></code> for OpenClaw plugins. That
+command only installs <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> agent skills.</p></li>
+<li><p>Do not put a Dockerfile in a broad directory such as <code class="docutils literal notranslate"><span class="pre">/tmp</span></code> unless you intend
+to send that whole directory as the Docker build context.</p></li>
+<li><p>Keep plugin dependencies in the build stage or plugin directory; avoid copying
+unrelated host files into the sandbox image.</p></li>
+</ul>
+</section>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>Review <a class="reference internal" href="sandbox-hardening.html"><span class="std std-doc">Sandbox Hardening</span></a> before adding plugin code to a
+shared or long-lived sandbox.</p></li>
+<li><p>Review <a class="reference internal" href="../reference/network-policies.html"><span class="std std-doc">Network Policies</span></a> to plan plugin
+egress rules.</p></li>
+<li><p>Follow <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize Network Policy</span></a>
+if the plugin needs a custom preset.</p></li>
 </ul>
 </section>
 </section>
@@ -637,20 +598,20 @@ The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cl
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="install-openclaw-plugins.html"
+       href="set-up-telegram-bridge.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Install OpenClaw Plugins</p>
+        <p class="prev-next-title">Set Up Telegram</p>
       </div>
     </a>
     <a class="right-next"
-       href="../workspace/workspace-files.html"
+       href="sandbox-hardening.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Workspace Files</p>
+        <p class="prev-next-title">Sandbox Image Hardening</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -675,17 +636,12 @@ The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cl
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#removed-unnecessary-tools">Removed Unnecessary Tools</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#process-limits">Process Limits</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dropping-linux-capabilities">Dropping Linux Capabilities</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-compose-example">Docker Compose Example</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read-only-home-directory">Read-Only Home Directory</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#landlock-kernel-requirements">Landlock Kernel Requirements</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prepare-a-build-directory">Prepare a Build Directory</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example-dockerfile">Example Dockerfile</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#create-the-sandbox">Create the Sandbox</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#network-access">Network Access</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#common-mistakes">Common Mistakes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
 </ul>
   </nav></div>
 

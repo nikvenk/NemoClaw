@@ -417,6 +417,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -991,7 +992,8 @@ The command validates the <code class="docutils literal notranslate"><span class
 </pre></div>
 </div>
 <p>The skill directory must contain a <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> file with YAML frontmatter that includes a <code class="docutils literal notranslate"><span class="pre">name</span></code> field.
-Skill names must contain only alphanumeric characters, dots, hyphens, and underscores.</p>
+Skill names must contain only alphanumeric characters, dots, hyphens, and underscores.
+OpenClaw plugins are a different kind of extension. To install an OpenClaw plugin, see <a class="reference internal" href="../deployment/install-openclaw-plugins.html"><span class="std std-doc">Install OpenClaw Plugins</span></a>.</p>
 <p>Files with names starting with <code class="docutils literal notranslate"><span class="pre">.</span></code> (dotfiles) are skipped and listed in the output.
 Files with unsafe path characters are rejected to prevent shell injection.</p>
 <p>If the skill already exists on the sandbox, the command updates it in place and preserves chat history.
