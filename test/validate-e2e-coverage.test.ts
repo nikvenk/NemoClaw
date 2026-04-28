@@ -210,10 +210,10 @@ describe("E2E coverage cross-validation", () => {
         continue;
       }
       // Check for the selective dispatch pattern:
-      // inputs.jobs == '' || contains(inputs.jobs, '<job-name>')
+      // inputs.jobs == '' || contains(format(',{0},', inputs.jobs), ',<job-name>,')
       if (
         !condition.includes("inputs.jobs") ||
-        !condition.includes(`contains(inputs.jobs, '${name}')`)
+        !condition.includes(`contains(format(',{0},', inputs.jobs), ',${name},')`)
       ) {
         missing.push(name);
       }
@@ -225,7 +225,7 @@ describe("E2E coverage cross-validation", () => {
         `if: condition: ${missing.join(", ")}. Each job needs:\n` +
         `  (github.event_name != 'workflow_dispatch' ||\n` +
         `   inputs.jobs == '' ||\n` +
-        `   contains(inputs.jobs, '<job-name>'))`,
+        `   contains(format(',{0},', inputs.jobs), ',<job-name>,'))`,
     ).toEqual([]);
   });
 });

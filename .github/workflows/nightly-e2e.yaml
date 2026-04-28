@@ -63,7 +63,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'cloud-e2e'))
+       contains(format(',{0},', inputs.jobs), ',cloud-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -98,7 +98,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'messaging-providers-e2e'))
+       contains(format(',{0},', inputs.jobs), ',messaging-providers-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -136,7 +136,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'token-rotation-e2e'))
+       contains(format(',{0},', inputs.jobs), ',token-rotation-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -170,7 +170,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'sandbox-survival-e2e'))
+       contains(format(',{0},', inputs.jobs), ',sandbox-survival-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -203,7 +203,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'hermes-e2e'))
+       contains(format(',{0},', inputs.jobs), ',hermes-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -239,7 +239,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'skip-permissions-e2e'))
+       contains(format(',{0},', inputs.jobs), ',skip-permissions-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -273,7 +273,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'sandbox-operations-e2e'))
+       contains(format(',{0},', inputs.jobs), ',sandbox-operations-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -306,7 +306,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'inference-routing-e2e'))
+       contains(format(',{0},', inputs.jobs), ',inference-routing-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -337,7 +337,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'network-policy-e2e'))
+       contains(format(',{0},', inputs.jobs), ',network-policy-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -370,7 +370,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'deployment-services-e2e'))
+       contains(format(',{0},', inputs.jobs), ',deployment-services-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -402,7 +402,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'diagnostics-e2e'))
+       contains(format(',{0},', inputs.jobs), ',diagnostics-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -433,7 +433,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'snapshot-commands-e2e'))
+       contains(format(',{0},', inputs.jobs), ',snapshot-commands-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -465,7 +465,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'shields-config-e2e'))
+       contains(format(',{0},', inputs.jobs), ',shields-config-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -497,7 +497,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'rebuild-openclaw-e2e'))
+       contains(format(',{0},', inputs.jobs), ',rebuild-openclaw-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -530,7 +530,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'upgrade-stale-sandbox-e2e'))
+       contains(format(',{0},', inputs.jobs), ',upgrade-stale-sandbox-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -563,7 +563,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'rebuild-hermes-e2e'))
+       contains(format(',{0},', inputs.jobs), ',rebuild-hermes-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -598,7 +598,7 @@ jobs:
       github.repository == 'NVIDIA/NemoClaw' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'overlayfs-autofix-e2e'))
+       contains(format(',{0},', inputs.jobs), ',overlayfs-autofix-e2e,'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -637,7 +637,7 @@ jobs:
       vars.GPU_E2E_ENABLED == 'true' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.jobs == '' ||
-       contains(inputs.jobs, 'gpu-e2e'))
+       contains(format(',{0},', inputs.jobs), ',gpu-e2e,'))
     runs-on: self-hosted
     timeout-minutes: 60
     env:
