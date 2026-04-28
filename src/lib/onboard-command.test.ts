@@ -158,6 +158,7 @@ describe("onboard command", () => {
       acceptThirdPartySoftware: false,
       agent: null,
       dangerouslySkipPermissions: false,
+      controlUiPort: null,
     });
   });
 
