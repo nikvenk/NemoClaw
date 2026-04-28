@@ -115,5 +115,6 @@ You can edit them in two ways:
 
 ## Next Steps
 
+- [Use a Task-Specific Sub-Agent Model](../inference/use-sub-agent-model.md)
 - [Backup and Restore workspace files](backup-restore.md)
 - [Commands reference](../reference/commands.md)
