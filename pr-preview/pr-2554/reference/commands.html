@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=349eaea7"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.29';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -815,8 +815,14 @@ If the preset name is unknown or already applied, the command exits non-zero wit
 </tr>
 </thead>
 <tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--from-file</span> <span class="pre">&lt;path&gt;</span></code></p></td>
+<td><p>Apply a custom preset YAML file instead of a built-in preset</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--from-dir</span> <span class="pre">&lt;path&gt;</span></code></p></td>
+<td><p>Apply every custom preset YAML file in a directory in lexicographic order</p></td>
+</tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--yes</span></code>, <code class="docutils literal notranslate"><span class="pre">--force</span></code></p></td>
-<td><p>Skip the confirmation prompt (requires a preset name)</p></td>
+<td><p>Skip the confirmation prompt (requires a preset name, <code class="docutils literal notranslate"><span class="pre">--from-file</span></code>, or <code class="docutils literal notranslate"><span class="pre">--from-dir</span></code>)</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--dry-run</span></code></p></td>
 <td><p>Preview the endpoints a preset would open without applying changes</p></td>
@@ -828,6 +834,16 @@ If the preset name is unknown or already applied, the command exits non-zero wit
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--dry-run
 </pre></div>
 </div>
+<p>Apply a custom preset file when you need to grant access to an endpoint that is not covered by a built-in preset:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--from-file<span class="w"> </span>./presets/my-internal-api.yaml
+</pre></div>
+</div>
+<p>For batch workflows, apply all preset files from a directory:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>my-assistant<span class="w"> </span>policy-add<span class="w"> </span>--from-dir<span class="w"> </span>./presets/<span class="w"> </span>--yes
+</pre></div>
+</div>
+<p>Review every host in custom preset files before applying them.
+Custom presets bypass the built-in preset review process and can widen sandbox egress.</p>
 </section>
 <section id="nemoclaw-name-policy-list">
 <h3><code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">policy-list</span></code><a class="headerlink" href="#nemoclaw-name-policy-list" title="Link to this heading">#</a></h3>
