@@ -1480,6 +1480,35 @@ startGateway(null).catch(() => {});
     }
   });
 
+  it("prefers the explicit --name option over NEMOCLAW_SANDBOX_NAME", () => {
+    const previous = process.env.NEMOCLAW_SANDBOX_NAME;
+    process.env.NEMOCLAW_SANDBOX_NAME = "from-env";
+    try {
+      expect(getRequestedSandboxNameHint({ sandboxName: "From-Flag" })).toBe("from-flag");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NEMOCLAW_SANDBOX_NAME;
+      } else {
+        process.env.NEMOCLAW_SANDBOX_NAME = previous;
+      }
+    }
+  });
+
+  it("detects resume conflicts when --name does not match the recorded sandbox", () => {
+    expect(
+      getResumeConfigConflicts(
+        { sandboxName: "my-assistant" },
+        { sandboxName: "second-assistant" },
+      ),
+    ).toEqual([
+      {
+        field: "sandbox",
+        requested: "second-assistant",
+        recorded: "my-assistant",
+      },
+    ]);
+  });
+
   it("detects resume conflicts when a different sandbox is requested", () => {
     const previous = process.env.NEMOCLAW_SANDBOX_NAME;
     process.env.NEMOCLAW_SANDBOX_NAME = "other-sandbox";

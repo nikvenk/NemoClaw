@@ -36,6 +36,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: true,
       agent: null,
       dangerouslySkipPermissions: false,
@@ -60,6 +61,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: true,
       agent: null,
       dangerouslySkipPermissions: false,
@@ -83,6 +85,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: false,
       agent: null,
       dangerouslySkipPermissions: false,
@@ -105,6 +108,7 @@ describe("onboard command", () => {
     expect(runOnboard).not.toHaveBeenCalled();
     expect(lines.join("\n")).toContain("Usage: nemoclaw onboard");
     expect(lines.join("\n")).toContain("--from <Dockerfile>");
+    expect(lines.join("\n")).toContain("--name <sandbox>");
     expect(lines.join("\n")).toContain("--agent <name>");
     expect(lines.join("\n")).toContain("--dangerously-skip-permissions");
   });
@@ -127,6 +131,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: "/tmp/Custom.Dockerfile",
+      sandboxName: null,
       acceptThirdPartySoftware: false,
       agent: null,
       dangerouslySkipPermissions: false,
@@ -151,6 +156,7 @@ describe("onboard command", () => {
       fresh: true,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: false,
       agent: null,
       dangerouslySkipPermissions: false,
@@ -172,6 +178,65 @@ describe("onboard command", () => {
       ),
     ).toThrow("exit:1");
     expect(errors.join("\n")).toContain("--resume and --fresh are mutually exclusive");
+  });
+
+  it("parses --name <sandbox>", () => {
+    expect(
+      parseOnboardArgs(
+        ["--non-interactive", "--from", "/tmp/Custom.Dockerfile", "--name", "second-assistant"],
+        "--yes-i-accept-third-party-software",
+        "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+        {
+          env: {},
+          error: () => {},
+          exit: exitWithCode,
+        },
+      ),
+    ).toEqual({
+      nonInteractive: true,
+      resume: false,
+      fresh: false,
+      recreateSandbox: false,
+      fromDockerfile: "/tmp/Custom.Dockerfile",
+      sandboxName: "second-assistant",
+      acceptThirdPartySoftware: false,
+      agent: null,
+      dangerouslySkipPermissions: false,
+    });
+  });
+
+  it("exits when --name is missing its sandbox value", () => {
+    const errors: string[] = [];
+    expect(() =>
+      parseOnboardArgs(
+        ["--name"],
+        "--yes-i-accept-third-party-software",
+        "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+        {
+          env: {},
+          error: (message = "") => errors.push(message),
+          exit: exitWithPrefixedCode,
+        },
+      ),
+    ).toThrow("exit:1");
+    expect(errors.join("\n")).toContain("--name requires a sandbox name");
+  });
+
+  it("exits when --name is followed by another flag instead of a value", () => {
+    const errors: string[] = [];
+    expect(() =>
+      parseOnboardArgs(
+        ["--name", "--resume"],
+        "--yes-i-accept-third-party-software",
+        "NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE",
+        {
+          env: {},
+          error: (message = "") => errors.push(message),
+          exit: exitWithPrefixedCode,
+        },
+      ),
+    ).toThrow("exit:1");
+    expect(errors.join("\n")).toContain("--name requires a sandbox name");
   });
 
   it("exits when --from is missing its Dockerfile path", () => {
@@ -226,6 +291,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: false,
       agent: "openclaw",
       dangerouslySkipPermissions: true,
@@ -274,6 +340,7 @@ describe("onboard command", () => {
       fresh: false,
       recreateSandbox: false,
       fromDockerfile: null,
+      sandboxName: null,
       acceptThirdPartySoftware: false,
       agent: null,
       dangerouslySkipPermissions: false,
