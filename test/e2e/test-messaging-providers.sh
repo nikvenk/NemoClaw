@@ -1344,14 +1344,22 @@ req.end();
 "' 2>/dev/null || true)
 
 info "Slack auth.test (unset env) response: ${sl_unset:0:300}"
-if [ -n "$sl_unset" ] && [ -n "$sl_canonical" ] && [ "$sl_unset" != "$sl_canonical" ]; then
-  pass "M-S15c: unset-var response differs from set-var response — proxy distinguishes (substitution is real)"
+# Empirically (verified in nightly run 25070238797): when the canonical
+# placeholder names an env var that isn't registered as a provider, the
+# OpenShell L7 proxy refuses to forward and the client sees a
+# connection-level failure ("socket hang up" / ECONNRESET / EPIPE).
+# The set-var path returns HTTP 200 invalid_auth from slack.com — these
+# shapes are completely disjoint, so we assert specifically on them
+# instead of doing a fuzzy string compare (UNDICI warnings carry a PID
+# and would always make the captures differ regardless of substance).
+if echo "$sl_unset" | grep -qE 'ERROR:.*(socket hang up|ECONNRESET|EPIPE|hang up|reset)'; then
+  pass "M-S15c: unset-var triggered connection-level failure — proxy refuses to forward unsubstituted placeholder"
+elif echo "$sl_unset" | grep -qE '^200\b'; then
+  fail "M-S15c: unset-var returned HTTP 200 — proxy passed canonical placeholder through unchanged for unset env (substitution may be a no-op)"
 elif [ -z "$sl_unset" ] || echo "$sl_unset" | grep -q "TIMEOUT"; then
   skip "M-S15c: unset-var probe timed out or returned no output"
-elif [ "$sl_unset" = "$sl_canonical" ]; then
-  fail "M-S15c: unset-var response identical to set-var — L7 proxy may not be substituting at all (both paths produce: ${sl_unset:0:120})"
 else
-  skip "M-S15c: unset-var response present but indistinguishable in this run: ${sl_unset:0:120}"
+  skip "M-S15c: unset-var produced an unclassified result: ${sl_unset:0:200}"
 fi
 
 # M-S16: Socket Mode HTTPS leg (apps.connections.open). Bolt's Socket
