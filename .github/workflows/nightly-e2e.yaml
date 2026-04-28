@@ -353,52 +353,42 @@ jobs:
               echo "=== final-snapshot: capturing logs for '$name'"
               {
                 printf '\n\n===== FINAL SNAPSHOT: %s =====\n' "$name"
-                # Try nemoclaw logs first (uses openshell's active gateway).
-                # If that fails (e.g., no active gateway after TC-SBX-06),
-                # fall back to direct ssh via the per-sandbox config that
-                # the test itself uses successfully.
-                #
-                # Note: must capture nemoclaw exit status before piping —
-                # `cmd | tail` returns tail's exit code, masking errors.
-                nm_out=$(mktemp)
-                if command -v nemoclaw >/dev/null 2>&1; then
-                  nemoclaw "$name" logs >"$nm_out" 2>&1
-                  nm_rc=$?
-                  tail -c 500000 "$nm_out"
-                  rm -f "$nm_out"
-                  if [ "$nm_rc" -ne 0 ]; then
-                    echo "(nemoclaw logs failed with rc=$nm_rc; falling back to direct ssh)"
-                    ssh_cfg="/tmp/sshcfg-final-${name}.tmp"
-                    if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>&1 && [ -s "$ssh_cfg" ]; then
-                      ssh_out=$(mktemp)
-                      # Read /sandbox/.openclaw-data/logs/gateway-persistent.log
-                      # FIRST: it survives docker-kill of the gateway pod (via
-                      # the volume mount) so it's the only durable record of
-                      # pre-restart events. Fall back to /tmp/gateway.log and
-                      # the per-uid structured log dirs.
-                      ssh -F "$ssh_cfg" \
-                          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                          -o ConnectTimeout=10 -o LogLevel=ERROR \
-                          "openshell-${name}" \
-                          'for f in /sandbox/.openclaw-data/logs/gateway-persistent.log \
-                                   /tmp/gateway.log \
-                                   /tmp/openclaw-*/openclaw-*.log; do
-                             [ -f "$f" ] || continue
-                             printf "\n----- %s -----\n" "$f"
-                             cat -- "$f" 2>/dev/null || true
-                           done' >"$ssh_out" 2>&1
-                      ssh_rc=$?
-                      tail -c 500000 "$ssh_out"
-                      rm -f "$ssh_out"
-                      [ "$ssh_rc" -eq 0 ] || echo "(direct ssh exited rc=$ssh_rc)"
-                    else
-                      echo "(openshell sandbox ssh-config failed for $name)"
-                    fi
-                    rm -f "$ssh_cfg"
-                  fi
+                # Always read directly via ssh: nemoclaw logs reads only
+                # /tmp/gateway.log which gets wiped by TC-SBX-06's docker-kill,
+                # often returning empty. The persistent file under
+                # /sandbox/.openclaw-data/logs survives pod restarts (mirrored
+                # by nemoclaw-start.sh), so SSH-cat'ing it is the durable
+                # capture.
+                ssh_cfg="/tmp/sshcfg-final-${name}.tmp"
+                if openshell sandbox ssh-config "$name" >"$ssh_cfg" 2>&1 && [ -s "$ssh_cfg" ]; then
+                  ssh_out=$(mktemp)
+                  ssh -F "$ssh_cfg" \
+                      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                      -o ConnectTimeout=10 -o LogLevel=ERROR \
+                      "openshell-${name}" \
+                      'for f in /sandbox/.openclaw-data/logs/gateway-persistent.log \
+                               /tmp/gateway.log \
+                               /tmp/openclaw-*/openclaw-*.log; do
+                         [ -f "$f" ] || continue
+                         printf "\n----- %s (size=%s) -----\n" "$f" "$(stat -c%s "$f" 2>/dev/null || echo ?)"
+                         cat -- "$f" 2>/dev/null || true
+                       done' >"$ssh_out" 2>&1
+                  ssh_rc=$?
+                  tail -c 500000 "$ssh_out"
+                  rm -f "$ssh_out"
+                  [ "$ssh_rc" -eq 0 ] || echo "(direct ssh exited rc=$ssh_rc)"
                 else
-                  echo "(nemoclaw not on PATH — install dir missing)"
+                  echo "(openshell sandbox ssh-config failed for $name)"
+                  # Fallback to nemoclaw logs (less reliable, but try anything)
+                  if command -v nemoclaw >/dev/null 2>&1; then
+                    nm_out=$(mktemp)
+                    nemoclaw "$name" logs >"$nm_out" 2>&1
+                    echo "(nemoclaw logs rc=$? size=$(wc -c <"$nm_out"))"
+                    tail -c 500000 "$nm_out"
+                    rm -f "$nm_out"
+                  fi
                 fi
+                rm -f "$ssh_cfg"
               } >> "docker-logs/sandbox-${name}.log"
             done
           else
