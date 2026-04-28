@@ -79,16 +79,16 @@ function stageOptimizedSandboxBuildContext(
     path.join(rootDir, "scripts", "nemoclaw-start.sh"),
     path.join(stagedScriptsDir, "nemoclaw-start.sh"),
   );
-  // OpenClaw config generator referenced by Dockerfile:195 (added in #2449)
-  fs.copyFileSync(
-    path.join(rootDir, "scripts", "generate-openclaw-config.py"),
-    path.join(stagedScriptsDir, "generate-openclaw-config.py"),
-  );
   // Shared sandbox initialisation library sourced by the entrypoint (#2277)
   fs.mkdirSync(path.join(stagedScriptsDir, "lib"), { recursive: true });
   fs.copyFileSync(
     path.join(rootDir, "scripts", "lib", "sandbox-init.sh"),
     path.join(stagedScriptsDir, "lib", "sandbox-init.sh"),
+  );
+  // OpenClaw config generator extracted in #2449 (fixed in #2565)
+  fs.copyFileSync(
+    path.join(rootDir, "scripts", "generate-openclaw-config.py"),
+    path.join(stagedScriptsDir, "generate-openclaw-config.py"),
   );
 
   return { buildCtx, stagedDockerfile };
