@@ -943,7 +943,7 @@ print(tags[0] if tags else '')
     printf "nvcr.io/%s:%s" "$repo" "$tag"
   else
     # Fall back to the official vLLM image on Docker Hub.
-    warn "Could not resolve NGC vLLM tag — falling back to docker.io/vllm/vllm-openai:latest"
+    warn "Could not resolve NGC vLLM tag — falling back to docker.io/vllm/vllm-openai:latest" >&2
     printf "docker.io/vllm/vllm-openai:latest"
   fi
 }
