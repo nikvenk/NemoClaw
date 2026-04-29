@@ -1541,7 +1541,6 @@ jobs:
         token-rotation-e2e,
         sandbox-survival-e2e,
         hermes-e2e,
-        skip-permissions-e2e,
         sandbox-operations-e2e,
         inference-routing-e2e,
         network-policy-e2e,
