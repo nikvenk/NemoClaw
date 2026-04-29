@@ -43,6 +43,14 @@ describe("buildManifestUrl", () => {
       "https://registry.ollama.ai/v2/acme/foo/manifests/7b",
     );
   });
+
+  it("rejects model references with an empty tag", () => {
+    expect(buildManifestUrl("foo:")).toBeNull();
+  });
+
+  it("rejects empty model references", () => {
+    expect(buildManifestUrl("")).toBeNull();
+  });
 });
 
 describe("probeRegistrySize", () => {

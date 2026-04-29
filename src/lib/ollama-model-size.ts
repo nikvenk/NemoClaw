@@ -24,7 +24,7 @@ export interface SizeLookup {
 
 function splitNamespaceAndTag(model: string): { namespace: string; tag: string } | null {
   const [name, tag = "latest"] = model.split(":", 2);
-  if (!name) return null;
+  if (!name || !tag) return null;
   const namespace = name.includes("/") ? name : `library/${name}`;
   return { namespace, tag };
 }
