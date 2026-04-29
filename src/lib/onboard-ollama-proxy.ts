@@ -18,6 +18,7 @@ const {
   getOllamaWarmupCommand,
   validateOllamaModel,
 } = require("./local-inference");
+const { buildSubprocessEnv } = require("./subprocess-env");
 const { prompt } = require("./credentials");
 const { promptManualModelId } = require("./model-prompts");
 
@@ -104,12 +105,11 @@ function spawnOllamaAuthProxy(token: string): number | null {
   const child = spawn(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
     detached: true,
     stdio: "ignore",
-    env: {
-      ...process.env,
+    env: buildSubprocessEnv({
       OLLAMA_PROXY_TOKEN: token,
       OLLAMA_PROXY_PORT: String(OLLAMA_PROXY_PORT),
       OLLAMA_BACKEND_PORT: String(OLLAMA_PORT),
-    },
+    }),
   });
   child.unref();
   persistProxyPid(child.pid);
@@ -166,8 +166,40 @@ function startOllamaAuthProxy(): boolean {
 }
 
 /**
- * Ensure the auth proxy is running — called on sandbox connect to recover
- * from host reboots where the background proxy process was lost.
+ * Probe the running proxy to confirm it accepts the given token.
+ * The proxy validates auth before forwarding to Ollama. A backend error like
+ * 502 still proves the token was accepted, while 401 means token mismatch.
+ */
+function probeProxyToken(token: string): "accepted" | "rejected" | "unreachable" {
+  const result = spawnSync(
+    "curl",
+    [
+      "-sS",
+      "-o",
+      "/dev/null",
+      "-w",
+      "%{http_code}",
+      "--max-time",
+      "3",
+      "-H",
+      `Authorization: Bearer ${token}`,
+      `http://localhost:${OLLAMA_PROXY_PORT}/v1/models`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) return "unreachable";
+
+  const status = String(result.stdout || "").trim();
+  if (status === "401") return "rejected";
+  if (/^\d{3}$/.test(status)) return "accepted";
+  return "unreachable";
+}
+
+/**
+ * Ensure the auth proxy is running with the correct persisted token.
+ * Called on sandbox connect to recover from host reboots where the
+ * background proxy process was lost, and to detect token divergence
+ * after a failed re-onboard (see issue #2553).
  */
 function ensureOllamaAuthProxy(): void {
   // Try to load persisted token first — if none, this isn't an Ollama setup.
@@ -176,17 +208,25 @@ function ensureOllamaAuthProxy(): void {
 
   const pid = loadPersistedProxyPid();
   if (isOllamaProxyProcess(pid)) {
-    ollamaProxyToken = token;
-    return;
+    const tokenStatus = probeProxyToken(token);
+    if (tokenStatus === "accepted") {
+      ollamaProxyToken = token;
+      return;
+    }
   }
-
-  // Proxy not running — restart it with the persisted token.
   killStaleProxy();
+
+  // Proxy not running, token mismatch, or PID stale — restart with the persisted token.
   ollamaProxyToken = token;
-  spawnOllamaAuthProxy(token);
-  sleep(1);
+  const startedPid = spawnOllamaAuthProxy(token);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (isOllamaProxyProcess(startedPid) && probeProxyToken(token) === "accepted") return;
+    sleep(1);
+  }
+  console.error(`  Error: Ollama auth proxy did not become ready after restart.`);
 }
 
+/** Return the current proxy token, falling back to the persisted file. */
 function getOllamaProxyToken(): string | null {
   if (ollamaProxyToken) return ollamaProxyToken;
   // Fall back to persisted token (resume / reconnect scenario)
@@ -235,7 +275,7 @@ function pullOllamaModel(model) {
     encoding: "utf8",
     stdio: "inherit",
     timeout: 600_000,
-    env: { ...process.env },
+    env: buildSubprocessEnv(),
   });
   if (result.signal === "SIGTERM") {
     console.error(

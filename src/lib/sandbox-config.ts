@@ -16,8 +16,8 @@ const readline = require("readline");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync } = require("child_process");
 const { validateName } = require("./runner");
+const { dockerExecFileSync } = require("./docker/exec");
 const credentialFilter: typeof import("./credential-filter") = require("./credential-filter");
 const { stripCredentials, isConfigObject, isConfigValue } = credentialFilter;
 const { appendAuditEntry } = require("./shields-audit");
@@ -516,8 +516,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
   // Write config to sandbox via kubectl exec (bypasses Landlock)
   console.log(`  Writing config to sandbox (${target.configPath})...`);
   const content = fs.readFileSync(tmpFile, "utf-8");
-  execFileSync(
-    "docker",
+  dockerExecFileSync(
     [
       "exec",
       "-i",
@@ -540,8 +539,7 @@ async function configSet(sandboxName: string, opts: ConfigSetOpts = {}): Promise
 
   // Fix ownership via kubectl exec (bypasses Landlock)
   try {
-    execFileSync(
-      "docker",
+    dockerExecFileSync(
       [
         "exec",
         K3S_CONTAINER,
@@ -672,10 +670,11 @@ async function configRotateToken(sandboxName: string, opts: RotateTokenOpts = {}
     process.exit(1);
   }
 
-  // 4. Save credential locally
+  // 4. Stage the new value in the current process so the openshell update
+  //    that follows can read it via --credential <ENV>. The OpenShell
+  //    gateway becomes the system of record once the update succeeds.
   const { saveCredential } = require("./credentials");
   saveCredential(credentialEnv, newToken);
-  console.log("  Credential saved to ~/.nemoclaw/credentials.json");
 
   // 5. Update the openshell provider
   console.log("  Updating openshell provider...");
@@ -753,9 +752,16 @@ function readStdin(): Promise<string> {
  */
 function confirmYesNo(prompt: string): Promise<boolean> {
   return new Promise((resolve) => {
+    // Re-attach stdin to the event loop — unref() on exit is sticky and
+    // would otherwise leave a follow-up prompt waiting on a detached handle.
+    if (typeof process.stdin.ref === "function") process.stdin.ref();
     const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
     rl.question(prompt, (answer: string) => {
       rl.close();
+      // pause+unref so the process exits naturally after the last prompt.
+      // The matching ref() above keeps subsequent prompts working.
+      if (typeof process.stdin.pause === "function") process.stdin.pause();
+      if (typeof process.stdin.unref === "function") process.stdin.unref();
       resolve(/^y(es)?$/i.test(answer.trim()));
     });
   });
