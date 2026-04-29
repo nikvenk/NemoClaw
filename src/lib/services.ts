@@ -298,13 +298,19 @@ export function stopAll(opts: ServiceOptions = {}): void {
   ensurePidDir(pidDir);
 
   // Stop the in-sandbox OpenClaw gateway (and its messaging channels).
-  const sandboxName =
+  const rawSandboxName =
     opts.sandboxName ??
     process.env.NEMOCLAW_SANDBOX ??
     process.env.NEMOCLAW_SANDBOX_NAME ??
     process.env.SANDBOX_NAME;
+  const sandboxName =
+    rawSandboxName && SAFE_NAME_RE.test(rawSandboxName) && !rawSandboxName.includes("..")
+      ? rawSandboxName
+      : undefined;
   if (sandboxName) {
     stopSandboxChannels(sandboxName);
+  } else if (rawSandboxName) {
+    warn(`Invalid sandbox name: ${JSON.stringify(rawSandboxName)} — skipping in-sandbox stop.`);
   } else {
     warn("No sandbox name available — cannot stop in-sandbox messaging channels.");
     warn("Hint: run 'nemoclaw stop' with a registered sandbox or set NEMOCLAW_SANDBOX_NAME.");

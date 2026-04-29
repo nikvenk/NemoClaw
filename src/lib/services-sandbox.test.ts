@@ -260,4 +260,58 @@ describe("stopAll with sandbox channels", () => {
     );
     logSpy.mockRestore();
   });
+
+  it("rejects malformed env var sandbox names before calling stopSandboxChannels", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const savedNemoclaw = process.env.NEMOCLAW_SANDBOX;
+    const savedNemoclawName = process.env.NEMOCLAW_SANDBOX_NAME;
+    const savedSandbox = process.env.SANDBOX_NAME;
+    delete process.env.NEMOCLAW_SANDBOX;
+    process.env.NEMOCLAW_SANDBOX_NAME = "bad name";
+    delete process.env.SANDBOX_NAME;
+
+    try {
+      stopAll({ pidDir });
+    } finally {
+      if (savedNemoclaw !== undefined) process.env.NEMOCLAW_SANDBOX = savedNemoclaw;
+      else delete process.env.NEMOCLAW_SANDBOX;
+      if (savedNemoclawName !== undefined) process.env.NEMOCLAW_SANDBOX_NAME = savedNemoclawName;
+      else delete process.env.NEMOCLAW_SANDBOX_NAME;
+      if (savedSandbox !== undefined) process.env.SANDBOX_NAME = savedSandbox;
+      else delete process.env.SANDBOX_NAME;
+    }
+
+    // Should NOT have called openshell sandbox exec with the bad name
+    expect(spawnSyncSpy).not.toHaveBeenCalled();
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Invalid sandbox name");
+    expect(output).toContain("All services stopped");
+    logSpy.mockRestore();
+  });
+
+  it("rejects path-traversal sandbox names from env vars", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const savedNemoclaw = process.env.NEMOCLAW_SANDBOX;
+    const savedNemoclawName = process.env.NEMOCLAW_SANDBOX_NAME;
+    const savedSandbox = process.env.SANDBOX_NAME;
+    delete process.env.NEMOCLAW_SANDBOX;
+    process.env.NEMOCLAW_SANDBOX_NAME = "../../etc/passwd";
+    delete process.env.SANDBOX_NAME;
+
+    try {
+      stopAll({ pidDir });
+    } finally {
+      if (savedNemoclaw !== undefined) process.env.NEMOCLAW_SANDBOX = savedNemoclaw;
+      else delete process.env.NEMOCLAW_SANDBOX;
+      if (savedNemoclawName !== undefined) process.env.NEMOCLAW_SANDBOX_NAME = savedNemoclawName;
+      else delete process.env.NEMOCLAW_SANDBOX_NAME;
+      if (savedSandbox !== undefined) process.env.SANDBOX_NAME = savedSandbox;
+      else delete process.env.SANDBOX_NAME;
+    }
+
+    expect(spawnSyncSpy).not.toHaveBeenCalled();
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Invalid sandbox name");
+    logSpy.mockRestore();
+  });
 });
