@@ -1918,7 +1918,7 @@ They provide guidance on which controls to keep tight or relax.</p>
 <td><p>Pass <code class="docutils literal notranslate"><span class="pre">--cap-drop=ALL</span></code> at the container runtime level as defense-in-depth.</p></td>
 </tr>
 <tr class="row-odd"><td><p>Leaving <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> writable on sensitive workloads</p></td>
-<td><p>This directory contains the OpenClaw gateway configuration. A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> lets the agent modify auth tokens, disable CORS, or redirect inference routing.</p></td>
+<td><p>This directory contains the OpenClaw gateway configuration. A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> lets the agent disable CORS, redirect inference routing, or weaken gateway protections.</p></td>
 <td><p>Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> to lock config for always-on assistants handling sensitive data.</p></td>
 </tr>
 <tr class="row-even"><td><p>Adding inference provider hosts to the network policy</p></td>
