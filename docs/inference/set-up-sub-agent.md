@@ -1,7 +1,7 @@
 ---
 title:
-  page: "Use a Task-Specific Sub-Agent Model"
-  nav: "Sub-Agent Model"
+  page: "Set up a Task-Specific Sub-Agent"
+  nav: "Task-Specific Sub-Agent"
 description:
   main: "Where NemoClaw stores OpenClaw sub-agent model configuration, credentials, and workspace files inside the sandbox."
   agent: "Shows the NemoClaw-specific file paths and update flow for adding an auxiliary OpenClaw sub-agent model. Use when users ask how to add a second model, configure a sub-agent model, use Omni for vision tasks, configure agents.list, or use sessions_spawn in NemoClaw."
@@ -20,7 +20,7 @@ status: published
   SPDX-License-Identifier: Apache-2.0
 -->
 
-# Use a Task-Specific Sub-Agent Model
+# Set Up Task-Specific Sub-Agents
 
 OpenClaw documents the sub-agent behavior, `sessions_spawn` tool, `agents.list` configuration, tool policy, nesting, and auth model in [Sub-Agents](https://docs.openclaw.ai/tools/subagents).
 Use that page as the source of truth for how OpenClaw sub-agents work.
