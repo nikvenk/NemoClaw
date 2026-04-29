@@ -1937,26 +1937,26 @@ provision_agent_workspaces() {
   if [ -f "$config_dir/openclaw.json" ] && command -v node >/dev/null 2>&1; then
     config_names="$(
       node - "$config_dir/openclaw.json" <<'NODE' 2>/dev/null || true
-const fs = require("fs");
-const configPath = process.argv[2];
-const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const names = new Set();
-function addWorkspace(value) {
-  if (typeof value !== "string") return;
-  const trimmed = value.trim();
-  if (!trimmed) return;
-  if (trimmed.startsWith("/sandbox/.openclaw/")) {
-    const relative = trimmed.slice("/sandbox/.openclaw/".length);
-    if (relative && !relative.includes("..")) names.add(relative);
-    return;
+  const fs = require("fs");
+  const configPath = process.argv[2];
+  const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const names = new Set();
+  function addWorkspace(value) {
+    if (typeof value !== "string") return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    if (trimmed.startsWith("/sandbox/.openclaw/")) {
+      const relative = trimmed.slice("/sandbox/.openclaw/".length);
+      if (relative && !relative.includes("..")) names.add(relative);
+      return;
+    }
+    if (/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+      names.add(trimmed.startsWith("workspace-") ? trimmed : `workspace-${trimmed}`);
+    }
   }
-  if (/^[A-Za-z0-9._-]+$/.test(trimmed)) {
-    names.add(trimmed.startsWith("workspace-") ? trimmed : `workspace-${trimmed}`);
-  }
-}
-addWorkspace(cfg?.agents?.defaults?.workspace);
-for (const agent of cfg?.agents?.list || []) addWorkspace(agent?.workspace);
-for (const name of names) console.log(name);
+  addWorkspace(cfg?.agents?.defaults?.workspace);
+  for (const agent of cfg?.agents?.list || []) addWorkspace(agent?.workspace);
+  for (const name of names) console.log(name);
 NODE
     )"
     if [ -n "$config_names" ]; then
