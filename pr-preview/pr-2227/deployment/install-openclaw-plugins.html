@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Overview &#8212; NVIDIA NemoClaw Developer Guide</title>
+    <title>Install OpenClaw Plugins &#8212; NVIDIA NemoClaw Developer Guide</title>
   
   
   
@@ -52,7 +52,7 @@
     <script src="../_static/copybutton.js?v=6dbb43f8"></script>
     <script src="../_static/search-assets.bundle.js?v=099b119e"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'about/overview';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'deployment/install-openclaw-plugins';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
@@ -61,12 +61,12 @@
             false;
         </script>
 
-    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/about/overview.html" />
+    <link rel="canonical" href="https://docs.nvidia.com/nemoclaw/latest/deployment/install-openclaw-plugins.html" />
     <link rel="icon" href="../_static/favicon.png"/>
 
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="How NemoClaw Works" href="how-it-works.html" />
-    <link rel="prev" title="NVIDIA NemoClaw" href="../index.html" />
+    <link rel="next" title="Sandbox Image Hardening" href="sandbox-hardening.html" />
+    <link rel="prev" title="Set Up Telegram" href="set-up-telegram-bridge.html" />
 
 
 
@@ -382,11 +382,11 @@
      aria-label="Table of Contents">
   <p class="bd-links__title" role="heading" aria-level="1">Table of Contents</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">About NemoClaw</span></p>
-<ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="how-it-works.html">How It Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ecosystem.html">Ecosystem</a></li>
-<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../about/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../about/how-it-works.html">How It Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../about/ecosystem.html">Ecosystem</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../about/release-notes.html">Release Notes</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Get Started</span></p>
 <ul class="nav bd-sidenav">
@@ -415,11 +415,11 @@
 <li class="toctree-l1"><a class="reference internal" href="../security/openclaw-controls.html">OpenClaw Controls</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Deployment</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
+<li class="toctree-l1"><a class="reference internal" href="set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Install OpenClaw Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
 <ul class="nav bd-sidenav">
@@ -477,7 +477,7 @@
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Overview</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">Install OpenClaw Plugins</span></li>
   </ul>
 </nav>
 </div>
@@ -495,134 +495,95 @@
                 <article class="bd-article">
                   
   <!--
-  SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
   SPDX-License-Identifier: Apache-2.0
 -->
-<section class="tex2jax_ignore mathjax_ignore" id="overview">
-<h1>Overview<a class="headerlink" href="#overview" title="Link to this heading">#</a></h1>
-<p>NVIDIA NemoClaw is an open-source reference stack that simplifies running <a class="reference external" href="https://openclaw.ai" rel="noreferer noopener" target="_blank">OpenClaw</a> always-on assistants.
-NemoClaw provides onboarding, lifecycle management, and OpenClaw operations within OpenShell containers.
-It incorporates policy-based privacy and security guardrails, giving you control over your agents’ behavior and data handling.
-This enables self-evolving claws to run more safely in clouds, on prem, RTX PCs and DGX Spark.</p>
-<p>NemoClaw pairs open-source and hosted models (for example <a class="reference external" href="https://build.nvidia.com" rel="noreferer noopener" target="_blank">NVIDIA Nemotron</a>) with a hardened sandbox, routed inference, and declarative egress policy so deployment stays safer and more repeatable.
-The sandbox runtime comes from <a class="reference external" href="https://github.com/NVIDIA/OpenShell" rel="noreferer noopener" target="_blank">NVIDIA OpenShell</a>; NemoClaw adds the blueprint, <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> CLI, onboarding, and related tooling as the reference way to run OpenClaw there.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Capability</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Sandbox OpenClaw</p></td>
-<td><p>Creates an OpenShell sandbox pre-configured for OpenClaw, with filesystem and network policies applied from the first boot.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Route inference</p></td>
-<td><p>Configures OpenShell inference routing so agent traffic goes to the provider and model you chose during onboarding (NVIDIA Endpoints, OpenAI, Anthropic, Gemini, compatible endpoints, local Ollama, and others). The agent uses <code class="docutils literal notranslate"><span class="pre">inference.local</span></code> inside the sandbox; credentials stay on the host.</p></td>
-</tr>
-<tr class="row-even"><td><p>Manage the lifecycle</p></td>
-<td><p>Handles blueprint versioning, digest verification, and sandbox setup.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<section id="key-features">
-<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading">#</a></h2>
-<p>NemoClaw provides the following product capabilities.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Feature</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Guided onboarding</p></td>
-<td><p>Validates credentials, selects providers, and creates a working sandbox in one command.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Hardened blueprint</p></td>
-<td><p>A security-first Dockerfile with capability drops, least-privilege network rules, and declarative policy.</p></td>
-</tr>
-<tr class="row-even"><td><p>State management</p></td>
-<td><p>Safe migration of agent state across machines with credential stripping and integrity verification.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Channel messaging</p></td>
-<td><p>OpenShell-managed processes connect Telegram, Discord, Slack, and similar platforms to the sandboxed agent. NemoClaw configures channels during onboarding; OpenShell supplies the native constructs, credential flow, and runtime supervision.</p></td>
-</tr>
-<tr class="row-even"><td><p>Routed inference</p></td>
-<td><p>Provider-routed model calls through the OpenShell gateway, transparent to the agent. Supports NVIDIA Endpoints, OpenAI, Anthropic, Google Gemini, and local Ollama.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Layered protection</p></td>
-<td><p>Network, filesystem, process, and inference controls that can be hot-reloaded or locked at creation.</p></td>
-</tr>
-</tbody>
-</table>
+<section class="tex2jax_ignore mathjax_ignore" id="install-openclaw-plugins">
+<h1>Install OpenClaw Plugins<a class="headerlink" href="#install-openclaw-plugins" title="Link to this heading">#</a></h1>
+<p>OpenClaw plugins extend the OpenClaw runtime with hooks, services, tools, or
+provider integrations. They are different from NemoClaw-managed agent skills:</p>
+<ul class="simple">
+<li><p><strong>Plugins</strong> are code packages loaded by OpenClaw.</p></li>
+<li><p><strong>Skills</strong> are <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> directories that teach an agent how to perform a task.</p></li>
+<li><p><strong>Policy presets</strong> are network-egress rules that control what sandboxed code can reach.</p></li>
+</ul>
+<p>Today, the supported NemoClaw path for OpenClaw plugins is to bake the plugin
+into a custom sandbox image and onboard from that Dockerfile.</p>
+<section id="prepare-a-build-directory">
+<h2>Prepare a Build Directory<a class="headerlink" href="#prepare-a-build-directory" title="Link to this heading">#</a></h2>
+<p>Put the Dockerfile and everything it needs to <code class="docutils literal notranslate"><span class="pre">COPY</span></code> in one directory.
+<code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span> <span class="pre">&lt;Dockerfile&gt;</span></code> uses the Dockerfile’s parent directory as
+the Docker build context.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>my-plugin-sandbox/
+├── Dockerfile
+└── my-plugin/
+    ├── package.json
+    └── src/
+</pre></div>
 </div>
 </section>
-<section id="challenge">
-<h2>Challenge<a class="headerlink" href="#challenge" title="Link to this heading">#</a></h2>
-<p>Autonomous AI agents like OpenClaw can make arbitrary network requests, access the host filesystem, and call any inference endpoint. Without guardrails, this creates security, cost, and compliance risks that grow as agents run unattended.</p>
-</section>
-<section id="benefits">
-<h2>Benefits<a class="headerlink" href="#benefits" title="Link to this heading">#</a></h2>
-<p>NemoClaw provides the following benefits.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Benefit</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Sandboxed execution</p></td>
-<td><p>Every agent runs inside an OpenShell sandbox with Landlock, seccomp, and network namespace isolation. No access is granted by default.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Routed inference</p></td>
-<td><p>Model traffic is routed through the OpenShell gateway to your selected provider, transparent to the agent. You can switch providers or models. Refer to <a class="reference internal" href="../inference/inference-options.html"><span class="std std-doc">Inference Options</span></a>.</p></td>
-</tr>
-<tr class="row-even"><td><p>Declarative network policy</p></td>
-<td><p>Egress rules are defined in YAML. Unknown hosts are blocked and surfaced to the operator for approval.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Single CLI</p></td>
-<td><p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> command orchestrates the full stack: gateway, sandbox, inference provider, and network policy.</p></td>
-</tr>
-<tr class="row-even"><td><p>Blueprint lifecycle</p></td>
-<td><p>Versioned blueprints handle sandbox creation, digest verification, and reproducible setup.</p></td>
-</tr>
-</tbody>
-</table>
+<section id="example-dockerfile">
+<h2>Example Dockerfile<a class="headerlink" href="#example-dockerfile" title="Link to this heading">#</a></h2>
+<p>Use the custom image to copy the plugin into the OpenClaw extensions directory
+and let OpenClaw refresh its config before NemoClaw starts the sandbox.</p>
+<div class="highlight-dockerfile notranslate"><div class="highlight"><pre><span></span><span class="k">ARG</span><span class="w"> </span><span class="nv">SANDBOX_BASE</span><span class="o">=</span>ghcr.io/nvidia/nemoclaw/sandbox-base:latest
+<span class="k">FROM</span><span class="w"> </span><span class="s">${SANDBOX_BASE}</span>
+
+<span class="k">COPY</span><span class="w"> </span>my-plugin/<span class="w"> </span>/opt/my-plugin/
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/my-plugin</span>
+<span class="k">RUN</span><span class="w"> </span>npm<span class="w"> </span>ci<span class="w"> </span>--no-audit<span class="w"> </span>--no-fund<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build
+
+<span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/sandbox/.openclaw-data/extensions<span class="w"> </span><span class="se">\</span>
+<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cp<span class="w"> </span>-a<span class="w"> </span>/opt/my-plugin<span class="w"> </span>/sandbox/.openclaw-data/extensions/my-plugin<span class="w"> </span><span class="se">\</span>
+<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>openclaw<span class="w"> </span>doctor<span class="w"> </span>--fix
+
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/nemoclaw</span>
+</pre></div>
 </div>
+<p>If the plugin needs configuration in <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>, apply it after
+<code class="docutils literal notranslate"><span class="pre">openclaw</span> <span class="pre">doctor</span> <span class="pre">--fix</span></code> so the base config exists first.</p>
 </section>
-<section id="use-cases">
-<h2>Use Cases<a class="headerlink" href="#use-cases" title="Link to this heading">#</a></h2>
-<p>You can use NemoClaw for various use cases including the following.</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Use Case</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Always-on assistant</p></td>
-<td><p>Run an OpenClaw assistant with controlled network access and operator-approved egress.</p></td>
-</tr>
-<tr class="row-odd"><td><p>Sandboxed testing</p></td>
-<td><p>Test agent behavior in a locked-down environment before granting broader permissions.</p></td>
-</tr>
-<tr class="row-even"><td><p>Remote GPU deployment</p></td>
-<td><p>Deploy a sandboxed agent to a remote GPU instance for persistent operation.</p></td>
-</tr>
-</tbody>
-</table>
+<section id="create-the-sandbox">
+<h2>Create the Sandbox<a class="headerlink" href="#create-the-sandbox" title="Link to this heading">#</a></h2>
+<p>Point <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span> <span class="pre">--from</span></code> at the Dockerfile in the build directory.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard<span class="w"> </span>--from<span class="w"> </span>./my-plugin-sandbox/Dockerfile
+</pre></div>
 </div>
+<p>If you need a second sandbox alongside an existing one, use a dedicated build
+directory and rerun onboarding with the sandbox name and ports you intend to
+use.</p>
+</section>
+<section id="network-access">
+<h2>Network Access<a class="headerlink" href="#network-access" title="Link to this heading">#</a></h2>
+<p>Plugins still run inside the sandbox policy boundary. If a plugin needs network
+egress, add or update a policy preset for the required hostnames and binaries
+before rebuilding the sandbox.</p>
+<p>For example, see <a class="reference internal" href="../reference/network-policies.html"><span class="std std-doc">Network Policies</span></a> for
+policy concepts and <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize Network Policy</span></a>
+for custom preset workflows.</p>
+</section>
+<section id="common-mistakes">
+<h2>Common Mistakes<a class="headerlink" href="#common-mistakes" title="Link to this heading">#</a></h2>
+<p>These are the most common places where plugin installation gets mixed up with
+other NemoClaw extension paths.</p>
+<ul class="simple">
+<li><p>Do not use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">skill</span> <span class="pre">install</span></code> for OpenClaw plugins. That
+command only installs <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code> agent skills.</p></li>
+<li><p>Do not put a Dockerfile in a broad directory such as <code class="docutils literal notranslate"><span class="pre">/tmp</span></code> unless you intend
+to send that whole directory as the Docker build context.</p></li>
+<li><p>Keep plugin dependencies in the build stage or plugin directory; avoid copying
+unrelated host files into the sandbox image.</p></li>
+</ul>
 </section>
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="ecosystem.html"><span class="std std-doc">Ecosystem</span></a> to understand how OpenClaw, OpenShell, and NemoClaw relate in the wider stack, and when to use NemoClaw versus OpenShell.</p></li>
-<li><p><a class="reference internal" href="how-it-works.html"><span class="std std-doc">How It Works</span></a> to understand how NemoClaw works internally: plugin, blueprint, sandbox lifecycle.</p></li>
-<li><p><a class="reference internal" href="../get-started/quickstart.html"><span class="std std-doc">Quickstart</span></a> to install NemoClaw and run your first agent.</p></li>
-<li><p><a class="reference internal" href="../inference/switch-inference-providers.html"><span class="std std-doc">Switch Inference Providers</span></a> to configure the inference provider.</p></li>
-<li><p><a class="reference internal" href="../network-policy/approve-network-requests.html"><span class="std std-doc">Approve or Deny Network Requests</span></a> to manage egress approvals.</p></li>
-<li><p><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html"><span class="std std-doc">Deploy to a Remote GPU Instance</span></a> for persistent operation.</p></li>
-<li><p><a class="reference internal" href="../monitoring/monitor-sandbox-activity.html"><span class="std std-doc">Monitor Sandbox Activity</span></a> to observe agent behavior.</p></li>
+<li><p>Review <a class="reference internal" href="sandbox-hardening.html"><span class="std std-doc">Sandbox Hardening</span></a> before adding plugin code to a
+shared or long-lived sandbox.</p></li>
+<li><p>Review <a class="reference internal" href="../reference/network-policies.html"><span class="std std-doc">Network Policies</span></a> to plan plugin
+egress rules.</p></li>
+<li><p>Follow <a class="reference internal" href="../network-policy/customize-network-policy.html"><span class="std std-doc">Customize Network Policy</span></a>
+if the plugin needs a custom preset.</p></li>
 </ul>
 </section>
 </section>
@@ -638,20 +599,20 @@ The sandbox runtime comes from <a class="reference external" href="https://githu
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../index.html"
+       href="set-up-telegram-bridge.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">NVIDIA NemoClaw</p>
+        <p class="prev-next-title">Set Up Telegram</p>
       </div>
     </a>
     <a class="right-next"
-       href="how-it-works.html"
+       href="sandbox-hardening.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">How NemoClaw Works</p>
+        <p class="prev-next-title">Sandbox Image Hardening</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -676,10 +637,11 @@ The sandbox runtime comes from <a class="reference external" href="https://githu
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#key-features">Key Features</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#challenge">Challenge</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#benefits">Benefits</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#use-cases">Use Cases</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prepare-a-build-directory">Prepare a Build Directory</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example-dockerfile">Example Dockerfile</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#create-the-sandbox">Create the Sandbox</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#network-access">Network Access</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#common-mistakes">Common Mistakes</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
 </ul>
   </nav></div>

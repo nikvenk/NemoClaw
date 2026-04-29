@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=349eaea7"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.29';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -401,6 +401,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -417,6 +418,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -552,6 +554,13 @@
 <p>OpenShell Lifecycle
 For NemoClaw-managed environments, use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> when you need to create or recreate the OpenShell gateway or sandbox.
 Avoid <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">self-update</span></code>, <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">update</span> <span class="pre">-g</span> <span class="pre">openshell</span></code>, <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">gateway</span> <span class="pre">start</span> <span class="pre">--recreate</span></code>, or <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">create</span></code> directly unless you intend to manage OpenShell separately and then rerun <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Docker storage driver
+On Linux hosts running Docker 26 or later with the <a class="reference external" href="https://docs.docker.com/engine/storage/containerd/" rel="noreferer noopener" target="_blank">containerd image store</a> enabled (the install-time default for fresh <code class="docutils literal notranslate"><span class="pre">docker-ce</span></code> installations on Ubuntu 24.04 and similar distros), <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> transparently builds a <code class="docutils literal notranslate"><span class="pre">fuse-overlayfs</span></code>-enabled cluster image to bypass a kernel-level nested-overlay limitation in k3s.
+No manual setup is required.
+See the <a class="reference internal" href="../reference/troubleshooting.html"><span class="std std-doc">troubleshooting guide</span></a> for the override knobs and a manual <code class="docutils literal notranslate"><span class="pre">daemon.json</span></code> alternative.</p>
 </div>
 </section>
 <section id="platforms">
