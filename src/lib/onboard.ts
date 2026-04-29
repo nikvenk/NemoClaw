@@ -26,7 +26,22 @@ const LOCAL_INFERENCE_TIMEOUT_SECS = envInt("NEMOCLAW_LOCAL_INFERENCE_TIMEOUT", 
  *  Covers CSI (color, erase, cursor), OSC, and C1 two-byte escapes per ECMA-48. */
 const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|[@-_])/g;
 const runner: typeof import("./runner") = require("./runner");
-const { ROOT, SCRIPTS, redact, run, runCapture, runFile, shellQuote, validateName } = runner;
+const { ROOT, SCRIPTS, redact, run, runShell, runCapture, runFile, shellQuote, validateName } = runner;
+const docker: typeof import("./docker") = require("./docker");
+const {
+  dockerContainerInspectFormat,
+  dockerExecArgv,
+  dockerImageInspect,
+  dockerImageInspectFormat,
+  dockerInfo,
+  dockerInfoFormat,
+  dockerInspect,
+  dockerPull,
+  dockerRemoveVolumesByPrefix,
+  dockerRm,
+  dockerRmi,
+  dockerStop,
+} = docker;
 const errnoUtils: typeof import("./errno") = require("./errno");
 const { isErrnoException } = errnoUtils;
 
@@ -96,6 +111,8 @@ const {
   GEMINI_ENDPOINT_URL,
   REMOTE_PROVIDER_CONFIG,
   LOCAL_INFERENCE_PROVIDERS,
+  OLLAMA_PROXY_CREDENTIAL_ENV,
+  VLLM_LOCAL_CREDENTIAL_ENV,
   DISCORD_SNOWFLAKE_RE,
   getProviderLabel,
   getEffectiveProviderName,
@@ -109,6 +126,8 @@ const {
   GEMINI_ENDPOINT_URL: string;
   REMOTE_PROVIDER_CONFIG: Record<string, RemoteProviderConfigEntry>;
   LOCAL_INFERENCE_PROVIDERS: string[];
+  OLLAMA_PROXY_CREDENTIAL_ENV: string;
+  VLLM_LOCAL_CREDENTIAL_ENV: string;
   DISCORD_SNOWFLAKE_RE: RegExp;
   getProviderLabel: (key: string) => string;
   getEffectiveProviderName: (key: string | null | undefined) => string | null;
@@ -123,8 +142,16 @@ const platformUtils: typeof import("./platform") = require("./platform");
 const { inferContainerRuntime, isWsl, shouldPatchCoredns } = platformUtils;
 const { resolveOpenshell } = require("./resolve-openshell");
 const credentials: typeof import("./credentials") = require("./credentials");
-const { prompt, ensureApiKey, getCredential, normalizeCredentialValue, saveCredential, resolveProviderCredential } =
-  credentials;
+const {
+  prompt,
+  ensureApiKey,
+  getCredential,
+  stageLegacyCredentialsToEnv,
+  removeLegacyCredentialsFile,
+  normalizeCredentialValue,
+  resolveProviderCredential,
+  saveCredential,
+} = credentials;
 const registry: typeof import("./registry") = require("./registry");
 const nim: typeof import("./nim") = require("./nim");
 const onboardSession: typeof import("./onboard-session") = require("./onboard-session");
@@ -232,8 +259,8 @@ const BACK_TO_SELECTION = "__NEMOCLAW_BACK_TO_SELECTION__";
  */
 function verifyGatewayContainerRunning() {
   const containerName = `openshell-cluster-${GATEWAY_NAME}`;
-  const result = run(
-    `docker inspect --type container --format '{{.State.Running}}' ${containerName}`,
+  const result = dockerInspect(
+    ["--type", "container", "--format", "{{.State.Running}}", containerName],
     { ignoreError: true, suppressOutput: true },
   );
   if (result.status === 0 && String(result.stdout || "").trim() === "true") {
@@ -587,22 +614,16 @@ const SANDBOX_BASE_TAG = "latest";
  */
 function pullAndResolveBaseImageDigest(): { digest: string; ref: string } | null {
   const imageWithTag = `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`;
-  try {
-    run(["docker", "pull", imageWithTag], { suppressOutput: true });
-  } catch {
+  const pullResult = dockerPull(imageWithTag, { ignoreError: true, suppressOutput: true });
+  if (pullResult.status !== 0) {
     // Pull failed — caller should fall back to unpin :latest
     return null;
   }
 
-  let inspectOutput;
-  try {
-    inspectOutput = runCapture(
-      ["docker", "inspect", "--format", "{{json .RepoDigests}}", imageWithTag],
-      { ignoreError: false },
-    );
-  } catch {
-    return null;
-  }
+  const inspectOutput = dockerImageInspectFormat("{{json .RepoDigests}}", imageWithTag, {
+    ignoreError: true,
+  });
+  if (!inspectOutput) return null;
 
   // RepoDigests is a JSON array like ["ghcr.io/nvidia/nemoclaw/sandbox-base@sha256:abc..."].
   // Filter to the entry matching our registry — index ordering is not guaranteed.
@@ -670,8 +691,24 @@ const {
   parsePolicyPresetEnv,
 } = urlUtils;
 
+/**
+ * Resolve a credential into `process.env[envName]` so subsequent gateway
+ * upserts can read it via `--credential <ENV>`. Idempotently stages any
+ * pre-fix plaintext credentials.json (non-destructively) so callers that
+ * reach a credential check from outside the onboard entry point — such as
+ * rebuild preflight — can still find legacy values. The file itself is
+ * removed only after a full successful onboard, so an interrupted run can
+ * be retried without losing the user's only copy.
+ *
+ * @param envName Credential env variable name, e.g. `NVIDIA_API_KEY`.
+ * @returns The resolved value, or `null` if `envName` is empty/unstaged.
+ */
 function hydrateCredentialEnv(envName: string | null | undefined): string | null {
   if (!envName) return null;
+  // Thin wrapper for back-compat. resolveProviderCredential() (introduced
+  // by PR #2306 as the canonical entry point) now performs the staging
+  // dance internally — env first, then a one-time on-demand legacy stage,
+  // then write back into process.env for downstream code.
   return resolveProviderCredential(envName);
 }
 
@@ -740,7 +777,7 @@ async function replaceNamedCredential(
     saveCredential(envName, key);
     process.env[envName] = key;
     console.log("");
-    console.log(`  Key saved to ~/.nemoclaw/credentials.json (mode 600)`);
+    console.log(`  ${envName} staged. Onboarding will register it with the OpenShell gateway.`);
     console.log("");
     return key;
   }
@@ -839,8 +876,92 @@ async function promptValidationRecovery(
 
 // Provider CRUD — thin wrappers that inject runOpenshell to avoid circular deps.
 const { buildProviderArgs } = onboardProviders;
+
+// Snapshot of legacy {env-key → value} pairs that stageLegacyCredentialsToEnv()
+// imported from ~/.nemoclaw/credentials.json at the start of this run.
+// Captured by the onboard() entry point; consulted by the upsertProvider /
+// upsertMessagingProviders wrappers below to decide whether a successful
+// gateway upsert actually migrated the *legacy* value (vs. e.g. a vllm/ollama
+// branch that upserts a placeholder under the same env-key name).
+const stagedLegacyValues: Map<string, string> = new Map<string, string>();
+
+// Env-keys whose successful gateway upsert actually used the staged legacy
+// value. Seeded from the persisted onboard session at the start of every
+// run so a `--resume` invocation that skips already-completed upserts still
+// remembers the migrations the prior attempt committed. The post-onboard
+// legacy-file cleanup is gated on `stagedLegacyKeys ⊆ migratedLegacyKeys`
+// so picking a local inference provider, disabling a preselected messaging
+// channel, or any other path that upserts a different value under the same
+// env-key name leaves the file alone instead of stranding the user's only
+// copy.
+const migratedLegacyKeys: Set<string> = new Set<string>();
+
+// SHA-256 hex digest of `value`. Used to fingerprint migrated legacy
+// secrets in the persisted onboard session so a later `--resume` can
+// detect when the legacy file value was edited between runs (or another
+// session is on disk with stale entries) and refuse to inherit a stale
+// "migrated" mark.
+function legacyValueHash(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+// Mirror the in-memory `migratedLegacyKeys` set into the persisted onboard
+// session along with each entry's value hash. `--resume` invocations that
+// skip the upsert wrappers entirely use this to inherit migration state
+// from the previous attempt — but only when the staged value at restore
+// time still hashes to the same digest, so an edit to the legacy file or
+// an out-of-band gateway reset cannot satisfy the cleanup gate.
+function persistMigratedLegacyKeys(): void {
+  try {
+    const hashes: Record<string, string> = {};
+    for (const key of migratedLegacyKeys) {
+      const stagedValue = stagedLegacyValues.get(key);
+      if (stagedValue !== undefined) {
+        hashes[key] = legacyValueHash(stagedValue);
+      }
+    }
+    onboardSession.updateSession((current: Session) => {
+      current.migratedLegacyValueHashes = hashes;
+      return current;
+    });
+  } catch {
+    // updateSession can throw if the session file isn't yet writable
+    // (e.g. very early in the run before lockless state is established).
+    // The cleanup gate in this same process still consults the in-memory
+    // set, so a missed write only matters if THIS run later crashes and
+    // a future --resume needs the persisted value. Best effort.
+  }
+}
+
 function upsertProvider(name: string, type: string, credentialEnv: string, baseUrl: string | null, env: NodeJS.ProcessEnv = {}) {
-  return onboardProviders.upsertProvider(name, type, credentialEnv, baseUrl, env, runOpenshell);
+  const result = onboardProviders.upsertProvider(name, type, credentialEnv, baseUrl, env, runOpenshell);
+  if (result.ok && credentialEnv) {
+    const stagedValue = stagedLegacyValues.get(credentialEnv);
+    if (stagedValue !== undefined) {
+      // openshell receives `--credential <ENV>` and reads the value from the
+      // `env` block passed here, falling back to the inherited process.env.
+      // Use getCredential() for the env-fallback branch (per the
+      // no-direct-credential-env eslint rule from PR #2306) — it mirrors
+      // openshell's resolution order while the staging contract has
+      // already populated the same value into process.env.
+      const upsertedValue = env[credentialEnv] ?? getCredential(credentialEnv);
+      if (upsertedValue === stagedValue) {
+        // The gateway received the staged legacy value verbatim — count
+        // this key as migrated.
+        migratedLegacyKeys.add(credentialEnv);
+      } else {
+        // A later upsert under the same env-key wrote a different value
+        // (e.g. a retry-loop after validation failure replaced the legacy
+        // key with a freshly entered one, or a placeholder like "dummy"
+        // for vllm-local). The gateway no longer holds the staged legacy
+        // value under this env-key, so withdraw the migration mark — the
+        // cleanup gate must keep the legacy file intact.
+        migratedLegacyKeys.delete(credentialEnv);
+      }
+      persistMigratedLegacyKeys();
+    }
+  }
+  return result;
 }
 
 type MessagingTokenDef = { name: string; envKey: string; token: string | null };
@@ -859,7 +980,30 @@ type SelectionDrift = {
 };
 
 function upsertMessagingProviders(tokenDefs: MessagingTokenDef[]) {
-  return onboardProviders.upsertMessagingProviders(tokenDefs, runOpenshell);
+  const upserted = onboardProviders.upsertMessagingProviders(tokenDefs, runOpenshell);
+  // upsertMessagingProviders process.exits on failure, so reaching this
+  // point means every entry in tokenDefs that had a token was registered.
+  // Mark migrated only when the registered token equals the staged legacy
+  // value — a token rotated since staging (or a fresh prompt) is not a
+  // legacy migration even if it happens to use the same env-key name.
+  // Mirror upsertProvider's withdrawal logic so a later messaging upsert
+  // that replaces the legacy value with something else cannot leave the
+  // mark stuck on.
+  let mutated = false;
+  for (const def of tokenDefs) {
+    if (!def.token || !def.envKey) continue;
+    const stagedValue = stagedLegacyValues.get(def.envKey);
+    if (stagedValue === undefined) continue;
+    if (def.token === stagedValue) {
+      migratedLegacyKeys.add(def.envKey);
+      mutated = true;
+    } else {
+      migratedLegacyKeys.delete(def.envKey);
+      mutated = true;
+    }
+  }
+  if (mutated) persistMigratedLegacyKeys();
+  return upserted;
 }
 function providerExistsInGateway(name: string) {
   return onboardProviders.providerExistsInGateway(name, runOpenshell);
@@ -1815,7 +1959,7 @@ function getResumeConfigConflicts(
 }
 
 function getContainerRuntime(): ContainerRuntime {
-  const info = runCapture(["docker", "info"], { ignoreError: true });
+  const info = dockerInfo({ ignoreError: true });
   return inferContainerRuntime(info);
 }
 
@@ -1912,25 +2056,14 @@ function destroyGateway() {
   }
   // openshell gateway destroy doesn't remove Docker volumes, which leaves
   // corrupted cluster state that breaks the next gateway start. Clean them up.
-  // Shell required: pipe (|), && chaining, || fallback.
-  run(
-    `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm || true`,
-    { ignoreError: true },
-  );
+  dockerRemoveVolumesByPrefix(`openshell-cluster-${GATEWAY_NAME}`, { ignoreError: true });
 }
 
 function getGatewayClusterContainerState(): string {
   const containerName = getGatewayClusterContainerName();
-  const state = runCapture(
-    [
-      "docker",
-      "inspect",
-      "--type",
-      "container",
-      "--format",
-      "{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}",
-      containerName,
-    ],
+  const state = dockerContainerInspectFormat(
+    "{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}",
+    containerName,
     { ignoreError: true },
   )
     .trim()
@@ -1963,7 +2096,7 @@ function getGatewayClusterContainerName(): string {
 }
 
 function buildGatewayClusterExecArgv(script: string): string[] {
-  return ["docker", "exec", getGatewayClusterContainerName(), "sh", "-lc", script];
+  return dockerExecArgv(getGatewayClusterContainerName(), ["sh", "-lc", script]);
 }
 
 function hostCommandExists(commandName: string): boolean {
@@ -2537,29 +2670,29 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
   // OpenShell has no metadata for it (gatewayReuseState === "missing").
   if (gatewayReuseState === "missing") {
     const containerName = `openshell-cluster-${GATEWAY_NAME}`;
-    const inspectResult = run(
-      ["docker", "inspect", "--type", "container", "--format", "{{.State.Status}}", containerName],
+    const inspectResult = dockerInspect(
+      ["--type", "container", "--format", "{{.State.Status}}", containerName],
       { ignoreError: true, suppressOutput: true },
     );
     if (inspectResult.status === 0) {
       console.log("  Cleaning up orphaned gateway container...");
-      run(["docker", "stop", containerName], {
+      dockerStop(containerName, {
         ignoreError: true,
         suppressOutput: true,
       });
-      run(["docker", "rm", containerName], {
+      dockerRm(containerName, {
         ignoreError: true,
         suppressOutput: true,
       });
-      const postInspectResult = run(["docker", "inspect", "--type", "container", containerName], {
+      const postInspectResult = dockerInspect(["--type", "container", containerName], {
         ignoreError: true,
         suppressOutput: true,
       });
       if (postInspectResult.status !== 0) {
-        run(
-          `docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | grep . && docker volume ls -q --filter "name=openshell-cluster-${GATEWAY_NAME}" | xargs docker volume rm 2>/dev/null || true`,
-          { ignoreError: true, suppressOutput: true },
-        );
+        dockerRemoveVolumesByPrefix(`openshell-cluster-${GATEWAY_NAME}`, {
+          ignoreError: true,
+          suppressOutput: true,
+        });
         registry.clearAll();
         console.log("  ✓ Orphaned gateway container removed");
       } else {
@@ -2597,7 +2730,7 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
           console.log(
             `  Cleaning up orphaned SSH port-forward on port ${port} (PID ${portCheck.pid})...`,
           );
-          run(`kill ${portCheck.pid} 2>/dev/null || true`, { ignoreError: true });
+          run(["kill", String(portCheck.pid)], { ignoreError: true });
           sleep(1);
           portCheck = await checkPortAvailable(port);
           if (portCheck.ok) {
@@ -3166,7 +3299,7 @@ function formatOnboardConfigSummary({
   const webSearch =
     webSearchConfig && webSearchConfig.fetchEnabled === true ? "enabled" : "disabled";
   const apiKeyLine = credentialEnv
-    ? `  API key:       ${credentialEnv} (stored in ~/.nemoclaw/credentials.json)`
+    ? `  API key:       ${credentialEnv} (staged for OpenShell gateway registration)`
     : `  API key:       (not required for ${provider ?? "this provider"})`;
   const noteLines = (Array.isArray(notes) ? notes : [])
     .filter((n) => typeof n === "string" && n.length > 0)
@@ -3521,7 +3654,7 @@ async function createSandbox(
     // Destroy old sandbox and clean up its host-side Docker image.
     runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
     if (previousEntry?.imageTag) {
-      const rmiResult = run(["docker", "rmi", previousEntry.imageTag], {
+      const rmiResult = dockerRmi(previousEntry.imageTag, {
         ignoreError: true,
         suppressOutput: true,
       });
@@ -3723,11 +3856,11 @@ async function createSandbox(
     // Check if the image exists locally before falling back to unpinned :latest.
     // On a first-time install behind a firewall with no cached image, warn early
     // so the user knows the build will likely fail.
-    const localCheck = runCapture(
-      ["docker", "image", "inspect", `${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`],
-      { ignoreError: true },
-    );
-    if (localCheck) {
+    const localCheck = dockerImageInspect(`${SANDBOX_BASE_IMAGE}:${SANDBOX_BASE_TAG}`, {
+      ignoreError: true,
+      suppressOutput: true,
+    });
+    if (localCheck.status === 0) {
       console.warn("  Warning: could not pull base image from registry; using cached :latest.");
     } else {
       console.warn(
@@ -4008,7 +4141,7 @@ async function createSandbox(
 
   try {
     if (process.platform === "darwin") {
-      const vmKernel = runCapture(["docker", "info", "--format", "{{.KernelVersion}}"], {
+      const vmKernel = dockerInfoFormat("{{.KernelVersion}}", {
         ignoreError: true,
       }).trim();
       if (vmKernel) {
@@ -4243,7 +4376,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           }
         }
 
-        // Hydrate from saved credentials (~/.nemoclaw/credentials.json)
+        // Hydrate from credential env vars set earlier in this process
         // before checking env, so rebuild and other non-interactive callers
         // can resolve keys stored during the original interactive onboard.
         // See #2273.
@@ -4582,7 +4715,10 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
             nimContainer = null;
           } else {
             provider = "vllm-local";
-            credentialEnv = "OPENAI_API_KEY";
+            // Local NIM (vLLM under the hood) does not require a host API key —
+            // setupInference registers the gateway provider with an internal
+            // credential env (NEMOCLAW_VLLM_LOCAL_TOKEN). See GH #2519.
+            credentialEnv = null;
             endpointUrl = getLocalProviderBaseUrl(provider);
             if (!endpointUrl) {
               console.error("  Local NVIDIA NIM base URL could not be determined.");
@@ -4592,7 +4728,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
               "Local NVIDIA NIM",
               endpointUrl,
               requireValue(model, "Expected a Local NVIDIA NIM model after startup"),
-              credentialEnv,
+              null,
             );
             if (validation.retry === "selection" || validation.retry === "model") {
               continue selectionLoop;
@@ -4621,7 +4757,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           // because WSL2 relays IPv4-only sockets to the Windows host.
           // Shell required: backgrounding (&), env var prefix, output redirection.
           const ollamaEnv = isWsl() ? "" : `OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} `;
-          run(`${ollamaEnv}ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
+          runShell(`${ollamaEnv}ollama serve > /dev/null 2>&1 &`, { ignoreError: true });
           sleep(2);
           if (!isWsl()) printOllamaExposureWarning();
         }
@@ -4637,7 +4773,12 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           );
         }
         provider = "ollama-local";
-        credentialEnv = "OPENAI_API_KEY";
+        // Local Ollama needs no user-supplied API key — the auth proxy uses
+        // an internal token (NEMOCLAW_OLLAMA_PROXY_TOKEN, set in setupInference).
+        // Leaving this null prevents the wizard from prompting for / caching
+        // OPENAI_API_KEY and prevents the rebuild preflight from requiring it.
+        // See GH #2519.
+        credentialEnv = null;
         endpointUrl = getLocalProviderBaseUrl(provider);
         if (!endpointUrl) {
           console.error("  Local Ollama base URL could not be determined.");
@@ -4702,11 +4843,11 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           run(["brew", "install", "ollama"], { ignoreError: true });
         } else {
           console.log("  Installing Ollama via official installer...");
-          run("set -o pipefail; curl -fsSL https://ollama.com/install.sh | sh");
+          runShell("set -o pipefail; curl -fsSL https://ollama.com/install.sh | sh");
         }
         console.log("  Starting Ollama...");
         // Shell required: backgrounding (&), env var prefix, output redirection.
-        run(`OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
+        runShell(`OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT} ollama serve > /dev/null 2>&1 &`, {
           ignoreError: true,
         });
         sleep(2);
@@ -4717,7 +4858,8 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           `  ✓ Using Ollama on localhost:${OLLAMA_PORT} (proxy on :${OLLAMA_PROXY_PORT})`,
         );
         provider = "ollama-local";
-        credentialEnv = "OPENAI_API_KEY";
+        // See above ollama branch — internal proxy token, no user API key.
+        credentialEnv = null;
         endpointUrl = getLocalProviderBaseUrl(provider);
         if (!endpointUrl) {
           console.error("  Local Ollama base URL could not be determined.");
@@ -4778,7 +4920,8 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
       } else if (selected.key === "vllm") {
         console.log(`  ✓ Using existing vLLM on localhost:${VLLM_PORT}`);
         provider = "vllm-local";
-        credentialEnv = "OPENAI_API_KEY";
+        // See NIM branch above — internal credential env, no user API key.
+        credentialEnv = null;
         endpointUrl = getLocalProviderBaseUrl(provider);
         if (!endpointUrl) {
           console.error("  Local vLLM base URL could not be determined.");
@@ -4821,7 +4964,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
           "Local vLLM",
           validationBaseUrl,
           requireValue(model, "Expected a detected vLLM model"),
-          credentialEnv,
+          null,
         );
         if (validation.retry === "selection" || validation.retry === "model") {
           continue selectionLoop;
@@ -4948,9 +5091,17 @@ async function setupInference(
       process.exit(1);
     }
     const baseUrl = getLocalProviderBaseUrl(provider);
-    const providerResult = upsertProvider("vllm-local", "openai", "OPENAI_API_KEY", baseUrl, {
-      OPENAI_API_KEY: "dummy",
-    });
+    // Use a dedicated internal credential env so the gateway does not pick
+    // up the user's host OPENAI_API_KEY for local vLLM. vLLM does not enforce
+    // the bearer at runtime, but a dedicated env name prevents accidental
+    // hijacking. See GH #2519.
+    const providerResult = upsertProvider(
+      "vllm-local",
+      "openai",
+      VLLM_LOCAL_CREDENTIAL_ENV,
+      baseUrl,
+      { [VLLM_LOCAL_CREDENTIAL_ENV]: "dummy" },
+    );
     if (!providerResult.ok) {
       console.error(`  ${providerResult.message}`);
       process.exit(providerResult.status || 1);
@@ -4966,6 +5117,9 @@ async function setupInference(
       "--timeout",
       String(LOCAL_INFERENCE_TIMEOUT_SECS),
     ]);
+    // Do not mutate ~/.nemoclaw/credentials.json here: local vLLM now uses
+    // VLLM_LOCAL_CREDENTIAL_ENV, so any saved OPENAI_API_KEY remains available
+    // to unrelated OpenAI-backed sandboxes.
   } else if (provider === "ollama-local") {
     const validation = validateLocalProvider(provider);
     if (!validation.ok) {
@@ -4993,9 +5147,17 @@ async function setupInference(
       // Not persisted earlier in case the user backs out to a different provider.
       persistProxyToken(proxyToken);
     }
-    const providerResult = upsertProvider("ollama-local", "openai", "OPENAI_API_KEY", baseUrl, {
-      OPENAI_API_KEY: ollamaCredential,
-    });
+    // Use a dedicated internal credential env (NEMOCLAW_OLLAMA_PROXY_TOKEN)
+    // so the gateway never reads the user's host OPENAI_API_KEY for local
+    // Ollama. GH #2519: a stale host OPENAI_API_KEY was leaking into the
+    // inference path and producing 401s.
+    const providerResult = upsertProvider(
+      "ollama-local",
+      "openai",
+      OLLAMA_PROXY_CREDENTIAL_ENV,
+      baseUrl,
+      { [OLLAMA_PROXY_CREDENTIAL_ENV]: ollamaCredential },
+    );
     if (!providerResult.ok) {
       console.error(`  ${providerResult.message}`);
       process.exit(providerResult.status || 1);
@@ -5018,6 +5180,9 @@ async function setupInference(
       console.error(`  ${probe.message}`);
       process.exit(1);
     }
+    // Do not mutate ~/.nemoclaw/credentials.json here: local Ollama now uses
+    // OLLAMA_PROXY_CREDENTIAL_ENV, so any saved OPENAI_API_KEY remains available
+    // to unrelated OpenAI-backed sandboxes.
   }
 
   verifyInferenceRoute(provider, model);
@@ -6780,6 +6945,47 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     process.exit(1);
   }
 
+  // Stage any pre-fix plaintext credentials.json into process.env so the
+  // provider upserts later in this run can pick the values up. The file is
+  // NOT removed here — the secure unlink runs only after onboarding
+  // completes successfully and only when every staged value was actually
+  // pushed to the gateway in this run.
+  stagedLegacyValues.clear();
+  migratedLegacyKeys.clear();
+
+  const stagedLegacyKeys = stageLegacyCredentialsToEnv();
+  for (const key of stagedLegacyKeys) {
+    const value = process.env[key];
+    if (value) stagedLegacyValues.set(key, value);
+  }
+
+  // Only carry forward migration state across processes when the user is
+  // explicitly continuing the same attempt via `--resume`. Even then,
+  // validate each persisted entry against the *current* staged value: if
+  // the legacy file was edited between runs (so the staged secret no
+  // longer matches what the gateway holds), the hash mismatch drops that
+  // key from migratedLegacyKeys and the cleanup gate forces a fresh
+  // upsert before the file can be removed. A fresh / non-resume run
+  // ignores prior persisted state entirely so a stale or unrelated
+  // session record cannot satisfy the cleanup gate.
+  if (resume) {
+    const previousSession = onboardSession.loadSession();
+    const persistedHashes = previousSession?.migratedLegacyValueHashes ?? {};
+    for (const [key, hash] of Object.entries(persistedHashes)) {
+      if (typeof key !== "string" || typeof hash !== "string") continue;
+      const currentValue = stagedLegacyValues.get(key);
+      if (currentValue === undefined) continue;
+      if (legacyValueHash(currentValue) !== hash) continue;
+      migratedLegacyKeys.add(key);
+    }
+  }
+
+  if (stagedLegacyKeys.length > 0) {
+    console.error(
+      `  Staged ${String(stagedLegacyKeys.length)} legacy credential(s) for migration to the OpenShell gateway.`,
+    );
+  }
+
   let lockReleased = false;
   const releaseOnboardLock = () => {
     if (lockReleased) return;
@@ -7046,9 +7252,9 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
           .toLowerCase();
         if (answer === "n" || answer === "no") {
           console.log("  Aborted. Re-run `nemoclaw onboard` to start over.");
-          console.log("  Credentials entered so far are stored in ~/.nemoclaw/credentials.json —");
+          console.log("  Credentials entered so far were only staged in memory for this run.");
           console.log(
-            "  clear them with `nemoclaw credentials reset <KEY>` if you no longer want them.",
+            "  No new gateway credential was registered because onboarding stopped here.",
           );
           process.exit(0);
         }
@@ -7274,6 +7480,30 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
 
     onboardSession.completeSession(toSessionUpdates({ sandboxName, provider, model }));
     completed = true;
+    // Onboarding finished successfully. Delete the legacy plaintext
+    // credentials.json only when every staged *value* was actually pushed
+    // to the gateway in this run. A successful upsert under the same
+    // env-key name with a different value (e.g. vllm-local upserting
+    // `OPENAI_API_KEY: "dummy"` while the legacy file held a real
+    // `sk-…` cloud key) does not count as a migration — the gateway
+    // never received the legacy secret, so unlinking the file would
+    // strand the user's only copy.
+    const allStagedMigrated =
+      stagedLegacyKeys.length > 0 &&
+      stagedLegacyKeys.every((k) => migratedLegacyKeys.has(k));
+    if (allStagedMigrated) {
+      removeLegacyCredentialsFile();
+    } else if (stagedLegacyKeys.length > 0) {
+      const unmigrated = stagedLegacyKeys.filter(
+        (k) => !migratedLegacyKeys.has(k),
+      );
+      console.error(
+        `  Kept ~/.nemoclaw/credentials.json: ${String(unmigrated.length)} ` +
+          `legacy credential(s) were not migrated verbatim to the gateway in this run ` +
+          `(${unmigrated.join(", ")}). Re-run onboard with the relevant ` +
+          `providers/channels enabled to migrate them, then the file is removed automatically.`,
+      );
+    }
     printDashboard(sandboxName, model, provider, nimContainer, agent);
   } finally {
     releaseOnboardLock();
