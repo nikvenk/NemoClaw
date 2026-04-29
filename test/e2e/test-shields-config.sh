@@ -389,8 +389,13 @@ else
 fi
 
 # Restore shields for the next phase
-nemoclaw "${SANDBOX_NAME}" shields up 2>&1
-pass "shields up restored for audit trail test"
+if RESTORE_UP_OUTPUT=$(nemoclaw "${SANDBOX_NAME}" shields up 2>&1); then
+  echo "$RESTORE_UP_OUTPUT"
+  pass "shields up restored for audit trail test"
+else
+  echo "$RESTORE_UP_OUTPUT"
+  fail "Failed to restore shields up before audit phase: ${RESTORE_UP_OUTPUT}"
+fi
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 8: Audit trail

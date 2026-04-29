@@ -874,8 +874,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
     });
 
     if (sshResult.status === 0) {
-      restoredDirs.push(...localDirs);
-
+      let ownershipFixed = true;
       // Fix ownership — treat failure as restore failure since wrong
       // ownership means the agent can't read its own state files.
       const openshellBinary = resolveOpenshell();
@@ -886,11 +885,22 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
           ["sandbox", "exec", sandboxName, "--", "chown", "-R", "sandbox:sandbox", dir],
           { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },
         );
-        if (chownResult.status !== 0) {
-          _log(
-            `WARNING: chown failed (exit ${chownResult.status}) — agent may not be able to read restored state`,
-          );
+        if (chownResult.status !== 0 || chownResult.error || chownResult.signal) {
+          const stderr = (chownResult.stderr?.toString() || "").trim();
+          const stdout = (chownResult.stdout?.toString() || "").trim();
+          const detail =
+            stderr ||
+            stdout ||
+            chownResult.error?.message ||
+            (chownResult.signal ? `signal ${chownResult.signal}` : `exit ${String(chownResult.status)}`);
+          _log(`FAILED: post-restore chown failed: ${detail.substring(0, 200)}`);
+          ownershipFixed = false;
         }
+      }
+      if (ownershipFixed) {
+        restoredDirs.push(...localDirs);
+      } else {
+        failedDirs.push(...localDirs);
       }
     } else {
       failedDirs.push(...localDirs);

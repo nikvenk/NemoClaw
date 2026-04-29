@@ -798,5 +798,14 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn[1]).toContain("workspacePattern");
     expect(fn[1]).toContain("workspacePattern.test(relative)");
     expect(fn[1]).toContain("workspacePattern.test(name)");
+    expect(fn[1]).toContain('[ -L "$d" ]');
+    expect(fn[1]).toContain('[ -L "$ws_path" ]');
+  });
+
+  it("migrates hidden legacy entries before removing the legacy data dir", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('"$data_dir"/.[!.]*');
+    expect(fn[1]).toContain('"$data_dir"/..?*');
   });
 });

@@ -335,7 +335,7 @@ migrate_legacy_layout() {
   ensure_mutable_for_migration "$data_dir" "$label" || return 1
 
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
-  for entry in "$data_dir"/*; do
+  for entry in "$data_dir"/.[!.]* "$data_dir"/..?* "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     if [ -L "$entry" ]; then
       echo "[SECURITY] ${label}: refusing migration because ${entry} is a symlink" >&2
@@ -356,7 +356,8 @@ migrate_legacy_layout() {
       cp -a "$entry" "$target"
     fi
   done
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
+    [ -L "$entry" ] && continue
     [ -d "$entry" ] || continue
     chown -R sandbox:sandbox "$entry" 2>/dev/null || true
   done

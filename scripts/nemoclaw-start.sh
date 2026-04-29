@@ -1782,7 +1782,7 @@ migrate_legacy_layout() {
   ensure_mutable_for_migration "$data_dir" "$label" || return 1
 
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
-  for entry in "$data_dir"/*; do
+  for entry in "$data_dir"/.[!.]* "$data_dir"/..?* "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     if [ -L "$entry" ]; then
       echo "[SECURITY] ${label}: refusing migration because ${entry} is a symlink" >&2
@@ -1806,7 +1806,8 @@ migrate_legacy_layout() {
   # Only chown state subdirectories, NOT the config dir itself or
   # protected files (openclaw.json, .config-hash, .env).
   # This prevents undoing shields-up root ownership on the config dir.
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
+    [ -L "$entry" ] && continue
     [ -d "$entry" ] || continue
     chown -R sandbox:sandbox "$entry" 2>/dev/null || true
   done
@@ -2004,7 +2005,12 @@ provision_agent_workspaces() {
 
   # Discover existing workspace-* dirs.
   if [ -d "$config_dir" ]; then
-    for d in "$config_dir"/workspace-*/; do
+    for d in "$config_dir"/workspace-*; do
+      [ -e "$d" ] || [ -L "$d" ] || continue
+      if [ -L "$d" ]; then
+        echo "[SECURITY] refusing symlinked workspace dir: $d" >&2
+        continue
+      fi
       [ -d "$d" ] || continue
       name="$(basename "$d")"
       names="${names} ${name}"
@@ -2052,6 +2058,10 @@ NODE
 
   for name in $names; do
     local ws_path="$config_dir/$name"
+    if [ -L "$ws_path" ]; then
+      echo "[SECURITY] refusing to provision symlinked workspace path: $ws_path" >&2
+      continue
+    fi
     mkdir -p "$ws_path"
     chown -R sandbox:sandbox "$ws_path" 2>/dev/null || true
     echo "[setup] provisioned multi-agent workspace: $name" >&2

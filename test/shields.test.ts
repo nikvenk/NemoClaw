@@ -354,6 +354,19 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(cleanupCheck).toContain("FAILED: pre-restore cleanup failed");
     expect(cleanupCheck).toContain("failedDirs: [...localDirs]");
   });
+
+  it("restore fails closed when post-restore ownership repair fails", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function restoreSandboxState");
+    const fnBody = src.slice(fnStart);
+    const chownCheck = fnBody.slice(fnBody.indexOf("const chownResult"), fnBody.indexOf("if (ownershipFixed)"));
+
+    expect(chownCheck).toContain("chownResult.status !== 0");
+    expect(chownCheck).toContain("chownResult.error");
+    expect(chownCheck).toContain("chownResult.signal");
+    expect(chownCheck).toContain("FAILED: post-restore chown failed");
+    expect(fnBody).toContain("failedDirs.push(...localDirs)");
+  });
 });
 
 // -------------------------------------------------------------------
@@ -395,6 +408,23 @@ describe("NC-2227-05: shields.ts locks state directories", () => {
     expect(fnBody).toContain("applyStateDirLockMode");
     expect(fnBody).toContain("chown");
     expect(fnBody).toContain("root:root");
+  });
+
+  it("lockAgentConfig verifies every file it attempts to lock", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function lockAgentConfig");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = src.slice(fnStart, src.indexOf("function shieldsDown"));
+    const verificationBlock = fnBody.slice(
+      fnBody.indexOf("// Verify the lock actually took effect."),
+      fnBody.indexOf("try {\n    assertNoLegacyStateLayout"),
+    );
+
+    expect(verificationBlock).toContain("for (const f of filesToLock)");
+    expect(verificationBlock).toContain('["stat", "-c", "%a %U:%G", f]');
+    expect(verificationBlock).toContain("${f} mode=");
+    expect(verificationBlock).toContain("${f} owner=");
+    expect(verificationBlock).toContain("${f} immutable bit not set");
   });
 
   it("unlockAgentConfig restores sandbox ownership on HIGH_RISK_STATE_DIRS", () => {

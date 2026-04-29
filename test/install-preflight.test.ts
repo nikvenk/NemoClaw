@@ -1588,7 +1588,7 @@ exit 99`,
   });
 
   it("clone_nemoclaw_ref uses fetch checkout so fully-qualified refs work", () => {
-    const payload = fs.readFileSync(INSTALLER, "utf-8");
+    const payload = fs.readFileSync(INSTALLER_PAYLOAD, "utf-8");
     const bootstrap = fs.readFileSync(CURL_PIPE_INSTALLER, "utf-8");
     for (const src of [payload, bootstrap]) {
       const fn = src.match(/clone_nemoclaw_ref\(\) \{([\s\S]*?)^}/m);

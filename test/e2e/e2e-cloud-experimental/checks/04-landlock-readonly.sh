@@ -110,7 +110,7 @@ else
 fi
 
 # ── Cleanup test artifacts ────────────────────────────────────────
-sandbox_exec "sed -i '/^# test$/d' /sandbox/.bashrc /sandbox/.profile 2>/dev/null || true; rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
+sandbox_exec "sed -i '/^# test$/d' /sandbox/.bashrc /sandbox/.profile 2>/dev/null || true; rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /usr/landlock-test /etc/landlock-test /tmp/landlock-test 2>/dev/null" || true
 
 # ── Summary ───────────────────────────────────────────────────────
 printf '%s\n' "04-landlock-readonly: $PASSED passed, $FAILED failed"

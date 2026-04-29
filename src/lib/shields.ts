@@ -489,14 +489,16 @@ function lockAgentConfig(
   // Mode + ownership are mandatory (layers 1+2 depend on them).
   // Immutable bit is only verified if chattr succeeded above.
   const issues: string[] = [];
-  try {
-    const perms = kubectlExecCapture(sandboxName, ["stat", "-c", "%a %U:%G", target.configPath]);
-    const [mode, owner] = perms.split(" ");
-    if (!/^4[0-4][0-4]$/.test(mode)) issues.push(`file mode=${mode} (expected 444)`);
-    if (owner !== "root:root") issues.push(`file owner=${owner} (expected root:root)`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    issues.push(`file stat failed: ${msg}`);
+  for (const f of filesToLock) {
+    try {
+      const perms = kubectlExecCapture(sandboxName, ["stat", "-c", "%a %U:%G", f]);
+      const [mode, owner] = perms.split(" ");
+      if (!/^4[0-4][0-4]$/.test(mode)) issues.push(`${f} mode=${mode} (expected 444)`);
+      if (owner !== "root:root") issues.push(`${f} owner=${owner} (expected root:root)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      issues.push(`${f} stat failed: ${msg}`);
+    }
   }
 
   try {
@@ -510,14 +512,16 @@ function lockAgentConfig(
   }
 
   if (chattrSucceeded) {
-    try {
-      const attrs = kubectlExecCapture(sandboxName, ["lsattr", "-d", target.configPath]);
-      // lsattr format: "----i---------e----- /path/to/file"
-      // First whitespace-delimited token is the flags field.
-      const [flags] = attrs.trim().split(/\s+/, 1);
-      if (!flags.includes("i")) issues.push("immutable bit not set");
-    } catch {
-      // lsattr may not be available on all images — skip
+    for (const f of filesToLock) {
+      try {
+        const attrs = kubectlExecCapture(sandboxName, ["lsattr", "-d", f]);
+        // lsattr format: "----i---------e----- /path/to/file"
+        // First whitespace-delimited token is the flags field.
+        const [flags] = attrs.trim().split(/\s+/, 1);
+        if (!flags.includes("i")) issues.push(`${f} immutable bit not set`);
+      } catch {
+        // lsattr may not be available on all images — skip
+      }
     }
   }
 
