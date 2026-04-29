@@ -254,6 +254,10 @@ export function showStatus(opts: ServiceOptions = {}): void {
  * Slack polling.  When openshell is not available or the sandbox is
  * unreachable the function warns and continues — host-side cleanup
  * should still proceed.
+ *
+ * The pkill pattern uses regex `openclaw.gateway.run` so it matches both
+ * the space-separated form (`openclaw gateway run`) and the hyphenated
+ * binary name (`openclaw-gateway run`).
  */
 export function stopSandboxChannels(sandboxName: string): void {
   const openshell = resolveOpenshell();
@@ -262,12 +266,12 @@ export function stopSandboxChannels(sandboxName: string): void {
     return;
   }
 
-  info("Stopping in-sandbox OpenClaw gateway and messaging channels...");
+  info(`Stopping in-sandbox OpenClaw gateway (sandbox: ${sandboxName})...`);
   const result = spawnSync(
     openshell,
     [
       "sandbox", "exec", "--name", sandboxName, "--",
-      "pkill", "-TERM", "-f", "openclaw gateway run",
+      "pkill", "-TERM", "-f", "openclaw.gateway.run",
     ],
     { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
   );

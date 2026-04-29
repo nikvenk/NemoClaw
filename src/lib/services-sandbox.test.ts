@@ -52,7 +52,7 @@ describe("stopSandboxChannels", () => {
 
     expect(spawnSyncSpy).toHaveBeenCalledWith(
       "/usr/local/bin/openshell",
-      ["sandbox", "exec", "--name", "my-sandbox", "--", "pkill", "-TERM", "-f", "openclaw gateway run"],
+      ["sandbox", "exec", "--name", "my-sandbox", "--", "pkill", "-TERM", "-f", "openclaw.gateway.run"],
       expect.objectContaining({ timeout: 15000 }),
     );
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -118,7 +118,7 @@ describe("stopSandboxChannels", () => {
     logSpy.mockRestore();
   });
 
-  it("targets 'openclaw gateway run' (not just 'openclaw gateway') to avoid killing unrelated processes", () => {
+  it("targets 'openclaw.gateway.run' regex (not just 'openclaw gateway') to avoid killing unrelated processes", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     stopSandboxChannels("my-sandbox");
@@ -127,7 +127,8 @@ describe("stopSandboxChannels", () => {
     const pkillPattern = args[args.length - 1];
     // Must include "run" to avoid matching decoy processes like
     // "openclaw gateway decoy" or "openclaw gateway status".
-    expect(pkillPattern).toBe("openclaw gateway run");
+    // Uses "." regex to match both "openclaw-gateway run" and "openclaw gateway run".
+    expect(pkillPattern).toBe("openclaw.gateway.run");
     logSpy.mockRestore();
   });
 });
@@ -163,7 +164,7 @@ describe("stopAll with sandbox channels", () => {
 
     expect(spawnSyncSpy).toHaveBeenCalledWith(
       "/usr/local/bin/openshell",
-      ["sandbox", "exec", "--name", "test-sb", "--", "pkill", "-TERM", "-f", "openclaw gateway run"],
+      ["sandbox", "exec", "--name", "test-sb", "--", "pkill", "-TERM", "-f", "openclaw.gateway.run"],
       expect.any(Object),
     );
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
