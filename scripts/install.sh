@@ -341,7 +341,7 @@ usage() {
   printf "    --non-interactive                       Skip prompts (uses env vars / defaults)\n"
   printf "    --yes-i-accept-third-party-software     Accept the third-party software notice in non-interactive mode\n"
   printf "    --fresh                                 Discard any failed/interrupted onboarding session and start over\n"
-  printf "    --reinstall-vllm                        Reinstall vLLM from NGC and force a full fresh re-onboard\n"
+  printf "    --force-reinstall                        Reinstall vLLM from NGC and force a full fresh re-onboard\n"
   printf "    --version, -v                           Print installer version and exit\n"
   printf "    --help, -h                              Show this help message and exit\n\n"
 
@@ -357,7 +357,7 @@ usage() {
   printf "  ${C_DIM}Environment — installer behavior:${C_RESET}\n"
   printf "    NEMOCLAW_NON_INTERACTIVE=1              Same as --non-interactive\n"
   printf "    NEMOCLAW_FRESH=1                        Same as --fresh\n"
-  printf "    NEMOCLAW_REINSTALL_VLLM=1               Same as --reinstall-vllm\n"
+  printf "    NEMOCLAW_FORCE_REINSTALL=1               Same as --force-reinstall\n"
   printf "    NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1  Same as --yes-i-accept-third-party-software\n"
   printf "    NEMOCLAW_INSTALL_TAG                    Git ref to install (default: latest release)\n"
   printf "    NEMOCLAW_PLATFORM_OVERRIDE              Bypass auto-detect: spark | station | linux\n"
@@ -1254,8 +1254,8 @@ _proc_running() {
 }
 
 select_backend() {
-  # 1) Force-reinstall vLLM if requested (--reinstall-vllm / NEMOCLAW_REINSTALL_VLLM).
-  if [[ -n "${REINSTALL_VLLM:-}" ]]; then
+  # 1) Force-reinstall vLLM if requested (--force-reinstall / NEMOCLAW_FORCE_REINSTALL).
+  if [[ -n "${FORCE_REINSTALL:-}" ]]; then
     install_vllm force
     NEMOCLAW_SELECTED_BACKEND="vllm"
     NEMOCLAW_SELECTED_BACKEND_ENDPOINT="http://127.0.0.1:8000"
@@ -2117,13 +2117,13 @@ main() {
   NON_INTERACTIVE=""
   ACCEPT_THIRD_PARTY_SOFTWARE=""
   FRESH=""
-  REINSTALL_VLLM=""
+  FORCE_REINSTALL=""
   for arg in "$@"; do
     case "$arg" in
       --non-interactive) NON_INTERACTIVE=1 ;;
       --yes-i-accept-third-party-software) ACCEPT_THIRD_PARTY_SOFTWARE=1 ;;
       --fresh) FRESH=1 ;;
-      --reinstall-vllm) REINSTALL_VLLM=1 ;;
+      --force-reinstall) FORCE_REINSTALL=1 ;;
       --version | -v)
         local version_suffix
         version_suffix="$(installer_version_for_display)"
@@ -2144,10 +2144,10 @@ main() {
   NON_INTERACTIVE="${NON_INTERACTIVE:-${NEMOCLAW_NON_INTERACTIVE:-}}"
   ACCEPT_THIRD_PARTY_SOFTWARE="${ACCEPT_THIRD_PARTY_SOFTWARE:-${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:-}}"
   FRESH="${FRESH:-${NEMOCLAW_FRESH:-}}"
-  REINSTALL_VLLM="${REINSTALL_VLLM:-${NEMOCLAW_REINSTALL_VLLM:-}}"
-  # --reinstall-vllm implies a full fresh re-onboard: discard any in-progress
+  FORCE_REINSTALL="${FORCE_REINSTALL:-${NEMOCLAW_FORCE_REINSTALL:-}}"
+  # --force-reinstall implies a full fresh re-onboard: discard any in-progress
   # session and force sandbox recreation so the new backend is wired cleanly.
-  if [[ -n "${REINSTALL_VLLM:-}" ]]; then
+  if [[ -n "${FORCE_REINSTALL:-}" ]]; then
     FRESH=1
     export NEMOCLAW_RECREATE_SANDBOX=1
   fi
