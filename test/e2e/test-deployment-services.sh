@@ -300,7 +300,7 @@ test_deploy_01_start_stop() {
   fi
 
   # Cascade guard: skip if a prior TC (e.g. TC-STATE-02) left the sandbox missing.
-  if ! nemoclaw list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
+  if ! nemoclaw list 2>/dev/null | grep -Fq -- "$SANDBOX_NAME"; then
     skip "TC-DEPLOY-01a / TC-DEPLOY-01b / TC-DEPLOY-01c" \
       "Sandbox '$SANDBOX_NAME' not present"
     return
