@@ -193,12 +193,13 @@ _SANDBOX_HOME="/sandbox"          # Home dir for the sandbox user (useradd -d /s
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/759
 
 apply_model_override() {
-  # Any of these env vars trigger a config patch
+  # Only explicit override env vars trigger a config patch. NEMOCLAW_CONTEXT_WINDOW,
+  # NEMOCLAW_MAX_TOKENS, and NEMOCLAW_REASONING are promoted from Dockerfile build
+  # ARGs to ENV and are always set — they should only take effect when accompanied
+  # by an explicit model or API override. Without this guard the function runs on
+  # every container start even with no override requested. Ref: #2653
   [ -n "${NEMOCLAW_MODEL_OVERRIDE:-}" ] \
     || [ -n "${NEMOCLAW_INFERENCE_API_OVERRIDE:-}" ] \
-    || [ -n "${NEMOCLAW_CONTEXT_WINDOW:-}" ] \
-    || [ -n "${NEMOCLAW_MAX_TOKENS:-}" ] \
-    || [ -n "${NEMOCLAW_REASONING:-}" ] \
     || return 0
 
   # SECURITY: Only root can write to /sandbox/.openclaw (root:root 444).
@@ -272,6 +273,9 @@ apply_model_override() {
   [ -n "$max_tokens" ] && printf '[config] Applying max tokens override: %s\n' "$max_tokens" >&2
   [ -n "$reasoning" ] && printf '[config] Applying reasoning override: %s\n' "$reasoning" >&2
 
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  relax_config_for_write "$config_file" "$hash_file"
+
   NEMOCLAW_CONTEXT_WINDOW="$context_window" \
     NEMOCLAW_MAX_TOKENS="$max_tokens" \
     NEMOCLAW_REASONING="$reasoning" \
@@ -314,6 +318,9 @@ PYOVERRIDE
   # Recompute config hash so integrity check passes on next startup
   (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
   printf '[SECURITY] Config hash recomputed after model override\n' >&2
+
+  # Re-lock 644 → 444 after writes complete (#2653)
+  lock_config_after_write "$config_file" "$hash_file"
 }
 
 # ── Runtime CORS origin override ──────────────────────────────────
@@ -356,6 +363,9 @@ apply_cors_override() {
 
   printf '[config] Adding CORS origin: %s\n' "$cors_origin" >&2
 
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  relax_config_for_write "$config_file" "$hash_file"
+
   python3 - "$config_file" "$cors_origin" <<'PYCORS'
 import json, sys
 
@@ -375,6 +385,9 @@ PYCORS
 
   (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
   printf '[config] Config hash recomputed after CORS override\n' >&2
+
+  # Re-lock 644 → 444 after writes complete (#2653)
+  lock_config_after_write "$config_file" "$hash_file"
 }
 
 # ── Slack token placeholder resolution ────────────────────────────
@@ -431,6 +444,9 @@ apply_slack_token_override() {
 
   printf '[channels] Resolving Slack token placeholders in openclaw.json\n' >&2
 
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  relax_config_for_write "$config_file" "$hash_file"
+
   SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
     SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
     python3 - "$config_file" <<'PYSLACK'
@@ -465,6 +481,9 @@ PYSLACK
 
   (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
   printf '[channels] Config hash recomputed after Slack token override\n' >&2
+
+  # Re-lock 644 → 444 after writes complete (#2653)
+  lock_config_after_write "$config_file" "$hash_file"
 }
 
 # ── Slack channel guard (unhandled-rejection safety net) ─────────
