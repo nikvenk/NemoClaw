@@ -438,6 +438,22 @@ function checkAndRecoverSandboxProcesses(
   // (e.g. 18790) probe and recover the correct port.
   const sb = registry.getSandbox(sandboxName);
   const port = sb?.dashboardPort ?? DASHBOARD_PORT;
+
+  // Fast path: if the gateway is running AND the forward is active, skip
+  // the expensive chain recovery (which includes a 30s downloadSandboxConfig
+  // timeout). Only run full chain verification when something is clearly broken.
+  if (running) {
+    const forwardOutput = captureOpenshell(["forward", "list"], {
+      ignoreError: true,
+      timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+    });
+    const hasForward = forwardOutput.status === 0 &&
+      forwardOutput.output.split("\n").some((line: string) => line.trim().split(/\s+/)[2] === String(port));
+    if (hasForward) {
+      return { checked: true, wasRunning: true, recovered: false };
+    }
+  }
+
   const chain = buildChain({ port, chatUiUrl: process.env.CHAT_UI_URL });
   const deps = buildDashboardRecoverDeps();
   const result = recoverDashboardChain(sandboxName, chain, deps);
