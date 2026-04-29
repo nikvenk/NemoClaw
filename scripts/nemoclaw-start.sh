@@ -816,6 +816,53 @@ except Exception:
 PYTOKEN
 }
 
+rewrite_rc_marker_block() {
+  local rc_file="$1"
+  local marker_begin="$2"
+  local marker_end="$3"
+  local snippet="${4:-}"
+  local dir base tmp
+
+  [ -e "$rc_file" ] || return 0
+  if [ -L "$rc_file" ] || [ ! -f "$rc_file" ]; then
+    echo "[SECURITY] refusing unsafe rc file: $rc_file" >&2
+    return 1
+  fi
+
+  dir="$(dirname "$rc_file")"
+  base="$(basename "$rc_file")"
+  tmp="$(mktemp "${dir}/.${base}.tmp.XXXXXX")" || return 1
+
+  awk -v b="$marker_begin" -v e="$marker_end" \
+    '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+    rm -f "$tmp"
+    return 1
+  }
+
+  if [ -n "$snippet" ]; then
+    printf '%s\n' "$snippet" >>"$tmp" || {
+      rm -f "$tmp"
+      return 1
+    }
+  fi
+
+  if [ "$(id -u)" -eq 0 ] && ! chown root:root "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 644 "$tmp" 2>/dev/null || true
+
+  if [ -L "$rc_file" ]; then
+    echo "[SECURITY] refusing symlinked rc file during replace: $rc_file" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$rc_file" 2>/dev/null || {
+    rm -f "$tmp"
+    return 1
+  }
+}
+
 export_gateway_token() {
   local token
   token="$(_read_gateway_token)"
@@ -827,16 +874,8 @@ export_gateway_token() {
     # are not re-exported in later interactive sessions.
     unset OPENCLAW_GATEWAY_TOKEN
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
-      if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-        local tmp
-        tmp="$(mktemp)" || continue
-        awk -v b="$marker_begin" -v e="$marker_end" \
-          '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
-          rm -f "$tmp"
-          continue
-        }
-        cat "$tmp" >"$rc_file" 2>/dev/null || true
-        rm -f "$tmp"
+      if [ -f "$rc_file" ] && ! [ -L "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+        rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "" || true
       fi
     done
     return
@@ -856,22 +895,9 @@ ${marker_end}"
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
     [ -f "$rc_file" ] || continue
-    # All writes use || true because Landlock may block writes even though
-    # DAC (-w) says writable (#804) — same pattern as install_configure_guard.
-    if grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-      local tmp
-      tmp="$(mktemp)" || continue
-      awk -v b="$marker_begin" -v e="$marker_end" \
-        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
-        rm -f "$tmp"
-        continue
-      }
-      printf '%s\n' "$snippet" >>"$tmp"
-      { cat "$tmp" >"$rc_file"; } 2>/dev/null || true
-      rm -f "$tmp"
-    else
-      { printf '\n%s\n' "$snippet" >>"$rc_file"; } 2>/dev/null || true
-    fi
+    # Landlock may still block writes; failures are non-fatal, but root must
+    # never follow sandbox-planted rc-file symlinks.
+    rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "$snippet" || true
   done
 }
 
@@ -951,22 +977,9 @@ GUARD
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
     [ -f "$rc_file" ] || continue
-    # Try to write the guard snippet. All writes use || true because
-    # Landlock may block writes even though DAC (-w) says writable (#804).
-    if grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-      local tmp
-      tmp="$(mktemp)" || continue
-      awk -v b="$marker_begin" -v e="$marker_end" \
-        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
-        rm -f "$tmp"
-        continue
-      }
-      printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file" 2>/dev/null || true
-      rm -f "$tmp"
-    else
-      printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
-    fi
+    # Try to write the guard snippet. Landlock may block writes even though
+    # DAC (-w) says writable (#804), but root must not follow rc-file symlinks.
+    rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "$snippet" || true
   done
   # Best-effort lock — Landlock may already enforce read-only.
   lock_rc_files "$_SANDBOX_HOME"
@@ -1020,6 +1033,48 @@ print_dashboard_urls() {
 
   echo "[gateway] Local UI: ${local_url}" >&2
   echo "[gateway] Remote UI: ${remote_url}" >&2
+}
+
+start_persistent_gateway_log_mirror() {
+  local log_dir="/sandbox/.openclaw/logs"
+  local log_file="${log_dir}/gateway-persistent.log"
+
+  if [ -L "$log_dir" ]; then
+    echo "[SECURITY] refusing symlinked persistent log directory: $log_dir" >&2
+    return 1
+  fi
+
+  if [ "$(id -u)" -eq 0 ]; then
+    install -d -o root -g root -m 755 "$log_dir" 2>/dev/null || return 1
+  else
+    mkdir -p "$log_dir" 2>/dev/null || return 1
+    chmod 755 "$log_dir" 2>/dev/null || true
+  fi
+
+  if [ -L "$log_file" ] || { [ -e "$log_file" ] && [ ! -f "$log_file" ]; }; then
+    echo "[SECURITY] refusing unsafe persistent log path: $log_file" >&2
+    return 1
+  fi
+
+  if [ "$(id -u)" -eq 0 ]; then
+    if [ ! -e "$log_file" ]; then
+      install -o root -g root -m 644 /dev/null "$log_file" 2>/dev/null || return 1
+    else
+      chown root:root "$log_file" 2>/dev/null || return 1
+      chmod 644 "$log_file" 2>/dev/null || return 1
+    fi
+  else
+    touch "$log_file" 2>/dev/null || return 1
+    chmod 644 "$log_file" 2>/dev/null || true
+  fi
+
+  if [ -L "$log_file" ] || [ ! -f "$log_file" ]; then
+    echo "[SECURITY] refusing unsafe persistent log path after create: $log_file" >&2
+    return 1
+  fi
+
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>"$log_file"; } &
+  GATEWAY_LOG_PERSIST_PID=$!
 }
 
 start_auto_pair() {
@@ -2093,9 +2148,7 @@ if [ "$(id -u)" -ne 0 ]; then
   { tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
   GATEWAY_LOG_TAIL_PID=$!
   # Persistent mirror: see root-mode block for rationale.
-  mkdir -p /sandbox/.openclaw/logs 2>/dev/null || true
-  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw/logs/gateway-persistent.log; } &
-  GATEWAY_LOG_PERSIST_PID=$!
+  start_persistent_gateway_log_mirror || exit 1
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
   # registration and the final append is a small race window (same as before
@@ -2263,10 +2316,7 @@ GATEWAY_LOG_TAIL_PID=$!
 # restarts (TC-SBX-06 docker-kills the gateway container), so the
 # only durable record of pre-restart events lives here. The diag
 # streamer in the e2e workflow snapshots this file post-test.
-mkdir -p /sandbox/.openclaw/logs 2>/dev/null || true
-chown gateway:gateway /sandbox/.openclaw/logs 2>/dev/null || true
-{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw/logs/gateway-persistent.log; } &
-GATEWAY_LOG_PERSIST_PID=$!
+start_persistent_gateway_log_mirror || exit 1
 
 start_auto_pair
 # NOTE: PIDs are collected after launch; a signal arriving between trap

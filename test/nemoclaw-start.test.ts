@@ -165,6 +165,21 @@ describe("nemoclaw-start gateway token export (#1114)", () => {
     expect(body).toMatch(/export OPENCLAW_GATEWAY_TOKEN='\$\{escaped_token\}'/);
   });
 
+  it("rewrites rc marker blocks through a symlink-safe temp rename helper", () => {
+    const helperFn = src.match(/rewrite_rc_marker_block\(\) \{([\s\S]*?)^}/m);
+    expect(helperFn).toBeTruthy();
+    expect(helperFn![1]).toContain('[ -L "$rc_file" ]');
+    expect(helperFn![1]).toContain('mktemp "${dir}/.${base}.tmp.XXXXXX"');
+    expect(helperFn![1]).toContain('chown root:root "$tmp"');
+    expect(helperFn![1]).toContain('mv -f "$tmp" "$rc_file"');
+
+    const exportFn = src.match(/export_gateway_token\(\) \{([\s\S]*?)^}/m);
+    expect(exportFn).toBeTruthy();
+    expect(exportFn![1]).toContain("rewrite_rc_marker_block");
+    expect(exportFn![1]).not.toContain('>"$rc_file"');
+    expect(exportFn![1]).not.toContain('>>"$rc_file"');
+  });
+
   it("calls export_gateway_token in both root and non-root paths", () => {
     const calls = src.match(/export_gateway_token/g) || [];
     // definition + 2 call sites
@@ -202,14 +217,22 @@ describe("nemoclaw-start configure guard (#1114)", () => {
     const body = guardBlock[1];
     expect(body).toContain("nemoclaw-configure-guard begin");
     expect(body).toContain("nemoclaw-configure-guard end");
-    // Uses awk to strip existing block before re-inserting
-    expect(body).toContain("awk");
+    // Delegates marker replacement to the shared symlink-safe helper.
+    expect(body).toContain("rewrite_rc_marker_block");
   });
 
   it("calls install_configure_guard in both root and non-root paths", () => {
     const calls = src.match(/install_configure_guard/g) || [];
     // definition + 2 call sites
     expect(calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("uses the symlink-safe rc marker helper for configure guard writes", () => {
+    const guardBlock = src.match(/install_configure_guard\(\) \{([\s\S]*?)^write_auth_profile/m);
+    expect(guardBlock).toBeTruthy();
+    expect(guardBlock![1]).toContain("rewrite_rc_marker_block");
+    expect(guardBlock![1]).not.toContain('>"$rc_file"');
+    expect(guardBlock![1]).not.toContain('>>"$rc_file"');
   });
 });
 
@@ -267,6 +290,26 @@ describe("nemoclaw-start configure guard blocks config set/unset (#1973)", () =>
     // not matched, so execution falls through to `command openclaw "$@"` below.
     expect(src).not.toMatch(/config\)\s+case "\$2" in[\s\S]*?\b(get|list|show|view)\)/);
     expect(src).toContain('command openclaw "$@"');
+  });
+});
+
+describe("nemoclaw-start persistent gateway log hardening", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("creates a regular root-owned persistent log before root append", () => {
+    const helperFn = src.match(/start_persistent_gateway_log_mirror\(\) \{([\s\S]*?)^}/m);
+    expect(helperFn).toBeTruthy();
+    expect(helperFn![1]).toContain('[ -L "$log_dir" ]');
+    expect(helperFn![1]).toContain('[ -L "$log_file" ]');
+    expect(helperFn![1]).toContain("install -d -o root -g root -m 755");
+    expect(helperFn![1]).toContain("install -o root -g root -m 644 /dev/null");
+    expect(helperFn![1]).toContain('>>"$log_file"');
+  });
+
+  it("uses the persistent log helper in root and non-root paths", () => {
+    const calls = src.match(/start_persistent_gateway_log_mirror \|\| exit 1/g) || [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(src).not.toContain("chown gateway:gateway /sandbox/.openclaw/logs");
   });
 });
 

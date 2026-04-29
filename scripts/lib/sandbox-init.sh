@@ -328,6 +328,10 @@ lock_rc_files() {
   local home_dir="$1"
 
   for rc_file in "${home_dir}/.bashrc" "${home_dir}/.profile"; do
+    if [ -L "$rc_file" ]; then
+      echo "[SECURITY] Refusing to lock symlinked rc file: ${rc_file}" >&2
+      continue
+    fi
     if [ -f "$rc_file" ]; then
       if ! chmod 444 "$rc_file" 2>/dev/null; then
         echo "[SECURITY] Could not lock ${rc_file} to 444 — continuing (best-effort, Landlock may enforce)" >&2

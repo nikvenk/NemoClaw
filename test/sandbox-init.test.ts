@@ -364,6 +364,17 @@ EOF
       // Should not throw
       runWithLib(`lock_rc_files ${JSON.stringify(workDir)}`);
     });
+
+    it("refuses to chmod symlinked rc files", () => {
+      const target = join(workDir, "target");
+      writeFileSync(target, "# target", { mode: 0o600 });
+      symlinkSync(target, join(workDir, ".bashrc"));
+
+      const { stdout } = runWithLib(`lock_rc_files ${JSON.stringify(workDir)} 2>&1`);
+
+      expect(stdout).toContain("Refusing to lock symlinked rc file");
+      expect(getOctalPerms(target)).toBe("600");
+    });
   });
 
   describe("drop_capabilities", () => {
