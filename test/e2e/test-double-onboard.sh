@@ -487,6 +487,13 @@ openshell sandbox delete "$SANDBOX_B" 2>/dev/null || true
 openshell forward stop 18789 2>/dev/null || true
 openshell gateway destroy -g nemoclaw 2>/dev/null || true
 
+# Force registry reconciliation: when the gateway is in a degraded state
+# (stopped in Phase 6), `nemoclaw destroy` may delete the sandbox from
+# OpenShell but fail to clean its own registry entry. Running `status` for
+# each sandbox triggers the stale-entry reconciliation path.
+run_nemoclaw "$SANDBOX_A" status 2>/dev/null || true
+run_nemoclaw "$SANDBOX_B" status 2>/dev/null || true
+
 if openshell sandbox get "$SANDBOX_A" >/dev/null 2>&1; then
   fail "Sandbox '$SANDBOX_A' still exists after cleanup"
 else
