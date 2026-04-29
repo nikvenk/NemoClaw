@@ -167,7 +167,10 @@ relax_config_for_write() {
       return 1
     fi
     [ -f "$f" ] || continue
-    chmod 644 "$f"
+    if ! chmod 644 "$f"; then
+      printf '[SECURITY] Failed to relax permissions on %s\n' "$f" >&2
+      return 1
+    fi
   done
 }
 
@@ -179,7 +182,10 @@ lock_config_after_write() {
       return 1
     fi
     [ -f "$f" ] || continue
-    chmod 444 "$f"
+    if ! chmod 444 "$f"; then
+      printf '[SECURITY] Failed to lock permissions on %s\n' "$f" >&2
+      return 1
+    fi
   done
 }
 

@@ -273,13 +273,15 @@ apply_model_override() {
   [ -n "$max_tokens" ] && printf '[config] Applying max tokens override: %s\n' "$max_tokens" >&2
   [ -n "$reasoning" ] && printf '[config] Applying reasoning override: %s\n' "$reasoning" >&2
 
-  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653).
+  # Re-lock in all exit paths so files are never left at 644 on failure.
   relax_config_for_write "$config_file" "$hash_file"
+  local _write_rc=0
 
   NEMOCLAW_CONTEXT_WINDOW="$context_window" \
     NEMOCLAW_MAX_TOKENS="$max_tokens" \
     NEMOCLAW_REASONING="$reasoning" \
-    python3 - "$config_file" "$model_override" "$api_override" <<'PYOVERRIDE'
+    python3 - "$config_file" "$model_override" "$api_override" <<'PYOVERRIDE' || _write_rc=$?
 import json, os, sys
 
 config_file, model_override, api_override = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -315,12 +317,15 @@ with open(config_file, "w") as f:
     json.dump(cfg, f, indent=2)
 PYOVERRIDE
 
-  # Recompute config hash so integrity check passes on next startup
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[SECURITY] Config hash recomputed after model override\n' >&2
+  if [ "$_write_rc" -eq 0 ]; then
+    # Recompute config hash so integrity check passes on next startup
+    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
+    printf '[SECURITY] Config hash recomputed after model override\n' >&2
+  fi
 
-  # Re-lock 644 → 444 after writes complete (#2653)
+  # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
   lock_config_after_write "$config_file" "$hash_file"
+  [ "$_write_rc" -eq 0 ] || return "$_write_rc"
 }
 
 # ── Runtime CORS origin override ──────────────────────────────────
@@ -363,10 +368,12 @@ apply_cors_override() {
 
   printf '[config] Adding CORS origin: %s\n' "$cors_origin" >&2
 
-  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653).
+  # Re-lock in all exit paths so files are never left at 644 on failure.
   relax_config_for_write "$config_file" "$hash_file"
+  local _write_rc=0
 
-  python3 - "$config_file" "$cors_origin" <<'PYCORS'
+  python3 - "$config_file" "$cors_origin" <<'PYCORS' || _write_rc=$?
 import json, sys
 
 config_file, cors_origin = sys.argv[1], sys.argv[2]
@@ -383,11 +390,14 @@ with open(config_file, "w") as f:
     json.dump(cfg, f, indent=2)
 PYCORS
 
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[config] Config hash recomputed after CORS override\n' >&2
+  if [ "$_write_rc" -eq 0 ]; then
+    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
+    printf '[config] Config hash recomputed after CORS override\n' >&2
+  fi
 
-  # Re-lock 644 → 444 after writes complete (#2653)
+  # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
   lock_config_after_write "$config_file" "$hash_file"
+  [ "$_write_rc" -eq 0 ] || return "$_write_rc"
 }
 
 # ── Slack token placeholder resolution ────────────────────────────
@@ -444,12 +454,14 @@ apply_slack_token_override() {
 
   printf '[channels] Resolving Slack token placeholders in openclaw.json\n' >&2
 
-  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653)
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653).
+  # Re-lock in all exit paths so files are never left at 644 on failure.
   relax_config_for_write "$config_file" "$hash_file"
+  local _write_rc=0
 
   SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
     SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
-    python3 - "$config_file" <<'PYSLACK'
+    python3 - "$config_file" <<'PYSLACK' || _write_rc=$?
 import json, os, re, sys
 
 config_file = sys.argv[1]
@@ -479,11 +491,14 @@ with open(config_file, "w") as f:
     f.write(content)
 PYSLACK
 
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[channels] Config hash recomputed after Slack token override\n' >&2
+  if [ "$_write_rc" -eq 0 ]; then
+    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
+    printf '[channels] Config hash recomputed after Slack token override\n' >&2
+  fi
 
-  # Re-lock 644 → 444 after writes complete (#2653)
+  # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
   lock_config_after_write "$config_file" "$hash_file"
+  [ "$_write_rc" -eq 0 ] || return "$_write_rc"
 }
 
 # ── Slack channel guard (unhandled-rejection safety net) ─────────
