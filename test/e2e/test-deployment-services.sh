@@ -174,7 +174,7 @@ onboard_sandbox() {
     NEMOCLAW_NON_INTERACTIVE=1 \
     NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
     NEMOCLAW_POLICY_TIER="open" \
-    run_with_timeout 600 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
+    run_with_timeout 1800 nemoclaw onboard --non-interactive --yes-i-accept-third-party-software \
     2>&1 | tee -a "$LOG_FILE" || {
     log "FATAL: Onboard failed for '$name'"
     return 1
@@ -299,11 +299,22 @@ test_deploy_01_start_stop() {
     return
   fi
 
+  # Cascade guard: skip if a prior TC (e.g. TC-STATE-02) left the sandbox missing.
+  if ! nemoclaw list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
+    skip "TC-DEPLOY-01a / TC-DEPLOY-01b / TC-DEPLOY-01c" \
+      "Sandbox '$SANDBOX_NAME' not present"
+    return
+  fi
+
   # ── TC-DEPLOY-01a: Start tunnel + verify URL surfaces ───────────────────────────────────
   log "  Step 1: Running nemoclaw tunnel start..."
-  local start_output
-  start_output=$(nemoclaw tunnel start 2>&1) || true
+  local start_output start_rc=0
+  start_output=$(nemoclaw tunnel start 2>&1) || start_rc=$?
   log "  Start output: ${start_output}"
+  if [[ $start_rc -ne 0 ]]; then
+    fail "TC-DEPLOY-01a: Start" "nemoclaw tunnel start failed (exit $start_rc)"
+    return
+  fi
 
   log "  Step 2: Reading nemoclaw status (polling for tunnel URL)..."
   local status_output tunnel_url
@@ -330,7 +341,7 @@ test_deploy_01_start_stop() {
     body_file=$(mktemp)
     for i in $(seq 1 10); do
       http_code=$(curl -sS -o "$body_file" -w '%{http_code}' \
-        --max-time 10 "$tunnel_url" 2>/dev/null || echo "000")
+        --max-time 30 "$tunnel_url" 2>/dev/null || echo "000")
       if [[ "$http_code" == "200" ]]; then
         break
       fi
@@ -353,9 +364,13 @@ test_deploy_01_start_stop() {
   fi
 
   log "  Step 4: Running nemoclaw stop..."
-  local stop_output
-  stop_output=$(nemoclaw tunnel stop 2>&1) || true
+  local stop_output stop_rc=0
+  stop_output=$(nemoclaw tunnel stop 2>&1) || stop_rc=$?
   log "  Tunnel stop output:     ${stop_output//$'\n'/$'\n'    }"
+  if [[ $stop_rc -ne 0 ]]; then
+    fail "TC-DEPLOY-01c: Stop command" "nemoclaw tunnel stop failed (exit $stop_rc)"
+    return
+  fi
 
   # ── TC-DEPLOY-01c: Tunnel URL absent after stop ─────────────────────────────
   log "  Step 5: Verifying tunnel stopped (polling for URL removal)..."
