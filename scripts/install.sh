@@ -341,7 +341,7 @@ usage() {
   printf "    --non-interactive                       Skip prompts (uses env vars / defaults)\n"
   printf "    --yes-i-accept-third-party-software     Accept the third-party software notice in non-interactive mode\n"
   printf "    --fresh                                 Discard any failed/interrupted onboarding session and start over\n"
-  printf "    --reinstall-vllm                        Stop any running vLLM process/container and reinstall from NGC\n"
+  printf "    --reinstall-vllm                        Reinstall vLLM from NGC and force a full fresh re-onboard\n"
   printf "    --version, -v                           Print installer version and exit\n"
   printf "    --help, -h                              Show this help message and exit\n\n"
 
@@ -2145,6 +2145,12 @@ main() {
   ACCEPT_THIRD_PARTY_SOFTWARE="${ACCEPT_THIRD_PARTY_SOFTWARE:-${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:-}}"
   FRESH="${FRESH:-${NEMOCLAW_FRESH:-}}"
   REINSTALL_VLLM="${REINSTALL_VLLM:-${NEMOCLAW_REINSTALL_VLLM:-}}"
+  # --reinstall-vllm implies a full fresh re-onboard: discard any in-progress
+  # session and force sandbox recreation so the new backend is wired cleanly.
+  if [[ -n "${REINSTALL_VLLM:-}" ]]; then
+    FRESH=1
+    export NEMOCLAW_RECREATE_SANDBOX=1
+  fi
   export NEMOCLAW_NON_INTERACTIVE="${NON_INTERACTIVE}"
   export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE="${ACCEPT_THIRD_PARTY_SOFTWARE}"
 
