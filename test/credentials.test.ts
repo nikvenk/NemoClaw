@@ -504,4 +504,132 @@ describe("prompt machinery (unchanged)", () => {
     expect(source).toContain('output.write("*")');
     expect(source).toContain('output.write("\\b \\b")');
   });
+
+  it("releases stdin after a prompt resolves so the event loop drains on a TTY", () => {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "credentials.ts"),
+      "utf-8",
+    );
+
+    // The previous TTY-only guard kept the event loop pinned on interactive
+    // runs — the wizard would not exit after its last prompt.
+    expect(source).not.toMatch(/cleanup\s*\(\s*\)\s*\{\s*rl\.close\(\);\s*if\s*\(\s*!process\.stdin\.isTTY\s*\)/);
+    expect(source).toMatch(
+      /function cleanup\(\)\s*\{\s*rl\.close\(\);[\s\S]*?process\.stdin\.pause\(\)[\s\S]*?process\.stdin\.unref\(\)/,
+    );
+  });
+
+  it("re-refs stdin before each prompt so a follow-up prompt is not stranded by a sticky unref()", () => {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "credentials.ts"),
+      "utf-8",
+    );
+
+    // unref() is sticky — readline.createInterface() will not re-ref by
+    // itself, so a sequential prompt after the first cleanup would see a
+    // detached stdin handle and the process could exit before the user
+    // can answer. The matching ref() at the top of `prompt()` undoes that.
+    expect(source).toMatch(
+      /process\.stdin\.ref\(\)[\s\S]*?readline\.createInterface\(\{\s*input:\s*process\.stdin/,
+    );
+  });
+
+  it("re-refs stdin even on the secret-prompt branch so a follow-up secret read is not stranded", () => {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "credentials.ts"),
+      "utf-8",
+    );
+
+    // The ref() must come before the silent/secret branch so that a
+    // sequence of `prompt()` -> `prompt({ secret: true })` after a normal
+    // prompt's sticky unref() still has a ref'd handle for promptSecret().
+    const refIdx = source.search(/process\.stdin\.ref\(\);/);
+    const silentIdx = source.search(/const silent = opts\.secret === true/);
+    expect(refIdx).toBeGreaterThan(0);
+    expect(silentIdx).toBeGreaterThan(0);
+    expect(refIdx).toBeLessThan(silentIdx);
+  });
+
+  it("releases stdin in promptSecret() cleanup so a wizard ending on a secret prompt exits naturally", () => {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "credentials.ts"),
+      "utf-8",
+    );
+
+    // The secret reader uses raw mode + a `data` listener instead of
+    // readline. Its cleanup must still pause+unref or the wizard hangs the
+    // same way the readline path did.
+    expect(source).toMatch(
+      /promptSecret[\s\S]*?function cleanup\(\)\s*\{[\s\S]*?input\.pause\(\)[\s\S]*?input\.unref\(\)/,
+    );
+  });
+
+  it("re-refs stdin at the top of promptSecret() so a direct caller is self-contained", () => {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "lib", "credentials.ts"),
+      "utf-8",
+    );
+
+    // promptSecret() is exported and used directly elsewhere. Because its
+    // own cleanup unref()s stdin, two sequential direct calls (or any call
+    // after a prior unref) would strand the second read without an entry
+    // ref(). Assert ref() is the first effectful call inside the body.
+    expect(source).toMatch(
+      /export function promptSecret[\s\S]*?const input = process\.stdin;[\s\S]{0,400}?input\.ref\(\);[\s\S]*?function cleanup/,
+    );
+  });
+
+  it("accepts two sequential prompts on a real PTY without the second one stranding the process", () => {
+    // Reproduces the regression risk of a sticky stdin.unref() across
+    // multiple prompts: spawn the built `prompt()` in a PTY (via `script`
+    // so stdin is a real terminal), feed two answers, and assert the
+    // child both echoed both answers and exited 0.
+    const which = spawnSync("sh", ["-c", "command -v script"], { encoding: "utf-8" });
+    if (which.status !== 0) {
+      // No `script` on this host — skip behavioural check, leave the
+      // source-text assertions above to guard the contract.
+      return;
+    }
+    const credentialsModule = JSON.stringify(
+      path.join(import.meta.dirname, "..", "bin", "lib", "credentials"),
+    );
+    const inner = `const { prompt } = require(${credentialsModule}); (async () => { const a = await prompt('first: '); const b = await prompt('second: '); process.stdout.write('GOT:' + a + '|' + b + '\\n'); })().catch(err => { console.error(err); process.exit(1); });`;
+    // Stagger the two answers so the second one is buffered after the first
+    // prompt's read returns — without the gap, both arrive before readline
+    // is listening and the PTY echo masks the order we're testing.
+    const cmd = `{ printf 'one\\n'; sleep 0.3; printf 'two\\n'; } | script -qfec ${JSON.stringify(`${process.execPath} -e ${JSON.stringify(inner)}`)} /dev/null`;
+    const result = spawnSync("bash", ["-lc", cmd], {
+      cwd: path.join(import.meta.dirname, ".."),
+      encoding: "utf-8",
+      timeout: 15000,
+    });
+
+    expect(result.status).toBe(0);
+    // PTY merges stdout/stderr; assert both answers landed on the GOT line.
+    expect(result.stdout).toMatch(/GOT:one\|two/);
+  });
+
+  it("hands off cleanly from a normal prompt to a secret prompt on a real PTY", () => {
+    // The High finding: a normal prompt's sticky unref() must not strand
+    // the follow-up `prompt({ secret: true })` call. Drive both paths in
+    // one PTY-attached child and assert both answers reach the child's
+    // GOT line and the child exits 0.
+    const which = spawnSync("sh", ["-c", "command -v script"], { encoding: "utf-8" });
+    if (which.status !== 0) {
+      return;
+    }
+    const credentialsModule = JSON.stringify(
+      path.join(import.meta.dirname, "..", "bin", "lib", "credentials"),
+    );
+    const inner = `const { prompt } = require(${credentialsModule}); (async () => { const a = await prompt('first: '); const b = await prompt('secret: ', { secret: true }); process.stdout.write('GOT:' + a + '|' + b + '\\n'); })().catch(err => { console.error(err); process.exit(1); });`;
+    const cmd = `{ printf 'one\\n'; sleep 0.3; printf 'two\\n'; } | script -qfec ${JSON.stringify(`${process.execPath} -e ${JSON.stringify(inner)}`)} /dev/null`;
+    const result = spawnSync("bash", ["-lc", cmd], {
+      cwd: path.join(import.meta.dirname, ".."),
+      encoding: "utf-8",
+      timeout: 15000,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/GOT:one\|two/);
+  });
 });
