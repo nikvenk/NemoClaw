@@ -333,17 +333,18 @@ function recoverSandboxProcesses(sandboxName: string): boolean {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const agentScript = agentRuntime.buildRecoveryScript(agent, agent?.forwardPort ?? DASHBOARD_PORT);
   const script = agentScript || agentRuntime.buildOpenClawRecoveryScript(DASHBOARD_PORT);
-  const recovered = (result: SandboxCommandResult | null) =>
+  const hasRecoveryMarker = (result: SandboxCommandResult | null) =>
     !!(
       result &&
-      result.status === 0 &&
       (result.stdout.includes("GATEWAY_PID=") || result.stdout.includes("ALREADY_RUNNING"))
     );
+  const recoveredSsh = (result: SandboxCommandResult | null) =>
+    !!(result && result.status === 0 && hasRecoveryMarker(result));
 
   const execResult = executeSandboxExecCommand(sandboxName, script, 30000);
-  if (recovered(execResult)) return true;
+  if (hasRecoveryMarker(execResult)) return true;
   if (execResult !== null) return false;
-  return recovered(executeSandboxCommand(sandboxName, script));
+  return recoveredSsh(executeSandboxCommand(sandboxName, script));
 }
 
 /**

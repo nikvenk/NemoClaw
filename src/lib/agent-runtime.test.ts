@@ -128,11 +128,13 @@ describe("buildRecoveryScript", () => {
       // anyone debugging a crash-loop. (#2478)
       expect(script).toContain('echo "$_W" >> /tmp/gateway.log');
       // And the warning must be deferred until AFTER gateway.log is
-      // freshly touched/chmod'd, otherwise the redirect targets a stale
-      // file that gets removed seconds later.
-      const touchIdx = script!.indexOf("touch /tmp/gateway.log");
+      // safely opened with O_NOFOLLOW, otherwise the redirect targets a
+      // stale or attacker-controlled file.
+      const prepareIdx = script!.indexOf("os.open(path, flags, 0o644)");
       const warnIdx = script!.indexOf('echo "$_W" >> /tmp/gateway.log');
-      expect(touchIdx).toBeLessThan(warnIdx);
+      expect(prepareIdx).toBeGreaterThanOrEqual(0);
+      expect(warnIdx).toBeGreaterThanOrEqual(0);
+      expect(prepareIdx).toBeLessThan(warnIdx);
     });
 
     it("appends (not truncates) gateway.log on launch so warnings survive", () => {
@@ -153,22 +155,25 @@ describe("buildRecoveryScript", () => {
 
     it("rejects a symlinked gateway.log before preparing the log", () => {
       const script = buildOpenClawRecoveryScript(18789);
-      const guardIdx = script.indexOf("[ -L /tmp/gateway.log ]");
-      const touchIdx = script.indexOf(": > /tmp/gateway.log");
-      const chownIdx = script.indexOf("chown 'gateway:gateway' /tmp/gateway.log");
+      const noFollowIdx = script.indexOf("O_NOFOLLOW");
+      const openIdx = script.indexOf("os.open(path, flags, 0o644)");
+      const fchownIdx = script.indexOf("os.fchown(fd");
       expect(script).toContain("refusing to prepare symlinked /tmp/gateway.log");
-      expect(script).toContain("exit 1");
-      expect(guardIdx).toBeGreaterThanOrEqual(0);
-      expect(touchIdx).toBeGreaterThanOrEqual(0);
-      expect(chownIdx).toBeGreaterThanOrEqual(0);
-      expect(guardIdx).toBeLessThan(touchIdx);
-      expect(guardIdx).toBeLessThan(chownIdx);
+      expect(script).toContain("sys.exit(1)");
+      expect(script).not.toContain(": > /tmp/gateway.log");
+      expect(script).not.toContain("chown 'gateway:gateway' /tmp/gateway.log");
+      expect(noFollowIdx).toBeGreaterThanOrEqual(0);
+      expect(openIdx).toBeGreaterThanOrEqual(0);
+      expect(fchownIdx).toBeGreaterThanOrEqual(0);
+      expect(noFollowIdx).toBeLessThan(openIdx);
+      expect(openIdx).toBeLessThan(fchownIdx);
     });
 
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {
       const script = buildOpenClawRecoveryScript(18789);
-      expect(script).toContain("chown 'gateway:gateway' /tmp/gateway.log");
-      expect(script).toContain("chmod 644 /tmp/gateway.log");
+      expect(script).toContain("os.fchown(fd");
+      expect(script).toContain("os.fchmod(fd, 0o644)");
+      expect(script).toContain("/tmp/gateway.log 'gateway'");
       expect(script).toContain("gosu 'gateway'");
     });
 

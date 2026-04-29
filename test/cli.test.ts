@@ -1346,7 +1346,7 @@ describe("CLI dispatch", () => {
         '      echo recovered > "$state_file"',
         "      echo '__NEMOCLAW_SANDBOX_EXEC_STARTED__'",
         "      echo 'GATEWAY_PID=123'",
-        "      exit 0",
+        "      exit 42",
         "      ;;",
         "    *'curl -sf'*)",
         "      echo '__NEMOCLAW_SANDBOX_EXEC_STARTED__'",
@@ -1370,6 +1370,7 @@ describe("CLI dispatch", () => {
     const calls = fs.readFileSync(markerFile, "utf8").trim().split("\n").filter(Boolean);
     expect(calls).toContain("sandbox get alpha");
     expect(calls.some((call) => call.startsWith("sandbox exec --name alpha -- sh -c"))).toBe(true);
+    expect(calls).not.toContain("sandbox ssh-config alpha");
     expect(calls).not.toContain("sandbox connect alpha");
   });
 

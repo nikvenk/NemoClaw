@@ -49,17 +49,48 @@ export function getHealthProbeUrl(agent: AgentDefinition | null): string {
 }
 
 function buildGatewayLogSetup(includeAutoPairLog = false, logOwnerUser?: string): string[] {
-  const gatewayLogSymlinkGuard =
-    'if [ -L /tmp/gateway.log ] || [ -h /tmp/gateway.log ]; then echo "[gateway-recovery] ERROR: refusing to prepare symlinked /tmp/gateway.log" >&2; exit 1; fi;';
-  const chmodGatewayLog = logOwnerUser
-    ? `if [ "$(id -u)" = "0" ] && id ${shellQuote(logOwnerUser)} >/dev/null 2>&1; then chown ${shellQuote(`${logOwnerUser}:${logOwnerUser}`)} /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;`
-    : "chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true;";
-  const lines = [
-    gatewayLogSymlinkGuard,
-    ": > /tmp/gateway.log 2>/dev/null || touch /tmp/gateway.log 2>/dev/null || true;",
-    chmodGatewayLog,
-    'if ! : >> /tmp/gateway.log 2>/dev/null; then echo "[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user $(id -un 2>/dev/null || id -u)" >&2; fi;',
-  ];
+  const prepareGatewayLog = [
+    "import errno, grp, os, pwd, stat, sys",
+    "path = sys.argv[1]",
+    "owner = sys.argv[2] if len(sys.argv) > 2 else ''",
+    "flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0)",
+    "try:",
+    "    fd = os.open(path, flags, 0o644)",
+    "except OSError as exc:",
+    "    if exc.errno == errno.ELOOP:",
+    "        print('[gateway-recovery] ERROR: refusing to prepare symlinked /tmp/gateway.log', file=sys.stderr)",
+    "        sys.exit(1)",
+    "    if exc.errno in (errno.EACCES, errno.EPERM):",
+    "        print('[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user', file=sys.stderr)",
+    "        sys.exit(0)",
+    "    print(f'[gateway-recovery] ERROR: cannot prepare /tmp/gateway.log: {exc}', file=sys.stderr)",
+    "    sys.exit(1)",
+    "try:",
+    "    if not stat.S_ISREG(os.fstat(fd).st_mode):",
+    "        print('[gateway-recovery] ERROR: /tmp/gateway.log is not a regular file', file=sys.stderr)",
+    "        sys.exit(1)",
+    "    if owner and os.geteuid() == 0:",
+    "        try:",
+    "            pw = pwd.getpwnam(owner)",
+    "            gr = grp.getgrnam(owner)",
+    "        except KeyError:",
+    "            os.fchmod(fd, 0o600)",
+    "        else:",
+    "            os.fchown(fd, pw.pw_uid, gr.gr_gid)",
+    "            os.fchmod(fd, 0o644)",
+    "    else:",
+    "        os.fchmod(fd, 0o600)",
+    "finally:",
+    "    os.close(fd)",
+  ].join("\n");
+  const prepareGatewayLogCommand = [
+    "python3",
+    "-c",
+    shellQuote(prepareGatewayLog),
+    "/tmp/gateway.log",
+    ...(logOwnerUser ? [shellQuote(logOwnerUser)] : []),
+  ].join(" ");
+  const lines = [`${prepareGatewayLogCommand};`];
   if (includeAutoPairLog) {
     lines.push(
       "rm -f /tmp/auto-pair.log 2>/dev/null || true;",
