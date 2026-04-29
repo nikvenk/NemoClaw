@@ -295,11 +295,13 @@ type OnboardOptions = {
   acceptThirdPartySoftware?: boolean;
   agent?: string | null;
   controlUiPort?: number | null;
+  autoYes?: boolean;
 };
 // Non-interactive mode: set by --non-interactive flag or env var.
 // When active, all prompts use env var overrides or sensible defaults.
 let NON_INTERACTIVE = false;
 let RECREATE_SANDBOX = false;
+let AUTO_YES = false;
 // Set by onboard() before preflight() when --control-ui-port is specified.
 // null means "use auto-allocation" (skip dashboard port check in preflight).
 let _preflightDashboardPort: number | null = null;
@@ -310,6 +312,10 @@ function isNonInteractive(): boolean {
 
 function isRecreateSandbox(): boolean {
   return RECREATE_SANDBOX || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
+}
+
+function isAutoYes(): boolean {
+  return AUTO_YES || process.env.NEMOCLAW_YES === "1";
 }
 
 function note(message: string): void {
@@ -1902,6 +1908,48 @@ const {
   pullOllamaModel,
   prepareOllamaModel,
 } = require("./onboard-ollama-proxy");
+
+const ollamaModelSize: typeof import("./ollama-model-size") = require("./ollama-model-size");
+
+type OllamaProbeResult = { ok: true } | { ok: false; message: string };
+
+async function prepareOllamaModelWithSizeConfirm(
+  model: string,
+  installedModels: string[],
+): Promise<OllamaProbeResult> {
+  if (installedModels.includes(model)) {
+    return prepareOllamaModel(model, installedModels);
+  }
+
+  const lookup = ollamaModelSize.getOllamaModelSize(model);
+  const sizeLabel = ollamaModelSize.formatModelSize(lookup);
+
+  if (isAutoYes()) {
+    note(`  Pulling Ollama model '${model}' (${sizeLabel}).`);
+  } else if (isNonInteractive()) {
+    return {
+      ok: false,
+      message:
+        `Ollama model '${model}' (${sizeLabel}) is not installed and ` +
+        "non-interactive mode cannot prompt for confirmation. " +
+        "Re-run with --yes / -y (or NEMOCLAW_YES=1) to authorise the download.",
+    };
+  } else {
+    const proceed = await promptYesNoOrDefault(
+      `  Download Ollama model '${model}' (${sizeLabel})?`,
+      null,
+      false,
+    );
+    if (!proceed) {
+      return {
+        ok: false,
+        message: `Skipped pulling Ollama model '${model}'. Choose another model or re-run with --yes to confirm.`,
+      };
+    }
+  }
+
+  return prepareOllamaModel(model, installedModels);
+}
 
 function getRequestedSandboxNameHint(opts: { sandboxName?: string | null } = {}): string | null {
   const raw =
@@ -4840,7 +4888,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
             continue selectionLoop;
           }
           const selectedModel = requireValue(model, "Expected an Ollama model selection");
-          const probe = prepareOllamaModel(selectedModel, installedModels);
+          const probe = await prepareOllamaModelWithSizeConfirm(selectedModel, installedModels);
           if (!probe.ok) {
             console.error(`  ${probe.message}`);
             if (isNonInteractive()) {
@@ -4921,7 +4969,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
             continue selectionLoop;
           }
           const selectedModel = requireValue(model, "Expected an Ollama model selection");
-          const probe = prepareOllamaModel(selectedModel, installedModels);
+          const probe = await prepareOllamaModelWithSizeConfirm(selectedModel, installedModels);
           if (!probe.ok) {
             console.error(`  ${probe.message}`);
             if (isNonInteractive()) {
@@ -6965,6 +7013,7 @@ function skippedStepMessage(
 async function onboard(opts: OnboardOptions = {}): Promise<void> {
   NON_INTERACTIVE = opts.nonInteractive || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
   RECREATE_SANDBOX = opts.recreateSandbox || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
+  AUTO_YES = opts.autoYes === true || process.env.NEMOCLAW_YES === "1";
   _preflightDashboardPort = opts.controlUiPort || null;
   const dangerouslySkipPermissions =
     opts.dangerouslySkipPermissions || process.env.NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS === "1";

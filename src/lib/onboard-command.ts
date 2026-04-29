@@ -15,6 +15,7 @@ export interface OnboardCommandOptions {
   agent: string | null;
   dangerouslySkipPermissions: boolean;
   controlUiPort: number | null;
+  autoYes: boolean;
 }
 
 export interface RunOnboardCommandDeps {
@@ -39,11 +40,13 @@ const ONBOARD_BASE_ARGS = [
   "--fresh",
   "--recreate-sandbox",
   "--dangerously-skip-permissions",
+  "--yes",
+  "-y",
 ];
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
+    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [--yes | -y] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
     "",
   ];
 }
@@ -161,6 +164,7 @@ export function parseOnboardArgs(
     agent,
     dangerouslySkipPermissions: parsedArgs.includes("--dangerously-skip-permissions"),
     controlUiPort,
+    autoYes: parsedArgs.includes("--yes") || parsedArgs.includes("-y"),
   };
 }
 
