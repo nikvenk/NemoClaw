@@ -96,7 +96,84 @@ RUN mkdir -p /sandbox/.hermes/memories \
 # chattr +i.
 # hadolint ignore=DL3002
 USER root
-RUN rm -rf /root/.cache/pip /sandbox/.cache \
+# Flatten stale published base images that still contain the old .hermes-data
+# symlink bridge. OpenShell starts the sandbox as the sandbox user, so runtime
+# migration cannot rely on root privileges inside the pod.
+RUN set -eu; \
+    config_dir=/sandbox/.hermes; \
+    data_dir=/sandbox/.hermes-data; \
+    mkdir -p "$config_dir"; \
+    if [ -L "$data_dir" ]; then \
+        echo "ERROR: refusing legacy layout cleanup because $data_dir is a symlink" >&2; \
+        exit 1; \
+    fi; \
+    if [ -d "$data_dir" ]; then \
+        for entry in "$data_dir"/*; do \
+            [ -e "$entry" ] || [ -L "$entry" ] || continue; \
+            if [ -L "$entry" ]; then \
+                echo "ERROR: refusing legacy layout cleanup because $entry is a symlink" >&2; \
+                exit 1; \
+            fi; \
+            name="$(basename "$entry")"; \
+            target="$config_dir/$name"; \
+            if [ -L "$target" ]; then \
+                rm -f "$target"; \
+            fi; \
+            if [ -d "$entry" ]; then \
+                mkdir -p "$target"; \
+                cp -a "$entry"/. "$target"/; \
+            elif [ ! -e "$target" ]; then \
+                cp -a "$entry" "$target"; \
+            fi; \
+        done; \
+        data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
+        find "$config_dir" -type l -print | while IFS= read -r link; do \
+            target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
+            case "$target" in \
+                "$data_real"/* | "$data_dir"/*) \
+                    if [ -d "$target" ]; then \
+                        rm -f "$link"; \
+                        mkdir -p "$link"; \
+                        cp -a "$target"/. "$link"/; \
+                    elif [ -e "$target" ]; then \
+                        rm -f "$link"; \
+                        cp -a "$target" "$link"; \
+                    else \
+                        echo "ERROR: legacy symlink target missing: $link -> $target" >&2; \
+                        exit 1; \
+                    fi; \
+                    ;; \
+            esac; \
+        done; \
+        rm -rf "$data_dir"; \
+    fi; \
+    mkdir -p "$config_dir/memories" \
+        "$config_dir/sessions" \
+        "$config_dir/skills" \
+        "$config_dir/plugins" \
+        "$config_dir/cron" \
+        "$config_dir/logs" \
+        "$config_dir/skins" \
+        "$config_dir/plans" \
+        "$config_dir/workspace" \
+        "$config_dir/profiles" \
+        "$config_dir/cache" \
+        "$config_dir/pairing"; \
+    if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then \
+        echo "ERROR: legacy data dir still exists after cleanup: $data_dir" >&2; \
+        exit 1; \
+    fi; \
+    data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
+    find "$config_dir" -type l -print | while IFS= read -r link; do \
+        target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
+        case "$target" in \
+            "$data_real"/* | "$data_dir"/*) \
+                echo "ERROR: legacy symlink remains after cleanup: $link -> $target" >&2; \
+                exit 1; \
+                ;; \
+        esac; \
+    done; \
+    rm -rf /root/.cache/pip /sandbox/.cache \
     && chown -R sandbox:sandbox /sandbox/.hermes \
     && chmod 750 /sandbox/.hermes \
     && chmod 640 /sandbox/.hermes/config.yaml \

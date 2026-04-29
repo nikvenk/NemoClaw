@@ -183,25 +183,11 @@ else
   fail "Config directory should be mode 700: ${DIR_PERMS}"
 fi
 
-# shellcheck disable=SC2016  # single-quoted script runs inside the sandbox
-LAYOUT_CHECK=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- sh -c '
-bad=0
-if [ -e /sandbox/.openclaw-data ] || [ -L /sandbox/.openclaw-data ]; then
-  echo "legacy data dir exists: /sandbox/.openclaw-data"
-  bad=1
-fi
-for entry in /sandbox/.openclaw/*; do
-  [ -L "$entry" ] || continue
-  target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
-  case "$target" in
-    /sandbox/.openclaw-data/*)
-      echo "legacy symlink remains: $entry -> $target"
-      bad=1
-      ;;
-  esac
-done
-exit "$bad"
-' 2>&1)
+# OpenShell rejects command arguments containing newlines, so keep the probe
+# as a single shell argument.
+# shellcheck disable=SC2016  # expanded inside the sandbox by sh -c
+LAYOUT_PROBE='bad=0; if [ -e /sandbox/.openclaw-data ] || [ -L /sandbox/.openclaw-data ]; then echo "legacy data dir exists: /sandbox/.openclaw-data"; bad=1; fi; for entry in /sandbox/.openclaw/*; do [ -L "$entry" ] || continue; target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"; case "$target" in /sandbox/.openclaw-data/*) echo "legacy symlink remains: $entry -> $target"; bad=1 ;; esac; done; exit "$bad"'
+LAYOUT_CHECK=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- sh -c "$LAYOUT_PROBE" 2>&1)
 if [ -z "$LAYOUT_CHECK" ]; then
   pass "Unified .openclaw layout has no .openclaw-data mirror or symlink bridge"
 else

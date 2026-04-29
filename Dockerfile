@@ -361,26 +361,106 @@ cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = ''; \
 json.dump(cfg, open(path, 'w'), indent=2); \
 os.chmod(path, 0o600)"
 
-# Ensure state subdirectories exist inside .openclaw.
+# Flatten stale published base images that still contain the old
+# .openclaw-data symlink bridge. OpenShell starts the sandbox as the sandbox
+# user, so runtime migration cannot rely on root privileges inside the pod.
+# Doing this in the image build guarantees new PR images have only the unified
+# .openclaw layout even when sandbox-base:latest has not been rebuilt yet.
 # hadolint ignore=DL3002
 USER root
-RUN mkdir -p /sandbox/.openclaw/logs \
-        /sandbox/.openclaw/credentials \
-        /sandbox/.openclaw/sandbox \
-        /sandbox/.openclaw/media \
-        /sandbox/.openclaw/plugin-runtime-deps \
-    && rm -rf /root/.npm /sandbox/.npm
+RUN set -eu; \
+    config_dir=/sandbox/.openclaw; \
+    data_dir=/sandbox/.openclaw-data; \
+    mkdir -p "$config_dir"; \
+    if [ -L "$data_dir" ]; then \
+        echo "ERROR: refusing legacy layout cleanup because $data_dir is a symlink" >&2; \
+        exit 1; \
+    fi; \
+    if [ -d "$data_dir" ]; then \
+        for entry in "$data_dir"/*; do \
+            [ -e "$entry" ] || [ -L "$entry" ] || continue; \
+            if [ -L "$entry" ]; then \
+                echo "ERROR: refusing legacy layout cleanup because $entry is a symlink" >&2; \
+                exit 1; \
+            fi; \
+            name="$(basename "$entry")"; \
+            target="$config_dir/$name"; \
+            if [ -L "$target" ]; then \
+                rm -f "$target"; \
+            fi; \
+            if [ -d "$entry" ]; then \
+                mkdir -p "$target"; \
+                cp -a "$entry"/. "$target"/; \
+            elif [ ! -e "$target" ]; then \
+                cp -a "$entry" "$target"; \
+            fi; \
+        done; \
+        data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
+        find "$config_dir" -type l -print | while IFS= read -r link; do \
+            target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
+            case "$target" in \
+                "$data_real"/* | "$data_dir"/*) \
+                    if [ -d "$target" ]; then \
+                        rm -f "$link"; \
+                        mkdir -p "$link"; \
+                        cp -a "$target"/. "$link"/; \
+                    elif [ -e "$target" ]; then \
+                        rm -f "$link"; \
+                        cp -a "$target" "$link"; \
+                    else \
+                        echo "ERROR: legacy symlink target missing: $link -> $target" >&2; \
+                        exit 1; \
+                    fi; \
+                    ;; \
+            esac; \
+        done; \
+        rm -rf "$data_dir"; \
+    fi; \
+    mkdir -p "$config_dir/agents/main/agent" \
+        "$config_dir/extensions" \
+        "$config_dir/workspace" \
+        "$config_dir/skills" \
+        "$config_dir/hooks" \
+        "$config_dir/identity" \
+        "$config_dir/devices" \
+        "$config_dir/canvas" \
+        "$config_dir/cron" \
+        "$config_dir/memory" \
+        "$config_dir/logs" \
+        "$config_dir/credentials" \
+        "$config_dir/flows" \
+        "$config_dir/sandbox" \
+        "$config_dir/telegram" \
+        "$config_dir/media" \
+        "$config_dir/plugin-runtime-deps"; \
+    touch "$config_dir/update-check.json" "$config_dir/exec-approvals.json"; \
+    if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then \
+        echo "ERROR: legacy data dir still exists after cleanup: $data_dir" >&2; \
+        exit 1; \
+    fi; \
+    data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
+    find "$config_dir" -type l -print | while IFS= read -r link; do \
+        target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
+        case "$target" in \
+            "$data_real"/* | "$data_dir"/*) \
+                echo "ERROR: legacy symlink remains after cleanup: $link -> $target" >&2; \
+                exit 1; \
+                ;; \
+        esac; \
+    done; \
+    rm -rf /root/.npm /sandbox/.npm
 
-# Set mutable-default permissions (600/700 sandbox:sandbox).
-# This is what `openclaw doctor` expects and what shields-down restores.
+# Keep the image readable to the root entrypoint after capabilities are
+# dropped. OpenShell starts the runtime as the sandbox user; the entrypoint
+# restores the stricter mutable-default 600/700 permissions there.
 # Shields-up applies 444 root:root + chattr +i on top.
 RUN chown -R sandbox:sandbox /sandbox/.openclaw \
-    && chmod 700 /sandbox/.openclaw \
-    && chmod 600 /sandbox/.openclaw/openclaw.json
+    && chmod 755 /sandbox/.openclaw \
+    && chmod 644 /sandbox/.openclaw/openclaw.json
 
 # Pin config hash at build time so the entrypoint can verify integrity.
 RUN sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash \
-    && chmod 600 /sandbox/.openclaw/.config-hash \
+    && chmod 644 /sandbox/.openclaw/.config-hash \
     && chown sandbox:sandbox /sandbox/.openclaw/.config-hash
 
 # DAC-protect .nemoclaw directory: /sandbox/.nemoclaw is Landlock read_write

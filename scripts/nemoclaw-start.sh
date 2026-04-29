@@ -705,10 +705,10 @@ ${marker_end}"
         continue
       }
       printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file" 2>/dev/null || true
+      { cat "$tmp" >"$rc_file"; } 2>/dev/null || true
       rm -f "$tmp"
     else
-      printf '\n%s\n' "$snippet" >>"$rc_file" 2>/dev/null || true
+      { printf '\n%s\n' "$snippet" >>"$rc_file"; } 2>/dev/null || true
     fi
   done
 }
@@ -1677,7 +1677,7 @@ legacy_symlinks_exist() {
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
   for entry in "$config_dir"/*; do
     [ -L "$entry" ] || continue
-    target="$(readlink -f "$entry" 2>/dev/null || true)"
+    target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
     case "$target" in
       "$data_real"/* | "$data_dir"/*) return 0 ;;
     esac
@@ -1695,7 +1695,7 @@ assert_no_legacy_layout() {
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
   for entry in "$config_dir"/*; do
     [ -L "$entry" ] || continue
-    target="$(readlink -f "$entry" 2>/dev/null || true)"
+    target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
     case "$target" in
       "$data_real"/* | "$data_dir"/*)
         echo "[SECURITY] ${label}: legacy symlink remains after migration: ${entry} -> ${target}" >&2
@@ -1878,6 +1878,8 @@ if [ "$(id -u)" -ne 0 ]; then
         && echo "[setup] fixed ownership on ${openclaw_dir}" >&2 \
         || echo "[setup] could not fix ownership on ${openclaw_dir}; writes may fail" >&2
     fi
+    chmod 700 "$openclaw_dir" 2>/dev/null || true
+    chmod 600 "$openclaw_dir/openclaw.json" "$openclaw_dir/.config-hash" 2>/dev/null || true
   }
   fix_openclaw_ownership
   write_auth_profile

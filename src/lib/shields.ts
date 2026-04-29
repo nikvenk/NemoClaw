@@ -304,36 +304,17 @@ function legacyDataDirFor(configDir: string): string {
 
 function assertNoLegacyStateLayout(sandboxName: string, configDir: string): void {
   const dataDir = legacyDataDirFor(configDir);
+  const script =
+    'set -u; config_dir="$1"; data_dir="$2"; data_real="$(readlink -f "$data_dir" 2>/dev/null || printf "%s" "$data_dir")"; if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then echo "legacy data dir exists: $data_dir"; exit 1; fi; for entry in "$config_dir"/*; do [ -L "$entry" ] || continue; target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"; case "$target" in "$data_real"/*|"$data_dir"/*) echo "legacy symlink remains: $entry -> $target"; exit 1;; esac; done';
   try {
-    kubectlExec(sandboxName, [
-      "sh",
-      "-c",
-      `
-set -u
-config_dir="$1"
-data_dir="$2"
-data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"
-if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then
-  echo "legacy data dir exists: $data_dir"
-  exit 1
-fi
-for entry in "$config_dir"/*; do
-  [ -L "$entry" ] || continue
-  target="$(readlink -f "$entry" 2>/dev/null || true)"
-  case "$target" in
-    "$data_real"/* | "$data_dir"/*)
-      echo "legacy symlink remains: $entry -> $target"
-      exit 1
-      ;;
-  esac
-done
-`,
-      "sh",
-      configDir,
-      dataDir,
-    ]);
+    kubectlExecCapture(sandboxName, ["sh", "-c", script, "sh", configDir, dataDir]);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const execErr = err as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
+    const captured = [execErr.stdout, execErr.stderr]
+      .map((value) => (value ? String(value).trim() : ""))
+      .filter(Boolean)
+      .join("\n");
+    const message = captured || (err instanceof Error ? err.message : String(err));
     throw new Error(`legacy state layout still present: ${message}`);
   }
 }

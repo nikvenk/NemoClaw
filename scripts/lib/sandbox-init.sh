@@ -144,9 +144,9 @@ validate_tmp_permissions() {
 }
 
 # ── Config file permission helpers ────────────────────────────────
-# After drop_capabilities() strips CAP_DAC_OVERRIDE, root can no longer
-# write to files with mode 444. These helpers temporarily relax config
-# files to 644 for writing, then re-lock to 444 afterward.
+# After drop_capabilities() strips CAP_DAC_OVERRIDE, root can no longer write
+# files it does not own. These helpers temporarily make config files root-owned
+# and 644 for writing, then re-lock to 444 afterward.
 #
 # CAP_FOWNER is retained (by design in PR #917), so root can still chmod
 # files it doesn't own. The helpers include symlink guards to prevent
@@ -167,6 +167,10 @@ relax_config_for_write() {
       return 1
     fi
     [ -f "$f" ] || continue
+    if [ "$(id -u)" -eq 0 ] && ! chown root:root "$f"; then
+      printf '[SECURITY] Failed to take ownership of %s for write\n' "$f" >&2
+      return 1
+    fi
     if ! chmod 644 "$f"; then
       printf '[SECURITY] Failed to relax permissions on %s\n' "$f" >&2
       return 1

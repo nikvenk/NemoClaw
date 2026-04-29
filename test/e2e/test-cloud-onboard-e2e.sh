@@ -155,8 +155,17 @@ export NEMOCLAW_POLICY_PRESETS="${NEMOCLAW_POLICY_PRESETS:-npm,pypi}"
 
 NEMOCLAW_INSTALL_SCRIPT_URL="${NEMOCLAW_INSTALL_SCRIPT_URL:-https://www.nvidia.com/nemoclaw.sh}"
 export NEMOCLAW_INSTALL_SCRIPT_URL
+PUBLIC_INSTALL_REF="${NEMOCLAW_PUBLIC_INSTALL_REF:-${GITHUB_SHA:-}}"
+if [ -n "$PUBLIC_INSTALL_REF" ]; then
+  export NEMOCLAW_INSTALL_REF="$PUBLIC_INSTALL_REF"
+fi
 
 info "Model: ${CLOUD_MODEL}, Policy: ${NEMOCLAW_POLICY_MODE} ${NEMOCLAW_POLICY_PRESETS}"
+if [ -n "${NEMOCLAW_INSTALL_REF:-}" ]; then
+  info "Public installer will clone NemoClaw ref: ${NEMOCLAW_INSTALL_REF}"
+else
+  info "Public installer will clone NemoClaw ref: latest"
+fi
 
 if [ "$INTERACTIVE_INSTALL" = "1" ]; then
   # Interactive install via expect is not currently supported in the split
