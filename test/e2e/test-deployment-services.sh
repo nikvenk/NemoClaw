@@ -305,12 +305,15 @@ test_deploy_01_start_stop() {
   start_output=$(nemoclaw tunnel start 2>&1) || true
   log "  Start output: ${start_output}"
 
-  log "  Step 2: Reading nemoclaw status..."
-  sleep 5
+  log "  Step 2: Reading nemoclaw status (polling for tunnel URL)..."
   local status_output tunnel_url
-  status_output=$(nemoclaw status 2>&1) || true
+  for i in $(seq 1 15); do
+    status_output=$(nemoclaw status 2>&1) || true
+    tunnel_url=$(printf '%s\n' "$status_output" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
+    [[ -n "$tunnel_url" ]] && break
+    sleep 1
+  done
   log "  Status output:     ${status_output//$'\n'/$'\n'    }"
-  tunnel_url=$(echo "$status_output" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
 
   if [[ -n "$tunnel_url" ]]; then
     pass "TC-DEPLOY-01a: Tunnel URL found in status ($tunnel_url)"
@@ -325,7 +328,7 @@ test_deploy_01_start_stop() {
     log "  Step 3: Probing tunnel URL (HTTP + content)..."
     local http_code="000" body_file
     body_file=$(mktemp)
-    for i in $(seq 1 6); do
+    for i in $(seq 1 10); do
       http_code=$(curl -sS -o "$body_file" -w '%{http_code}' \
         --max-time 10 "$tunnel_url" 2>/dev/null || echo "000")
       if [[ "$http_code" == "200" ]]; then
@@ -354,17 +357,18 @@ test_deploy_01_start_stop() {
   stop_output=$(nemoclaw tunnel stop 2>&1) || true
   log "  Tunnel stop output:     ${stop_output//$'\n'/$'\n'    }"
 
-  sleep 3
-
   # ── TC-DEPLOY-01c: Tunnel URL absent after stop ─────────────────────────────
-  log "  Step 5: Verifying tunnel stopped..."
+  log "  Step 5: Verifying tunnel stopped (polling for URL removal)..."
   if [[ -z "$tunnel_url" ]]; then
     skip "TC-DEPLOY-01c" "Tunnel URL was never confirmed in status"
   else
     local post_status post_url
-    post_status=$(nemoclaw status 2>&1) || true
-    post_url=$(echo "$post_status" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
-
+    for i in $(seq 1 10); do
+      post_status=$(nemoclaw status 2>&1) || true
+      post_url=$(printf '%s\n' "$post_status" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
+      [[ -z "$post_url" ]] && break
+      sleep 1
+    done
     if [[ -z "$post_url" ]]; then
       pass "TC-DEPLOY-01c: Tunnel URL absent after stop"
     else
