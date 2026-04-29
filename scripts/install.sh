@@ -377,7 +377,8 @@ usage() {
   printf "                                            | gemini | ollama | custom | nim-local | vllm | sglang\n"
   printf "                                            (aliases: cloud -> build, nim -> nim-local)\n"
   printf "    NEMOCLAW_MODEL                          Inference model tag (e.g., nemotron-3-super:120b)\n"
-  printf "    NEMOCLAW_BACKEND_ENDPOINT               Override auto-detected backend URL\n\n"
+  printf "    NEMOCLAW_BACKEND_ENDPOINT               Override auto-detected backend URL\n"
+  printf "    NEMOCLAW_VLLM_IMAGE                     Override vLLM container image (default: resolved from NGC)\n\n"
 
   printf "  ${C_DIM}Environment — policies:${C_RESET}\n"
   printf "    NEMOCLAW_POLICY_MODE                    suggested (default) | custom | skip\n"
@@ -911,10 +912,47 @@ install_or_upgrade_ollama() {
   fi
 }
 
+_resolve_vllm_image() {
+  # Honor an explicit override first.
+  if [[ -n "${NEMOCLAW_VLLM_IMAGE:-}" ]]; then
+    printf "%s" "${NEMOCLAW_VLLM_IMAGE}"
+    return 0
+  fi
+
+  # Try to resolve the latest tag from the NGC registry.
+  # NGC requires a Bearer token even for public catalog reads.
+  local token repo="nvidia/vllm" tag=""
+  token=$(curl -fsSL \
+    "https://authn.nvidia.com/token?service=registry.ngc.nvidia.com&scope=repository:${repo}:pull" \
+    2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+
+  if [[ -n "$token" ]]; then
+    tag=$(curl -fsSL -H "Authorization: Bearer ${token}" \
+      "https://registry.ngc.nvidia.com/v2/${repo}/tags/list" \
+      2>/dev/null \
+      | python3 -c "
+import sys, json, re
+data = json.load(sys.stdin)
+tags = [t for t in data.get('tags', []) if re.match(r'^\d{2}\.\d{2}', t) or re.match(r'^v?\d+\.\d+\.\d+', t)]
+tags.sort(reverse=True)
+print(tags[0] if tags else '')
+" 2>/dev/null || true)
+  fi
+
+  if [[ -n "$tag" ]]; then
+    printf "nvcr.io/%s:%s" "$repo" "$tag"
+  else
+    # Fall back to the official vLLM image on Docker Hub.
+    warn "Could not resolve NGC vLLM tag — falling back to docker.io/vllm/vllm-openai:latest"
+    printf "docker.io/vllm/vllm-openai:latest"
+  fi
+}
+
 install_vllm() {
   local force="${1:-}"
   local container_name="nemoclaw-vllm"
-  local image="nvcr.io/nvidia/vllm:latest"
+  local image
+  image="$(_resolve_vllm_image)"
   local port=8000
 
   if [[ -n "$force" ]]; then
@@ -932,7 +970,7 @@ install_vllm() {
     return 0
   fi
 
-  info "Pulling NGC vLLM container (${image})…"
+  info "Pulling vLLM container (${image})…"
   docker pull "$image"
 
   local vram_mb vram_gb model_id
