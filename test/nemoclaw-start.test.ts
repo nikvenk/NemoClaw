@@ -708,12 +708,27 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn[1]).toContain("requires root");
   });
 
-  it("rejects sandbox-owned data directories as potentially agent-planted", () => {
+  it("rejects sandbox-owned data directories without a legacy symlink bridge", () => {
     const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
     expect(fn[1]).toContain("data_owner");
     expect(fn[1]).toContain("sandbox-owned");
+    expect(fn[1]).toContain("legacy symlink bridge");
     expect(fn[1]).toContain("possible agent-planted trigger");
+  });
+
+  it("repairs trusted-sentinel sandboxes when legacy artifacts remain", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("trusted sentinel exists but legacy artifacts remain; repairing");
+    expect(fn[1]).toContain("legacy_symlinks_exist");
+    expect(fn[1]).toContain("assert_no_legacy_layout");
+  });
+
+  it("fails entrypoint startup if legacy migration cannot complete", () => {
+    expect(src).toContain(
+      'migrate_legacy_layout "/sandbox/.openclaw" "/sandbox/.openclaw-data" "openclaw" || exit 1',
+    );
   });
 
   it("rejects symlinked legacy data directories and entries before root copy", () => {

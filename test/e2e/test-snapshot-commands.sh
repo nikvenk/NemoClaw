@@ -30,7 +30,7 @@ SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-e2e-snapshot}"
 . "$(dirname "${BASH_SOURCE[0]}")/lib/sandbox-teardown.sh"
 register_sandbox_for_teardown "$SANDBOX_NAME"
 
-MARKER_FILE="/sandbox/.openclaw-data/workspace/snapshot-marker.txt"
+MARKER_FILE="/sandbox/.openclaw/workspace/snapshot-marker.txt"
 MARKER_CONTENT="SNAPSHOT_E2E_$(date +%s)"
 SECOND_MARKER="/sandbox/.openclaw/workspace/snapshot-marker-2.txt"
 SECOND_CONTENT="SNAPSHOT_E2E_SECOND_$(date +%s)"

@@ -1671,13 +1671,46 @@ ensure_mutable_for_migration() {
   return 1
 }
 
+legacy_symlinks_exist() {
+  local config_dir="$1" data_dir="$2"
+  local data_real entry target
+  data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
+  for entry in "$config_dir"/*; do
+    [ -L "$entry" ] || continue
+    target="$(readlink -f "$entry" 2>/dev/null || true)"
+    case "$target" in
+      "$data_real"/* | "$data_dir"/*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+assert_no_legacy_layout() {
+  local config_dir="$1" data_dir="$2" label="$3"
+  local data_real entry target
+  if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then
+    echo "[SECURITY] ${label}: legacy data dir still exists after migration: ${data_dir}" >&2
+    return 1
+  fi
+  data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
+  for entry in "$config_dir"/*; do
+    [ -L "$entry" ] || continue
+    target="$(readlink -f "$entry" 2>/dev/null || true)"
+    case "$target" in
+      "$data_real"/* | "$data_dir"/*)
+        echo "[SECURITY] ${label}: legacy symlink remains after migration: ${entry} -> ${target}" >&2
+        return 1
+        ;;
+    esac
+  done
+}
+
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
   if [ -L "$data_dir" ]; then
     echo "[SECURITY] ${label}: refusing migration because ${data_dir} is a symlink" >&2
     return 1
   fi
-  [ -d "$data_dir" ] || return 0
 
   local sentinel="${config_dir}/.migration-complete"
 
@@ -1687,12 +1720,23 @@ migrate_legacy_layout() {
     sentinel_uid="$(stat -c '%u' "$sentinel" 2>/dev/null || stat -f '%u' "$sentinel" 2>/dev/null || echo "unknown")"
     sentinel_mode="$(stat -c '%a' "$sentinel" 2>/dev/null || stat -f '%Lp' "$sentinel" 2>/dev/null || echo "unknown")"
     if [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && [ "$sentinel_uid" = "0" ] && [ "$sentinel_mode" != "unknown" ] && (((8#$sentinel_mode & 0222) == 0)); then
-      echo "[migration] ${label}: already migrated (trusted sentinel exists), skipping" >&2
-      return 0
+      if [ ! -d "$data_dir" ] && ! legacy_symlinks_exist "$config_dir" "$data_dir"; then
+        echo "[migration] ${label}: already migrated (trusted sentinel exists), skipping" >&2
+        return 0
+      fi
+      echo "[migration] ${label}: trusted sentinel exists but legacy artifacts remain; repairing" >&2
+      ensure_mutable_for_migration "$sentinel" "$label" || return 1
+      rm -f "$sentinel" || return 1
+    else
+      echo "[SECURITY] ${label}: ignoring untrusted migration sentinel ${sentinel}" >&2
+      ensure_mutable_for_migration "$sentinel" "$label" || return 1
+      rm -f "$sentinel" || return 1
     fi
-    echo "[SECURITY] ${label}: ignoring untrusted migration sentinel ${sentinel}" >&2
-    ensure_mutable_for_migration "$sentinel" "$label" || return 1
-    rm -f "$sentinel" || return 1
+  fi
+
+  if [ ! -d "$data_dir" ]; then
+    assert_no_legacy_layout "$config_dir" "$data_dir" "$label"
+    return $?
   fi
 
   # Guard 2: Only root may run migration. The sandbox user cannot reach
@@ -1708,8 +1752,8 @@ migrate_legacy_layout() {
   # is owned by sandbox, the agent may have planted it to trigger migration.
   local data_owner
   data_owner="$(stat -c '%U' "$data_dir" 2>/dev/null || stat -f '%Su' "$data_dir" 2>/dev/null || echo "unknown")"
-  if [ "$data_owner" = "sandbox" ]; then
-    echo "[SECURITY] ${label}: data dir ${data_dir} is sandbox-owned — refusing migration (possible agent-planted trigger)" >&2
+  if [ "$data_owner" = "sandbox" ] && ! legacy_symlinks_exist "$config_dir" "$data_dir"; then
+    echo "[SECURITY] ${label}: sandbox-owned ${data_dir} has no legacy symlink bridge — refusing migration (possible agent-planted trigger)" >&2
     return 1
   fi
 
@@ -1738,6 +1782,8 @@ migrate_legacy_layout() {
       ensure_mutable_for_migration "$target" "$label" || return 1
       rm -f "$target"
       cp -a "$entry" "$target"
+    elif [ -d "$target" ] && [ -d "$entry" ]; then
+      cp -a "$entry"/. "$target"/
     elif [ ! -e "$target" ]; then
       cp -a "$entry" "$target"
     fi
@@ -1752,6 +1798,7 @@ migrate_legacy_layout() {
   done
 
   rm -rf "$data_dir"
+  assert_no_legacy_layout "$config_dir" "$data_dir" "$label" || return 1
 
   # Write the migration sentinel (root-owned, read-only) so we never
   # re-run migration on this sandbox.
@@ -1785,7 +1832,7 @@ migrate_legacy_layout() {
 # ── Main ─────────────────────────────────────────────────────────
 
 # Migrate legacy symlink layout before anything else reads .openclaw
-migrate_legacy_layout "/sandbox/.openclaw" "/sandbox/.openclaw-data" "openclaw"
+migrate_legacy_layout "/sandbox/.openclaw" "/sandbox/.openclaw-data" "openclaw" || exit 1
 
 echo 'Setting up NemoClaw...' >&2
 # Best-effort: .env may not exist.

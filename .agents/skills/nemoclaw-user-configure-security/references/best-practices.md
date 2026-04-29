@@ -223,17 +223,17 @@ The token file location depends on the startup mode:
 Writable agent state such as plugins, skills, hooks, and workspace metadata lives directly under `/sandbox/.openclaw`.
 
 By default, this directory starts writable so the agent can manage its own config, install skills, and write to standard home-directory paths natively.
-Operators can opt into immutability by running `nemoclaw <name> shields up`, which locks the config and high-risk state directories until `shields down` restores the default writable state.
+Operators can opt into immutability by running `nemoclaw <name> shields up`, which locks the config and writable state entry points until `shields down` restores the default writable state.
 
 - **DAC permissions (default).** The sandbox user owns the directory and `openclaw.json` with `chmod 600`, so the agent can read and write config directly.
 - **Config integrity hash.** The build process pins a SHA256 hash of `openclaw.json`. The entrypoint verifies it at startup and refuses to start if the hash does not match.
 - **Externalized gateway token.** The gateway auth token never appears in `openclaw.json`. It is generated at container startup, written to a mode-dependent token file, and passed to the gateway process via an environment variable. In root mode, the token file is owned by the `gateway` user and unreadable by the sandbox agent.
-- **Shields UP (opt-in).** `nemoclaw <name> shields up` applies root-owned read-only permissions and best-effort immutable bits to sensitive config files, and locks high-risk state directories such as skills, hooks, cron, agents, and extensions.
+- **Shields UP (opt-in).** `nemoclaw <name> shields up` applies root-owned read-only permissions and best-effort immutable bits to sensitive config files, and locks writable state directories such as workspace, memory, skills, hooks, cron, agents, and extensions.
 
 | Aspect | Detail |
 |---|---|
 | Default | `/sandbox/.openclaw` is writable (`700 sandbox:sandbox`; `openclaw.json` is `600 sandbox:sandbox`). The agent can read and write config, install skills, and manage state directly. The gateway auth token is stored separately: `/run/nemoclaw/gateway-token` in root mode (`gateway:gateway 0400`) or `/tmp/.runtime/nemoclaw/gateway-token` in non-root mode (`sandbox:sandbox 0400`). |
-| What you can change | Run `nemoclaw <name> shields up` to lock config with DAC permissions and the immutable flag. Run `shields down` to return to the writable default. |
+| What you can change | Run `nemoclaw <name> shields up` to lock config and state directories with DAC permissions and the immutable flag where available. Run `shields down` to return to the writable default. |
 | Risk of default | A writable `.openclaw` directory lets the agent modify its own gateway config: disabling CORS or redirecting inference to an attacker-controlled endpoint. |
 | Recommendation | For always-on assistants handling sensitive workloads, use `shields up` to lock config after initial setup. For development workflows, the writable default is appropriate. |
 

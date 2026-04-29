@@ -473,7 +473,7 @@ jobs:
                 pod_ns="${pod_match%%/*}"
                 pod_name="${pod_match##*/}"
                 docker exec openshell-cluster-nemoclaw kubectl exec -n "$pod_ns" "$pod_name" -- bash -c "
-                  for f in /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
+                  for f in /sandbox/.openclaw/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
                     [ -f \"\$f\" ] || continue
                     printf \"\\n----- %s (size=%s) -----\\n\" \"\$f\" \"\$(stat -c%s \"\$f\" 2>/dev/null || echo ?)\"
                     cat -- \"\$f\" 2>/dev/null
@@ -567,7 +567,7 @@ jobs:
                   pod_name="${pod_ns_name##*/}"
                   k_out=$(mktemp)
                   docker exec openshell-cluster-nemoclaw kubectl exec -n "$pod_ns" "$pod_name" -- bash -c '
-                    for f in /sandbox/.openclaw-data/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
+                    for f in /sandbox/.openclaw/logs/gateway-persistent.log /tmp/gateway.log /tmp/openclaw-*/openclaw-*.log; do
                       [ -f "$f" ] || continue
                       printf "\n----- %s (size=%s) -----\n" "$f" "$(stat -c%s "$f" 2>/dev/null || echo ?)"
                       cat -- "$f" 2>/dev/null || true
@@ -590,7 +590,7 @@ jobs:
                       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                       -o ConnectTimeout=10 -o LogLevel=ERROR \
                       "openshell-${name}" \
-                      'for f in /sandbox/.openclaw-data/logs/gateway-persistent.log \
+                      'for f in /sandbox/.openclaw/logs/gateway-persistent.log \
                                /tmp/gateway.log \
                                /tmp/openclaw-*/openclaw-*.log; do
                          [ -f "$f" ] || continue

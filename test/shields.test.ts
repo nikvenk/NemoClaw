@@ -404,9 +404,9 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
 });
 
 // -------------------------------------------------------------------
-// NC-2227-05: Regression test — shields.ts locks high-risk state dirs
+// NC-2227-05: Regression test — shields.ts locks state dirs
 // -------------------------------------------------------------------
-describe("NC-2227-05: shields.ts locks high-risk state directories", () => {
+describe("NC-2227-05: shields.ts locks state directories", () => {
   function getSourceCode(): string {
     return fs.readFileSync(
       path.join(import.meta.dirname, "..", "src", "lib", "shields.ts"),
@@ -414,20 +414,32 @@ describe("NC-2227-05: shields.ts locks high-risk state directories", () => {
     );
   }
 
-  it("HIGH_RISK_STATE_DIRS constant includes skills, hooks, cron, agents, extensions, plugins", () => {
+  it("HIGH_RISK_STATE_DIRS constant includes executable state and workspace entry points", () => {
     const src = getSourceCode();
     expect(src).toContain("HIGH_RISK_STATE_DIRS");
-    for (const dir of ["skills", "hooks", "cron", "agents", "extensions", "plugins"]) {
+    for (const dir of [
+      "skills",
+      "hooks",
+      "cron",
+      "agents",
+      "extensions",
+      "plugins",
+      "workspace",
+      "memory",
+      "credentials",
+    ]) {
       expect(src).toContain(`"${dir}"`);
     }
   });
 
-  it("lockAgentConfig iterates over HIGH_RISK_STATE_DIRS", () => {
+  it("lockAgentConfig locks fixed and dynamic workspace state directories", () => {
     const src = getSourceCode();
     const fnStart = src.indexOf("function lockAgentConfig");
     expect(fnStart).not.toBe(-1);
     const fnBody = src.slice(fnStart);
-    expect(fnBody).toContain("HIGH_RISK_STATE_DIRS");
+    expect(src).toContain("function applyStateDirLockMode");
+    expect(src).toContain("workspace-*");
+    expect(fnBody).toContain("applyStateDirLockMode");
     expect(fnBody).toContain("chown");
     expect(fnBody).toContain("root:root");
   });
@@ -437,7 +449,18 @@ describe("NC-2227-05: shields.ts locks high-risk state directories", () => {
     const fnStart = src.indexOf("function unlockAgentConfig");
     expect(fnStart).not.toBe(-1);
     const fnBody = src.slice(fnStart, src.indexOf("function lockAgentConfig"));
-    expect(fnBody).toContain("HIGH_RISK_STATE_DIRS");
+    expect(fnBody).toContain("applyStateDirLockMode");
     expect(fnBody).toContain("sandbox:sandbox");
+  });
+
+  it("lockAgentConfig fails if legacy .openclaw-data artifacts remain", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function lockAgentConfig");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = src.slice(fnStart);
+    expect(src).toContain("function assertNoLegacyStateLayout");
+    expect(src).toContain("legacy data dir exists");
+    expect(src).toContain("legacy symlink remains");
+    expect(fnBody).toContain("assertNoLegacyStateLayout");
   });
 });

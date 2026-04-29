@@ -61,7 +61,7 @@ $ nemoclaw my-assistant snapshot restore 2026-04-14T
 ```
 
 The `nemoclaw <name> rebuild` command uses the same snapshot mechanism automatically.
-Snapshot restore accepts symlinks that resolve to NemoClaw-managed sandbox data paths such as `/sandbox/.openclaw-data/`.
+Snapshot restore accepts symlinks that resolve to NemoClaw-managed sandbox state paths such as `/sandbox/.openclaw/`.
 Symlinks that point outside the known sandbox data paths are still rejected during extraction.
 For full details, see the [Commands reference](../reference/commands.md).
 
@@ -149,9 +149,8 @@ directory under the sandbox state tree and includes it in the snapshot bundle
 alongside the default `workspace/`. `snapshot restore` re-applies the full
 per-agent set. No manual per-workspace backup pattern is needed.
 
-The sandbox entrypoint ensures every per-agent workspace is backed by the
-persistent `.openclaw-data/` tree (via a symlink from
-`.openclaw/workspace-<name>/`) so state also survives `openshell sandbox restart`.
+The sandbox entrypoint ensures every per-agent workspace lives directly under
+the persistent `.openclaw/` tree, so state also survives `openshell sandbox restart`.
 
 ### Shared files across agents
 

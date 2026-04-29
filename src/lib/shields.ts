@@ -228,12 +228,13 @@ function killTimer(sandboxName: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// NC-2227-05: High-risk state directories that can contain executable code.
+// NC-2227-05: State directories locked by shields-up.
 //
 // During shields-up, these must be locked (root:root 755) so the sandbox
 // user cannot create new entries or modify existing ones. This covers both
-// OpenClaw and Hermes agent state dirs that contain executable artifacts
-// (skills, hooks, cron jobs, extensions, plugins, agent definitions).
+// executable state (skills, hooks, cron jobs, extensions, plugins, agent
+// definitions) and writable agent state entry points such as workspace and
+// memory, so a stale symlink bridge cannot bypass the lockdown.
 //
 // The list is a superset: directories that don't exist in a given agent's
 // config dir are silently skipped.
@@ -246,7 +247,96 @@ const HIGH_RISK_STATE_DIRS = [
   "agents",
   "extensions",
   "plugins", // Hermes equivalent of extensions
+  "workspace",
+  "memory",
+  "credentials",
+  "identity",
+  "devices",
+  "canvas",
+  "telegram",
 ];
+
+function applyStateDirLockMode(sandboxName: string, configDir: string, owner: string): void {
+  for (const dirName of HIGH_RISK_STATE_DIRS) {
+    const dirPath = `${configDir}/${dirName}`;
+    try {
+      kubectlExec(sandboxName, ["chown", "-R", owner, dirPath]);
+    } catch {
+      // Directory may not exist for this agent — silently skip
+    }
+    try {
+      kubectlExec(sandboxName, ["chmod", "755", dirPath]);
+      kubectlExec(sandboxName, ["chmod", "-R", "go-w", dirPath]);
+    } catch {
+      // Silently skip
+    }
+  }
+
+  // Multi-agent OpenClaw workspaces are named workspace-<agent>. They are
+  // discovered dynamically because they are configured by openclaw.json.
+  try {
+    kubectlExec(sandboxName, [
+      "sh",
+      "-c",
+      `
+set -u
+config_dir="$1"
+owner="$2"
+for dir in "$config_dir"/workspace-*; do
+  [ -d "$dir" ] || continue
+  chown -R "$owner" "$dir" 2>/dev/null || true
+  chmod 755 "$dir" 2>/dev/null || true
+  chmod -R go-w "$dir" 2>/dev/null || true
+done
+`,
+      "sh",
+      configDir,
+      owner,
+    ]);
+  } catch {
+    // Best effort; verification below catches the primary config lock.
+  }
+}
+
+function legacyDataDirFor(configDir: string): string {
+  return `${configDir}-data`;
+}
+
+function assertNoLegacyStateLayout(sandboxName: string, configDir: string): void {
+  const dataDir = legacyDataDirFor(configDir);
+  try {
+    kubectlExec(sandboxName, [
+      "sh",
+      "-c",
+      `
+set -u
+config_dir="$1"
+data_dir="$2"
+data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"
+if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then
+  echo "legacy data dir exists: $data_dir"
+  exit 1
+fi
+for entry in "$config_dir"/*; do
+  [ -L "$entry" ] || continue
+  target="$(readlink -f "$entry" 2>/dev/null || true)"
+  case "$target" in
+    "$data_real"/* | "$data_dir"/*)
+      echo "legacy symlink remains: $entry -> $target"
+      exit 1
+      ;;
+  esac
+done
+`,
+      "sh",
+      configDir,
+      dataDir,
+    ]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`legacy state layout still present: ${message}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Config unlock — returns config to the default (mutable) state
@@ -296,23 +386,10 @@ function unlockAgentConfig(
     errors.push(`chmod ${dirMode} config dir`);
   }
 
-  // NC-2227-05: Restore sandbox ownership on high-risk state directories.
+  // NC-2227-05: Restore sandbox ownership on locked state directories.
   // Use chown -R to restore the full tree (files within may have been
   // locked to root:root by a prior shields-up).
-  for (const dirName of HIGH_RISK_STATE_DIRS) {
-    const dirPath = `${target.configDir}/${dirName}`;
-    try {
-      kubectlExec(sandboxName, ["chown", "-R", "sandbox:sandbox", dirPath]);
-    } catch {
-      // Directory may not exist for this agent — silently skip
-    }
-    try {
-      kubectlExec(sandboxName, ["chmod", "755", dirPath]);
-      kubectlExec(sandboxName, ["chmod", "-R", "go-w", dirPath]);
-    } catch {
-      // Silently skip
-    }
-  }
+  applyStateDirLockMode(sandboxName, target.configDir, "sandbox:sandbox");
 
   if (errors.length > 0) {
     console.error(
@@ -382,24 +459,10 @@ function lockAgentConfig(
     }
   }
 
-  // NC-2227-05: Lock high-risk state directories that can contain executable
-  // code (skills, hooks, cron, agents, extensions, plugins). Root-own the
-  // directory and set 755 so the sandbox user can read/execute but cannot
-  // create new entries or modify existing ones.
-  for (const dirName of HIGH_RISK_STATE_DIRS) {
-    const dirPath = `${target.configDir}/${dirName}`;
-    try {
-      kubectlExec(sandboxName, ["chown", "-R", "root:root", dirPath]);
-    } catch {
-      // Directory may not exist for this agent — silently skip
-    }
-    try {
-      kubectlExec(sandboxName, ["chmod", "755", dirPath]);
-      kubectlExec(sandboxName, ["chmod", "-R", "go-w", dirPath]);
-    } catch {
-      // Silently skip
-    }
-  }
+  // NC-2227-05: Lock state directories. Root-own the directory and set 755 so
+  // the sandbox user can read/execute but cannot create new entries or modify
+  // existing ones.
+  applyStateDirLockMode(sandboxName, target.configDir, "root:root");
 
   if (errors.length > 0) {
     console.error(`  Some lock operations failed: ${errors.join(", ")}`);
@@ -439,6 +502,13 @@ function lockAgentConfig(
     } catch {
       // lsattr may not be available on all images — skip
     }
+  }
+
+  try {
+    assertNoLegacyStateLayout(sandboxName, target.configDir);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    issues.push(msg);
   }
 
   if (issues.length > 0) {

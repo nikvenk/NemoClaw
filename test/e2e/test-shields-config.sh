@@ -183,6 +183,31 @@ else
   fail "Config directory should be mode 700: ${DIR_PERMS}"
 fi
 
+# shellcheck disable=SC2016  # single-quoted script runs inside the sandbox
+LAYOUT_CHECK=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- sh -c '
+bad=0
+if [ -e /sandbox/.openclaw-data ] || [ -L /sandbox/.openclaw-data ]; then
+  echo "legacy data dir exists: /sandbox/.openclaw-data"
+  bad=1
+fi
+for entry in /sandbox/.openclaw/*; do
+  [ -L "$entry" ] || continue
+  target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
+  case "$target" in
+    /sandbox/.openclaw-data/*)
+      echo "legacy symlink remains: $entry -> $target"
+      bad=1
+      ;;
+  esac
+done
+exit "$bad"
+' 2>&1)
+if [ -z "$LAYOUT_CHECK" ]; then
+  pass "Unified .openclaw layout has no .openclaw-data mirror or symlink bridge"
+else
+  fail "Legacy .openclaw-data layout should not exist: ${LAYOUT_CHECK}"
+fi
+
 # ══════════════════════════════════════════════════════════════════
 # Phase 3: shields up — config becomes immutable
 # ══════════════════════════════════════════════════════════════════
@@ -225,6 +250,17 @@ elif echo "$WRITE_RESULT" | grep -q "Permission denied\|Read-only\|Operation not
   pass "Config file write rejected by OS (shields UP)"
 else
   fail "Config file should be immutable but sandbox could write: ${WRITE_RESULT}"
+fi
+
+WORKSPACE_WRITE_RESULT=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- \
+  sh -c "touch /sandbox/.openclaw/workspace/.shields-up-probe 2>&1 && echo WRITABLE || echo BLOCKED" 2>&1)
+
+if echo "$WORKSPACE_WRITE_RESULT" | grep -q "BLOCKED"; then
+  pass "Workspace state is read-only for sandbox user (shields UP)"
+elif echo "$WORKSPACE_WRITE_RESULT" | grep -q "Permission denied\|Read-only\|Operation not permitted"; then
+  pass "Workspace write rejected by OS (shields UP)"
+else
+  fail "Workspace should be locked after shields up: ${WORKSPACE_WRITE_RESULT}"
 fi
 
 # ══════════════════════════════════════════════════════════════════
@@ -322,6 +358,14 @@ if [ "$(echo "$DIR_PERMS_DOWN" | awk '{print $2}')" = "sandbox:sandbox" ]; then
   pass "Config directory owned by sandbox:sandbox after shields down"
 else
   fail "Config directory should be owned by sandbox:sandbox: ${DIR_PERMS_DOWN}"
+fi
+
+WORKSPACE_DOWN_RESULT=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- \
+  sh -c "touch /sandbox/.openclaw/workspace/.shields-down-probe 2>&1 && rm -f /sandbox/.openclaw/workspace/.shields-down-probe && echo WRITABLE || echo BLOCKED" 2>&1)
+if echo "$WORKSPACE_DOWN_RESULT" | grep -q "WRITABLE"; then
+  pass "Workspace state is writable again after shields down"
+else
+  fail "Workspace should be writable after shields down: ${WORKSPACE_DOWN_RESULT}"
 fi
 
 # ══════════════════════════════════════════════════════════════════
