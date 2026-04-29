@@ -1796,6 +1796,7 @@ migrate_legacy_layout() {
       rm -f "$target"
       cp -a "$entry" "$target"
     elif [ -d "$target" ] && [ -d "$entry" ]; then
+      ensure_mutable_for_migration "$target" "$label" || return 1
       cp -a "$entry"/. "$target"/
     elif [ ! -e "$target" ]; then
       cp -a "$entry" "$target"

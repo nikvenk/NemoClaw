@@ -695,7 +695,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         (d) =>
           `find ${shellQuote(`${dir}/${d}`)} \\( -type l -o \\( -type f -a -links +1 \\) -o \\( ! -type f -a ! -type d \\) \\) -printf "%y %p\\n" 2>/dev/null`,
       )
-      .join("; ");
+      .join(" && ");
     _log(`Pre-backup audit: checking for symlinks, hard links, and special files`);
     const auditResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), auditCmd], {
       encoding: "utf-8",

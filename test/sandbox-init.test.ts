@@ -303,6 +303,27 @@ EOF
       `);
       expect(stdout).toContain("Config integrity check skipped for mutable default");
     });
+
+    it("locked-aware verifier fails closed when a locked config is missing its hash", () => {
+      const fakeBin = join(workDir, "bin");
+      mkdirSync(fakeBin);
+      writeFileSync(
+        join(fakeBin, "stat"),
+        [
+          "#!/usr/bin/env bash",
+          'if [ "${2:-}" = "%u" ]; then echo 0; exit 0; fi',
+          'if [ "${2:-}" = "%a" ] || [ "${2:-}" = "%Lp" ]; then echo 755; exit 0; fi',
+          "exit 1",
+        ].join("\n"),
+        { mode: 0o700 },
+      );
+
+      const { stderr } = runWithLib(`verify_config_integrity_if_locked ${JSON.stringify(workDir)}`, {
+        env: { PATH: `${fakeBin}:${process.env.PATH || ""}` },
+        expectFail: true,
+      });
+      expect(stderr).toContain("Locked config is missing hash file");
+    });
   });
 
   describe("lock_rc_files", () => {
@@ -514,6 +535,7 @@ EOF
       for (const target of ["$sentinel", "$config_dir", "$data_dir", "$entry", "$target"]) {
         expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
       }
+      expect(fn![1]).toContain('elif [ -d "$target" ] && [ -d "$entry" ]; then');
     });
 
     it("nemoclaw-start.sh uses emit_sandbox_sourced_file for proxy-env.sh", () => {

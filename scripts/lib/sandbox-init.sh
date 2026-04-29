@@ -287,6 +287,13 @@ verify_config_integrity_if_locked() {
   fi
 
   if [ ! -f "$hash_file" ]; then
+    local config_uid config_mode
+    config_uid="$(stat -c '%u' "$config_dir" 2>/dev/null || stat -f '%u' "$config_dir" 2>/dev/null || echo unknown)"
+    config_mode="$(stat -c '%a' "$config_dir" 2>/dev/null || stat -f '%Lp' "$config_dir" 2>/dev/null || echo unknown)"
+    if [ "$config_uid" = "0" ] && [ "$config_mode" != "unknown" ] && (((8#$config_mode & 0022) == 0)); then
+      echo "[SECURITY] Locked config is missing hash file (${hash_file}) — refusing to start" >&2
+      return 1
+    fi
     echo "[config] Config integrity check skipped for mutable default (${hash_file} missing)" >&2
     return 0
   fi

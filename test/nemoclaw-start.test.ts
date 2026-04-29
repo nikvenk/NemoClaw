@@ -756,6 +756,7 @@ describe("NC-2227-01: legacy migration guards", () => {
     for (const target of ["$sentinel", "$config_dir", "$data_dir", "$target"]) {
       expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
     }
+    expect(fn![1]).toContain('elif [ -d "$target" ] && [ -d "$entry" ]; then');
   });
 
   it("uses a sandbox placeholder in shields-down recovery hints", () => {

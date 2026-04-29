@@ -61,8 +61,8 @@ $ nemoclaw my-assistant snapshot restore 2026-04-14T
 ```
 
 The `nemoclaw <name> rebuild` command uses the same snapshot mechanism automatically.
-Snapshot restore accepts symlinks that resolve to NemoClaw-managed sandbox state paths such as `/sandbox/.openclaw/`.
-Symlinks that point outside the known sandbox data paths are still rejected during extraction.
+Snapshot restore performs a targeted repair for legacy `.openclaw-data` symlinks that were created by older images.
+Unsafe symlinks and hard links inside sandbox state are rejected during backup creation before they can enter a snapshot.
 For full details, see the [Commands reference](../reference/commands.md).
 
 ## Manual Backup

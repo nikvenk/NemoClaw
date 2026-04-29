@@ -4485,8 +4485,31 @@ const [cmd, ...args] = process.argv.slice(2);
               format: "json",
             };
             for (let i = 1; i < actionArgs.length; i++) {
-              if (actionArgs[i] === "--key") configOpts.key = actionArgs[++i];
-              else if (actionArgs[i] === "--format") configOpts.format = actionArgs[++i];
+              const flag = actionArgs[i];
+              if (flag === "--key") {
+                if (i + 1 >= actionArgs.length || actionArgs[i + 1].startsWith("--")) {
+                  console.error("  --key requires a value.");
+                  console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                  process.exit(1);
+                }
+                configOpts.key = actionArgs[++i];
+              } else if (flag === "--format") {
+                if (i + 1 >= actionArgs.length || actionArgs[i + 1].startsWith("--")) {
+                  console.error("  --format requires a value (json|yaml).");
+                  console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                  process.exit(1);
+                }
+                const format = actionArgs[++i];
+                if (format !== "json" && format !== "yaml") {
+                  console.error(`  Unknown format: ${format}. Use json or yaml.`);
+                  process.exit(1);
+                }
+                configOpts.format = format;
+              } else {
+                console.error(`  Unknown flag: ${flag}`);
+                console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                process.exit(1);
+              }
             }
             sandboxConfig.configGet(cmd, configOpts);
             break;

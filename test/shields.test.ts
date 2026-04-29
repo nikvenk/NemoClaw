@@ -265,77 +265,15 @@ describe("shields — unit logic", () => {
   // NC-2227-02: Three-state shields model
   // -------------------------------------------------------------------
   describe("NC-2227-02: three-state shields model", () => {
-    it("fresh sandbox (no state file) reports mutable_default, not locked", () => {
-      const stateDir = path.join(tmpDir, ".nemoclaw", "state");
-      fs.mkdirSync(stateDir, { recursive: true });
-      // Do NOT create shields-fresh.json — simulates fresh sandbox
-      const stateFile = path.join(stateDir, "shields-fresh.json");
-      expect(fs.existsSync(stateFile)).toBe(false);
-
-      // Manually replicate the deriveShieldsMode logic to test the invariant
-      // (we can't import the CJS module directly)
-      const hasStateFile = false;
-      const state: Record<string, unknown> = {};
-      // deriveShieldsMode: no state file => mutable_default
-      let mode: string;
-      if (!hasStateFile) mode = "mutable_default";
-      else if (state["shieldsDown"] === true) mode = "temporarily_unlocked";
-      else if (state["shieldsDown"] === false) mode = "locked";
-      else mode = "mutable_default";
-
-      expect(mode).toBe("mutable_default");
-    });
-
-    it("explicitly locked sandbox (shieldsDown: false, file exists) reports locked", () => {
-      const stateDir = path.join(tmpDir, ".nemoclaw", "state");
-      fs.mkdirSync(stateDir, { recursive: true });
-      const state = { shieldsDown: false, updatedAt: new Date().toISOString() };
-      fs.writeFileSync(path.join(stateDir, "shields-locked.json"), JSON.stringify(state, null, 2));
-
-      const hasStateFile = true;
-      let mode: string;
-      if (!hasStateFile) mode = "mutable_default";
-      else if (state.shieldsDown === true) mode = "temporarily_unlocked";
-      else if (state.shieldsDown === false) mode = "locked";
-      else mode = "mutable_default";
-
-      expect(mode).toBe("locked");
-    });
-
-    it("temporarily unlocked sandbox (shieldsDown: true) reports temporarily_unlocked", () => {
-      const stateDir = path.join(tmpDir, ".nemoclaw", "state");
-      fs.mkdirSync(stateDir, { recursive: true });
-      const state = {
-        shieldsDown: true,
-        shieldsDownAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      fs.writeFileSync(path.join(stateDir, "shields-temp.json"), JSON.stringify(state, null, 2));
-
-      const hasStateFile = true;
-      let mode: string;
-      if (!hasStateFile) mode = "mutable_default";
-      else if (state.shieldsDown === true) mode = "temporarily_unlocked";
-      else if (state.shieldsDown === false) mode = "locked";
-      else mode = "mutable_default";
-
-      expect(mode).toBe("temporarily_unlocked");
-    });
-
-    it("state file with undefined shieldsDown reports mutable_default", () => {
-      const stateDir = path.join(tmpDir, ".nemoclaw", "state");
-      fs.mkdirSync(stateDir, { recursive: true });
-      const state: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-      fs.writeFileSync(path.join(stateDir, "shields-undef.json"), JSON.stringify(state, null, 2));
-
-      const hasStateFile = true;
-      let mode: string;
-      if (!hasStateFile) mode = "mutable_default";
-      else if (state["shieldsDown"] === true) mode = "temporarily_unlocked";
-      else if (state["shieldsDown"] === false) mode = "locked";
-      else mode = "mutable_default";
-
-      expect(mode).toBe("mutable_default");
+    it("deriveShieldsMode encodes the fresh, locked, unlocked, and legacy-state cases", () => {
+      const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "lib", "shields.ts"), "utf-8");
+      const fn = src.match(/function deriveShieldsMode\([\s\S]*?^}/m);
+      expect(fn).toBeTruthy();
+      expect(fn![0]).toContain('if (!hasStateFile) return "mutable_default"');
+      expect(fn![0]).toContain('if (state.shieldsDown === true) return "temporarily_unlocked"');
+      expect(fn![0]).toContain('if (state.shieldsDown === false) return "locked"');
+      expect(fn![0]).toContain('return "mutable_default"');
+      expect(src).toContain("deriveShieldsMode(state, state._hasStateFile)");
     });
   });
 });
@@ -391,6 +329,7 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(fnBody).toContain("Pre-backup audit");
     expect(fnBody).toContain("-type l");
     expect(fnBody).toContain("-links +1");
+    expect(fnBody).toContain('.join(" && ")');
   });
 
   it("backup fails closed when the pre-backup audit command errors", () => {
@@ -465,6 +404,28 @@ describe("NC-2227-05: shields.ts locks state directories", () => {
     const fnBody = src.slice(fnStart, src.indexOf("function lockAgentConfig"));
     expect(fnBody).toContain("applyStateDirLockMode");
     expect(fnBody).toContain("sandbox:sandbox");
+  });
+
+  it("unlockAgentConfig verifies mutable-default postconditions before state is saved", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function unlockAgentConfig");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = src.slice(fnStart, src.indexOf("function lockAgentConfig"));
+    expect(fnBody).toContain("Config not unlocked");
+    expect(fnBody).toContain("stat");
+    expect(fnBody).toContain("lsattr");
+    expect(fnBody).toContain("sandbox:sandbox");
+  });
+
+  it("shieldsDown only kills auto-restore timers after rejecting repeated down", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function shieldsDown");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = src.slice(fnStart, src.indexOf("function shieldsUp"));
+    const stateGuard = fnBody.indexOf("if (state.shieldsDown)");
+    const killTimer = fnBody.indexOf("killTimer(sandboxName)");
+    expect(stateGuard).toBeGreaterThan(-1);
+    expect(killTimer).toBeGreaterThan(stateGuard);
   });
 
   it("lockAgentConfig fails if legacy .openclaw-data artifacts remain", () => {

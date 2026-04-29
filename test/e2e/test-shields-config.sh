@@ -183,6 +183,14 @@ else
   fail "Config directory should be mode 700: ${DIR_PERMS}"
 fi
 
+STATUS_DEFAULT=$(nemoclaw "${SANDBOX_NAME}" shields status 2>&1)
+echo "$STATUS_DEFAULT"
+if echo "$STATUS_DEFAULT" | grep -q "Shields: NOT CONFIGURED"; then
+  pass "Fresh sandbox status reports default mutable state"
+else
+  fail "Fresh sandbox status should report NOT CONFIGURED mutable default: ${STATUS_DEFAULT}"
+fi
+
 # OpenShell rejects command arguments containing newlines, so keep the probe
 # as a single shell argument.
 # shellcheck disable=SC2016  # expanded inside the sandbox by sh -c

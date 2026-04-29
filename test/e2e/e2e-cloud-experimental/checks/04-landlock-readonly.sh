@@ -57,7 +57,7 @@ fi
 
 # ── 2: Cannot modify trusted shell startup files ─────────────────
 info "2. Cannot modify .bashrc/.profile (trusted startup snippets)"
-OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc 2>&1 || echo BASHRC_BLOCKED; echo '# test' >> /sandbox/.profile 2>&1 || echo PROFILE_BLOCKED" || true)
+OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc 2>&1 || echo BASHRC_BLOCKED; sed -i '/^# test$/d' /sandbox/.bashrc 2>/dev/null || true; echo '# test' >> /sandbox/.profile 2>&1 || echo PROFILE_BLOCKED; sed -i '/^# test$/d' /sandbox/.profile 2>/dev/null || true" || true)
 if echo "$OUT" | grep -q "BASHRC_BLOCKED" && echo "$OUT" | grep -q "PROFILE_BLOCKED"; then
   pass ".bashrc/.profile remain read-only while home is mutable"
 else
@@ -110,7 +110,7 @@ else
 fi
 
 # ── Cleanup test artifacts ────────────────────────────────────────
-sandbox_exec "rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
+sandbox_exec "sed -i '/^# test$/d' /sandbox/.bashrc /sandbox/.profile 2>/dev/null || true; rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
 
 # ── Summary ───────────────────────────────────────────────────────
 printf '%s\n' "04-landlock-readonly: $PASSED passed, $FAILED failed"

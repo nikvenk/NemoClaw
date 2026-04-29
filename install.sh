@@ -63,16 +63,10 @@ has_payload_marker() {
 clone_nemoclaw_ref() {
   local ref="$1" dest="$2"
 
-  if [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
-    git init --quiet "$dest"
-    git -C "$dest" remote add origin https://github.com/NVIDIA/NemoClaw.git
-    git -C "$dest" fetch --quiet --depth 1 origin "$ref"
-    git -C "$dest" -c advice.detachedHead=false checkout --quiet --detach FETCH_HEAD
-    return
-  fi
-
-  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" \
-    https://github.com/NVIDIA/NemoClaw.git "$dest"
+  git init --quiet "$dest"
+  git -C "$dest" remote add origin https://github.com/NVIDIA/NemoClaw.git
+  git -C "$dest" fetch --quiet --depth 1 origin "$ref"
+  git -C "$dest" -c advice.detachedHead=false checkout --quiet --detach FETCH_HEAD
 }
 
 exec_installer_from_ref() {

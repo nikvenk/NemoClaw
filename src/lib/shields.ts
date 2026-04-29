@@ -377,6 +377,42 @@ function unlockAgentConfig(
       `  Warning: Some unlock operations failed: ${errors.join(", ")}. Config may remain read-only.`,
     );
   }
+
+  const issues: string[] = [];
+  for (const f of filesToUnlock) {
+    try {
+      const perms = kubectlExecCapture(sandboxName, ["stat", "-c", "%a %U:%G", f]);
+      const [mode, owner] = perms.split(" ");
+      if (mode !== fileMode) issues.push(`${f} mode=${mode} (expected ${fileMode})`);
+      if (owner !== "sandbox:sandbox") issues.push(`${f} owner=${owner} (expected sandbox:sandbox)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      issues.push(`${f} stat failed: ${msg}`);
+    }
+    try {
+      const attrs = kubectlExecCapture(sandboxName, ["lsattr", "-d", f]);
+      const [flags] = attrs.trim().split(/\s+/, 1);
+      if (flags.includes("i")) issues.push(`${f} immutable bit still set`);
+    } catch {
+      // lsattr may not be available on all images — skip
+    }
+  }
+
+  try {
+    const dirPerms = kubectlExecCapture(sandboxName, ["stat", "-c", "%a %U:%G", target.configDir]);
+    const [mode, owner] = dirPerms.split(" ");
+    if (mode !== dirMode) issues.push(`config dir mode=${mode} (expected ${dirMode})`);
+    if (owner !== "sandbox:sandbox") {
+      issues.push(`config dir owner=${owner} (expected sandbox:sandbox)`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    issues.push(`config dir stat failed: ${msg}`);
+  }
+
+  if (issues.length > 0) {
+    throw new Error(`Config not unlocked: ${issues.join(", ")}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -513,9 +549,6 @@ interface ShieldsDownOpts {
 function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
   validateName(sandboxName, "sandbox name");
 
-  // Kill any stale timer from a previous cycle
-  killTimer(sandboxName);
-
   const state = loadShieldsState(sandboxName);
   if (state.shieldsDown) {
     console.error(
@@ -524,6 +557,11 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
     console.error("  Run `nemoclaw shields up` first, or use --extend (not yet implemented).");
     process.exit(1);
   }
+
+  // Kill stale auto-restore markers only when this command will actually
+  // transition into shields-down. A repeated shields-down must not cancel the
+  // active timer and leave the sandbox unlocked indefinitely.
+  killTimer(sandboxName);
 
   const timeoutSeconds = parseDuration(opts.timeout || `${DEFAULT_TIMEOUT_SECONDS}`);
   const reason = opts.reason || null;
@@ -570,7 +608,15 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
   //     sees the expected owner and mode without recommending fixes.
   const target = resolveAgentConfig(sandboxName);
   console.log(`  Unlocking ${target.agentName} config (${target.configPath})...`);
-  unlockAgentConfig(sandboxName, target);
+  try {
+    unlockAgentConfig(sandboxName, target);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  ERROR: ${message}`);
+    console.error("  Config did not reach the mutable-default state; refusing to save shields-down state.");
+    console.error(`  Re-run \`nemoclaw ${sandboxName} shields down\` after correcting file ownership.`);
+    process.exit(1);
+  }
 
   // 3. Update state
   const now = new Date().toISOString();
