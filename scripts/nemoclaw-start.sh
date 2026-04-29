@@ -706,9 +706,10 @@ install_slack_channel_guard() {
 // fatal (--unhandled-rejections=throw is the default), taking down
 // inference, chat, and TUI alongside the failed Slack channel.
 //
-// This preload installs a process-level handler that detects Slack-specific
-// rejections (by error code or stack trace) and logs a warning instead of
-// crashing. Non-Slack rejections are re-thrown to preserve normal behavior.
+// This preload wraps process.emit for Slack-specific process-level failures
+// and consumes those events before later OpenClaw handlers can treat the
+// provider startup failure as fatal. Non-Slack failures pass through to the
+// original event machinery unchanged.
 //
 // Ref: https://github.com/NVIDIA/NemoClaw/issues/2340
 
@@ -780,24 +781,22 @@ install_slack_channel_guard() {
     return false;
   }
 
-  // Catch async Slack errors (rejected promises from @slack/web-api).
-  process.on('unhandledRejection', function (reason, promise) {
-    if (handleSlackError(reason, 'unhandledRejection')) return;
-    // Non-Slack: re-throw to preserve default --unhandled-rejections=throw.
-    throw reason;
-  });
+  if (process.__nemoclawSlackChannelGuardInstalled) return;
+  try {
+    Object.defineProperty(process, '__nemoclawSlackChannelGuardInstalled', { value: true });
+  } catch (_e) {
+    process.__nemoclawSlackChannelGuardInstalled = true;
+  }
 
-  // Catch sync Slack errors (e.g., Bolt token format validation throws
-  // synchronously when appToken doesn't start with xapp-).
-  process.on('uncaughtException', function (err, origin) {
-    if (handleSlackError(err, 'uncaughtException')) return;
-    // Non-Slack: re-throw to preserve normal crash behavior.
-    // Print the error first since re-throw inside uncaughtException handler
-    // may not print the original stack.
-    process.stderr.write(err.stack || String(err));
-    process.stderr.write('\n');
-    process.exit(1);
-  });
+  var origEmit = process.emit;
+  process.emit = function (eventName) {
+    if (eventName === 'unhandledRejection') {
+      if (handleSlackError(arguments[1], 'unhandledRejection')) return true;
+    } else if (eventName === 'uncaughtException') {
+      if (handleSlackError(arguments[1], 'uncaughtException')) return true;
+    }
+    return origEmit.apply(this, arguments);
+  };
 })();
 SLACK_GUARD_EOF
 

@@ -488,6 +488,11 @@ describe("runtime CORS origin override (#719)", () => {
 
 describe("Slack channel guard — unhandled-rejection safety net (#2340)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
+  const extractGuardScript = () => {
+    const match = src.match(/<<'SLACK_GUARD_EOF'\n([\s\S]*?)\nSLACK_GUARD_EOF/);
+    expect(match).toBeTruthy();
+    return match[1];
+  };
 
   it("defines install_slack_channel_guard function", () => {
     expect(src).toMatch(/install_slack_channel_guard\(\) \{/);
@@ -532,11 +537,51 @@ describe("Slack channel guard — unhandled-rejection safety net (#2340)", () =>
     expect(fn[1]).toContain("uncaughtException");
   });
 
-  it("re-throws non-Slack rejections to preserve default behavior", () => {
+  it("passes non-Slack failures through to later process handlers", () => {
     const fn = src.match(/install_slack_channel_guard\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
-    expect(fn[1]).toContain("throw reason");
-    expect(fn[1]).toContain("process.exit(1)");
+    expect(fn[1]).toContain("origEmit.apply");
+
+    const run = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `${extractGuardScript()}
+process.on('unhandledRejection', function () {
+  console.log('downstream');
+  process.exit(42);
+});
+process.emit('unhandledRejection', new Error('plain failure'), {});
+`,
+      ],
+      { encoding: "utf-8" },
+    );
+    expect(run.status).toBe(42);
+    expect(run.stdout).toContain("downstream");
+  });
+
+  it("consumes Slack auth rejections before later fatal handlers see them", () => {
+    const run = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `${extractGuardScript()}
+let downstreamCalled = false;
+process.on('unhandledRejection', function () {
+  downstreamCalled = true;
+  process.exit(42);
+});
+process.emit('unhandledRejection', new Error('An API error occurred: invalid_auth'), {});
+setImmediate(function () {
+  console.log('downstream=' + downstreamCalled);
+});
+`,
+      ],
+      { encoding: "utf-8" },
+    );
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("downstream=false");
+    expect(run.stderr).toContain("provider failed to start");
   });
 
   it("detects Slack errors by error code, message, stack trace, and domain", () => {
