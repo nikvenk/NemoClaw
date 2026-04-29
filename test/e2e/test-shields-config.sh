@@ -445,7 +445,7 @@ PERMS_TIMER=$(openshell sandbox exec --name "${SANDBOX_NAME}" -- \
 if echo "$PERMS_TIMER" | grep -qE "^4[0-4][0-4]"; then
   pass "Config locked after auto-restore (${PERMS_TIMER})"
 else
-  info "Config permissions after auto-restore: ${PERMS_TIMER}"
+  fail "Config should be locked after auto-restore, got: ${PERMS_TIMER}"
 fi
 
 # ══════════════════════════════════════════════════════════════════

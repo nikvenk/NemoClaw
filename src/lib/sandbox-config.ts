@@ -196,4 +196,11 @@ function configGet(sandboxName: string, opts: ConfigGetOpts = {}): void {
 // Exports
 // ---------------------------------------------------------------------------
 
-export { configGet, resolveAgentConfig, readSandboxConfig, extractDotpath, parseConfig };
+export {
+  DEFAULT_AGENT_CONFIG,
+  configGet,
+  resolveAgentConfig,
+  readSandboxConfig,
+  extractDotpath,
+  parseConfig,
+};

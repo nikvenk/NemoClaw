@@ -230,17 +230,36 @@ drop_capabilities() {
 # someone (or something) has tampered with the config.
 #
 # Usage:
-#   verify_config_integrity /sandbox/.openclaw    # OpenClaw
-#   verify_config_integrity /sandbox/.hermes      # Hermes
+#   verify_config_integrity /sandbox/.openclaw                         # OpenClaw
+#   verify_config_integrity /sandbox/.hermes /etc/nemoclaw/hermes.config-hash # Hermes
 #
-# The config_dir must contain a .config-hash file with sha256sum output.
+# The config_dir must contain a .config-hash file with sha256sum output unless
+# an explicit hash file path is supplied. Explicit hash files are trust anchors:
+# they must be root-owned and have no write bits set.
 verify_config_integrity() {
   local config_dir="$1"
-  local hash_file="${config_dir}/.config-hash"
+  local hash_file="${2:-${config_dir}/.config-hash}"
 
   if [ ! -f "$hash_file" ]; then
     echo "[SECURITY] Config hash file missing (${hash_file}) — refusing to start without integrity verification" >&2
     return 1
+  fi
+  if [ -L "$hash_file" ]; then
+    echo "[SECURITY] Config hash file is a symlink (${hash_file}) — refusing to trust it" >&2
+    return 1
+  fi
+  if [ "${2:-}" != "" ]; then
+    local hash_uid hash_mode
+    hash_uid="$(stat -c '%u' "$hash_file" 2>/dev/null || stat -f '%u' "$hash_file" 2>/dev/null || echo unknown)"
+    hash_mode="$(stat -c '%a' "$hash_file" 2>/dev/null || stat -f '%Lp' "$hash_file" 2>/dev/null || echo unknown)"
+    if [ "$hash_uid" != "0" ]; then
+      echo "[SECURITY] Config hash file ${hash_file} is owned by uid ${hash_uid}, expected root (uid 0)" >&2
+      return 1
+    fi
+    if [ "$hash_mode" = "unknown" ] || (( (8#$hash_mode & 0222) != 0 )); then
+      echo "[SECURITY] Config hash file ${hash_file} has writable mode ${hash_mode}, expected no write bits" >&2
+      return 1
+    fi
   fi
   if ! (cd "$config_dir" && sha256sum -c "$hash_file" --status 2>/dev/null); then
     echo "[SECURITY] Config integrity check FAILED in ${config_dir} — config may have been tampered with" >&2

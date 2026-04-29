@@ -30,6 +30,7 @@ import { loadAgent } from "./agent-defs.js";
 import { resolveOpenshell } from "./resolve-openshell.js";
 import { captureOpenshellCommand } from "./openshell.js";
 import { sanitizeConfigFile, isSensitiveFile } from "./credential-filter.js";
+import { shellQuote } from "./runner.js";
 
 const HOME_DIR = path.resolve(process.env.HOME || os.homedir());
 const REBUILD_BACKUPS_DIR = path.join(HOME_DIR, ".nemoclaw", "rebuild-backups");
@@ -652,10 +653,10 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // snapshotted alongside the manifest-declared dirs. `awk '!seen[$0]++'`
     // dedupes while preserving order.
     const existCheckCmd = stateDirs
-      .map((d) => `[ -d "${dir}/${d}" ] && echo "${d}"`)
+      .map((d) => `[ -d ${shellQuote(`${dir}/${d}`)} ] && printf '%s\\n' ${shellQuote(d)}`)
       .join("; ");
     const workspaceGlobCmd =
-      `for d in ${dir}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
+      `for d in ${shellQuote(dir)}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
     const fullCheckCmd =
       `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
@@ -694,7 +695,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const auditCmd = existingDirs
       .map(
         (d) =>
-          `find "${dir}/${d}" \\( -type l -o ! -type f -a ! -type d \\) -printf "%y %p\\n" 2>/dev/null`,
+          `find ${shellQuote(`${dir}/${d}`)} \\( -type l -o ! -type f -a ! -type d \\) -printf "%y %p\\n" 2>/dev/null`,
       )
       .join("; ");
     _log(`Pre-backup audit: checking for symlinks/special files`);
@@ -724,7 +725,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // NC-2227-04: Removed -h flag (was following symlinks). State dirs are
     // now agent-writable and co-located with config — a compromised agent
     // could create symlinks to exfiltrate config contents via backup.
-    const tarCmd = `tar -cf - -C ${dir} ${existingDirs.join(" ")}`;
+    const tarCmd = `tar -cf - -C ${shellQuote(dir)} -- ${existingDirs.map(shellQuote).join(" ")}`;
     _log(`Downloading via SSH+tar: ${tarCmd}`);
     const result = spawnSync("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -839,7 +840,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
 
     // Remove existing state dirs before extracting so stale files from
     // later snapshots don't persist after restoring an earlier one.
-    const rmCmd = localDirs.map((d) => `rm -rf "${dir}/${d}"`).join(" && ");
+    const rmCmd = localDirs.map((d) => `rm -rf -- ${shellQuote(`${dir}/${d}`)}`).join(" && ");
     _log(`Cleaning target dirs before restore: ${rmCmd}`);
     const rmResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), rmCmd], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -851,7 +852,7 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       );
     }
 
-    const extractCmd = `tar -xf - -C ${dir}`;
+    const extractCmd = `tar -xf - -C ${shellQuote(dir)}`;
     const sshResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), extractCmd], {
       input: tarResult.stdout,
       stdio: ["pipe", "pipe", "pipe"],

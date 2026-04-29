@@ -1652,6 +1652,25 @@ PROXYEOF
 # this path), (b) the data directory is NOT agent-writable (root-owned),
 # and (c) a migration-complete sentinel does not already exist.
 # After migration, reapply shields-up ownership if shields were active.
+path_has_immutable_bit() {
+  local target="$1"
+  command -v lsattr >/dev/null 2>&1 || return 1
+  [ -e "$target" ] || [ -L "$target" ] || return 1
+  lsattr -d "$target" 2>/dev/null | awk '{print $1}' | grep -q 'i'
+}
+
+ensure_mutable_for_migration() {
+  local target="$1" label="$2"
+  if ! path_has_immutable_bit "$target"; then
+    return 0
+  fi
+  if command -v chattr >/dev/null 2>&1 && chattr -i "$target" 2>/dev/null; then
+    return 0
+  fi
+  echo "[SECURITY] ${label}: ${target} is immutable; run 'nemoclaw ${label} shields down' before migration" >&2
+  return 1
+}
+
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
   [ -d "$data_dir" ] || return 0
@@ -1659,9 +1678,17 @@ migrate_legacy_layout() {
   local sentinel="${config_dir}/.migration-complete"
 
   # Guard 1: Already migrated — the sentinel proves a prior trusted run.
-  if [ -f "$sentinel" ]; then
-    echo "[migration] ${label}: already migrated (sentinel exists), skipping" >&2
-    return 0
+  if [ -e "$sentinel" ] || [ -L "$sentinel" ]; then
+    local sentinel_uid sentinel_mode
+    sentinel_uid="$(stat -c '%u' "$sentinel" 2>/dev/null || stat -f '%u' "$sentinel" 2>/dev/null || echo "unknown")"
+    sentinel_mode="$(stat -c '%a' "$sentinel" 2>/dev/null || stat -f '%Lp' "$sentinel" 2>/dev/null || echo "unknown")"
+    if [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && [ "$sentinel_uid" = "0" ] && [ "$sentinel_mode" != "unknown" ] && (( (8#$sentinel_mode & 0222) == 0 )); then
+      echo "[migration] ${label}: already migrated (trusted sentinel exists), skipping" >&2
+      return 0
+    fi
+    echo "[SECURITY] ${label}: ignoring untrusted migration sentinel ${sentinel}" >&2
+    ensure_mutable_for_migration "$sentinel" "$label" || return 1
+    rm -f "$sentinel" || return 1
   fi
 
   # Guard 2: Only root may run migration. The sandbox user cannot reach
@@ -1690,6 +1717,9 @@ migrate_legacy_layout() {
     shields_were_active=true
   fi
 
+  ensure_mutable_for_migration "$config_dir" "$label" || return 1
+  ensure_mutable_for_migration "$data_dir" "$label" || return 1
+
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
   for entry in "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
@@ -1697,6 +1727,7 @@ migrate_legacy_layout() {
     name="$(basename "$entry")"
     local target="${config_dir}/${name}"
     if [ -L "$target" ]; then
+      ensure_mutable_for_migration "$target" "$label" || return 1
       rm -f "$target"
       cp -a "$entry" "$target"
     elif [ ! -e "$target" ]; then
@@ -1820,8 +1851,8 @@ if [ "$(id -u)" -ne 0 ]; then
   { tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
   GATEWAY_LOG_TAIL_PID=$!
   # Persistent mirror: see root-mode block for rationale.
-  mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
-  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+  mkdir -p /sandbox/.openclaw/logs 2>/dev/null || true
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw/logs/gateway-persistent.log; } &
   GATEWAY_LOG_PERSIST_PID=$!
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
@@ -1890,7 +1921,7 @@ chmod 600 /tmp/auto-pair.log
 provision_agent_workspaces() {
   local config_dir="/sandbox/.openclaw"
   local names=""
-  local d name
+  local d name config_names
 
   # Discover existing workspace-* dirs.
   if [ -d "$config_dir" ]; then
@@ -1899,6 +1930,38 @@ provision_agent_workspaces() {
       name="$(basename "$d")"
       names="${names} ${name}"
     done
+  fi
+
+  # Also provision workspace directories declared in openclaw.json. On first
+  # boot these may not exist yet, so directory discovery alone is insufficient.
+  if [ -f "$config_dir/openclaw.json" ] && command -v node >/dev/null 2>&1; then
+    config_names="$(
+      node - "$config_dir/openclaw.json" <<'NODE' 2>/dev/null || true
+const fs = require("fs");
+const configPath = process.argv[2];
+const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const names = new Set();
+function addWorkspace(value) {
+  if (typeof value !== "string") return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (trimmed.startsWith("/sandbox/.openclaw/")) {
+    const relative = trimmed.slice("/sandbox/.openclaw/".length);
+    if (relative && !relative.includes("..")) names.add(relative);
+    return;
+  }
+  if (/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+    names.add(trimmed.startsWith("workspace-") ? trimmed : `workspace-${trimmed}`);
+  }
+}
+addWorkspace(cfg?.agents?.defaults?.workspace);
+for (const agent of cfg?.agents?.list || []) addWorkspace(agent?.workspace);
+for (const name of names) console.log(name);
+NODE
+    )"
+    if [ -n "$config_names" ]; then
+      names="$({ printf '%s\n' $names; printf '%s\n' "$config_names"; } | awk 'NF && !seen[$0]++' | tr '\n' ' ')"
+    fi
   fi
 
   for name in $names; do
@@ -1935,14 +1998,14 @@ echo "[gateway] openclaw gateway launched as 'gateway' user (pid $GATEWAY_PID)" 
 GATEWAY_LOG_TAIL_PID=$!
 
 # Persistent mirror: append /tmp/gateway.log content to a file under
-# /sandbox/.openclaw-data/logs which is volume-mounted by openshell and
+# /sandbox/.openclaw/logs which is volume-mounted by openshell and
 # survives pod restarts. /tmp/gateway.log itself is wiped when the pod
 # restarts (TC-SBX-06 docker-kills the gateway container), so the
 # only durable record of pre-restart events lives here. The diag
 # streamer in the e2e workflow snapshots this file post-test.
-mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
-chown gateway:gateway /sandbox/.openclaw-data/logs 2>/dev/null || true
-{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+mkdir -p /sandbox/.openclaw/logs 2>/dev/null || true
+chown gateway:gateway /sandbox/.openclaw/logs 2>/dev/null || true
+{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw/logs/gateway-persistent.log; } &
 GATEWAY_LOG_PERSIST_PID=$!
 
 start_auto_pair

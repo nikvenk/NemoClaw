@@ -262,10 +262,12 @@ const HIGH_RISK_STATE_DIRS = [
 
 function unlockAgentConfig(
   sandboxName: string,
-  target: { configPath: string; configDir: string; sensitiveFiles?: string[] },
+  target: { agentName?: string; configPath: string; configDir: string; sensitiveFiles?: string[] },
 ): void {
   const errors: string[] = [];
   const filesToUnlock = [target.configPath, ...(target.sensitiveFiles || [])];
+  const fileMode = target.agentName === "hermes" ? "640" : "600";
+  const dirMode = target.agentName === "hermes" ? "750" : "700";
   for (const f of filesToUnlock) {
     try {
       kubectlExec(sandboxName, ["chattr", "-i", f]);
@@ -278,9 +280,9 @@ function unlockAgentConfig(
       errors.push(`chown ${f}`);
     }
     try {
-      kubectlExec(sandboxName, ["chmod", "600", f]);
+      kubectlExec(sandboxName, ["chmod", fileMode, f]);
     } catch {
-      errors.push(`chmod 600 ${f}`);
+      errors.push(`chmod ${fileMode} ${f}`);
     }
   }
   try {
@@ -289,9 +291,9 @@ function unlockAgentConfig(
     errors.push("chown config dir");
   }
   try {
-    kubectlExec(sandboxName, ["chmod", "700", target.configDir]);
+    kubectlExec(sandboxName, ["chmod", dirMode, target.configDir]);
   } catch {
-    errors.push("chmod 700 config dir");
+    errors.push(`chmod ${dirMode} config dir`);
   }
 
   // NC-2227-05: Restore sandbox ownership on high-risk state directories.
@@ -306,6 +308,7 @@ function unlockAgentConfig(
     }
     try {
       kubectlExec(sandboxName, ["chmod", "755", dirPath]);
+      kubectlExec(sandboxName, ["chmod", "-R", "go-w", dirPath]);
     } catch {
       // Silently skip
     }
@@ -338,7 +341,7 @@ function unlockAgentConfig(
 
 function lockAgentConfig(
   sandboxName: string,
-  target: { configPath: string; configDir: string; sensitiveFiles?: string[] },
+  target: { agentName?: string; configPath: string; configDir: string; sensitiveFiles?: string[] },
 ): void {
   const errors: string[] = [];
   const filesToLock = [target.configPath, ...(target.sensitiveFiles || [])];
@@ -392,6 +395,7 @@ function lockAgentConfig(
     }
     try {
       kubectlExec(sandboxName, ["chmod", "755", dirPath]);
+      kubectlExec(sandboxName, ["chmod", "-R", "go-w", dirPath]);
     } catch {
       // Silently skip
     }
@@ -645,7 +649,12 @@ function shieldsUp(sandboxName: string): void {
   //    If first shields-up on a fresh sandbox (no prior shields-down),
   //    the current policy is already the restrictive baseline — skip restore.
   const snapshotPath = state.shieldsDown ? state.shieldsPolicySnapshotPath : undefined;
-  if (snapshotPath && fs.existsSync(snapshotPath)) {
+  if (state.shieldsDown && (!snapshotPath || !fs.existsSync(snapshotPath))) {
+    console.error("  Cannot restore restrictive policy: saved snapshot is missing.");
+    console.error("  Sandbox remains unlocked; recapture shields-down state before running shields up.");
+    process.exit(1);
+  }
+  if (snapshotPath) {
     console.log("  Restoring restrictive policy from snapshot...");
     run(buildPolicySetCommand(snapshotPath, sandboxName));
   }

@@ -90,17 +90,26 @@ RUN mkdir -p /sandbox/.hermes/memories \
     'file, and web tools. Be concise and helpful.' \
     > /sandbox/.hermes/SOUL.md
 
-# Set mutable-default permissions (600/700 sandbox:sandbox).
-# This is what shields-down restores. Shields-up applies 444 root:root + chattr +i.
+# Set mutable-default permissions (640/750 sandbox:sandbox).
+# The sandbox user can write config; the gateway user can read it via
+# supplementary sandbox-group membership. Shields-up applies 444 root:root +
+# chattr +i.
 # hadolint ignore=DL3002
 USER root
 RUN rm -rf /root/.cache/pip /sandbox/.cache \
     && chown -R sandbox:sandbox /sandbox/.hermes \
-    && chmod 700 /sandbox/.hermes \
-    && chmod 600 /sandbox/.hermes/config.yaml \
-    && chmod 600 /sandbox/.hermes/.env
+    && chmod 750 /sandbox/.hermes \
+    && chmod 640 /sandbox/.hermes/config.yaml \
+    && chmod 640 /sandbox/.hermes/.env
 
 # Pin config hash at build time for integrity verification at startup.
+RUN mkdir -p /etc/nemoclaw \
+    && sha256sum /sandbox/.hermes/config.yaml /sandbox/.hermes/.env \
+    > /etc/nemoclaw/hermes.config-hash \
+    && chown root:root /etc/nemoclaw/hermes.config-hash \
+    && chmod 444 /etc/nemoclaw/hermes.config-hash
+
+# Backward-compatible marker for host-side shields logic on older sandboxes.
 RUN sha256sum /sandbox/.hermes/config.yaml /sandbox/.hermes/.env \
     > /sandbox/.hermes/.config-hash \
     && chmod 600 /sandbox/.hermes/.config-hash \

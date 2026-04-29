@@ -78,9 +78,10 @@ INTERNAL_PORT=18642
 HERMES="$(command -v hermes)" # Resolve once, use absolute path everywhere
 
 # Hermes writes state files (PID, state.db, .channel_directory) directly into
-# HERMES_HOME alongside config. Config is mutable by default (600 sandbox:sandbox).
-# Immutability is opt-in via `shields up`.
+# HERMES_HOME alongside config. Config is mutable by default for the sandbox user
+# and group-readable by the gateway user. Immutability is opt-in via `shields up`.
 HERMES_DIR="/sandbox/.hermes"
+HERMES_HASH_FILE="/etc/nemoclaw/hermes.config-hash"
 
 # verify_config_integrity is provided by sandbox-init.sh (parameterized).
 
@@ -94,7 +95,7 @@ hermes() {
   case "$1" in
     setup|doctor)
       echo "Error: 'hermes $1' cannot modify config inside the sandbox." >&2
-      echo "The sandbox config is read-only (Landlock enforced) for security." >&2
+      echo "NemoClaw manages sandbox config from the host for integrity checks." >&2
       echo "" >&2
       echo "To change your configuration, exit the sandbox and run:" >&2
       echo "  nemoclaw onboard --resume" >&2
@@ -231,6 +232,37 @@ PROXYEOF
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
   [ -d "$data_dir" ] || return 0
+
+  local sentinel="${config_dir}/.migration-complete"
+  if [ -e "$sentinel" ] || [ -L "$sentinel" ]; then
+    local sentinel_uid sentinel_mode
+    sentinel_uid="$(stat -c '%u' "$sentinel" 2>/dev/null || stat -f '%u' "$sentinel" 2>/dev/null || echo "unknown")"
+    sentinel_mode="$(stat -c '%a' "$sentinel" 2>/dev/null || stat -f '%Lp' "$sentinel" 2>/dev/null || echo "unknown")"
+    if [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && [ "$sentinel_uid" = "0" ] && [ "$sentinel_mode" != "unknown" ] && (( (8#$sentinel_mode & 0222) == 0 )); then
+      echo "[migration] ${label}: already migrated (trusted sentinel exists), skipping" >&2
+      return 0
+    fi
+    echo "[SECURITY] ${label}: ignoring untrusted migration sentinel ${sentinel}" >&2
+    rm -f "$sentinel" || return 1
+  fi
+
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "[SECURITY] ${label}: migration skipped — requires root" >&2
+    return 0
+  fi
+
+  local data_owner
+  data_owner="$(stat -c '%U' "$data_dir" 2>/dev/null || stat -f '%Su' "$data_dir" 2>/dev/null || echo "unknown")"
+  if [ "$data_owner" = "sandbox" ]; then
+    echo "[SECURITY] ${label}: data dir ${data_dir} is sandbox-owned — refusing migration (possible agent-planted trigger)" >&2
+    return 1
+  fi
+
+  if [ "$(stat -c '%U' "$config_dir" 2>/dev/null || stat -f '%Su' "$config_dir" 2>/dev/null || echo "unknown")" = "root" ]; then
+    echo "[SECURITY] ${label}: legacy layout appears shielded; run 'nemoclaw ${label} shields down' before migration" >&2
+    return 1
+  fi
+
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
   for entry in "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
@@ -244,8 +276,14 @@ migrate_legacy_layout() {
       cp -a "$entry" "$target"
     fi
   done
-  chown -R sandbox:sandbox "$config_dir" 2>/dev/null || true
+  for entry in "$config_dir"/*; do
+    [ -d "$entry" ] || continue
+    chown -R sandbox:sandbox "$entry" 2>/dev/null || true
+  done
   rm -rf "$data_dir"
+  printf 'migrated=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$sentinel"
+  chown root:root "$sentinel" 2>/dev/null || true
+  chmod 444 "$sentinel" 2>/dev/null || true
   echo "[migration] Completed ${label} layout migration (${data_dir} removed)" >&2
 }
 
@@ -262,7 +300,7 @@ if [ "$(id -u)" -ne 0 ]; then
   export HOME=/sandbox
   export HERMES_HOME="${HERMES_DIR}"
 
-  if ! verify_config_integrity "${HERMES_DIR}"; then
+  if ! verify_config_integrity "${HERMES_DIR}" "${HERMES_HASH_FILE}"; then
     echo "[SECURITY] Config integrity check failed — refusing to start (non-root mode)" >&2
     exit 1
   fi
@@ -308,7 +346,7 @@ fi
 
 # ── Root path (full privilege separation via gosu) ─────────────
 
-verify_config_integrity "${HERMES_DIR}"
+verify_config_integrity "${HERMES_DIR}" "${HERMES_HASH_FILE}"
 install_configure_guard
 configure_messaging_channels
 

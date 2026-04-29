@@ -149,6 +149,48 @@ export async function restoreIntoSandbox(
     return false;
   }
 
+  const repairLegacyLinks = await execa(
+    "openshell",
+    [
+      "sandbox",
+      "exec",
+      sandboxName,
+      "--",
+      "bash",
+      "-lc",
+      `set -euo pipefail
+root=/sandbox/.openclaw
+[ -d "$root" ] || exit 0
+find "$root" -type l -print0 | while IFS= read -r -d '' link; do
+  target="$(readlink "$link" 2>/dev/null || true)"
+  case "$target" in
+    *".openclaw-data"*) ;;
+    *) continue ;;
+  esac
+  rel="\${target#*/.openclaw-data/}"
+  if [ "$rel" = "$target" ] || [ -z "$rel" ]; then
+    rel="$(basename "$link")"
+  fi
+  candidate="$root/.openclaw-data/$rel"
+  tmp="$link.materialized"
+  rm -rf "$tmp"
+  if [ -e "$candidate" ]; then
+    cp -a "$candidate" "$tmp"
+  else
+    mkdir -p "$tmp"
+  fi
+  rm -f "$link"
+  mv "$tmp" "$link"
+done`,
+    ],
+    { reject: false },
+  );
+  if (repairLegacyLinks.exitCode !== 0) {
+    console.debug(
+      `legacy symlink repair in sandbox ${sandboxName} exited ${String(repairLegacyLinks.exitCode)}: ${repairLegacyLinks.stderr}`,
+    );
+  }
+
   // Files copied via `openshell sandbox cp` land as root:root because
   // the helper runs as root inside the pod. Fix ownership with a
   // best-effort recursive chown on the single config directory so the

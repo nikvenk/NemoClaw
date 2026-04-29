@@ -57,7 +57,7 @@ fi
 
 # ── 2: CAN modify .bashrc (home is writable) ──────────────────────
 info "2. Can modify .bashrc (home is writable)"
-OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc && echo OK || echo FAILED" || true)
+OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc && sed -i '/^# test$/d' /sandbox/.bashrc && echo OK || echo FAILED" || true)
 if echo "$OUT" | grep -q "OK"; then
   pass ".bashrc is writable in mutable-default mode"
 else
@@ -110,7 +110,7 @@ else
 fi
 
 # ── Cleanup test artifacts ────────────────────────────────────────
-sandbox_exec "rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
+sandbox_exec "sed -i '/^# test$/d' /sandbox/.bashrc 2>/dev/null || true; rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
 
 # ── Summary ───────────────────────────────────────────────────────
 printf '%s\n' "04-landlock-readonly: $PASSED passed, $FAILED failed"

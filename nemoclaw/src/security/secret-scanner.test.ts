@@ -195,6 +195,10 @@ describe("isMemoryPath", () => {
     expect(isMemoryPath("/sandbox/.openclaw/MEMORY.md")).toBe(true);
   });
 
+  it("matches OpenClaw runtime config", () => {
+    expect(isMemoryPath("/sandbox/.openclaw/openclaw.json")).toBe(true);
+  });
+
   it("matches workspace paths", () => {
     expect(isMemoryPath("/sandbox/.openclaw/workspace/notes.md")).toBe(true);
   });

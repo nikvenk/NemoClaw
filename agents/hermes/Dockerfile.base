@@ -53,9 +53,12 @@ RUN arch="$(dpkg --print-architecture)" \
     && gosu --version
 
 # Create sandbox user (matches OpenShell convention) and gateway user.
-# Same UID/GID layout as OpenClaw — OpenShell expects these names.
-RUN groupadd -r gateway && useradd -r -g gateway -d /sandbox -s /usr/sbin/nologin gateway \
-    && groupadd -r sandbox && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbox \
+# gateway is a member of the sandbox group so it can read Hermes config files
+# with group-read permissions while the sandbox user remains the only writer.
+RUN groupadd -r sandbox \
+    && groupadd -r gateway \
+    && useradd -r -g gateway -G sandbox -d /sandbox -s /usr/sbin/nologin gateway \
+    && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbox \
     && mkdir -p /sandbox/.nemoclaw \
     && chown -R sandbox:sandbox /sandbox
 

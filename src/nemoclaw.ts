@@ -4283,6 +4283,14 @@ const [cmd, ...args] = process.argv.slice(2);
 
     switch (action) {
       case "connect":
+        if (actionArgs.length > 0) {
+          console.error(`  Unknown connect argument${actionArgs.length === 1 ? "" : "s"}: ${actionArgs.join(" ")}`);
+          if (actionArgs.includes("--dangerously-skip-permissions")) {
+            console.error("  --dangerously-skip-permissions was removed; use shields commands instead.");
+          }
+          console.error("  Usage: nemoclaw <name> connect");
+          process.exit(1);
+        }
         await sandboxConnect(cmd);
         break;
       case "status":

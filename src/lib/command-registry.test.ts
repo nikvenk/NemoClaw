@@ -65,7 +65,7 @@ describe("command-registry", () => {
   });
 
   describe("visibleCommands()", () => {
-    it("should exclude 11 hidden commands (36 visible)", () => {
+    it("should exclude 9 hidden commands (36 visible)", () => {
       // 5 hidden global (help, --help, -h, --version, -v) +
       // 4 hidden sandbox (shields×3, config get)
       expect(visibleCommands()).toHaveLength(36);

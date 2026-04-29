@@ -13,7 +13,7 @@ import path from "node:path";
 
 import { buildPolicySetCommand } from "./policies";
 import { run } from "./runner";
-import { resolveAgentConfig } from "./sandbox-config";
+import { DEFAULT_AGENT_CONFIG, resolveAgentConfig } from "./sandbox-config";
 import { lockAgentConfig } from "./shields";
 
 type UnknownRecord = { [key: string]: unknown };
@@ -151,9 +151,19 @@ function runRestoreTimer(args: TimerArgs): void {
     // configDir from argv if resolution fails (e.g., registry unavailable).
     let lockVerified = true;
     if (args.configPath) {
-      let lockTarget: { configPath: string; configDir: string; sensitiveFiles?: string[] };
+      let lockTarget: {
+        agentName?: string;
+        configPath: string;
+        configDir: string;
+        sensitiveFiles?: string[];
+      };
       try {
-        lockTarget = resolveAgentConfig(args.sandboxName);
+        const resolvedTarget = resolveAgentConfig(args.sandboxName);
+        if (resolvedTarget === DEFAULT_AGENT_CONFIG && args.configDir) {
+          lockTarget = { configPath: args.configPath, configDir: args.configDir };
+        } else {
+          lockTarget = resolvedTarget;
+        }
       } catch {
         // Fall back to argv-supplied paths without sensitive files —
         // better to lock the main config than nothing at all.

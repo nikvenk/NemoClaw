@@ -119,6 +119,7 @@ const MEMORY_PATH_SEGMENTS = [
   "/.openclaw/telegram/",
   "/.openclaw/sandbox/",
   "/.openclaw/MEMORY.md",
+  "/.openclaw/openclaw.json",
   "/.nemoclaw/",
 ];
 
