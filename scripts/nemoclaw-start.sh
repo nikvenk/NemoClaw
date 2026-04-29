@@ -939,6 +939,16 @@ export http_proxy="$_PROXY_URL"
 export https_proxy="$_PROXY_URL"
 export no_proxy="$_NO_PROXY_VAL"
 
+# Git TLS CA bundle fix (NemoClaw#2270).
+# OpenShell's L7 proxy does MITM TLS termination and re-signs with its own CA.
+# OpenShell injects SSL_CERT_FILE and CURL_CA_BUNDLE pointing at the CA bundle,
+# but git does not read those — it needs GIT_SSL_CAINFO.  Without it, git clone
+# fails with "server certificate verification failed".
+# Use SSL_CERT_FILE (set by OpenShell) as the canonical CA bundle path.
+if [ -n "${SSL_CERT_FILE:-}" ] && [ -f "${SSL_CERT_FILE}" ]; then
+  export GIT_SSL_CAINFO="$SSL_CERT_FILE"
+fi
+
 # HTTP library + NODE_USE_ENV_PROXY double-proxy fix (NemoClaw#2109).
 # Node.js 22 sets NODE_USE_ENV_PROXY=1 in the OpenShell base image, which
 # intercepts https.request() calls and handles proxying via CONNECT tunnel.
@@ -1374,14 +1384,36 @@ emit_sandbox_sourced_file "$_CIAO_GUARD_SCRIPT" <<'CIAO_GUARD_EOF'
   // Monkey-patch os.networkInterfaces to return empty on failure.
   var os = require('os');
   var _origNetworkInterfaces = os.networkInterfaces;
+  // Rate-limit the failure log. The bonjour watchdog inside ciao retries
+  // advertising every few seconds, so a naive "log on every failure" fills
+  // sandbox logs with hundreds of identical lines per hour. Log the first
+  // failure (operator gets the actionable message) and at most one summary
+  // every 5 minutes thereafter, with a suppression count so volume is
+  // still observable. See GitHub issue #2611.
+  var _failureCount = 0;
+  var _lastLogMs = 0;
+  var _suppressedSinceLog = 0;
+  var _LOG_INTERVAL_MS = 5 * 60 * 1000;
   os.networkInterfaces = function () {
     try {
       return _origNetworkInterfaces.call(os);
     } catch (err) {
-      process.stderr.write(
-        '[guard] os.networkInterfaces() failed: ' + (err.message || err) +
-        ' — returning empty (mDNS disabled)\n'
-      );
+      _failureCount++;
+      var nowMs = Date.now();
+      var shouldLog = _failureCount === 1 || (nowMs - _lastLogMs) >= _LOG_INTERVAL_MS;
+      if (shouldLog) {
+        var suffix = _suppressedSinceLog > 0
+          ? ' [' + _suppressedSinceLog + ' suppressed in last ~5min, ' + _failureCount + ' total]'
+          : '';
+        process.stderr.write(
+          '[guard] os.networkInterfaces() failed: ' + (err.message || err) +
+          ' — returning empty (mDNS disabled)' + suffix + '\n'
+        );
+        _lastLogMs = nowMs;
+        _suppressedSinceLog = 0;
+      } else {
+        _suppressedSinceLog++;
+      }
       return {};
     }
   };
@@ -1470,6 +1502,10 @@ PROXYEOF
   # WebSocket CONNECT tunnel fix for connect sessions. (NemoClaw#1570)
   if [ -f "$_WS_FIX_SCRIPT" ]; then
     echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_WS_FIX_SCRIPT\""
+  fi
+  # Git TLS CA bundle for connect sessions (NemoClaw#2270)
+  if [ -n "${GIT_SSL_CAINFO:-}" ]; then
+    printf 'export GIT_SSL_CAINFO=%q\n' "$GIT_SSL_CAINFO"
   fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
