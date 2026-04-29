@@ -1667,12 +1667,16 @@ ensure_mutable_for_migration() {
   if command -v chattr >/dev/null 2>&1 && chattr -i "$target" 2>/dev/null; then
     return 0
   fi
-  echo "[SECURITY] ${label}: ${target} is immutable; run 'nemoclaw ${label} shields down' before migration" >&2
+  echo "[SECURITY] ${label}: ${target} is immutable; run 'nemoclaw <sandbox> shields down' before migration" >&2
   return 1
 }
 
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
+  if [ -L "$data_dir" ]; then
+    echo "[SECURITY] ${label}: refusing migration because ${data_dir} is a symlink" >&2
+    return 1
+  fi
   [ -d "$data_dir" ] || return 0
 
   local sentinel="${config_dir}/.migration-complete"
@@ -1723,6 +1727,10 @@ migrate_legacy_layout() {
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
   for entry in "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
+    if [ -L "$entry" ]; then
+      echo "[SECURITY] ${label}: refusing migration because ${entry} is a symlink" >&2
+      return 1
+    fi
     local name
     name="$(basename "$entry")"
     local target="${config_dir}/${name}"
@@ -1761,6 +1769,13 @@ migrate_legacy_layout() {
       if [ -f "$f" ]; then
         chown root:root "$f" 2>/dev/null || true
         chmod 444 "$f" 2>/dev/null || true
+      fi
+    done
+    for subdir in skills hooks cron agents extensions plugins; do
+      if [ -d "$config_dir/$subdir" ]; then
+        chown -R root:root "$config_dir/$subdir" 2>/dev/null || true
+        chmod 755 "$config_dir/$subdir" 2>/dev/null || true
+        chmod -R go-w "$config_dir/$subdir" 2>/dev/null || true
       fi
     done
   fi
@@ -1941,17 +1956,19 @@ provision_agent_workspaces() {
   const configPath = process.argv[2];
   const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const names = new Set();
+  const workspacePattern = /^workspace-[A-Za-z0-9._-]+$/;
   function addWorkspace(value) {
     if (typeof value !== "string") return;
     const trimmed = value.trim();
     if (!trimmed) return;
     if (trimmed.startsWith("/sandbox/.openclaw/")) {
       const relative = trimmed.slice("/sandbox/.openclaw/".length);
-      if (relative && !relative.includes("..")) names.add(relative);
+      if (workspacePattern.test(relative)) names.add(relative);
       return;
     }
     if (/^[A-Za-z0-9._-]+$/.test(trimmed)) {
-      names.add(trimmed.startsWith("workspace-") ? trimmed : `workspace-${trimmed}`);
+      const name = trimmed.startsWith("workspace-") ? trimmed : `workspace-${trimmed}`;
+      if (workspacePattern.test(name)) names.add(name);
     }
   }
   addWorkspace(cfg?.agents?.defaults?.workspace);

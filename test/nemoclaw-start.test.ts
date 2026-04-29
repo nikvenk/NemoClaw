@@ -716,6 +716,19 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn[1]).toContain("possible agent-planted trigger");
   });
 
+  it("rejects symlinked legacy data directories and entries before root copy", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('[ -L "$data_dir" ]');
+    expect(fn[1]).toContain('[ -L "$entry" ]');
+    expect(fn[1]).toContain("refusing migration");
+  });
+
+  it("uses a sandbox placeholder in shields-down recovery hints", () => {
+    expect(src).toContain("nemoclaw <sandbox> shields down");
+    expect(src).not.toContain("nemoclaw ${label} shields down");
+  });
+
   it("does not chown -R the config directory itself", () => {
     const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
@@ -730,6 +743,10 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn).toBeTruthy();
     expect(fn[1]).toContain("shields_were_active");
     expect(fn[1]).toContain("Reapplying shields-up ownership");
+    for (const dir of ["skills", "hooks", "cron", "agents", "extensions", "plugins"]) {
+      expect(fn[1]).toContain(dir);
+    }
+    expect(fn[1]).toContain("chmod -R go-w");
   });
 
   it("writes a root-owned read-only sentinel after successful migration", () => {
@@ -738,5 +755,13 @@ describe("NC-2227-01: legacy migration guards", () => {
     // Sentinel must be root-owned and 444
     expect(fn[1]).toMatch(/chown root:root "\$sentinel"/);
     expect(fn[1]).toMatch(/chmod 444 "\$sentinel"/);
+  });
+
+  it("only provisions canonical workspace-* paths from config", () => {
+    const fn = src.match(/provision_agent_workspaces\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("workspacePattern");
+    expect(fn[1]).toContain("workspacePattern.test(relative)");
+    expect(fn[1]).toContain("workspacePattern.test(name)");
   });
 });

@@ -231,6 +231,10 @@ PROXYEOF
 # ── Legacy layout migration ──────────────────────────────────────
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
+  if [ -L "$data_dir" ]; then
+    echo "[SECURITY] ${label}: refusing migration because ${data_dir} is a symlink" >&2
+    return 1
+  fi
   [ -d "$data_dir" ] || return 0
 
   local sentinel="${config_dir}/.migration-complete"
@@ -259,13 +263,17 @@ migrate_legacy_layout() {
   fi
 
   if [ "$(stat -c '%U' "$config_dir" 2>/dev/null || stat -f '%Su' "$config_dir" 2>/dev/null || echo "unknown")" = "root" ]; then
-    echo "[SECURITY] ${label}: legacy layout appears shielded; run 'nemoclaw ${label} shields down' before migration" >&2
+    echo "[SECURITY] ${label}: legacy layout appears shielded; run 'nemoclaw <sandbox> shields down' before migration" >&2
     return 1
   fi
 
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
   for entry in "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
+    if [ -L "$entry" ]; then
+      echo "[SECURITY] ${label}: refusing migration because ${entry} is a symlink" >&2
+      return 1
+    fi
     local name
     name="$(basename "$entry")"
     local target="${config_dir}/${name}"

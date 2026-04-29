@@ -704,6 +704,18 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30000,
     });
+    if (auditResult.status !== 0) {
+      const stderr = (auditResult.stderr || "").trim();
+      const detail = stderr || auditResult.error?.message || `exit ${String(auditResult.status)}`;
+      _log(`FAILED: Pre-backup audit command failed — ${detail}`);
+      return {
+        success: false,
+        manifest,
+        backedUpDirs,
+        failedDirs: [...existingDirs],
+        error: `Pre-backup audit failed: ${detail}`,
+      };
+    }
     const auditOutput = (auditResult.stdout || "").trim();
     if (auditOutput.length > 0) {
       // Found symlinks or special files — log them and reject the backup

@@ -391,6 +391,16 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(fnBody).toContain("Pre-backup audit");
     expect(fnBody).toContain("-type l");
   });
+
+  it("backup fails closed when the pre-backup audit command errors", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function backupSandboxState");
+    const fnBody = src.slice(fnStart);
+
+    expect(fnBody).toContain("auditResult.status !== 0");
+    expect(fnBody).toContain("Pre-backup audit failed");
+    expect(fnBody).toContain("failedDirs: [...existingDirs]");
+  });
 });
 
 // -------------------------------------------------------------------
