@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import { renderBox } from "./banner.js";
 import { DASHBOARD_PORT } from "./ports";
 import { buildSubprocessEnv } from "./subprocess-env";
 
@@ -293,11 +294,6 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
   }
 
   // Banner
-  console.log("");
-  console.log("  ┌─────────────────────────────────────────────────────┐");
-  console.log("  │  NemoClaw Services                                  │");
-  console.log("  │                                                     │");
-
   let tunnelUrl = "";
   const cfLogFile = join(pidDir, "cloudflared.log");
   if (isRunning(pidDir, "cloudflared") && existsSync(cfLogFile)) {
@@ -308,15 +304,19 @@ export async function startAll(opts: ServiceOptions = {}): Promise<void> {
     }
   }
 
-  if (tunnelUrl) {
-    console.log(`  │  Public URL:  ${tunnelUrl.padEnd(40)}│`);
+  const bannerLines: (string | null)[] = [
+    "  NemoClaw Services",
+    null,
+    ...(tunnelUrl ? [`  Public URL:  ${tunnelUrl}`] : []),
+    "  Messaging:   via OpenClaw native channels (if configured)",
+    null,
+    "  Run 'openshell term' to monitor egress approvals",
+  ];
+
+  console.log("");
+  for (const line of renderBox(bannerLines)) {
+    console.log(line);
   }
-
-  console.log("  │  Messaging:   via OpenClaw native channels (if configured) │");
-
-  console.log("  │                                                     │");
-  console.log("  │  Run 'openshell term' to monitor egress approvals   │");
-  console.log("  └─────────────────────────────────────────────────────┘");
   console.log("");
 }
 
