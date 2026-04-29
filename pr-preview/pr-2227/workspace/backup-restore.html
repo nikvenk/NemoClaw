@@ -532,8 +532,8 @@ Snapshots capture all workspace state directories defined in the agent manifest 
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code> command uses the same snapshot mechanism automatically.
-Snapshot restore accepts symlinks that resolve to NemoClaw-managed sandbox state paths such as <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/</span></code>.
-Symlinks that point outside the known sandbox data paths are still rejected during extraction.
+Snapshot restore performs a targeted repair for legacy <code class="docutils literal notranslate"><span class="pre">.openclaw-data</span></code> symlinks that were created by older images.
+Unsafe symlinks and hard links inside sandbox state are rejected during backup creation before they can enter a snapshot.
 For full details, see the <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">Commands reference</span></a>.</p>
 </section>
 <section id="manual-backup">
