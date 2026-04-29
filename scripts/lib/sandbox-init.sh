@@ -256,7 +256,7 @@ verify_config_integrity() {
       echo "[SECURITY] Config hash file ${hash_file} is owned by uid ${hash_uid}, expected root (uid 0)" >&2
       return 1
     fi
-    if [ "$hash_mode" = "unknown" ] || (( (8#$hash_mode & 0222) != 0 )); then
+    if [ "$hash_mode" = "unknown" ] || (((8#$hash_mode & 0222) != 0)); then
       echo "[SECURITY] Config hash file ${hash_file} has writable mode ${hash_mode}, expected no write bits" >&2
       return 1
     fi

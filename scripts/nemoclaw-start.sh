@@ -1682,7 +1682,7 @@ migrate_legacy_layout() {
     local sentinel_uid sentinel_mode
     sentinel_uid="$(stat -c '%u' "$sentinel" 2>/dev/null || stat -f '%u' "$sentinel" 2>/dev/null || echo "unknown")"
     sentinel_mode="$(stat -c '%a' "$sentinel" 2>/dev/null || stat -f '%Lp' "$sentinel" 2>/dev/null || echo "unknown")"
-    if [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && [ "$sentinel_uid" = "0" ] && [ "$sentinel_mode" != "unknown" ] && (( (8#$sentinel_mode & 0222) == 0 )); then
+    if [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && [ "$sentinel_uid" = "0" ] && [ "$sentinel_mode" != "unknown" ] && (((8#$sentinel_mode & 0222) == 0)); then
       echo "[migration] ${label}: already migrated (trusted sentinel exists), skipping" >&2
       return 0
     fi
@@ -1960,7 +1960,12 @@ for (const name of names) console.log(name);
 NODE
     )"
     if [ -n "$config_names" ]; then
-      names="$({ printf '%s\n' $names; printf '%s\n' "$config_names"; } | awk 'NF && !seen[$0]++' | tr '\n' ' ')"
+      names="$({
+        for name in $names; do
+          printf '%s\n' "$name"
+        done
+        printf '%s\n' "$config_names"
+      } | awk 'NF && !seen[$0]++' | tr '\n' ' ')"
     fi
   fi
 
