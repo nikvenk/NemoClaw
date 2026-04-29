@@ -505,6 +505,17 @@ EOF
       expect(src).toContain("validate_tmp_permissions");
     });
 
+    it("hermes start.sh checks immutable bits before legacy migration mutates files", () => {
+      const src = readFileSync(join(import.meta.dirname, "../agents/hermes/start.sh"), "utf-8");
+      const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+      expect(fn).toBeTruthy();
+      expect(src).toContain("path_has_immutable_bit");
+      expect(src).toContain("ensure_mutable_for_migration");
+      for (const target of ["$sentinel", "$config_dir", "$data_dir", "$entry", "$target"]) {
+        expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
+      }
+    });
+
     it("nemoclaw-start.sh uses emit_sandbox_sourced_file for proxy-env.sh", () => {
       const src = readFileSync(join(import.meta.dirname, "../scripts/nemoclaw-start.sh"), "utf-8");
       expect(src).toContain("emit_sandbox_sourced_file");

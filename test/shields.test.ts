@@ -402,6 +402,19 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(fnBody).toContain("Pre-backup audit failed");
     expect(fnBody).toContain("failedDirs: [...existingDirs]");
   });
+
+  it("restore fails closed when pre-restore cleanup cannot remove stale state", () => {
+    const src = getSourceCode();
+    const fnStart = src.indexOf("function restoreSandboxState");
+    const fnBody = src.slice(fnStart);
+    const cleanupCheck = fnBody.slice(fnBody.indexOf("const rmResult"), fnBody.indexOf("const extractCmd"));
+
+    expect(cleanupCheck).toContain("rmResult.status !== 0");
+    expect(cleanupCheck).toContain("rmResult.error");
+    expect(cleanupCheck).toContain("rmResult.signal");
+    expect(cleanupCheck).toContain("FAILED: pre-restore cleanup failed");
+    expect(cleanupCheck).toContain("failedDirs: [...localDirs]");
+  });
 });
 
 // -------------------------------------------------------------------

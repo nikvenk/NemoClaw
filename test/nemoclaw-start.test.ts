@@ -80,6 +80,15 @@ describe("nemoclaw-start non-root fallback", () => {
     expect(src).toContain('export "${_raw_args[$i]}"');
     expect(src).toContain('set -- "${_raw_args[@]:$((_self_wrapper_index + 1))}"');
   });
+
+  it("repairs ownership for all writable OpenClaw state directories in non-root mode", () => {
+    const src = fs.readFileSync(START_SCRIPT, "utf-8");
+    const fn = src.match(/fix_openclaw_ownership\(\) \{([\s\S]*?)^\s*\}/m);
+    expect(fn).toBeTruthy();
+    for (const dir of ["workspace", "memory", "credentials", "flows", "telegram", "media"]) {
+      expect(fn![1]).toContain(dir);
+    }
+  });
 });
 
 describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
@@ -737,6 +746,16 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn[1]).toContain('[ -L "$data_dir" ]');
     expect(fn[1]).toContain('[ -L "$entry" ]');
     expect(fn[1]).toContain("refusing migration");
+  });
+
+  it("checks immutable bits before touching legacy migration artifacts", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(src).toContain("path_has_immutable_bit");
+    expect(src).toContain("ensure_mutable_for_migration");
+    for (const target of ["$sentinel", "$config_dir", "$data_dir", "$target"]) {
+      expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
+    }
   });
 
   it("uses a sandbox placeholder in shields-down recovery hints", () => {

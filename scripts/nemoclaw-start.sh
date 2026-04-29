@@ -1882,7 +1882,7 @@ if [ "$(id -u)" -ne 0 ]; then
   fix_openclaw_ownership() {
     local openclaw_dir="${HOME}/.openclaw"
     [ -d "$openclaw_dir" ] || return 0
-    local subdirs="agents/main/agent extensions workspace skills hooks identity devices canvas cron logs credentials sandbox media"
+    local subdirs="agents/main/agent extensions workspace skills hooks identity devices canvas cron memory logs credentials flows sandbox telegram media"
     for sub in $subdirs; do
       mkdir -p "${openclaw_dir}/${sub}" 2>/dev/null || true
     done

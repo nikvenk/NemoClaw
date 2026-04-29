@@ -229,6 +229,25 @@ PROXYEOF
 } | emit_sandbox_sourced_file "$_PROXY_ENV_FILE"
 
 # ── Legacy layout migration ──────────────────────────────────────
+path_has_immutable_bit() {
+  local target="$1"
+  command -v lsattr >/dev/null 2>&1 || return 1
+  [ -e "$target" ] || [ -L "$target" ] || return 1
+  lsattr -d "$target" 2>/dev/null | awk '{print $1}' | grep -q 'i'
+}
+
+ensure_mutable_for_migration() {
+  local target="$1" label="$2"
+  if ! path_has_immutable_bit "$target"; then
+    return 0
+  fi
+  if command -v chattr >/dev/null 2>&1 && chattr -i "$target" 2>/dev/null; then
+    return 0
+  fi
+  echo "[SECURITY] ${label}: ${target} is immutable; run 'nemoclaw <sandbox> shields down' before migration" >&2
+  return 1
+}
+
 legacy_symlinks_exist() {
   local config_dir="$1" data_dir="$2"
   local data_real entry target
@@ -281,9 +300,11 @@ migrate_legacy_layout() {
         return 0
       fi
       echo "[migration] ${label}: trusted sentinel exists but legacy artifacts remain; repairing" >&2
+      ensure_mutable_for_migration "$sentinel" "$label" || return 1
       rm -f "$sentinel" || return 1
     else
       echo "[SECURITY] ${label}: ignoring untrusted migration sentinel ${sentinel}" >&2
+      ensure_mutable_for_migration "$sentinel" "$label" || return 1
       rm -f "$sentinel" || return 1
     fi
   fi
@@ -310,6 +331,9 @@ migrate_legacy_layout() {
     return 1
   fi
 
+  ensure_mutable_for_migration "$config_dir" "$label" || return 1
+  ensure_mutable_for_migration "$data_dir" "$label" || return 1
+
   echo "[migration] Detected legacy ${label} layout (${data_dir} exists), migrating..." >&2
   for entry in "$data_dir"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
@@ -317,10 +341,12 @@ migrate_legacy_layout() {
       echo "[SECURITY] ${label}: refusing migration because ${entry} is a symlink" >&2
       return 1
     fi
+    ensure_mutable_for_migration "$entry" "$label" || return 1
     local name
     name="$(basename "$entry")"
     local target="${config_dir}/${name}"
     if [ -L "$target" ]; then
+      ensure_mutable_for_migration "$target" "$label" || return 1
       rm -f "$target"
       cp -a "$entry" "$target"
     elif [ -d "$target" ] && [ -d "$entry" ]; then
@@ -388,6 +414,7 @@ if [ "$(id -u)" -ne 0 ]; then
   # the shared-library refactor). Acceptable for entrypoint-level cleanup.
   SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
   [ -n "${DECODE_PROXY_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$DECODE_PROXY_PID")
+  # shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
   SANDBOX_WAIT_PID="$GATEWAY_PID"
   trap cleanup_on_signal SIGTERM SIGINT
   start_socat_forwarder
@@ -433,6 +460,7 @@ echo "[gateway] hermes gateway launched as 'gateway' user (pid $GATEWAY_PID)" >&
 # the shared-library refactor). Acceptable for entrypoint-level cleanup.
 SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
 [ -n "${DECODE_PROXY_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$DECODE_PROXY_PID")
+# shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
 SANDBOX_WAIT_PID="$GATEWAY_PID"
 trap cleanup_on_signal SIGTERM SIGINT
 start_socat_forwarder

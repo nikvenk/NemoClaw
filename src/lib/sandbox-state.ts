@@ -856,10 +856,14 @@ export function restoreSandboxState(sandboxName: string, backupPath: string): Re
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30000,
     });
-    if (rmResult.status !== 0) {
-      _log(
-        `WARNING: pre-restore cleanup failed (exit ${rmResult.status}): ${(rmResult.stderr?.toString() || "").substring(0, 200)}`,
-      );
+    if (rmResult.status !== 0 || rmResult.error || rmResult.signal) {
+      const stderr = (rmResult.stderr?.toString() || "").trim();
+      const detail =
+        stderr ||
+        rmResult.error?.message ||
+        (rmResult.signal ? `signal ${rmResult.signal}` : `exit ${String(rmResult.status)}`);
+      _log(`FAILED: pre-restore cleanup failed: ${detail.substring(0, 200)}`);
+      return { success: false, restoredDirs, failedDirs: [...localDirs] };
     }
 
     const extractCmd = `tar -xf - -C ${shellQuote(dir)}`;

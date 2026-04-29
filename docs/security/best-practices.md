@@ -238,7 +238,7 @@ Writable agent state such as plugins, skills, hooks, and workspace metadata live
 By default, this directory starts writable so the agent can manage its own config, install skills, and write to standard home-directory paths natively.
 Operators can opt into immutability by running `nemoclaw <name> shields up`, which locks the config and writable state entry points until `shields down` restores the default writable state.
 
-- **DAC permissions (default).** The sandbox user owns the directory and `openclaw.json` with `chmod 600`, so the agent can read and write config directly.
+- **DAC permissions (default).** The sandbox user owns `/sandbox/.openclaw` with mode `700` and `openclaw.json` with mode `600`, so the agent can read and write config directly.
 - **Config integrity hash.** The build process pins a SHA256 hash of `openclaw.json`. The entrypoint verifies it at startup and refuses to start if the hash does not match.
 - **Gateway token environment.** The gateway auth token is exported as `OPENCLAW_GATEWAY_TOKEN` and written to marked shell rc blocks for interactive sandbox sessions. Keep this in mind when deciding whether a workload should run with mutable config or with Shields UP.
 - **Shields UP (opt-in).** `nemoclaw <name> shields up` applies root-owned read-only permissions and best-effort immutable bits to sensitive config files, and locks writable state directories such as workspace, memory, skills, hooks, cron, agents, and extensions.
