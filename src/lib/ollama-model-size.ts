@@ -64,6 +64,7 @@ export function probeRegistrySize(model: string, capture: CaptureFn = runCapture
 
   let total = 0;
   for (const layer of layers) {
+    if (layer === null || typeof layer !== "object") return null;
     const size = (layer as { size?: unknown }).size;
     if (typeof size !== "number" || !Number.isFinite(size) || size < 0) return null;
     total += size;

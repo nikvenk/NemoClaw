@@ -84,6 +84,15 @@ describe("probeRegistrySize", () => {
     const bad = JSON.stringify({ layers: [{ size: "huge" }] });
     expect(probeRegistrySize("qwen2.5:7b", captureReturning(bad))).toBeNull();
   });
+
+  it("returns null when a layer entry is null or not an object", () => {
+    expect(
+      probeRegistrySize("qwen2.5:7b", captureReturning(JSON.stringify({ layers: [null] }))),
+    ).toBeNull();
+    expect(
+      probeRegistrySize("qwen2.5:7b", captureReturning(JSON.stringify({ layers: [42] }))),
+    ).toBeNull();
+  });
 });
 
 describe("getOllamaModelSize", () => {
