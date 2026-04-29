@@ -655,10 +655,8 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const existCheckCmd = stateDirs
       .map((d) => `[ -d ${shellQuote(`${dir}/${d}`)} ] && printf '%s\\n' ${shellQuote(d)}`)
       .join("; ");
-    const workspaceGlobCmd =
-      `for d in ${shellQuote(dir)}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
-    const fullCheckCmd =
-      `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
+    const workspaceGlobCmd = `for d in ${shellQuote(dir)}/workspace-*/; do [ -d "$d" ] && basename "$d"; done 2>/dev/null`;
+    const fullCheckCmd = `{ ${existCheckCmd}; ${workspaceGlobCmd}; } 2>/dev/null | awk '!seen[$0]++'`;
     _log(`Checking existing dirs via SSH: ${fullCheckCmd.substring(0, 100)}...`);
     const existResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), fullCheckCmd], {
       encoding: "utf-8",
@@ -695,10 +693,10 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     const auditCmd = existingDirs
       .map(
         (d) =>
-          `find ${shellQuote(`${dir}/${d}`)} \\( -type l -o ! -type f -a ! -type d \\) -printf "%y %p\\n" 2>/dev/null`,
+          `find ${shellQuote(`${dir}/${d}`)} \\( -type l -o \\( -type f -a -links +1 \\) -o \\( ! -type f -a ! -type d \\) \\) -printf "%y %p\\n" 2>/dev/null`,
       )
       .join("; ");
-    _log(`Pre-backup audit: checking for symlinks/special files`);
+    _log(`Pre-backup audit: checking for symlinks, hard links, and special files`);
     const auditResult = spawnSync("ssh", [...sshArgs(configFile, sandboxName), auditCmd], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -728,10 +726,10 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         manifest,
         backedUpDirs,
         failedDirs: [...existingDirs],
-        error: `Pre-backup audit rejected: symlinks or special files found in state dirs: ${violations.slice(0, 3).join("; ")}`,
+        error: `Pre-backup audit rejected: symlinks, hard links, or special files found in state dirs: ${violations.slice(0, 3).join("; ")}`,
       };
     }
-    _log("Pre-backup audit passed — no symlinks or special files found");
+    _log("Pre-backup audit passed — no symlinks, hard links, or special files found");
 
     // Download via SSH+tar
     // NC-2227-04: Removed -h flag (was following symlinks). State dirs are
@@ -921,9 +919,15 @@ function readManifest(backupPath: string): RebuildManifest | null {
   if (!existsSync(manifestPath)) return null;
   try {
     const parsed = parseJson<unknown>(readFileSync(manifestPath, "utf-8"));
-    return isRebuildManifest(parsed)
-      ? { ...parsed, blueprintDigest: parsed.blueprintDigest ?? null }
-      : null;
+    if (!isRebuildManifest(parsed)) return null;
+    const manifest = parsed as RebuildManifest & { dir?: string; writableDir?: string };
+    const dir = manifest.dir ?? manifest.writableDir;
+    if (!dir) return null;
+    return {
+      ...manifest,
+      dir,
+      blueprintDigest: manifest.blueprintDigest ?? null,
+    };
   } catch {
     return null;
   }

@@ -447,7 +447,7 @@ The scanner intercepts Write, Edit, and similar tool calls targeting memory and 
 | Aspect | Detail |
 |---|---|
 | Default | Enabled. The plugin registers a `before_tool_call` hook that scans for 14 high-confidence secret patterns. |
-| What it covers | `.openclaw/memory/`, `workspace/`, `agents/`, `skills/`, `hooks/`, and `MEMORY.md`. |
+| What it covers | Examples include `.openclaw/memory/`, `.openclaw/workspace/`, `.openclaw/agents/`, `.openclaw/skills/`, `.openclaw/hooks/`, `.openclaw/credentials/`, `.openclaw/openclaw.json`, `.nemoclaw/`, and `MEMORY.md`; the exact coverage is defined by `MEMORY_PATH_SEGMENTS` and enforced through `isMemoryPath()`. |
 | What you can change | This is not a user-facing knob. The plugin enforces it automatically. |
 | Risk if relaxed | Without scanning, the agent could persist API keys or tokens in memory files that survive across sessions and backups. |
 | Recommendation | No action needed. If a write is blocked, the agent receives an actionable error listing the detected patterns. |
