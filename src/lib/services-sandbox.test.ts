@@ -261,6 +261,34 @@ describe("stopAll with sandbox channels", () => {
     logSpy.mockRestore();
   });
 
+  it("prefers NEMOCLAW_SANDBOX_NAME over NEMOCLAW_SANDBOX (consistent with resolveDefaultSandboxName)", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const savedNemoclaw = process.env.NEMOCLAW_SANDBOX;
+    const savedNemoclawName = process.env.NEMOCLAW_SANDBOX_NAME;
+    const savedSandbox = process.env.SANDBOX_NAME;
+    process.env.NEMOCLAW_SANDBOX_NAME = "name-sandbox";
+    process.env.NEMOCLAW_SANDBOX = "other-sandbox";
+    delete process.env.SANDBOX_NAME;
+
+    try {
+      stopAll({ pidDir });
+    } finally {
+      if (savedNemoclaw !== undefined) process.env.NEMOCLAW_SANDBOX = savedNemoclaw;
+      else delete process.env.NEMOCLAW_SANDBOX;
+      if (savedNemoclawName !== undefined) process.env.NEMOCLAW_SANDBOX_NAME = savedNemoclawName;
+      else delete process.env.NEMOCLAW_SANDBOX_NAME;
+      if (savedSandbox !== undefined) process.env.SANDBOX_NAME = savedSandbox;
+      else delete process.env.SANDBOX_NAME;
+    }
+
+    expect(spawnSyncSpy).toHaveBeenCalledWith(
+      "/usr/local/bin/openshell",
+      expect.arrayContaining(["name-sandbox"]),
+      expect.any(Object),
+    );
+    logSpy.mockRestore();
+  });
+
   it("rejects malformed env var sandbox names before calling stopSandboxChannels", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const savedNemoclaw = process.env.NEMOCLAW_SANDBOX;

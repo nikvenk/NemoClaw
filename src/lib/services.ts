@@ -300,8 +300,8 @@ export function stopAll(opts: ServiceOptions = {}): void {
   // Stop the in-sandbox OpenClaw gateway (and its messaging channels).
   const rawSandboxName =
     opts.sandboxName ??
-    process.env.NEMOCLAW_SANDBOX ??
     process.env.NEMOCLAW_SANDBOX_NAME ??
+    process.env.NEMOCLAW_SANDBOX ??
     process.env.SANDBOX_NAME;
   const sandboxName =
     rawSandboxName && SAFE_NAME_RE.test(rawSandboxName) && !rawSandboxName.includes("..")
