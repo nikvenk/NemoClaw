@@ -220,6 +220,7 @@ info "Expected duration: 3-8 minutes."
 
 # The launchable script expects to run as root (it uses sudo internally).
 # On GitHub runners, we already have passwordless sudo.
+# shellcheck disable=SC2024 — redirect is intentional; log file stays runner-owned
 sudo -E bash "$REPO/scripts/brev-launchable-ci-cpu.sh" >"$INSTALL_LOG" 2>&1 &
 install_pid=$!
 tail -f "$INSTALL_LOG" --pid=$install_pid 2>/dev/null &
