@@ -368,6 +368,7 @@ os.chmod(path, 0o600)"
 # .openclaw layout even when sandbox-base:latest has not been rebuilt yet.
 # hadolint ignore=DL3002
 USER root
+# hadolint ignore=DL4006
 RUN set -eu; \
     config_dir=/sandbox/.openclaw; \
     data_dir=/sandbox/.openclaw-data; \

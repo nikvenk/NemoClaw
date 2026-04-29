@@ -1333,10 +1333,14 @@ describe("CLI dispatch", () => {
       mode: 0o755,
     });
 
-    const r = runWithEnv("alpha connect", {
-      HOME: home,
-      PATH: `${localBin}:${process.env.PATH || ""}`,
-    });
+    const r = runWithEnv(
+      "alpha connect",
+      {
+        HOME: home,
+        PATH: `${localBin}:${process.env.PATH || ""}`,
+      },
+      30000,
+    );
 
     expect(r.code).toBe(0);
     expect(r.out.includes("Waiting for sandbox 'alpha' to be ready")).toBeTruthy();

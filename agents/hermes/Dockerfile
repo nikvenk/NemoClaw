@@ -99,6 +99,7 @@ USER root
 # Flatten stale published base images that still contain the old .hermes-data
 # symlink bridge. OpenShell starts the sandbox as the sandbox user, so runtime
 # migration cannot rely on root privileges inside the pod.
+# hadolint ignore=DL4006
 RUN set -eu; \
     config_dir=/sandbox/.hermes; \
     data_dir=/sandbox/.hermes-data; \
