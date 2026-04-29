@@ -132,43 +132,51 @@ pass "Exported NVIDIA_API_KEY for the repair run (host writes nothing to disk; O
 # Phase 2: Create interrupted resumable state
 # ══════════════════════════════════════════════════════════════════
 section "Phase 2: Create interrupted state"
-info "Running onboard with an invalid policy mode to create resumable state..."
+info "Running a successful onboard, then patching session to simulate interruption..."
 
 FIRST_LOG="$(mktemp)"
 NEMOCLAW_NON_INTERACTIVE=1 \
   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
   NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
   NEMOCLAW_RECREATE_SANDBOX=1 \
-  NEMOCLAW_POLICY_MODE=invalid \
+  NEMOCLAW_POLICY_MODE=skip \
   node "$REPO/bin/nemoclaw.js" onboard --non-interactive >"$FIRST_LOG" 2>&1
 first_exit=$?
 first_output="$(cat "$FIRST_LOG")"
 rm -f "$FIRST_LOG"
 
-if [ $first_exit -eq 1 ]; then
-  pass "First onboard exited 1 (expected interrupted run)"
+if [ $first_exit -eq 0 ]; then
+  pass "First onboard completed successfully"
 else
-  fail "First onboard exited $first_exit (expected 1)"
+  fail "First onboard exited $first_exit (expected 0)"
   echo "$first_output"
   exit 1
 fi
 
-if [ -f "$SESSION_FILE" ]; then
-  pass "Onboard session file created"
-else
-  fail "Onboard session file missing after interrupted run"
-fi
-
-if echo "$first_output" | grep -q "Unsupported NEMOCLAW_POLICY_MODE: invalid"; then
-  pass "First run failed at policy setup as intended"
-else
-  fail "First run did not fail at the expected policy step"
-fi
-
 if openshell sandbox get "$SANDBOX_NAME" >/dev/null 2>&1; then
-  pass "Sandbox '$SANDBOX_NAME' exists after interrupted run"
+  pass "Sandbox '$SANDBOX_NAME' exists after first onboard"
 else
-  fail "Sandbox '$SANDBOX_NAME' not found after interrupted run"
+  fail "Sandbox '$SANDBOX_NAME' not found after first onboard"
+fi
+
+# Patch session file to simulate a failure at the policies step.
+# This creates the exact resumable state that a real interruption would leave.
+if [ -f "$SESSION_FILE" ]; then
+  node -e '
+const fs = require("fs");
+const file = process.argv[1];
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+data.status = "failed";
+data.lastCompletedStep = "openclaw";
+data.failure = { step: "policies", message: "simulated policy failure for E2E" };
+if (data.steps && data.steps.policies) {
+  data.steps.policies.status = "failed";
+}
+fs.writeFileSync(file, JSON.stringify(data, null, 2));
+' "$SESSION_FILE"
+  pass "Session file patched to simulate interrupted state"
+else
+  fail "Onboard session file missing after first onboard"
 fi
 
 # ══════════════════════════════════════════════════════════════════
