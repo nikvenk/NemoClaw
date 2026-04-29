@@ -309,7 +309,7 @@ test_deploy_01_start_stop() {
   sleep 5
   local status_output tunnel_url
   status_output=$(nemoclaw status 2>&1) || true
-  log "  Status output: $(echo "$status_output" | sed 's/^/    /')"
+  log "  Status output:     ${status_output//$'\n'/$'\n'    }"
   tunnel_url=$(echo "$status_output" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
 
   if [[ -n "$tunnel_url" ]]; then
@@ -318,7 +318,6 @@ test_deploy_01_start_stop() {
     fail "TC-DEPLOY-01a: Start" "Start executed but tunnel URL did not surface in status"
     nemoclaw tunnel stop 2>/dev/null || true
     return
-    fi
   fi
 
   # ── TC-DEPLOY-01b: Tunnel serves the OpenClaw dashboard ────────────────────────
@@ -353,7 +352,7 @@ test_deploy_01_start_stop() {
   log "  Step 4: Running nemoclaw stop..."
   local stop_output
   stop_output=$(nemoclaw tunnel stop 2>&1) || true
-  log "  Tunnel stop output: $(echo "$stop_output" | sed 's/^/    /')"
+  log "  Tunnel stop output:     ${stop_output//$'\n'/$'\n'    }"
 
   sleep 3
 
