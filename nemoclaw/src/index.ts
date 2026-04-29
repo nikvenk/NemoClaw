@@ -350,7 +350,9 @@ export default function register(api: OpenClawPluginApi): void {
   if (!bannerModel) bannerModel = "nvidia/nemotron-3-super-120b-a12b";
 
   const providerCredentialEnv = onboardCfg?.credentialEnv ?? "NVIDIA_API_KEY";
-  api.registerProvider(registeredProviderForConfig(onboardCfg, providerCredentialEnv, probed.model));
+  api.registerProvider(
+    registeredProviderForConfig(onboardCfg, providerCredentialEnv, probed.model),
+  );
 
   // 3. Register before_tool_call hook to block secrets in memory writes (#1233)
   // NOTE: This relies on OpenClaw's before_tool_call plugin hook contract

@@ -141,9 +141,7 @@ describe("plugin registration", () => {
 
     const logLines = vi.mocked(api.logger.info).mock.calls.map(([message]) => message);
     expect(
-      logLines.some((line) =>
-        line.includes("Model:     nvidia/llama-3.3-nemotron-super-49b-v1.5"),
-      ),
+      logLines.some((line) => line.includes("Model:     nvidia/llama-3.3-nemotron-super-49b-v1.5")),
     ).toBe(true);
   });
 
