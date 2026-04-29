@@ -941,16 +941,18 @@ detect_platform() {
     model="$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)"
   fi
 
-  case "$model" in
-    *Spark* | *spark* | *DGX*Spark*) plat="spark" ;;
-    *GB300* | *Station* | *Galaxy* | *P3830*) plat="station" ;;
-    "") plat="linux" ;;
-    *) plat="linux" ;;
-  esac
+  if [[ "$model" == *Spark* || "$model" == *spark* || "$model" == *DGX*Spark* ]]; then
+    plat="spark"
+  elif [[ "$model" == *P3830* || "$model" == *Galaxy* ]] || \
+       [[ "$model" == *Station* && "$model" == *GB300* ]]; then
+    plat="station"
+  else
+    plat="linux"
+  fi
 
   # Allow override (CI, test, etc.) — recipe §2 prerequisites.
   NEMOCLAW_DETECTED_PLATFORM="${NEMOCLAW_PLATFORM_OVERRIDE:-$plat}"
-  info "Platform: ${NEMOCLAW_DETECTED_PLATFORM} (${model:-unknown})"
+  printf "${C_GREEN}[INFO]${C_RESET}  Platform: ${C_GREEN}${NEMOCLAW_DETECTED_PLATFORM}${C_RESET} (${model:-unknown})\n"
 }
 
 # ---------------------------------------------------------------------------
