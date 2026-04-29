@@ -397,23 +397,33 @@ RUN set -eu; \
             fi; \
         done; \
         data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
-        find "$config_dir" -type l -print | while IFS= read -r link; do \
-            target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
-            case "$target" in \
-                "$data_real"/* | "$data_dir"/*) \
-                    if [ -d "$target" ]; then \
-                        rm -f "$link"; \
-                        mkdir -p "$link"; \
-                        cp -a "$target"/. "$link"/; \
-                    elif [ -e "$target" ]; then \
-                        rm -f "$link"; \
-                        cp -a "$target" "$link"; \
-                    else \
-                        echo "ERROR: legacy symlink target missing: $link -> $target" >&2; \
-                        exit 1; \
-                    fi; \
-                    ;; \
-            esac; \
+        while :; do \
+            replaced_marker="$(mktemp)"; \
+            rm -f "$replaced_marker"; \
+            find "$config_dir" -type l -print | while IFS= read -r link; do \
+                target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
+                case "$target" in \
+                    "$data_real"/* | "$data_dir"/*) \
+                        if [ -d "$target" ]; then \
+                            rm -f "$link"; \
+                            mkdir -p "$link"; \
+                            cp -a "$target"/. "$link"/; \
+                        elif [ -e "$target" ]; then \
+                            rm -f "$link"; \
+                            cp -a "$target" "$link"; \
+                        else \
+                            echo "ERROR: legacy symlink target missing: $link -> $target" >&2; \
+                            exit 1; \
+                        fi; \
+                        : > "$replaced_marker"; \
+                        ;; \
+                esac; \
+            done; \
+            if [ ! -e "$replaced_marker" ]; then \
+                rm -f "$replaced_marker"; \
+                break; \
+            fi; \
+            rm -f "$replaced_marker"; \
         done; \
         rm -rf "$data_dir"; \
     fi; \
