@@ -234,7 +234,7 @@ drop_capabilities() {
 # someone (or something) has tampered with the config.
 #
 # Usage:
-#   verify_config_integrity /sandbox/.openclaw                         # OpenClaw
+#   verify_config_integrity_if_locked /sandbox/.openclaw               # OpenClaw
 #   verify_config_integrity /sandbox/.hermes /etc/nemoclaw/hermes.config-hash # Hermes
 #
 # The config_dir must contain a .config-hash file with sha256sum output unless
@@ -269,6 +269,42 @@ verify_config_integrity() {
     echo "[SECURITY] Config integrity check FAILED in ${config_dir} — config may have been tampered with" >&2
     return 1
   fi
+}
+
+# OpenClaw is mutable by default in PR #2227: openclaw.json and .config-hash
+# are sandbox-owned until `shields up` locks them. A sandbox-writable hash is
+# not a trust anchor, so fail-closed integrity enforcement would only create a
+# self-DoS after legitimate runtime config writes. Enforce the strict verifier
+# only once the hash is root-owned and has no write bits, which is the state
+# applied by shields-up. Explicit hash files remain strict.
+verify_config_integrity_if_locked() {
+  local config_dir="$1"
+  local hash_file="${2:-${config_dir}/.config-hash}"
+
+  if [ "${2:-}" != "" ]; then
+    verify_config_integrity "$config_dir" "$hash_file"
+    return $?
+  fi
+
+  if [ ! -f "$hash_file" ]; then
+    echo "[config] Config integrity check skipped for mutable default (${hash_file} missing)" >&2
+    return 0
+  fi
+  if [ -L "$hash_file" ]; then
+    echo "[SECURITY] Config hash file is a symlink (${hash_file}) — refusing to trust it" >&2
+    return 1
+  fi
+
+  local hash_uid hash_mode
+  hash_uid="$(stat -c '%u' "$hash_file" 2>/dev/null || stat -f '%u' "$hash_file" 2>/dev/null || echo unknown)"
+  hash_mode="$(stat -c '%a' "$hash_file" 2>/dev/null || stat -f '%Lp' "$hash_file" 2>/dev/null || echo unknown)"
+  if [ "$hash_uid" = "0" ] && [ "$hash_mode" != "unknown" ] && (((8#$hash_mode & 0222) == 0)); then
+    verify_config_integrity "$config_dir" "$hash_file"
+    return $?
+  fi
+
+  echo "[config] Config integrity check skipped for mutable default (${hash_file} is not locked)" >&2
+  return 0
 }
 
 # ── RC file locking ──────────────────────────────────────────────

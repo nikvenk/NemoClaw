@@ -178,7 +178,9 @@ OPENCLAW="$(command -v openclaw)" # Resolve once, use absolute path everywhere
 _SANDBOX_HOME="/sandbox"          # Home dir for the sandbox user (useradd -d /sandbox in Dockerfile.base)
 
 # ── Config integrity check (delegates to shared library) ────────
-# verify_config_integrity is provided by sandbox-init.sh (parameterized).
+# verify_config_integrity_if_locked is provided by sandbox-init.sh. OpenClaw
+# mutable-default startup skips strict hash enforcement until shields-up locks
+# .config-hash into a root-owned read-only trust anchor.
 
 # ── Runtime model/provider override ──────────────────────────────
 # Patches openclaw.json at startup when NEMOCLAW_MODEL_OVERRIDE is set,
@@ -1673,12 +1675,16 @@ ensure_mutable_for_migration() {
 
 legacy_symlinks_exist() {
   local config_dir="$1" data_dir="$2"
-  local data_real entry target
+  local data_real entry raw_target resolved_target
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
   for entry in "$config_dir"/*; do
     [ -L "$entry" ] || continue
-    target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
-    case "$target" in
+    raw_target="$(readlink "$entry" 2>/dev/null || true)"
+    resolved_target="$(readlink -f "$entry" 2>/dev/null || true)"
+    case "$raw_target" in
+      "$data_real"/* | "$data_dir"/*) return 0 ;;
+    esac
+    case "$resolved_target" in
       "$data_real"/* | "$data_dir"/*) return 0 ;;
     esac
   done
@@ -1687,7 +1693,7 @@ legacy_symlinks_exist() {
 
 assert_no_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
-  local data_real entry target
+  local data_real entry raw_target resolved_target
   if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then
     echo "[SECURITY] ${label}: legacy data dir still exists after migration: ${data_dir}" >&2
     return 1
@@ -1695,10 +1701,17 @@ assert_no_legacy_layout() {
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
   for entry in "$config_dir"/*; do
     [ -L "$entry" ] || continue
-    target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
-    case "$target" in
+    raw_target="$(readlink "$entry" 2>/dev/null || true)"
+    resolved_target="$(readlink -f "$entry" 2>/dev/null || true)"
+    case "$raw_target" in
       "$data_real"/* | "$data_dir"/*)
-        echo "[SECURITY] ${label}: legacy symlink remains after migration: ${entry} -> ${target}" >&2
+        echo "[SECURITY] ${label}: legacy symlink remains after migration: ${entry} -> ${raw_target}" >&2
+        return 1
+        ;;
+    esac
+    case "$resolved_target" in
+      "$data_real"/* | "$data_dir"/*)
+        echo "[SECURITY] ${label}: legacy symlink remains after migration: ${entry} -> ${resolved_target}" >&2
         return 1
         ;;
     esac
@@ -1850,7 +1863,7 @@ fi
 if [ "$(id -u)" -ne 0 ]; then
   echo "[gateway] Running as non-root (uid=$(id -u)) — privilege separation disabled" >&2
   export HOME=/sandbox
-  if ! verify_config_integrity /sandbox/.openclaw; then
+  if ! verify_config_integrity_if_locked /sandbox/.openclaw; then
     echo "[SECURITY] Config integrity check failed — refusing to start (non-root mode)" >&2
     exit 1
   fi
@@ -1937,8 +1950,9 @@ fi
 
 # ── Root path (full privilege separation via gosu) ─────────────
 
-# Verify config integrity before starting anything
-verify_config_integrity /sandbox/.openclaw
+# Verify locked config integrity before starting anything. Mutable-default
+# config is intentionally writable and is not a trust anchor until shields-up.
+verify_config_integrity_if_locked /sandbox/.openclaw
 apply_model_override
 apply_cors_override
 apply_slack_token_override

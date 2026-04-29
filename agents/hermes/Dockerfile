@@ -132,23 +132,29 @@ RUN set -eu; \
             replaced_marker="$(mktemp)"; \
             rm -f "$replaced_marker"; \
             find "$config_dir" -type l -print | while IFS= read -r link; do \
-                target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
-                case "$target" in \
-                    "$data_real"/* | "$data_dir"/*) \
-                        if [ -d "$target" ]; then \
+                raw_target="$(readlink "$link" 2>/dev/null || true)"; \
+                resolved_target="$(readlink -f "$link" 2>/dev/null || true)"; \
+                legacy_target=0; \
+                case "$raw_target" in "$data_real"/* | "$data_dir"/*) legacy_target=1 ;; esac; \
+                case "$resolved_target" in "$data_real"/* | "$data_dir"/*) legacy_target=1 ;; esac; \
+                if [ "$legacy_target" -eq 1 ]; then \
+                    copy_target="$resolved_target"; \
+                    if [ -z "$copy_target" ] || { [ ! -e "$copy_target" ] && [ ! -L "$copy_target" ]; }; then \
+                        copy_target="$raw_target"; \
+                    fi; \
+                    if [ -d "$copy_target" ] && [ ! -L "$copy_target" ]; then \
                             rm -f "$link"; \
                             mkdir -p "$link"; \
-                            cp -a "$target"/. "$link"/; \
-                        elif [ -e "$target" ]; then \
+                            cp -a "$copy_target"/. "$link"/; \
+                    elif [ -e "$copy_target" ] || [ -L "$copy_target" ]; then \
                             rm -f "$link"; \
-                            cp -a "$target" "$link"; \
-                        else \
-                            echo "ERROR: legacy symlink target missing: $link -> $target" >&2; \
-                            exit 1; \
-                        fi; \
-                        : > "$replaced_marker"; \
-                        ;; \
-                esac; \
+                            cp -a "$copy_target" "$link"; \
+                    else \
+                        echo "ERROR: legacy symlink target missing: $link -> ${raw_target:-$resolved_target}" >&2; \
+                        exit 1; \
+                    fi; \
+                    : > "$replaced_marker"; \
+                fi; \
             done; \
             if [ ! -e "$replaced_marker" ]; then \
                 rm -f "$replaced_marker"; \
@@ -176,10 +182,17 @@ RUN set -eu; \
     fi; \
     data_real="$(readlink -f "$data_dir" 2>/dev/null || printf '%s' "$data_dir")"; \
     find "$config_dir" -type l -print | while IFS= read -r link; do \
-        target="$(readlink -f "$link" 2>/dev/null || readlink "$link" 2>/dev/null || true)"; \
-        case "$target" in \
+        raw_target="$(readlink "$link" 2>/dev/null || true)"; \
+        resolved_target="$(readlink -f "$link" 2>/dev/null || true)"; \
+        case "$raw_target" in \
             "$data_real"/* | "$data_dir"/*) \
-                echo "ERROR: legacy symlink remains after cleanup: $link -> $target" >&2; \
+                echo "ERROR: legacy symlink remains after cleanup: $link -> $raw_target" >&2; \
+                exit 1; \
+                ;; \
+        esac; \
+        case "$resolved_target" in \
+            "$data_real"/* | "$data_dir"/*) \
+                echo "ERROR: legacy symlink remains after cleanup: $link -> $resolved_target" >&2; \
                 exit 1; \
                 ;; \
         esac; \

@@ -19,23 +19,23 @@ describe("nemoclaw-start non-root fallback", () => {
     );
   });
 
-  it("exits on config integrity failure in non-root mode", () => {
+  it("exits on locked config integrity failure in non-root mode", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
     const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
     expect(nonRootBlock).toBeTruthy();
-    // Non-root block must call verify_config_integrity (with config dir) and exit 1 on failure
-    expect(nonRootBlock[1]).toMatch(/if ! verify_config_integrity\b.*; then\s+.*exit 1/s);
+    // Non-root block must call the locked-aware verifier and exit 1 on failure.
+    expect(nonRootBlock[1]).toMatch(/if ! verify_config_integrity_if_locked\b.*; then\s+.*exit 1/s);
     // Must not contain the old "proceeding anyway" fallback
     expect(src).not.toMatch(/proceeding anyway/i);
   });
 
-  it("calls verify_config_integrity in both root and non-root paths", () => {
+  it("calls verify_config_integrity_if_locked in both root and non-root paths", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
     // The function must be called at least twice: once in the non-root
     // if-block and once in the root path below it.
-    const calls = src.match(/verify_config_integrity/g) || [];
+    const calls = src.match(/verify_config_integrity_if_locked/g) || [];
     expect(calls.length).toBeGreaterThanOrEqual(3); // definition + 2 call sites
   });
 
@@ -285,17 +285,17 @@ describe("runtime model override (#759)", () => {
     expect(src).toContain("NEMOCLAW_MODEL_OVERRIDE");
   });
 
-  it("calls apply_model_override after verify_config_integrity in both paths", () => {
+  it("calls apply_model_override after locked-aware integrity check in both paths", () => {
     // Non-root path: extract from uid check to the Root path comment
     const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
     expect(nonRootBlock).toBeTruthy();
     expect(nonRootBlock[1]).toMatch(
-      /verify_config_integrity[\s\S]*?apply_model_override[\s\S]*?export_gateway_token/,
+      /verify_config_integrity_if_locked[\s\S]*?apply_model_override[\s\S]*?export_gateway_token/,
     );
 
-    // Root path: verify_config_integrity → apply_model_override → apply_cors_override
+    // Root path: locked-aware integrity check → apply_model_override → apply_cors_override
     const rootBlock = src.match(
-      /# ── Root path[\s\S]*?verify_config_integrity[\s\S]*?apply_model_override[\s\S]*?apply_cors_override[\s\S]*?export_gateway_token/,
+      /# ── Root path[\s\S]*?verify_config_integrity_if_locked[\s\S]*?apply_model_override[\s\S]*?apply_cors_override[\s\S]*?export_gateway_token/,
     );
     expect(rootBlock).toBeTruthy();
   });

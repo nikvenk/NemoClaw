@@ -287,6 +287,22 @@ EOF
       });
       expect(stderr).toContain("integrity check FAILED");
     });
+
+    it("locked-aware verifier skips mutable-default hash files", () => {
+      const configFile = join(workDir, "config.json");
+      writeFileSync(configFile, '{"test": true}');
+      execFileSync("bash", [
+        "-c",
+        `cd ${JSON.stringify(workDir)} && sha256sum config.json > .config-hash`,
+      ]);
+      writeFileSync(configFile, '{"test": false, "mutable": true}');
+
+      const { stdout } = runWithLib(`
+        verify_config_integrity_if_locked ${JSON.stringify(workDir)} 2>&1
+        echo "MUTABLE_OK"
+      `);
+      expect(stdout).toContain("Config integrity check skipped for mutable default");
+    });
   });
 
   describe("lock_rc_files", () => {
@@ -496,9 +512,9 @@ EOF
       expect(src).not.toMatch(/chmod 644.*\$_PROXY_ENV_FILE/);
     });
 
-    it("nemoclaw-start.sh uses parameterized verify_config_integrity", () => {
+    it("nemoclaw-start.sh uses locked-aware OpenClaw integrity checks", () => {
       const src = readFileSync(join(import.meta.dirname, "../scripts/nemoclaw-start.sh"), "utf-8");
-      expect(src).toContain("verify_config_integrity /sandbox/.openclaw");
+      expect(src).toContain("verify_config_integrity_if_locked /sandbox/.openclaw");
     });
   });
 });

@@ -6,8 +6,8 @@
 #
 # These checks run INSIDE a real OpenShell sandbox where Landlock is active.
 # They verify that the kernel enforces the filesystem policy: /sandbox and
-# /sandbox/.openclaw are writable (mutable default), system paths are
-# read-only, and /tmp is writable.
+# /sandbox/.openclaw are writable (mutable default), trusted shell startup
+# files remain read-only, system paths are read-only, and /tmp is writable.
 #
 # The Docker-only e2e tests (test/e2e-gateway-isolation.sh) cover DAC
 # enforcement but cannot exercise Landlock. This script closes that gap.
@@ -55,13 +55,13 @@ else
   fail_test "/sandbox is NOT writable under Landlock: $OUT"
 fi
 
-# ── 2: CAN modify .bashrc (home is writable) ──────────────────────
-info "2. Can modify .bashrc (home is writable)"
-OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc && sed -i '/^# test$/d' /sandbox/.bashrc && echo OK || echo FAILED" || true)
-if echo "$OUT" | grep -q "OK"; then
-  pass ".bashrc is writable in mutable-default mode"
+# ── 2: Cannot modify trusted shell startup files ─────────────────
+info "2. Cannot modify .bashrc/.profile (trusted startup snippets)"
+OUT=$(sandbox_exec "echo '# test' >> /sandbox/.bashrc 2>&1 || echo BASHRC_BLOCKED; echo '# test' >> /sandbox/.profile 2>&1 || echo PROFILE_BLOCKED" || true)
+if echo "$OUT" | grep -q "BASHRC_BLOCKED" && echo "$OUT" | grep -q "PROFILE_BLOCKED"; then
+  pass ".bashrc/.profile remain read-only while home is mutable"
 else
-  fail_test ".bashrc is NOT writable under Landlock: $OUT"
+  fail_test ".bashrc/.profile should be read-only trusted startup files: $OUT"
 fi
 
 # ── 3: CAN write to .openclaw (mutable default) ──────────────────
@@ -110,7 +110,7 @@ else
 fi
 
 # ── Cleanup test artifacts ────────────────────────────────────────
-sandbox_exec "sed -i '/^# test$/d' /sandbox/.bashrc 2>/dev/null || true; rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
+sandbox_exec "rm -f /sandbox/landlock-test /sandbox/.openclaw/landlock-test /sandbox/.nemoclaw/state/landlock-test /tmp/landlock-test 2>/dev/null" || true
 
 # ── Summary ───────────────────────────────────────────────────────
 printf '%s\n' "04-landlock-readonly: $PASSED passed, $FAILED failed"
