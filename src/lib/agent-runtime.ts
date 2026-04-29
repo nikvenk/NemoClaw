@@ -49,10 +49,13 @@ export function getHealthProbeUrl(agent: AgentDefinition | null): string {
 }
 
 function buildGatewayLogSetup(includeAutoPairLog = false, logOwnerUser?: string): string[] {
+  const gatewayLogSymlinkGuard =
+    'if [ -L /tmp/gateway.log ] || [ -h /tmp/gateway.log ]; then echo "[gateway-recovery] ERROR: refusing to prepare symlinked /tmp/gateway.log" >&2; exit 1; fi;';
   const chmodGatewayLog = logOwnerUser
     ? `if [ "$(id -u)" = "0" ] && id ${shellQuote(logOwnerUser)} >/dev/null 2>&1; then chown ${shellQuote(`${logOwnerUser}:${logOwnerUser}`)} /tmp/gateway.log 2>/dev/null || true; chmod 644 /tmp/gateway.log 2>/dev/null || true; else chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true; fi;`
     : "chmod 600 /tmp/gateway.log 2>/dev/null || chmod 644 /tmp/gateway.log 2>/dev/null || true;";
   const lines = [
+    gatewayLogSymlinkGuard,
     ": > /tmp/gateway.log 2>/dev/null || touch /tmp/gateway.log 2>/dev/null || true;",
     chmodGatewayLog,
     'if ! : >> /tmp/gateway.log 2>/dev/null; then echo "[gateway-recovery] ERROR: /tmp/gateway.log is not writable by recovery user $(id -un 2>/dev/null || id -u)" >&2; fi;',

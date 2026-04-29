@@ -279,14 +279,13 @@ function executeSandboxExecCommand(
         timeout,
       },
     );
-    if (result.error) return null;
     const stdout = (result.stdout || "").trim();
     const stdoutLines = stdout.split(/\r?\n/);
     const markerIndex = stdoutLines.indexOf(SANDBOX_EXEC_STARTED_MARKER);
     if (markerIndex === -1) return null;
     const commandStdoutLines = stdoutLines.slice(markerIndex + 1);
     return {
-      status: result.status ?? 1,
+      status: result.error ? 1 : (result.status ?? 1),
       stdout: commandStdoutLines.join("\n").trim(),
       stderr: (result.stderr || "").trim(),
     };

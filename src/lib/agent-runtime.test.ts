@@ -151,6 +151,20 @@ describe("buildRecoveryScript", () => {
       expect(script).toContain("_GATEWAY_LOG=/tmp/gateway-recovery.log");
     });
 
+    it("rejects a symlinked gateway.log before preparing the log", () => {
+      const script = buildOpenClawRecoveryScript(18789);
+      const guardIdx = script.indexOf("[ -L /tmp/gateway.log ]");
+      const touchIdx = script.indexOf(": > /tmp/gateway.log");
+      const chownIdx = script.indexOf("chown 'gateway:gateway' /tmp/gateway.log");
+      expect(script).toContain("refusing to prepare symlinked /tmp/gateway.log");
+      expect(script).toContain("exit 1");
+      expect(guardIdx).toBeGreaterThanOrEqual(0);
+      expect(touchIdx).toBeGreaterThanOrEqual(0);
+      expect(chownIdx).toBeGreaterThanOrEqual(0);
+      expect(guardIdx).toBeLessThan(touchIdx);
+      expect(guardIdx).toBeLessThan(chownIdx);
+    });
+
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {
       const script = buildOpenClawRecoveryScript(18789);
       expect(script).toContain("chown 'gateway:gateway' /tmp/gateway.log");
