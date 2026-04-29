@@ -52,7 +52,7 @@ describe("stopSandboxChannels", () => {
 
     expect(spawnSyncSpy).toHaveBeenCalledWith(
       "/usr/local/bin/openshell",
-      ["sandbox", "exec", "--name", "my-sandbox", "--", "pkill", "-TERM", "-f", "openclaw.gateway.run"],
+      ["sandbox", "exec", "--name", "my-sandbox", "--", "pkill", "-TERM", "-f", "openclaw[- ]gateway"],
       expect.objectContaining({ timeout: 15000 }),
     );
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -118,17 +118,17 @@ describe("stopSandboxChannels", () => {
     logSpy.mockRestore();
   });
 
-  it("targets 'openclaw.gateway.run' regex (not just 'openclaw gateway') to avoid killing unrelated processes", () => {
+  it("targets 'openclaw[- ]gateway' regex to match both launcher and re-exec'd binary", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     stopSandboxChannels("my-sandbox");
 
     const args = spawnSyncSpy.mock.calls[0][1] as string[];
     const pkillPattern = args[args.length - 1];
-    // Must include "run" to avoid matching decoy processes like
-    // "openclaw gateway decoy" or "openclaw gateway status".
-    // Uses "." regex to match both "openclaw-gateway run" and "openclaw gateway run".
-    expect(pkillPattern).toBe("openclaw.gateway.run");
+    // Must match both the launcher form ("openclaw gateway run") and the
+    // re-exec'd binary ("openclaw-gateway"). The gateway re-execs after
+    // startup, dropping "run" from argv entirely.
+    expect(pkillPattern).toBe("openclaw[- ]gateway");
     logSpy.mockRestore();
   });
 });
@@ -164,7 +164,7 @@ describe("stopAll with sandbox channels", () => {
 
     expect(spawnSyncSpy).toHaveBeenCalledWith(
       "/usr/local/bin/openshell",
-      ["sandbox", "exec", "--name", "test-sb", "--", "pkill", "-TERM", "-f", "openclaw.gateway.run"],
+      ["sandbox", "exec", "--name", "test-sb", "--", "pkill", "-TERM", "-f", "openclaw[- ]gateway"],
       expect.any(Object),
     );
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
