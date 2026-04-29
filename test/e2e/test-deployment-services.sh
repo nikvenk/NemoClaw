@@ -363,7 +363,7 @@ test_deploy_01_start_stop() {
     skip "TC-DEPLOY-01b" "Tunnel URL not available"
   fi
 
-  log "  Step 4: Running nemoclaw stop..."
+  log "  Step 4: Running nemoclaw tunnel stop..."
   local stop_output stop_rc=0
   stop_output=$(nemoclaw tunnel stop 2>&1) || stop_rc=$?
   log "  Tunnel stop output:     ${stop_output//$'\n'/$'\n'    }"
@@ -377,14 +377,23 @@ test_deploy_01_start_stop() {
   if [[ -z "$tunnel_url" ]]; then
     skip "TC-DEPLOY-01c" "Tunnel URL was never confirmed in status"
   else
-    local post_status post_url
+    local post_status post_url status_rc=0 status_ok=0
     for i in $(seq 1 10); do
-      post_status=$(nemoclaw status 2>&1) || true
+      status_rc=0
+      post_status=$(nemoclaw status 2>&1) || status_rc=$?
+      if [[ $status_rc -ne 0 ]]; then
+        log "  [$i] nemoclaw status failed (exit $status_rc), retrying in 1s..."
+        sleep 1
+        continue
+      fi
+      status_ok=1
       post_url=$(printf '%s\n' "$post_status" | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | head -1) || true
       [[ -z "$post_url" ]] && break
       sleep 1
     done
-    if [[ -z "$post_url" ]]; then
+    if [[ $status_ok -eq 0 ]]; then
+      fail "TC-DEPLOY-01c: Stop" "Could not read nemoclaw status after stop"
+    elif [[ -z "$post_url" ]]; then
       pass "TC-DEPLOY-01c: Tunnel URL absent after stop"
     else
       fail "TC-DEPLOY-01c: Stop" "Tunnel URL still present after stop ($post_url)"
