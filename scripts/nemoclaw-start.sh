@@ -319,8 +319,11 @@ PYOVERRIDE
 
   if [ "$_write_rc" -eq 0 ]; then
     # Recompute config hash so integrity check passes on next startup
-    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
-    printf '[SECURITY] Config hash recomputed after model override\n' >&2
+    if (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file"); then
+      printf '[SECURITY] Config hash recomputed after model override\n' >&2
+    else
+      _write_rc=$?
+    fi
   fi
 
   # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
@@ -391,8 +394,11 @@ with open(config_file, "w") as f:
 PYCORS
 
   if [ "$_write_rc" -eq 0 ]; then
-    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
-    printf '[config] Config hash recomputed after CORS override\n' >&2
+    if (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file"); then
+      printf '[config] Config hash recomputed after CORS override\n' >&2
+    else
+      _write_rc=$?
+    fi
   fi
 
   # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
@@ -492,8 +498,11 @@ with open(config_file, "w") as f:
 PYSLACK
 
   if [ "$_write_rc" -eq 0 ]; then
-    (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file") || _write_rc=$?
-    printf '[channels] Config hash recomputed after Slack token override\n' >&2
+    if (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file"); then
+      printf '[channels] Config hash recomputed after Slack token override\n' >&2
+    else
+      _write_rc=$?
+    fi
   fi
 
   # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
