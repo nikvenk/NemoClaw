@@ -968,11 +968,11 @@ detect_platform() {
 # ---------------------------------------------------------------------------
 _status_color() {
   case "$1" in
-    REUSE)                  printf "%s" "$C_GREEN" ;;
-    UPGRADE)                printf "%s" "$C_YELLOW" ;;
-    INSTALL)                printf "%s" "$C_RED" ;;
+    REUSE) printf "%s" "$C_GREEN" ;;
+    UPGRADE) printf "%s" "$C_YELLOW" ;;
+    INSTALL) printf "%s" "$C_RED" ;;
     DEFAULT | BUNDLED | PULL) printf "%s" "$C_CYAN" ;;
-    *)                      printf "" ;;
+    *) printf "" ;;
   esac
 }
 
@@ -1051,13 +1051,13 @@ print_dependency_table() {
   printf "  ${C_DIM}%s${C_RESET}\n" \
     "----------------------------------------------------------------------"
 
-  _row "Docker"       ">= ${MIN_DOCKER_VERSION}"     "${docker_ver}"                "$docker_act"
-  _row "Node.js"      ">= ${MIN_NODE_VERSION}"       "${node_ver:+v${node_ver}}"    "$node_act"
-  _row "npm"          ">= ${MIN_NPM_MAJOR}.x"        "${npm_ver}"                   "$npm_act"
-  _row "OpenShell"    ">= ${MIN_OPENSHELL_VERSION}"  "${openshell_ver}"             "$openshell_act"
-  _row "OpenClaw CLI" "bundled w/ NemoClaw"          "-"                            "BUNDLED"
-  _row "Nemotron-3"   "auto by VRAM"                 "-"                            "PULL" "(background)"
-  _row "Backend"      "vLLM > SGL > Ollama"          "${backend_present}"           "$backend_act" \
+  _row "Docker" ">= ${MIN_DOCKER_VERSION}" "${docker_ver}" "$docker_act"
+  _row "Node.js" ">= ${MIN_NODE_VERSION}" "${node_ver:+v${node_ver}}" "$node_act"
+  _row "npm" ">= ${MIN_NPM_MAJOR}.x" "${npm_ver}" "$npm_act"
+  _row "OpenShell" ">= ${MIN_OPENSHELL_VERSION}" "${openshell_ver}" "$openshell_act"
+  _row "OpenClaw CLI" "bundled w/ NemoClaw" "-" "BUNDLED"
+  _row "Nemotron-3" "auto by VRAM" "-" "PULL" "(background)"
+  _row "Backend" "vLLM > SGL > Ollama" "${backend_present}" "$backend_act" \
     "${NEMOCLAW_SELECTED_BACKEND:+-> ${NEMOCLAW_SELECTED_BACKEND}}"
 
   printf "  ${C_DIM}%s${C_RESET}\n" \
@@ -1071,7 +1071,10 @@ print_dependency_table() {
 # Recipe §4 — Dependency lane: Docker (>= 28.x)
 # ---------------------------------------------------------------------------
 get_docker_version() {
-  command_exists docker || { printf ""; return; }
+  command_exists docker || {
+    printf ""
+    return
+  }
   docker --version 2>/dev/null \
     | sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1
 }
@@ -1131,7 +1134,10 @@ resolve_docker() {
 # vs INSTALL up-front and records it in the manifest.
 # ---------------------------------------------------------------------------
 get_openshell_version() {
-  command_exists openshell || { printf ""; return; }
+  command_exists openshell || {
+    printf ""
+    return
+  }
   openshell --version 2>/dev/null \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
 }
@@ -1467,31 +1473,39 @@ run_smoke_tests() {
   # 1. openshell sandbox list → nemoclaw Ready
   if command_exists openshell; then
     if openshell sandbox list 2>/dev/null | grep -qiE 'nemoclaw.*ready|ready.*nemoclaw'; then
-      ok "1/5 openshell sandbox 'nemoclaw' Ready"; pass=$((pass + 1))
+      ok "1/5 openshell sandbox 'nemoclaw' Ready"
+      pass=$((pass + 1))
     else
-      warn "1/5 openshell sandbox not Ready — onboarding may still be running"; fail=$((fail + 1))
+      warn "1/5 openshell sandbox not Ready — onboarding may still be running"
+      fail=$((fail + 1))
     fi
   else
-    warn "1/5 openshell not on PATH"; fail=$((fail + 1))
+    warn "1/5 openshell not on PATH"
+    fail=$((fail + 1))
   fi
 
   # 2. nemoclaw status → deps + backend + model
   if command_exists nemoclaw; then
     if nemoclaw status >/dev/null 2>&1; then
-      ok "2/5 nemoclaw status returned 0"; pass=$((pass + 1))
+      ok "2/5 nemoclaw status returned 0"
+      pass=$((pass + 1))
     else
-      warn "2/5 nemoclaw status returned non-zero"; fail=$((fail + 1))
+      warn "2/5 nemoclaw status returned non-zero"
+      fail=$((fail + 1))
     fi
   else
-    warn "2/5 nemoclaw CLI not on PATH"; fail=$((fail + 1))
+    warn "2/5 nemoclaw CLI not on PATH"
+    fail=$((fail + 1))
   fi
 
   # 3. systemctl is-active nemoclaw.service (skip if no systemd / unit absent)
   if command_exists systemctl && systemctl list-unit-files 2>/dev/null | grep -q '^nemoclaw.service'; then
     if systemctl is-active --quiet nemoclaw.service; then
-      ok "3/5 nemoclaw.service active"; pass=$((pass + 1))
+      ok "3/5 nemoclaw.service active"
+      pass=$((pass + 1))
     else
-      warn "3/5 nemoclaw.service not active"; fail=$((fail + 1))
+      warn "3/5 nemoclaw.service not active"
+      fail=$((fail + 1))
     fi
   else
     info "3/5 nemoclaw.service not present (skipped)"
@@ -1500,7 +1514,8 @@ run_smoke_tests() {
   # 4. nemoclaw chat hello — only if backend is up. Avoid hanging in CI.
   if command_exists nemoclaw && [[ "$NEMOCLAW_SELECTED_BACKEND" != "deferred" ]]; then
     if timeout 30s nemoclaw chat --agent repl --local 'hello' >/dev/null 2>&1; then
-      ok "4/5 nemoclaw chat 'hello' returned 200"; pass=$((pass + 1))
+      ok "4/5 nemoclaw chat 'hello' returned 200"
+      pass=$((pass + 1))
     else
       warn "4/5 nemoclaw chat 'hello' did not respond within 30s (model may still be downloading)"
     fi
@@ -1513,9 +1528,18 @@ run_smoke_tests() {
     local state
     state="$(systemctl show -p ActiveState --value "$MODEL_PULL_UNIT" 2>/dev/null || echo unknown)"
     case "$state" in
-      active | activating) ok "5/5 ${MODEL_PULL_UNIT} ${state}"; pass=$((pass + 1)) ;;
-      inactive)            ok "5/5 ${MODEL_PULL_UNIT} completed"; pass=$((pass + 1)) ;;
-      *)                   warn "5/5 ${MODEL_PULL_UNIT} state=${state}"; fail=$((fail + 1)) ;;
+      active | activating)
+        ok "5/5 ${MODEL_PULL_UNIT} ${state}"
+        pass=$((pass + 1))
+        ;;
+      inactive)
+        ok "5/5 ${MODEL_PULL_UNIT} completed"
+        pass=$((pass + 1))
+        ;;
+      *)
+        warn "5/5 ${MODEL_PULL_UNIT} state=${state}"
+        fail=$((fail + 1))
+        ;;
     esac
   else
     info "5/5 model pull unit not used"
@@ -1526,7 +1550,7 @@ run_smoke_tests() {
     warn "Smoke tests: ${pass} passed, ${fail} warned — see 'nemoclaw status' for details"
   else
     emit_install_event "success"
-    ok  "Smoke tests: ${pass} passed"
+    ok "Smoke tests: ${pass} passed"
   fi
 }
 
