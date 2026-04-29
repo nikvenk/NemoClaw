@@ -315,14 +315,9 @@ test_deploy_01_start_stop() {
   if [[ -n "$tunnel_url" ]]; then
     pass "TC-DEPLOY-01a: Tunnel URL found in status ($tunnel_url)"
   else
-    local has_service
-    has_service=$(echo "$start_output$status_output" | grep -i "cloudflared\|tunnel\|public\|services" || true)
-    if [[ -n "$has_service" ]]; then
-      pass "TC-DEPLOY-01a: Start command executed (tunnel URL not available)"
-    else
-      fail "TC-DEPLOY-01a: Start" "No tunnel URL or service info in output"
-      nemoclaw stop 2>/dev/null || true
-      return
+    fail "TC-DEPLOY-01a: Start" "Start executed but tunnel URL did not surface in status"
+    nemoclaw tunnel stop 2>/dev/null || true
+    return
     fi
   fi
 
