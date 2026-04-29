@@ -156,7 +156,7 @@ function runRestoreTimer(args: TimerArgs): void {
         configPath: string;
         configDir: string;
         sensitiveFiles?: string[];
-      };
+      } | null = null;
       try {
         const resolvedTarget = resolveAgentConfig(args.sandboxName);
         if (resolvedTarget === DEFAULT_AGENT_CONFIG && args.configDir) {
@@ -179,7 +179,6 @@ function runRestoreTimer(args: TimerArgs): void {
             warning: "Missing config directory for auto-restore re-lock verification",
             lock_verified: false,
           });
-          lockTarget = null!;
         }
       }
       if (lockTarget) {
