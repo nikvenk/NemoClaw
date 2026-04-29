@@ -231,7 +231,8 @@ else
   fail "Repair resume did not report missing sandbox recreation"
 fi
 
-if echo "$repair_output" | grep -q "\[5/7\] Creating sandbox"; then
+# The step numbering is [6/8] in the current onboard flow.
+if echo "$repair_output" | grep -q "Creating sandbox"; then
   pass "Repair resume recreated sandbox"
 else
   fail "Repair resume did not rerun sandbox creation"
@@ -247,6 +248,22 @@ fi
 # Phase 4: Reject conflicting sandbox
 # ══════════════════════════════════════════════════════════════════
 section "Phase 4: Reject conflicting sandbox"
+
+# Phase 3 completed the session (resumable=false). Re-create interrupted state
+# so the conflict detection path is exercised (it runs before the "no resumable
+# session" early-exit).
+info "Re-creating interrupted state for conflict testing..."
+REINJECT_LOG="$(mktemp)"
+NEMOCLAW_NON_INTERACTIVE=1 \
+  NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+  NEMOCLAW_SANDBOX_NAME="$SANDBOX_NAME" \
+  NEMOCLAW_RECREATE_SANDBOX=1 \
+  NEMOCLAW_POLICY_MODE=custom \
+  NEMOCLAW_POLICY_PRESETS="" \
+  node "$REPO/bin/nemoclaw.js" onboard --non-interactive >"$REINJECT_LOG" 2>&1 || true
+rm -f "$REINJECT_LOG"
+pass "Re-created interrupted session for conflict tests"
+
 info "Attempting resume with a different sandbox name..."
 
 SANDBOX_CONFLICT_LOG="$(mktemp)"

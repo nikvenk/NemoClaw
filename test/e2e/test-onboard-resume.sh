@@ -269,10 +269,15 @@ else
   pass "Resume did not rerun sandbox creation"
 fi
 
+# The first onboard completed through openclaw (step 7) before failing at
+# policies (step 8). Inference was already configured during that run, so
+# the resume path detects it is ready (isInferenceRouteReady) and skips it.
 if echo "$resume_output" | grep -q "\[4/7\] Setting up inference provider"; then
-  pass "Resume continued with inference setup"
+  pass "Resume re-ran inference setup"
+elif echo "$resume_output" | grep -q "\[resume\] Skipping inference\|\[reuse\] Skipping inference"; then
+  pass "Resume skipped inference (already configured)"
 else
-  fail "Resume did not continue with inference setup"
+  fail "Resume neither ran nor skipped inference setup"
 fi
 
 if run_nemoclaw "$SANDBOX_NAME" status >/dev/null 2>&1; then
