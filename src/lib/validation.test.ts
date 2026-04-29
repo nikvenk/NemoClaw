@@ -196,6 +196,16 @@ describe("validateNvidiaApiKeyValue", () => {
   it("rejects key without nvapi- prefix", () => {
     expect(validateNvidiaApiKeyValue("sk-abc123")).toBeTruthy();
   });
+
+  it("accepts non-nvapi keys when credentialEnv is not NVIDIA_API_KEY", () => {
+    expect(validateNvidiaApiKeyValue("sk-ant-abc123", "ANTHROPIC_API_KEY")).toBeNull();
+    expect(validateNvidiaApiKeyValue("sk-openai-xyz", "OPENAI_API_KEY")).toBeNull();
+    expect(validateNvidiaApiKeyValue("AIza-gemini", "GEMINI_API_KEY")).toBeNull();
+  });
+
+  it("still rejects empty keys for non-NVIDIA providers", () => {
+    expect(validateNvidiaApiKeyValue("", "ANTHROPIC_API_KEY")).toBeTruthy();
+  });
 });
 
 describe("isSafeModelId", () => {
@@ -270,13 +280,17 @@ describe("shouldSkipResponsesProbe", () => {
     expect(shouldSkipResponsesProbe("nvidia-prod")).toBe(true);
   });
 
+  it("skips the Responses probe for nvidia-nim (same endpoint as nvidia-prod, no /v1/responses)", () => {
+    expect(shouldSkipResponsesProbe("nvidia-nim")).toBe(true);
+  });
+
   it("skips the Responses probe for gemini-api (Gemini does not support /v1/responses)", () => {
     expect(shouldSkipResponsesProbe("gemini-api")).toBe(true);
   });
 
   it("does not skip the Responses probe for other providers", () => {
     expect(shouldSkipResponsesProbe("openai-api")).toBe(false);
-    expect(shouldSkipResponsesProbe("anthropic-api")).toBe(false);
+    expect(shouldSkipResponsesProbe("anthropic-prod")).toBe(false);
     expect(shouldSkipResponsesProbe("compatible-endpoint")).toBe(false);
     expect(shouldSkipResponsesProbe("")).toBe(false);
   });

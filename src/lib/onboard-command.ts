@@ -1,14 +1,19 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import fs from "node:fs";
+import path from "node:path";
+
 export interface OnboardCommandOptions {
   nonInteractive: boolean;
   resume: boolean;
   fresh: boolean;
   recreateSandbox: boolean;
   fromDockerfile: string | null;
+  sandboxName: string | null;
   acceptThirdPartySoftware: boolean;
   agent: string | null;
+  controlUiPort: number | null;
 }
 
 export interface RunOnboardCommandDeps {
@@ -36,7 +41,7 @@ const ONBOARD_BASE_ARGS = [
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   return [
-    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--agent <name>] [${noticeAcceptFlag}]`,
+    `  Usage: nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [${noticeAcceptFlag}]`,
     "",
   ];
 }
@@ -60,13 +65,32 @@ export function parseOnboardArgs(
   let fromDockerfile: string | null = null;
   const fromIdx = parsedArgs.indexOf("--from");
   if (fromIdx !== -1) {
-    fromDockerfile = parsedArgs[fromIdx + 1] || null;
-    if (!fromDockerfile || fromDockerfile.startsWith("--")) {
+    const requestedFromDockerfile = parsedArgs[fromIdx + 1];
+    if (!requestedFromDockerfile || requestedFromDockerfile.startsWith("--")) {
       error("  --from requires a path to a Dockerfile");
       printOnboardUsage(error, noticeAcceptFlag);
       exit(1);
     }
+    const resolvedFromDockerfile = path.resolve(requestedFromDockerfile);
+    if (!fs.existsSync(resolvedFromDockerfile)) {
+      error(`  --from path not found: ${resolvedFromDockerfile}`);
+      exit(1);
+    }
+    fromDockerfile = requestedFromDockerfile;
     parsedArgs.splice(fromIdx, 2);
+  }
+
+  let sandboxName: string | null = null;
+  const nameIdx = parsedArgs.indexOf("--name");
+  if (nameIdx !== -1) {
+    const nameValue = parsedArgs[nameIdx + 1];
+    if (typeof nameValue !== "string" || nameValue.length === 0 || nameValue.startsWith("--")) {
+      error("  --name requires a sandbox name");
+      printOnboardUsage(error, noticeAcceptFlag);
+      exit(1);
+    }
+    sandboxName = nameValue;
+    parsedArgs.splice(nameIdx, 2);
   }
 
   let agent: string | null = null;
@@ -86,6 +110,25 @@ export function parseOnboardArgs(
     }
     agent = agentValue;
     parsedArgs.splice(agentIdx, 2);
+  }
+
+  let controlUiPort: number | null = null;
+  const portIdx = parsedArgs.indexOf("--control-ui-port");
+  if (portIdx !== -1) {
+    const portValue = parsedArgs[portIdx + 1];
+    if (typeof portValue !== "string" || portValue.startsWith("--")) {
+      error("  --control-ui-port requires a port number");
+      printOnboardUsage(error, noticeAcceptFlag);
+      exit(1);
+    }
+    const parsed = Number(portValue);
+    if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 65535) {
+      error(`  --control-ui-port: ${portValue} is not a valid port (1024-65535)`);
+      printOnboardUsage(error, noticeAcceptFlag);
+      exit(1);
+    }
+    controlUiPort = parsed;
+    parsedArgs.splice(portIdx, 2);
   }
 
   const allowedArgs = new Set([...ONBOARD_BASE_ARGS, noticeAcceptFlag]);
@@ -110,9 +153,11 @@ export function parseOnboardArgs(
     fresh,
     recreateSandbox: parsedArgs.includes("--recreate-sandbox"),
     fromDockerfile,
+    sandboxName,
     acceptThirdPartySoftware:
       parsedArgs.includes(noticeAcceptFlag) || String(deps.env[noticeAcceptEnv] || "") === "1",
     agent,
+    controlUiPort,
   };
 }
 

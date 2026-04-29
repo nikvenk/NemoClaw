@@ -17,10 +17,10 @@ import type { CommandDef } from "./command-registry";
 
 describe("command-registry", () => {
   describe("COMMANDS array", () => {
-    it("should contain exactly 46 commands", () => {
+    it("should contain exactly 45 commands", () => {
       // 23 global (18 visible + 5 hidden help/version aliases)
-      // 23 sandbox (17 visible + 6 hidden shields/config)
-      expect(COMMANDS).toHaveLength(46);
+      // 22 sandbox (18 visible + 4 hidden shields/config)
+      expect(COMMANDS).toHaveLength(45);
     });
 
     it("should have no duplicate usage strings", () => {
@@ -52,9 +52,9 @@ describe("command-registry", () => {
   });
 
   describe("sandboxCommands()", () => {
-    it("should return exactly 23 entries", () => {
-      // 17 visible + 6 hidden (shields×3 + config×3)
-      expect(sandboxCommands()).toHaveLength(23);
+    it("should return exactly 22 entries", () => {
+      // 18 visible + 4 hidden (shields×3 + config get)
+      expect(sandboxCommands()).toHaveLength(22);
     });
 
     it("every entry has scope sandbox", () => {
@@ -65,10 +65,10 @@ describe("command-registry", () => {
   });
 
   describe("visibleCommands()", () => {
-    it("should exclude 11 hidden commands (35 visible)", () => {
+    it("should exclude 11 hidden commands (36 visible)", () => {
       // 5 hidden global (help, --help, -h, --version, -v) +
-      // 6 hidden sandbox (shields×3, config×3)
-      expect(visibleCommands()).toHaveLength(35);
+      // 4 hidden sandbox (shields×3, config get)
+      expect(visibleCommands()).toHaveLength(36);
     });
 
     it("no visible command has hidden=true", () => {
@@ -79,9 +79,9 @@ describe("command-registry", () => {
   });
 
   describe("hidden commands", () => {
-    it("exactly 11 hidden commands: help/version aliases + shields + config", () => {
+    it("exactly 9 hidden commands: help/version aliases + shields + config", () => {
       const hidden = COMMANDS.filter((c) => c.hidden);
-      expect(hidden).toHaveLength(11);
+      expect(hidden).toHaveLength(9);
       const usages = hidden.map((c) => c.usage).sort();
       expect(usages).toEqual([
         "nemoclaw --help",
@@ -89,8 +89,6 @@ describe("command-registry", () => {
         "nemoclaw -h",
         "nemoclaw -v",
         "nemoclaw <name> config get",
-        "nemoclaw <name> config rotate-token",
-        "nemoclaw <name> config set",
         "nemoclaw <name> shields down",
         "nemoclaw <name> shields status",
         "nemoclaw <name> shields up",
@@ -167,9 +165,9 @@ describe("command-registry", () => {
   });
 
   describe("sandboxActionTokens()", () => {
-    it("returns exactly 14 unique action tokens including empty string", () => {
+    it("returns exactly 15 unique action tokens including empty string", () => {
       const tokens = sandboxActionTokens();
-      expect(tokens).toHaveLength(14);
+      expect(tokens).toHaveLength(15);
       // Must contain the same set as the old sandboxActions array
       const expected = new Set([
         "connect",
@@ -185,6 +183,7 @@ describe("command-registry", () => {
         "shields",
         "config",
         "channels",
+        "gateway-token",
         "",
       ]);
       expect(new Set(tokens)).toEqual(expected);

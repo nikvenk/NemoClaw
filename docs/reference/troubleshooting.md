@@ -160,8 +160,10 @@ When the lookup returns an answer, retry onboarding.
 ### Port already in use
 
 The NemoClaw dashboard uses port `18789` by default and the gateway uses port `8080`.
-If another process is already bound to one of these ports, onboarding fails.
-Identify the conflicting process, verify it is safe to stop, and terminate it:
+If another sandbox already owns the dashboard port, onboarding scans ports `18789` through `18799` and uses the next free port.
+If all ports in that range are occupied, the error lists the owner for each port and suggests using `--control-ui-port` with a port outside the range.
+
+If a non-NemoClaw process is already bound to the dashboard port or the gateway port, identify the conflicting process, verify it is safe to stop, and terminate it:
 
 ```console
 $ sudo lsof -i :18789
@@ -172,7 +174,13 @@ If the process does not exit, use `kill -9 <PID>` to force-terminate it.
 Then retry onboarding.
 
 Alternatively, override the conflicting port instead of stopping the other process.
-Set `CHAT_UI_URL` with the desired port — the dashboard port is derived automatically:
+Pass `--control-ui-port` with the desired dashboard port:
+
+```console
+$ nemoclaw onboard --control-ui-port 19000
+```
+
+You can also set `CHAT_UI_URL` with the desired port:
 
 ```console
 $ CHAT_UI_URL=http://127.0.0.1:19000 nemoclaw onboard
@@ -189,15 +197,15 @@ See [Environment Variables](commands.md#environment-variables) for the full list
 ### Running multiple sandboxes simultaneously
 
 Each sandbox requires its own dashboard port.
-If you onboard a second sandbox without overriding the port, onboarding fails with a clear error because port `18789` is already forwarded to the first sandbox.
+If you onboard a second sandbox without overriding the port, onboarding uses the next free port in the `18789` to `18799` range.
 `onboard` checks `openshell forward list` before starting a new forward, so a second onboard cannot silently take over the first sandbox's port.
 
-Assign a distinct port to each sandbox at onboard time.
-Set `CHAT_UI_URL` with the desired port — the dashboard port is derived automatically:
+Assign a distinct port only when you want a specific value:
 
 ```console
-$ nemoclaw onboard                                                   # first sandbox — uses default 18789
-$ CHAT_UI_URL=http://127.0.0.1:19000 nemoclaw onboard               # second sandbox — uses 19000
+$ nemoclaw onboard                                                   # first sandbox uses default 18789
+$ nemoclaw onboard                                                   # second sandbox uses the next free port
+$ nemoclaw onboard --control-ui-port 19000                          # explicit port override
 ```
 
 Each sandbox then has its own SSH tunnel and its own dashboard URL:
@@ -211,7 +219,10 @@ You can verify which tunnel belongs to which sandbox with:
 
 ```console
 $ openshell forward list
+$ nemoclaw list
 ```
+
+`nemoclaw list` prints the recorded dashboard URL for each sandbox.
 
 ## Onboarding
 
@@ -228,6 +239,50 @@ $ nemoclaw onboard
 
 Podman is not a tested runtime.
 If onboarding or sandbox lifecycle fails, switch to a tested runtime (Docker Desktop, Colima, or Docker Engine) and rerun onboarding.
+
+### Cluster fails with `overlayfs snapshotter cannot be enabled` on Docker 26+
+
+Docker Engine 26 and later default fresh installations to the [containerd image store](https://docs.docker.com/engine/storage/containerd/), which exposes its layers via the `overlayfs` snapshotter rather than the legacy `overlay2` graph driver.
+The k3s server inside the OpenShell cluster image needs to mount its own overlay filesystem on top, and the kernel rejects nesting two non-trivial overlay mounts.
+The cluster container then loops with:
+
+```text
+"overlayfs" snapshotter cannot be enabled for "/var/lib/rancher/k3s/agent/containerd",
+try using "fuse-overlayfs" or "native":
+failed to mount overlay: ... err: invalid argument
+```
+
+This is a Docker default-driver change, not a NemoClaw or OpenShell regression.
+The same hardware running Docker 25 or earlier — or any Docker version with the containerd image store disabled — uses the legacy `overlay2` driver and is unaffected.
+
+NemoClaw detects the Docker 26+ containerd-snapshotter overlayfs configuration during onboarding and transparently builds a small drop-in replacement for the cluster image on the local Docker engine.
+The patched image installs `fuse-overlayfs` and selects it as the k3s snapshotter, bypassing the kernel-level nested-overlay limitation.
+No host configuration changes, sudo, or Docker restart required.
+
+The auto-fix runs once per OpenShell version on the affected host.
+Subsequent onboarding runs reuse the cached patched image.
+Hosts without the conflict (`Driver: overlay2` in `docker info`, macOS Docker Desktop, or Linux installations that disable the containerd image store) see no change in behavior.
+
+Override knobs:
+
+- `NEMOCLAW_DISABLE_OVERLAY_FIX=1` — skip the auto-fix and run against the unmodified upstream cluster image.
+  Useful for diagnosis or when you have already applied the manual workaround below.
+- `NEMOCLAW_OVERLAY_SNAPSHOTTER=native` — build the patched image with k3s's `native` snapshotter instead of `fuse-overlayfs`.
+  The `native` snapshotter copies image layers instead of overlaying them, so it uses more disk but does not depend on FUSE.
+  Default is `fuse-overlayfs`.
+
+If you prefer to disable the new Docker storage driver instead of running the patched image, edit `/etc/docker/daemon.json`:
+
+```json
+{
+  "storage-driver": "overlay2",
+  "features": { "containerd-snapshotter": false }
+}
+```
+
+Then restart Docker (`sudo systemctl restart docker`) and re-run `nemoclaw onboard`.
+This restores the legacy `overlay2` driver host-wide, which kills any other running containers — prefer the auto-fix unless you need the change for unrelated reasons.
+Switching storage drivers also rebuilds the entire local image graph: previously-pulled images become unusable and Docker re-pulls them on first reference, so expect a cold cache and additional disk usage right after the restart.
 
 ### OpenShell version above maximum
 
@@ -452,6 +507,24 @@ The status command detects the sandbox context and reports "active (inside sandb
 
 Run `openshell sandbox list` on the host to check the underlying sandbox state.
 
+### Git clone fails with a certificate verification error
+
+In networks that inspect TLS, OpenShell injects a proxy CA bundle into the sandbox.
+Current NemoClaw exports that bundle as `GIT_SSL_CAINFO` during sandbox startup and persists it for `nemoclaw <name> connect` sessions, so Git can trust the proxy CA.
+It also forwards standard CA bundle variables for subprocesses, including `GIT_SSL_CAPATH`, `CURL_CA_BUNDLE`, and `REQUESTS_CA_BUNDLE`.
+
+If Git still reports `server certificate verification failed`, reconnect to the sandbox and check that the CA variables are present:
+
+```console
+$ env | grep -E 'SSL_CERT_FILE|GIT_SSL_CAINFO|CURL_CA_BUNDLE|REQUESTS_CA_BUNDLE'
+```
+
+If they are missing on an older sandbox, upgrade NemoClaw and run:
+
+```console
+$ nemoclaw <name> rebuild
+```
+
 ### `openclaw update` hangs or times out inside the sandbox
 
 This is expected for the current NemoClaw deployment model.
@@ -536,7 +609,7 @@ $ nemoclaw <sandbox> channels add <telegram|discord|slack>
 $ nemoclaw <sandbox> channels remove <telegram|discord|slack>
 ```
 
-`channels add` stores credentials under `~/.nemoclaw/credentials.json` and `channels remove` clears them; both offer to rebuild the sandbox so the image reflects the new channel set.
+`channels add` registers credentials with the OpenShell gateway and `channels remove` clears them; both offer to rebuild the sandbox so the image reflects the new channel set.
 In non-interactive mode (`NEMOCLAW_NON_INTERACTIVE=1`), the commands stage the change and leave the rebuild to a follow-up `nemoclaw <sandbox> rebuild`.
 
 ### `openclaw config set` or `unset` is blocked inside the sandbox
@@ -647,6 +720,62 @@ $ nemoclaw onboard
 
 These are build-time settings baked into the sandbox image.
 Changing them after onboarding requires re-running `nemoclaw onboard` to rebuild the image.
+
+### Agent cannot reach a host-side HTTP service
+
+When a sandbox needs to call an HTTP service running on the host, use the normal OpenShell network policy path.
+Expose the service on a host IP address that the OpenShell gateway can reach, create a custom NemoClaw policy preset for that IP and port, and apply it with `nemoclaw <sandbox> policy-add --from-file`.
+The sandbox request then flows through the OpenShell proxy while NemoClaw preserves the existing live policy entries.
+
+Do not rely on `host.docker.internal` or `host.openshell.internal` as a general-purpose host-service path.
+Those names may appear in the sandbox's `/etc/hosts`, but in OpenShell's sandbox network they are not guaranteed to point at a reachable host gateway.
+Bypassing the proxy with `--noproxy '*'` also bypasses network policy enforcement and audit.
+
+First, make sure the host-side service listens on a non-loopback address.
+For example, a health endpoint on port `50001` should be reachable from the host IP, not only from `127.0.0.1`:
+
+```console
+$ curl -s http://10.0.0.5:50001/health
+{"status":"ok"}
+```
+
+Then create a custom NemoClaw preset for the host-side service.
+Replace `10.0.0.5`, `50001`, paths, methods, and binaries with the service you want the sandbox to reach:
+
+```yaml
+preset:
+  name: host-memory-api
+  description: "Host memory API"
+network_policies:
+  host_memory_api:
+    name: host_memory_api
+    endpoints:
+      - host: 10.0.0.5
+        port: 50001
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/health" }
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+Apply the preset to the running sandbox with the NemoClaw CLI:
+
+```console
+$ nemoclaw my-assistant policy-add --from-file ./host-memory-api.yaml
+```
+
+After you apply the policy, retry the request from inside the sandbox without disabling the proxy:
+
+```console
+$ curl -s http://10.0.0.5:50001/health
+{"status":"ok"}
+```
+
+If the request is still denied, check the blocked request in `openshell term`.
+The policy `binaries` list must include the executable path that actually made the request.
+If the response changes from `policy_denied` to `upstream_unreachable`, the policy matched, but the OpenShell gateway could not reach the host IP and port.
 
 ### Agent cannot reach an external host
 
