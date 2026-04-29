@@ -4835,7 +4835,7 @@ const { createSandbox } = require(${onboardPath});
     assert.equal(payload.chatUiUrl, "http://127.0.0.1:18795");
     assert.ok(
       payload.commands.some((entry: CommandEntry) =>
-        entry.command.includes("forward start --background 18795 my-assistant"),
+        /forward start --background (?:0\.0\.0\.0:)?18795 my-assistant/.test(entry.command),
       ),
       "expected reused sandbox to keep its stored dashboard port 18795",
     );
