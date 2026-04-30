@@ -5176,7 +5176,7 @@ async function setupNim(
             continue selectionLoop;
           }
           const selectedModel = requireValue(model, "Expected an Ollama model selection");
-          const probe = prepareOllamaModel(selectedModel, installedModels);
+          const probe = await prepareOllamaModel(selectedModel, installedModels);
           if (!probe.ok) {
             console.error(`  ${probe.message}`);
             if (isNonInteractive()) {
@@ -5260,7 +5260,7 @@ async function setupNim(
             continue selectionLoop;
           }
           const selectedModel = requireValue(model, "Expected an Ollama model selection");
-          const probe = prepareOllamaModel(selectedModel, installedModels);
+          const probe = await prepareOllamaModel(selectedModel, installedModels);
           if (!probe.ok) {
             console.error(`  ${probe.message}`);
             if (isNonInteractive()) {
