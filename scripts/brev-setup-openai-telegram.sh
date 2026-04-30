@@ -4,20 +4,19 @@
 #
 # Brev launchable: NemoClaw + multi-provider + Telegram
 # Source: https://github.com/nikvenk/NemoClaw
-#
-# Required env vars:
-#   NEMOCLAW_PROVIDER   cloud | openai | anthropic | gemini | compatible-endpoint
-#   + matching key:     NVIDIA_API_KEY | OPENAI_API_KEY | ANTHROPIC_API_KEY |
-#                       GEMINI_API_KEY | COMPATIBLE_API_KEY + NEMOCLAW_ENDPOINT_URL
-#   NEMOCLAW_MODEL      e.g. nvidia/nemotron-3-super-120b-a12b, gpt-4o
-#
-# Optional env vars:
-#   TELEGRAM_BOT_TOKEN   Bot token from @BotFather
-#   TELEGRAM_ALLOWED_IDS Comma-separated Telegram user IDs
-#   NEMOCLAW_SANDBOX_NAME  (default: my-assistant)
-#   NEMOCLAW_POLICY_TIER   restricted | balanced (default) | open
-#   NEMOCLAW_REPO          GitHub repo (default: nikvenk/NemoClaw)
-#   NEMOCLAW_REF           Branch/tag (default: main)
+
+# ┌─────────────────────────────────────────────────────────────────┐
+# │  CONFIGURE HERE — fill in your values before deploying          │
+# └─────────────────────────────────────────────────────────────────┘
+export NEMOCLAW_PROVIDER="cloud"           # cloud | openai | anthropic | gemini | compatible-endpoint
+export NVIDIA_API_KEY=""                   # nvapi-... from build.nvidia.com  (cloud only)
+export OPENAI_API_KEY=""                   # OpenAI key                       (openai only)
+export ANTHROPIC_API_KEY=""               # Anthropic key                    (anthropic only)
+export GEMINI_API_KEY=""                   # Google Gemini key                (gemini only)
+export NEMOCLAW_MODEL="nvidia/nemotron-3-super-120b-a12b"
+export TELEGRAM_BOT_TOKEN=""              # Bot token from @BotFather (leave blank to skip)
+export TELEGRAM_ALLOWED_IDS=""            # e.g. "123456789,987654321" (leave blank for none)
+# ─────────────────────────────────────────────────────────────────
 #   OPENSHELL_VERSION      (default: v0.0.36)
 #   SKIP_DOCKER_PULL       Set to 1 to skip image pre-pulls
 
