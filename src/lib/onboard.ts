@@ -4313,8 +4313,12 @@ function providerNameToOptionKey(
   if (!name) return null;
   if (name === "ollama-local") return "ollama";
   // Local NIM and standalone vLLM both persist as provider="vllm-local";
-  // the presence of a nimContainer record disambiguates them.
-  if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : "vllm";
+  // the presence of a nimContainer record disambiguates them. Without that
+  // marker (e.g. live-gateway-only recovery, where the gateway returns
+  // provider/model only) the value is genuinely ambiguous — refuse to guess
+  // and let callers surface the situation rather than silently routing into
+  // the wrong branch.
+  if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : null;
   if (name === "nvidia-nim") return "nim-local";
   for (const [key, cfg] of Object.entries(REMOTE_PROVIDER_CONFIG)) {
     if ((cfg as { providerName?: string }).providerName === name) return key;
@@ -4517,10 +4521,13 @@ async function setupNim(
   if (options.length > 1) {
     selectionLoop: while (true) {
       let selected: ProviderChoice | undefined;
+      // Hoisted so downstream model-selection branches can fall back to a
+      // recorded model from the same recovery decision.
+      let recoveredFromSandbox = false;
+      let recoveredModel: string | null = null;
 
       if (isNonInteractive()) {
         let providerKey = requestedProvider;
-        let recoveredFromSandbox = false;
         if (!providerKey) {
           const recordedProvider = readRecordedProvider(sandboxName);
           const hasNimContainer = !!readRecordedNimContainer(sandboxName);
@@ -4540,6 +4547,15 @@ async function setupNim(
             }
             providerKey = recoveredKey;
             recoveredFromSandbox = true;
+            recoveredModel = readRecordedModel(sandboxName);
+          } else if (recordedProvider === "vllm-local") {
+            // vllm-local without a nimContainer marker is ambiguous — could be
+            // standalone vLLM or Local NIM. Don't guess; require an override.
+            console.error(
+              "  Recorded provider 'vllm-local' is ambiguous (could be standalone vLLM or Local NIM).",
+            );
+            console.error("  Set NEMOCLAW_PROVIDER explicitly (vllm or nim-local) and re-run.");
+            process.exit(1);
           } else {
             providerKey = "build";
           }
@@ -4695,6 +4711,7 @@ async function setupNim(
           const _envModel = (process.env.NEMOCLAW_MODEL || "").trim();
           model =
             requestedModel ||
+            (recoveredFromSandbox && recoveredModel) ||
             (isNonInteractive()
               ? DEFAULT_CLOUD_MODEL
               : await promptCloudModel({ defaultModelId: _envModel || undefined })) ||
@@ -4729,7 +4746,11 @@ async function setupNim(
             );
           }
           const _envModelRemote = (process.env.NEMOCLAW_MODEL || "").trim();
-          const defaultModel = requestedModel || _envModelRemote || remoteConfig.defaultModel;
+          const defaultModel =
+            requestedModel ||
+            _envModelRemote ||
+            (recoveredFromSandbox && recoveredModel) ||
+            remoteConfig.defaultModel;
           const selectedCredentialEnv = requireValue(
             credentialEnv,
             `Missing credential env for ${remoteConfig.label}`,
@@ -4932,10 +4953,12 @@ async function setupNim(
         } else {
           let sel;
           if (isNonInteractive()) {
-            if (requestedModel) {
-              sel = models.find((m) => m.name === requestedModel);
+            const targetModel = requestedModel || (recoveredFromSandbox ? recoveredModel : null);
+            if (targetModel) {
+              sel = models.find((m) => m.name === targetModel);
               if (!sel) {
-                console.error(`  Unsupported NEMOCLAW_MODEL for NIM: ${requestedModel}`);
+                const label = requestedModel ? "NEMOCLAW_MODEL for NIM" : "Recorded NIM model";
+                console.error(`  Unsupported ${label}: ${targetModel}`);
                 process.exit(1);
               }
             } else {
@@ -5071,7 +5094,10 @@ async function setupNim(
         while (true) {
           const installedModels = getOllamaModelOptions();
           if (isNonInteractive()) {
-            model = requestedModel || readRecordedModel(sandboxName) || getDefaultOllamaModel(gpu);
+            model =
+              requestedModel ||
+              (recoveredFromSandbox ? recoveredModel : null) ||
+              getDefaultOllamaModel(gpu);
           } else {
             model = await promptOllamaModel(gpu);
           }
@@ -5152,7 +5178,10 @@ async function setupNim(
         while (true) {
           const installedModels = getOllamaModelOptions();
           if (isNonInteractive()) {
-            model = requestedModel || readRecordedModel(sandboxName) || getDefaultOllamaModel(gpu);
+            model =
+              requestedModel ||
+              (recoveredFromSandbox ? recoveredModel : null) ||
+              getDefaultOllamaModel(gpu);
           } else {
             model = await promptOllamaModel(gpu);
           }
