@@ -15,7 +15,10 @@
 
 set -uo pipefail
 
-export NEMOCLAW_E2E_DEFAULT_TIMEOUT=900
+# Three sequential sandbox creations (~5-7 min each) plus cleanup phases need
+# well over the default 900s.  80 min leaves a 10 min buffer under the 90-min
+# CI job timeout.
+export NEMOCLAW_E2E_DEFAULT_TIMEOUT=4800
 SCRIPT_DIR_TIMEOUT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=test/e2e/e2e-timeout.sh
 source "${SCRIPT_DIR_TIMEOUT}/e2e-timeout.sh"
@@ -402,6 +405,27 @@ if openshell sandbox get "$SANDBOX_A" >/dev/null 2>&1; then
   pass "First sandbox '$SANDBOX_A' still exists after creating '$SANDBOX_B'"
 else
   fail "First sandbox '$SANDBOX_A' disappeared after creating '$SANDBOX_B' (regression: #849)"
+fi
+
+# #2174 regression: B must auto-allocate to a different dashboard port,
+# surface it in nemoclaw list, and not collide with A's 18789.
+if grep -q "is taken. Using port" <<<"$output3"; then
+  pass "Second-sandbox onboard logged port auto-allocation (#2174)"
+else
+  fail "Second-sandbox onboard did not log port auto-allocation — auto-alloc may not have fired (#2174)"
+fi
+
+LIST_LOG="$(mktemp)"
+run_nemoclaw list >"$LIST_LOG" 2>&1 || true
+list_output="$(cat "$LIST_LOG")"
+rm -f "$LIST_LOG"
+
+dashboard_ports_in_list="$(grep -oE 'dashboard: http://127\.0\.0\.1:[0-9]+' <<<"$list_output" | awk -F: '{print $NF}' | sort -u)"
+distinct_count="$(wc -l <<<"$dashboard_ports_in_list" | tr -d ' ')"
+if [ "$distinct_count" = "2" ]; then
+  pass "nemoclaw list shows two distinct dashboard ports (#2174)"
+else
+  fail "nemoclaw list did not show two distinct dashboard ports (got $distinct_count: $(tr '\n' ' ' <<<"$dashboard_ports_in_list"))"
 fi
 
 # ══════════════════════════════════════════════════════════════════
