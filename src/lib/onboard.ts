@@ -4212,6 +4212,18 @@ async function createSandbox(
       providerCredentialHashes[envKey] = hash;
     }
   }
+  // Parse the actual image tag from openshell's build output.
+  // openshell assigns its own timestamp (seconds) as the tag, e.g.
+  // "Built image openshell/sandbox-from:1777534687", while the local
+  // buildId uses Date.now() (milliseconds). Using the parsed tag keeps
+  // the registry in sync with what Docker actually tagged. Fixes #2672.
+  const builtImageMatch = createResult.output.match(
+    /Built image (openshell\/sandbox-from:\S+)/,
+  );
+  const resolvedImageTag = builtImageMatch
+    ? builtImageMatch[1]
+    : `openshell/sandbox-from:${buildId}`;
+
   registry.registerSandbox({
     name: sandboxName,
     model: model || null,
@@ -4219,7 +4231,7 @@ async function createSandbox(
     gpuEnabled: !!gpu,
     agent: agent ? agent.name : null,
     agentVersion: fromDockerfile ? null : effectiveAgent.expectedVersion || null,
-    imageTag: `openshell/sandbox-from:${buildId}`,
+    imageTag: resolvedImageTag,
     providerCredentialHashes:
       Object.keys(providerCredentialHashes).length > 0 ? providerCredentialHashes : undefined,
     messagingChannels: activeMessagingChannels,
