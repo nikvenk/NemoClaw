@@ -759,12 +759,19 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       `SSH+tar download: exit=${result.status}, stdout=${result.stdout ? result.stdout.length + " bytes" : "null"}, stderr=${tarStderr.substring(0, 200)}`,
     );
 
-    // Parse any per-file permission errors from tar stderr so callers can
-    // surface which files were skipped (partial backup).
-    skippedFiles = tarStderr
-      .split("\n")
-      .filter((l) => l.includes("Cannot open") || l.includes("Permission denied"))
-      .map((l) => l.replace(/^tar:\s*/, "").replace(/: Cannot open.*$/, "").replace(/: Permission denied.*$/, ""));
+    // Parse per-file permission errors from tar stderr so callers can surface
+    // which files were skipped (partial backup). Only match lines whose reason
+    // is actually "Permission denied" — "Cannot open: No such file or directory"
+    // and other non-permission errors should not be misclassified as skips.
+    const permissionDeniedRe = /^tar:\s+(.*?):\s+(?:Cannot open:\s+)?Permission denied$/;
+    skippedFiles = Array.from(
+      new Set(
+        tarStderr
+          .split("\n")
+          .map((line) => permissionDeniedRe.exec(line)?.[1] ?? "")
+          .filter((file) => file.length > 0),
+      ),
+    );
 
     // With --ignore-failed-read, GNU tar exits 0 even when individual files
     // are unreadable. Reject truly fatal exits: null (signal-killed), 2

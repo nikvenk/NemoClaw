@@ -294,10 +294,13 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
 
   it("backup tar command does not use -h flag (no symlink following)", () => {
     const src = getSourceCode();
-    // Find the backup tar command in backupSandboxState
+    // Find the backup tar command in backupSandboxState (bounded to that
+    // function only — stop at restoreSandboxState so restore-path tar
+    // commands don't satisfy this assertion if the backup command regresses).
     const fnStart = src.indexOf("function backupSandboxState");
     expect(fnStart).not.toBe(-1);
-    const fnBody = src.slice(fnStart);
+    const fnEnd = src.indexOf("function restoreSandboxState", fnStart);
+    const fnBody = src.slice(fnStart, fnEnd === -1 ? undefined : fnEnd);
 
     // The tar command should be `tar ... -cf` not `tar ... -chf`
     // Account for flags like --ignore-failed-read between tar and -cf.
