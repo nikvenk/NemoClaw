@@ -14,7 +14,6 @@ export interface OnboardCommandOptions {
   sandboxName: string | null;
   acceptThirdPartySoftware: boolean;
   agent: string | null;
-  dangerouslySkipPermissions: boolean;
   controlUiPort: number | null;
 }
 
@@ -34,18 +33,12 @@ export interface RunDeprecatedOnboardAliasCommandDeps extends RunOnboardCommandD
   kind: "setup" | "setup-spark";
 }
 
-const ONBOARD_BASE_ARGS = [
-  "--non-interactive",
-  "--resume",
-  "--fresh",
-  "--recreate-sandbox",
-  "--dangerously-skip-permissions",
-];
+const ONBOARD_BASE_ARGS = ["--non-interactive", "--resume", "--fresh", "--recreate-sandbox"];
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   const name = CLI_NAME;
   return [
-    `  Usage: ${name} onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [--dangerously-skip-permissions] [${noticeAcceptFlag}]`,
+    `  Usage: ${name} onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [${noticeAcceptFlag}]`,
     "",
     "  --from <Dockerfile> uses the Dockerfile's parent directory as the Docker build context.",
     "  Put files referenced by COPY/ADD next to that Dockerfile, or move the Dockerfile into",
@@ -172,7 +165,6 @@ export function parseOnboardArgs(
     acceptThirdPartySoftware:
       parsedArgs.includes(noticeAcceptFlag) || String(deps.env[noticeAcceptEnv] || "") === "1",
     agent,
-    dangerouslySkipPermissions: parsedArgs.includes("--dangerously-skip-permissions"),
     controlUiPort,
   };
 }

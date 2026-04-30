@@ -388,7 +388,6 @@ import type {
 type OnboardOptions = {
   nonInteractive?: boolean;
   recreateSandbox?: boolean;
-  dangerouslySkipPermissions?: boolean;
   resume?: boolean;
   fresh?: boolean;
   fromDockerfile?: string | null;
@@ -3455,7 +3454,6 @@ async function createSandbox(
   enabledChannels: string[] | null = null,
   fromDockerfile: string | null = null,
   agent: AgentDefinition | null = null,
-  dangerouslySkipPermissions = false,
   controlUiPort: number | null = null,
 ) {
   step(6, 8, "Creating sandbox");
@@ -3883,27 +3881,13 @@ async function createSandbox(
 
   // Create sandbox (use -- echo to avoid dropping into interactive shell)
   // Pass the base policy so sandbox starts in proxy mode (required for policy updates later)
-  const globalPermissivePath = path.join(
+  const defaultPolicyPath = path.join(
     ROOT,
     "nemoclaw-blueprint",
     "policies",
-    "openclaw-sandbox-permissive.yaml",
+    "openclaw-sandbox.yaml",
   );
-  let basePolicyPath;
-  if (dangerouslySkipPermissions) {
-    // Permissive mode: use agent-specific permissive policy if available,
-    // otherwise fall back to the global permissive policy.
-    const agentPermissive = agent && agentOnboard.getAgentPermissivePolicyPath(agent);
-    basePolicyPath = agentPermissive || globalPermissivePath;
-  } else {
-    const defaultPolicyPath = path.join(
-      ROOT,
-      "nemoclaw-blueprint",
-      "policies",
-      "openclaw-sandbox.yaml",
-    );
-    basePolicyPath = (agent && agentOnboard.getAgentPolicyPath(agent)) || defaultPolicyPath;
-  }
+  const basePolicyPath = (agent && agentOnboard.getAgentPolicyPath(agent)) || defaultPolicyPath;
   const createArgs = [
     "--from",
     `${buildCtx}/Dockerfile`,
@@ -4256,7 +4240,6 @@ async function createSandbox(
     agent: agent ? agent.name : null,
     agentVersion: fromDockerfile ? null : effectiveAgent.expectedVersion || null,
     imageTag: `openshell/sandbox-from:${buildId}`,
-    dangerouslySkipPermissions: dangerouslySkipPermissions || undefined,
     providerCredentialHashes:
       Object.keys(providerCredentialHashes).length > 0 ? providerCredentialHashes : undefined,
     messagingChannels: activeMessagingChannels,
@@ -4360,14 +4343,19 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
   let credentialEnv: string | null = REMOTE_PROVIDER_CONFIG.build.credentialEnv;
   let preferredInferenceApi: string | null = null;
 
-  // Detect local inference options
+  // Detect local inference options. Bound curl with --connect-timeout/--max-time
+  // so a half-open port or stalled listener cannot hang the onboard at step 3
+  // (#2674).
+  const localProbeCurlArgs = ["--connect-timeout", "2", "--max-time", "5"] as const;
   const hasOllama = hostCommandExists("ollama");
-  const ollamaRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${OLLAMA_PORT}/api/tags`], {
-    ignoreError: true,
-  });
-  const vllmRunning = !!runCapture(["curl", "-sf", `http://127.0.0.1:${VLLM_PORT}/v1/models`], {
-    ignoreError: true,
-  });
+  const ollamaRunning = !!runCapture(
+    ["curl", "-sf", ...localProbeCurlArgs, `http://127.0.0.1:${OLLAMA_PORT}/api/tags`],
+    { ignoreError: true },
+  );
+  const vllmRunning = !!runCapture(
+    ["curl", "-sf", ...localProbeCurlArgs, `http://127.0.0.1:${VLLM_PORT}/v1/models`],
+    { ignoreError: true },
+  );
   const requestedProvider = isNonInteractive() ? getNonInteractiveProvider() : null;
   const requestedModel = isNonInteractive()
     ? getNonInteractiveModel(requestedProvider || "build")
@@ -7200,18 +7188,6 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   NON_INTERACTIVE = opts.nonInteractive || process.env.NEMOCLAW_NON_INTERACTIVE === "1";
   RECREATE_SANDBOX = opts.recreateSandbox || process.env.NEMOCLAW_RECREATE_SANDBOX === "1";
   _preflightDashboardPort = opts.controlUiPort || null;
-  const dangerouslySkipPermissions =
-    opts.dangerouslySkipPermissions || process.env.NEMOCLAW_DANGEROUSLY_SKIP_PERMISSIONS === "1";
-  if (dangerouslySkipPermissions) {
-    console.error("");
-    console.error(
-      "  \u26a0  --dangerously-skip-permissions: sandbox security restrictions disabled.",
-    );
-    console.error("     Network:    all known endpoints open (no method/path filtering)");
-    console.error("     Filesystem: sandbox home directory is writable");
-    console.error("     Use for development/testing only.");
-    console.error("");
-  }
   delete process.env.OPENSHELL_GATEWAY;
   const resume = opts.resume === true;
   const fresh = opts.fresh === true;
@@ -7641,7 +7617,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
         }),
       );
       console.log("  Web search and messaging channels will be prompted next.");
-      if (!isNonInteractive() && !dangerouslySkipPermissions) {
+      if (!isNonInteractive()) {
         if (!(await promptYesNoOrDefault("  Apply this configuration?", null, true))) {
           console.log(`  Aborted. Re-run \`${cliName()} onboard\` to start over.`);
           console.log("  Credentials entered so far were only staged in memory for this run.");
@@ -7751,7 +7727,6 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
         selectedMessagingChannels,
         fromDockerfile,
         agent,
-        dangerouslySkipPermissions,
         opts.controlUiPort || null,
       );
       webSearchConfig = nextWebSearchConfig;
@@ -7813,61 +7788,48 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     const recordedMessagingChannels = Array.isArray(latestSession?.messagingChannels)
       ? latestSession.messagingChannels
       : [];
-    if (dangerouslySkipPermissions) {
-      step(8, 8, "Policy presets");
-      if (!waitForSandboxReady(sandboxName)) {
-        console.error(`\n  ✗ Sandbox '${sandboxName}' not ready after creation. Giving up.`);
-        process.exit(1);
-      }
-      shields.shieldsDownPermanent(sandboxName);
+    const resumePolicies =
+      resume && sandboxName && arePolicyPresetsApplied(sandboxName, recordedPolicyPresets || []);
+    if (resumePolicies) {
+      skippedStepMessage("policies", (recordedPolicyPresets || []).join(", "));
       onboardSession.markStepComplete(
         "policies",
-        toSessionUpdates({ sandboxName, provider, model, policyPresets: [] }),
-      );
-    } else {
-      const resumePolicies =
-        resume && sandboxName && arePolicyPresetsApplied(sandboxName, recordedPolicyPresets || []);
-      if (resumePolicies) {
-        skippedStepMessage("policies", (recordedPolicyPresets || []).join(", "));
-        onboardSession.markStepComplete(
-          "policies",
-          toSessionUpdates({
-            sandboxName,
-            provider,
-            model,
-            policyPresets: recordedPolicyPresets || [],
-          }),
-        );
-      } else {
-        startRecordedStep("policies", {
+        toSessionUpdates({
           sandboxName,
           provider,
           model,
           policyPresets: recordedPolicyPresets || [],
-        });
-        const appliedPolicyPresets = await setupPoliciesWithSelection(sandboxName, {
-          selectedPresets:
-            Array.isArray(recordedPolicyPresets) && recordedPolicyPresets.length > 0
-              ? recordedPolicyPresets
-              : null,
-          enabledChannels:
-            selectedMessagingChannels.length > 0
-              ? selectedMessagingChannels
-              : recordedMessagingChannels,
-          webSearchConfig,
-          provider,
-          onSelection: (policyPresets) => {
-            onboardSession.updateSession((current: Session) => {
-              current.policyPresets = policyPresets;
-              return current;
-            });
-          },
-        });
-        onboardSession.markStepComplete(
-          "policies",
-          toSessionUpdates({ sandboxName, provider, model, policyPresets: appliedPolicyPresets }),
-        );
-      }
+        }),
+      );
+    } else {
+      startRecordedStep("policies", {
+        sandboxName,
+        provider,
+        model,
+        policyPresets: recordedPolicyPresets || [],
+      });
+      const appliedPolicyPresets = await setupPoliciesWithSelection(sandboxName, {
+        selectedPresets:
+          Array.isArray(recordedPolicyPresets) && recordedPolicyPresets.length > 0
+            ? recordedPolicyPresets
+            : null,
+        enabledChannels:
+          selectedMessagingChannels.length > 0
+            ? selectedMessagingChannels
+            : recordedMessagingChannels,
+        webSearchConfig,
+        provider,
+        onSelection: (policyPresets) => {
+          onboardSession.updateSession((current: Session) => {
+            current.policyPresets = policyPresets;
+            return current;
+          });
+        },
+      });
+      onboardSession.markStepComplete(
+        "policies",
+        toSessionUpdates({ sandboxName, provider, model, policyPresets: appliedPolicyPresets }),
+      );
     }
 
     onboardSession.completeSession(toSessionUpdates({ sandboxName, provider, model }));
