@@ -957,7 +957,7 @@ install_vllm() {
 
   if [[ -n "$force" ]]; then
     info "vLLM reinstall requested — stopping existing container and any running vLLM process…"
-    docker stop "$container_name" 2>/dev/null || true
+    maybe_sudo docker stop "$container_name" 2>/dev/null || true
     if _proc_running vllm; then
       pkill -f vllm 2>/dev/null || true
       sleep 2
@@ -969,11 +969,12 @@ install_vllm() {
     return 0
   fi
 
-  # Remove any stopped container with the same name before creating a new one.
-  docker rm "$container_name" 2>/dev/null || true
+  # Remove any existing container (running or stopped) before creating a new one.
+  maybe_sudo docker stop "$container_name" 2>/dev/null || true
+  maybe_sudo docker rm   "$container_name" 2>/dev/null || true
 
   info "Pulling vLLM container (${image})…"
-  docker pull "$image"
+  maybe_sudo docker pull "$image"
 
   local vram_mb vram_gb model_id
   vram_mb=$(get_vram_mb)
@@ -984,7 +985,7 @@ install_vllm() {
     model_id="nvidia/nemotron-3-nano-30b-a4b"
   fi
   info "Launching vLLM container (model: ${model_id}, port: ${port})…"
-  docker run --detach --gpus all \
+  maybe_sudo docker run --detach --gpus all \
     --name "$container_name" \
     --restart unless-stopped \
     -p "${port}:${port}" \
