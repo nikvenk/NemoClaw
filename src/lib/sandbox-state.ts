@@ -763,7 +763,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     // which files were skipped (partial backup). Only match lines whose reason
     // is actually "Permission denied" — "Cannot open: No such file or directory"
     // and other non-permission errors should not be misclassified as skips.
-    const permissionDeniedRe = /^tar:\s+(.*?):\s+(?:Cannot open:\s+)?Permission denied$/;
+    const permissionDeniedRe = /^tar:\s+(.*):\s+(?:Cannot open:\s+)?Permission denied$/;
     skippedFiles = Array.from(
       new Set(
         tarStderr
@@ -773,27 +773,30 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       ),
     );
 
-    // With --ignore-failed-read, GNU tar exits 0 even when individual files
-    // are unreadable. Reject truly fatal exits: null (signal-killed), 2
-    // (fatal tar error without --ignore-failed-read fallback), or ≥128
-    // (signal/SSH failures like 255). Exit 1 is "some files differ" which
-    // is benign for backup purposes.
-    const isFatalExit =
-      result.status === null || result.status === 2 || result.status >= 128;
-
-    if (!isFatalExit && result.stdout && result.stdout.length > 0) {
+    // With --ignore-failed-read, GNU tar exits 0 when files are unreadable
+    // (permission denied, vanished mid-read, etc.) — it archives what it can
+    // and logs warnings to stderr. Any non-zero exit (1 = files changed during
+    // read, 2 = fatal error, null = signal-killed, ≥128 = SSH failures)
+    // indicates a problem that --ignore-failed-read did not absorb.
+    if (result.status === 0 && result.stdout && result.stdout.length > 0) {
       // SECURITY: Validate tar entries, extract safely, audit symlinks
       const extractResult = safeTarExtract(result.stdout, backupPath);
       if (extractResult.success) {
         backedUpDirs.push(...existingDirs);
-        if (result.status !== 0) {
-          _log(
-            `WARN: tar exited ${result.status} but produced valid output (partial backup); stderr: ${tarStderr.substring(0, 500)}`,
-          );
-        }
         if (skippedFiles.length > 0) {
           _log(
             `WARN: ${skippedFiles.length} file(s) skipped due to permission errors: ${skippedFiles.slice(0, 10).join(", ")}`,
+          );
+        }
+        // Log any tar stderr warnings that weren't permission-denied skips
+        // (e.g. "file changed as we read it", "file removed before we read it").
+        // These don't fail the backup but should be visible in verbose mode.
+        const unrecognizedWarnings = tarStderr
+          .split("\n")
+          .filter((l) => l.startsWith("tar:") && !permissionDeniedRe.test(l) && l.trim().length > 0);
+        if (unrecognizedWarnings.length > 0) {
+          _log(
+            `WARN: tar stderr contained ${unrecognizedWarnings.length} non-permission warning(s): ${unrecognizedWarnings.slice(0, 5).join("; ")}`,
           );
         }
       } else {
@@ -801,11 +804,9 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         failedDirs.push(...existingDirs);
       }
     } else {
-      if (isFatalExit) {
-        _log(
-          `FAILED: tar exited with fatal status ${result.status} — rejecting backup; stderr: ${tarStderr.substring(0, 500)}`,
-        );
-      }
+      _log(
+        `FAILED: tar exited ${result.status} — rejecting backup; stderr: ${tarStderr.substring(0, 500)}`,
+      );
       failedDirs.push(...existingDirs);
     }
   } finally {
