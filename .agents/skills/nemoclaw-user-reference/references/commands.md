@@ -168,10 +168,12 @@ $ nemoclaw onboard --from ./Dockerfile.custom
 ### `nemoclaw list`
 
 List all registered sandboxes with their model, provider, and policy presets.
+Pass `--json` for machine-readable output that includes a `schemaVersion`, the default sandbox, recovery metadata, and the sandbox inventory.
 Sandboxes with an active SSH session are marked with a `●` indicator so you can tell at a glance which sandbox you are already connected to in another terminal.
 
 ```console
 $ nemoclaw list
+$ nemoclaw list --json
 ```
 
 ### `nemoclaw deploy`

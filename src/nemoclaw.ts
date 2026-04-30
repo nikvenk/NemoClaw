@@ -69,7 +69,8 @@ const {
   stripAnsi,
   versionGte,
 } = require("./lib/openshell");
-const { listSandboxesCommand, showStatusCommand } = require("./lib/inventory-commands");
+const { showStatusCommand } = require("./lib/inventory-commands");
+const { runRegisteredOclifCommand } = require("./lib/oclif-runner");
 const { executeDeploy } = require("./lib/deploy");
 const { runStartCommand, runStopCommand } = require("./lib/services-command");
 const { buildVersionedUninstallUrl, runUninstallCommand } = require("./lib/uninstall-command");
@@ -595,6 +596,9 @@ async function recoverRegistryEntries({
     recoveredFromGateway,
   };
 }
+
+exports.captureOpenshell = captureOpenshell;
+exports.recoverRegistryEntries = recoverRegistryEntries;
 
 function hasNamedGateway(output = ""): boolean {
   return stripAnsi(output).includes("Gateway: nemoclaw");
@@ -1538,43 +1542,11 @@ function showStatus() {
   });
 }
 
-async function listSandboxes(): Promise<void> {
-  const opsBinList = resolveOpenshell();
-  const sessionDeps = opsBinList ? createSessionDeps(opsBinList) : null;
-
-  // Cache the SSH process probe once for all sandboxes — avoids spawning ps
-  // per sandbox row. The getSshProcesses() call is the expensive part (5s timeout).
-  let cachedSshOutput: string | null | undefined;
-  const getCachedSshOutput = () => {
-    if (cachedSshOutput === undefined && sessionDeps) {
-      cachedSshOutput = sessionDeps.getSshProcesses();
-    }
-    return cachedSshOutput ?? null;
-  };
-
-  await listSandboxesCommand({
-    recoverRegistryEntries: () => recoverRegistryEntries(),
-    getLiveInference: () =>
-      parseGatewayInference(
-        captureOpenshell(["inference", "get"], {
-          ignoreError: true,
-          timeout: OPENSHELL_PROBE_TIMEOUT_MS,
-        }).output,
-      ),
-    loadLastSession: () => onboardSession.loadSession(),
-    getActiveSessionCount: sessionDeps
-      ? (name: string) => {
-          try {
-            const sshOutput = getCachedSshOutput();
-            if (sshOutput === null) return null;
-            const { parseSshProcesses } = require("./lib/sandbox-session-state");
-            return parseSshProcesses(sshOutput, name).length;
-          } catch {
-            return null;
-          }
-        }
-      : undefined,
-    log: console.log,
+async function listSandboxes(args: string[] = []): Promise<void> {
+  await runRegisteredOclifCommand("list", args, {
+    rootDir: ROOT,
+    error: console.error,
+    exit: (code: number) => process.exit(code),
   });
 }
 
@@ -4434,7 +4406,7 @@ const [cmd, ...args] = process.argv.slice(2);
         await credentialsCommand(args);
         break;
       case "list":
-        await listSandboxes();
+        await listSandboxes(args);
         break;
       case "backup-all":
         backupAll();
