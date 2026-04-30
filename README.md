@@ -39,9 +39,7 @@ This fork ships a ready-to-use [Brev](https://brev.nvidia.com/) launchable that 
 
 ### One-click deploy
 
-[![Launch on Brev](https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg)](https://brev.nvidia.com/launchable/deploy?launchableID=env-nikvenk-openai-telegram)
-
-> **Note:** Replace the launchable ID above with the one you receive after creating the launchable in the [Brev Console](https://brev.nvidia.com/).
+[![Launch on Brev](https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg)](https://brev.nvidia.com/launchable/deploy?launchableID=env-3D5hWPp4XpPUOYZAVy1o7Uk3nu2)
 
 ### Environment variables
 
