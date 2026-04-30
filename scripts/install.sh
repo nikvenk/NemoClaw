@@ -986,9 +986,10 @@ install_vllm() {
   if [[ -n "${NEMOCLAW_VLLM_MODEL:-}" ]]; then
     model_id="${NEMOCLAW_VLLM_MODEL}"
   elif (( vram_gb >= 120 )); then
-    model_id="nvidia/nemotron-3-super-120b-a12b"
+    # Qwen2.5-72B fits in ~144 GB BF16 and is fully open (no HF token required)
+    model_id="Qwen/Qwen2.5-72B-Instruct"
   else
-    model_id="nvidia/nemotron-3-nano-30b-a4b"
+    model_id="Qwen/Qwen2.5-7B-Instruct"
   fi
 
   hf_token="${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}"
