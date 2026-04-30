@@ -147,17 +147,20 @@ info "nemoclaw $(nemoclaw --version 2>/dev/null || echo unknown) linked"
 
 [[ -n "$PULL_PID" ]] && { wait "$PULL_PID" || warn "Some Docker pulls failed (will pull at onboard time)"; }
 
-# ── 6. Write a welcome message shown on every SSH login ──────────────────────
+# ── 6. Install configure script and write MOTD ────────────────────────────────
+sudo cp "$NEMOCLAW_CLONE_DIR/scripts/nemoclaw-configure.sh" /usr/local/bin/nemoclaw-configure
+sudo chmod +x /usr/local/bin/nemoclaw-configure
+
 cat > /etc/motd << 'MOTD'
 
   ╔══════════════════════════════════════════════════════════════╗
   ║           NemoClaw — Ready to Configure                      ║
   ╠══════════════════════════════════════════════════════════════╣
-  ║  Run the setup wizard to configure your AI assistant:        ║
+  ║  Run the configuration wizard to set up your AI assistant:   ║
   ║                                                              ║
-  ║    nemoclaw onboard                                          ║
+  ║    nemoclaw-configure                                        ║
   ║                                                              ║
-  ║  The wizard will ask you to choose:                          ║
+  ║  It will ask you to choose:                                  ║
   ║    • Inference provider (NVIDIA, OpenAI, Anthropic, Gemini)  ║
   ║    • API key for that provider                               ║
   ║    • Model (e.g. nvidia/nemotron-3-super-120b-a12b, gpt-4o)  ║
