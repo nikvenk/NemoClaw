@@ -12,7 +12,8 @@
 # Optional env:
 #   NVIDIA_API_KEY                API key for NVIDIA-hosted inference
 #   CHAT_UI_URL                   Browser origin that will access the forwarded dashboard
-#   NEMOCLAW_DISABLE_DEVICE_AUTH  Build-time only. Set to "1" to skip device-pairing auth
+#   NEMOCLAW_DISABLE_DEVICE_AUTH  Build-time only. Set to "1" to skip device-pairing auth.
+#                                  Also auto-disabled when CHAT_UI_URL is non-loopback.
 #                                 (development/headless). Has no runtime effect — openclaw.json
 #                                 is baked at image build and verified by hash at startup.
 #   NEMOCLAW_MODEL_OVERRIDE       Override the primary model at startup without rebuilding
@@ -192,12 +193,13 @@ _SANDBOX_HOME="/sandbox"          # Home dir for the sandbox user (useradd -d /s
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/759
 
 apply_model_override() {
-  # Any of these env vars trigger a config patch
+  # Only explicit override env vars trigger a config patch. NEMOCLAW_CONTEXT_WINDOW,
+  # NEMOCLAW_MAX_TOKENS, and NEMOCLAW_REASONING are promoted from Dockerfile build
+  # ARGs to ENV and are always set — they should only take effect when accompanied
+  # by an explicit model or API override. Without this guard the function runs on
+  # every container start even with no override requested. Ref: #2653
   [ -n "${NEMOCLAW_MODEL_OVERRIDE:-}" ] \
     || [ -n "${NEMOCLAW_INFERENCE_API_OVERRIDE:-}" ] \
-    || [ -n "${NEMOCLAW_CONTEXT_WINDOW:-}" ] \
-    || [ -n "${NEMOCLAW_MAX_TOKENS:-}" ] \
-    || [ -n "${NEMOCLAW_REASONING:-}" ] \
     || return 0
 
   # SECURITY: Only root can write to /sandbox/.openclaw (root:root 444).
@@ -235,8 +237,8 @@ apply_model_override() {
     case "$api_override" in
       openai-completions | anthropic-messages) ;;
       *)
-        printf '[SECURITY] NEMOCLAW_INFERENCE_API_OVERRIDE must be "openai-completions" or "anthropic-messages", got "%s"\n' "$api_override" >&2
-        return 1
+        printf '[SECURITY] NEMOCLAW_INFERENCE_API_OVERRIDE must be "openai-completions" or "anthropic-messages", got "%s" — skipping override\n' "$api_override" >&2
+        return 0
         ;;
     esac
   fi
@@ -247,20 +249,20 @@ apply_model_override() {
 
   # Validate numeric values
   if [ -n "$context_window" ] && ! printf '%s' "$context_window" | grep -qE '^[0-9]+$'; then
-    printf '[SECURITY] NEMOCLAW_CONTEXT_WINDOW must be a positive integer, got "%s"\n' "$context_window" >&2
-    return 1
+    printf '[SECURITY] NEMOCLAW_CONTEXT_WINDOW must be a positive integer, got "%s" — skipping override\n' "$context_window" >&2
+    return 0
   fi
   if [ -n "$max_tokens" ] && ! printf '%s' "$max_tokens" | grep -qE '^[0-9]+$'; then
-    printf '[SECURITY] NEMOCLAW_MAX_TOKENS must be a positive integer, got "%s"\n' "$max_tokens" >&2
-    return 1
+    printf '[SECURITY] NEMOCLAW_MAX_TOKENS must be a positive integer, got "%s" — skipping override\n' "$max_tokens" >&2
+    return 0
   fi
   # Validate reasoning is true/false
   if [ -n "$reasoning" ]; then
     case "$reasoning" in
       true | false) ;;
       *)
-        printf '[SECURITY] NEMOCLAW_REASONING must be "true" or "false", got "%s"\n' "$reasoning" >&2
-        return 1
+        printf '[SECURITY] NEMOCLAW_REASONING must be "true" or "false", got "%s" — skipping override\n' "$reasoning" >&2
+        return 0
         ;;
     esac
   fi
@@ -271,10 +273,15 @@ apply_model_override() {
   [ -n "$max_tokens" ] && printf '[config] Applying max tokens override: %s\n' "$max_tokens" >&2
   [ -n "$reasoning" ] && printf '[config] Applying reasoning override: %s\n' "$reasoning" >&2
 
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653).
+  # Re-lock in all exit paths so files are never left at 644 on failure.
+  relax_config_for_write "$config_file" "$hash_file"
+  local _write_rc=0
+
   NEMOCLAW_CONTEXT_WINDOW="$context_window" \
     NEMOCLAW_MAX_TOKENS="$max_tokens" \
     NEMOCLAW_REASONING="$reasoning" \
-    python3 - "$config_file" "$model_override" "$api_override" <<'PYOVERRIDE'
+    python3 - "$config_file" "$model_override" "$api_override" <<'PYOVERRIDE' || _write_rc=$?
 import json, os, sys
 
 config_file, model_override, api_override = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -310,9 +317,18 @@ with open(config_file, "w") as f:
     json.dump(cfg, f, indent=2)
 PYOVERRIDE
 
-  # Recompute config hash so integrity check passes on next startup
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[SECURITY] Config hash recomputed after model override\n' >&2
+  if [ "$_write_rc" -eq 0 ]; then
+    # Recompute config hash so integrity check passes on next startup
+    if (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file"); then
+      printf '[SECURITY] Config hash recomputed after model override\n' >&2
+    else
+      _write_rc=$?
+    fi
+  fi
+
+  # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
+  lock_config_after_write "$config_file" "$hash_file"
+  [ "$_write_rc" -eq 0 ] || return "$_write_rc"
 }
 
 # ── Runtime CORS origin override ──────────────────────────────────
@@ -349,13 +365,18 @@ apply_cors_override() {
     return 1
   fi
   if ! printf '%s' "$cors_origin" | grep -qE '^https?://'; then
-    printf '[SECURITY] NEMOCLAW_CORS_ORIGIN must start with http:// or https://, got "%s"\n' "$cors_origin" >&2
-    return 1
+    printf '[SECURITY] NEMOCLAW_CORS_ORIGIN must start with http:// or https://, got "%s" — skipping override\n' "$cors_origin" >&2
+    return 0
   fi
 
   printf '[config] Adding CORS origin: %s\n' "$cors_origin" >&2
 
-  python3 - "$config_file" "$cors_origin" <<'PYCORS'
+  # Relax 444 → 644 so writes succeed after CAP_DAC_OVERRIDE is dropped (#2653).
+  # Re-lock in all exit paths so files are never left at 644 on failure.
+  relax_config_for_write "$config_file" "$hash_file"
+  local _write_rc=0
+
+  python3 - "$config_file" "$cors_origin" <<'PYCORS' || _write_rc=$?
 import json, sys
 
 config_file, cors_origin = sys.argv[1], sys.argv[2]
@@ -372,98 +393,282 @@ with open(config_file, "w") as f:
     json.dump(cfg, f, indent=2)
 PYCORS
 
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[config] Config hash recomputed after CORS override\n' >&2
+  if [ "$_write_rc" -eq 0 ]; then
+    if (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file"); then
+      printf '[config] Config hash recomputed after CORS override\n' >&2
+    else
+      _write_rc=$?
+    fi
+  fi
+
+  # Re-lock 644 → 444 — always runs, even on write/hash failure (#2653)
+  lock_config_after_write "$config_file" "$hash_file"
+  [ "$_write_rc" -eq 0 ] || return "$_write_rc"
 }
 
-# ── Slack token placeholder resolution ────────────────────────────
-# Resolves openshell:resolve:env:SLACK_* placeholders in openclaw.json at
-# container startup, before chattr +i locks the file. This ensures Bolt's
-# in-process token validation (appToken must start with xapp-) succeeds even
-# before the L7 proxy can intercept HTTP calls.
-# Same trust model as apply_model_override: host-set env vars, root-only,
-# applied before Landlock/chattr +i, hash recomputed. Tokens are unset from
-# the process env after patching so they are not visible inside the sandbox.
+# ── Slack token rewriter (Bolt-shape → canonical placeholder) ────
+# Installs a Node preload that translates the Bolt-compatible placeholder
+# (xoxb|xapp)-OPENSHELL-RESOLVE-ENV-VAR — emitted into openclaw.json by
+# generate-openclaw-config.py — into the canonical openshell:resolve:env:VAR
+# form on outbound HTTP. OpenShell's L7 proxy then substitutes the real
+# token from env on the wire, the same path Discord/Telegram/Brave already
+# take. No real Slack token ever touches openclaw.json, /tmp, or any other
+# disk surface readable by the sandbox uid.
+#
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/2085
 
-apply_slack_token_override() {
-  [ -n "${SLACK_BOT_TOKEN:-}" ] || return 0
+_SLACK_REWRITER_SCRIPT="/tmp/nemoclaw-slack-token-rewriter.js"
 
-  # Non-root cannot write to /sandbox/.openclaw (root:root 444), so the
-  # placeholder token cannot be resolved here. Log a warning and continue —
-  # the Slack channel guard will catch the inevitable auth failure at runtime
-  # without crashing the gateway. Ref: #2340
-  if [ "$(id -u)" -ne 0 ]; then
-    printf '[channels] Slack token override skipped (non-root) — channel guard will handle auth failure at runtime\n' >&2
+install_slack_token_rewriter() {
+  local config_file="/sandbox/.openclaw/openclaw.json"
+
+  # Only install if a Slack channel placeholder is present in the config.
+  # Same conditional shape as install_slack_channel_guard — both are no-ops
+  # for sandboxes without Slack configured.
+  if ! grep -q 'OPENSHELL-RESOLVE-ENV-SLACK_' "$config_file" 2>/dev/null; then
     return 0
   fi
 
-  local config_file="/sandbox/.openclaw/openclaw.json"
-  local hash_file="/sandbox/.openclaw/.config-hash"
+  printf '[channels] Installing Slack token rewriter (Bolt-shape → canonical)\n' >&2
 
-  # SECURITY: Refuse to write through symlinks to prevent symlink-following attacks.
-  if [ -L "$config_file" ] || [ -L "$hash_file" ]; then
-    printf '[SECURITY] Refusing Slack token override — config or hash path is a symlink\n' >&2
-    return 1
-  fi
+  emit_sandbox_sourced_file "$_SLACK_REWRITER_SCRIPT" <<'SLACK_REWRITER_EOF'
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// slack-token-rewriter.js — translates the Bolt-compatible placeholder
+// (xoxb|xapp)-OPENSHELL-RESOLVE-ENV-VAR into the canonical
+// openshell:resolve:env:VAR form on outbound HTTP, so Slack tokens travel
+// the same OpenShell substitution path Discord / Telegram / Brave already
+// use without any real token touching openclaw.json.
+//
+// Why this preload exists:
+//   Slack's Bolt SDK validates token shape (^xoxb-[A-Za-z0-9_-]+$ /
+//   ^xapp-…$) at App construction, before any HTTP call leaves the
+//   process — so the canonical openshell:resolve:env:VAR placeholder is
+//   rejected synchronously and the gateway crashes. We emit a Bolt-shape
+//   placeholder into openclaw.json (which Bolt accepts), then translate
+//   it back to canonical form here, just before the bytes hit the wire,
+//   where OpenShell's L7 proxy substitutes the real token from env.
+//
+// Wraps http.request / https.request — every Node HTTP client bottoms
+// out here, including @slack/web-api (axios → follow-redirects → http)
+// and Bolt's Socket Mode HTTPS auth (apps.connections.open → http).
+// Also wraps http.get / https.get because they call the module-local
+// `request` function, not module.exports.request — wrapping `request`
+// alone would miss any `get` caller.
+// Request body chunks are wrapped too: Bolt's auth.test path can put the
+// token in both Authorization and the urlencoded body.
+//
+// Invariants:
+//   - No env reads. Translation is purely structural.
+//   - Mutates options/headers in place. axios reuses the headers object
+//     after request creation, so cloning would break the request lifecycle.
+//   - Idempotent. The output (openshell:resolve:env:VAR) does not match
+//     the Bolt-shape regex, so re-entering the wrapper on a retry is safe.
+//   - Fast path: indexOf short-circuits the regex on the 99.9% of
+//     requests that don't contain a placeholder.
+//
+// This file is the canonical source for review and tests. At sandbox boot,
+// nemoclaw-start.sh writes a byte-identical copy to /tmp and loads it via
+// NODE_OPTIONS=--require. A sync test enforces byte-for-byte equality.
+// Mirrors the http-proxy-fix.js / ws-proxy-fix.js convention; see those
+// files for the rationale on why the content cannot live under
+// /opt/nemoclaw-blueprint/scripts/ in the optimized sandbox build.
+//
+// Ref: https://github.com/NVIDIA/NemoClaw/issues/2085
 
-  # SECURITY: Validate token prefixes — reject anything that doesn't look like a real Slack token.
-  case "${SLACK_BOT_TOKEN}" in
-    xoxb-*) ;;
-    *)
-      printf '[channels] SLACK_BOT_TOKEN does not start with xoxb- — skipping Slack placeholder resolution\n' >&2
-      return 0
-      ;;
-  esac
+(function () {
+  'use strict';
 
-  if [ -n "${SLACK_APP_TOKEN:-}" ]; then
-    case "$SLACK_APP_TOKEN" in
-      xapp-*) ;;
-      *)
-        printf '[channels] SLACK_APP_TOKEN does not start with xapp- — skipping Slack placeholder resolution\n' >&2
-        return 0
-        ;;
-    esac
-  else
-    printf '[channels] Warning: SLACK_BOT_TOKEN is set but SLACK_APP_TOKEN is missing — Socket Mode requires both tokens\n' >&2
-  fi
+  // Bolt-shape placeholder → canonical form. Single source of truth used
+  // by every code path below. <VAR> = [A-Z_][A-Z0-9_]* — the charset
+  // OpenShell's substitution layer accepts.
+  var BOLT_PLACEHOLDER =
+    /\b(?:xoxb|xapp)-OPENSHELL-RESOLVE-ENV-([A-Z_][A-Z0-9_]*)\b/g;
+  var FAST_PATH = 'OPENSHELL-RESOLVE-ENV-';
 
-  printf '[channels] Resolving Slack token placeholders in openclaw.json\n' >&2
+  function rewriteString(s) {
+    if (typeof s !== 'string') return s;
+    if (s.indexOf(FAST_PATH) === -1) return s;
+    return s.replace(BOLT_PLACEHOLDER, 'openshell:resolve:env:$1');
+  }
 
-  SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
-    SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
-    python3 - "$config_file" <<'PYSLACK'
-import json, os, re, sys
+  function rewriteHeaders(headers) {
+    if (!headers || typeof headers !== 'object') return headers;
+    var keys = Object.keys(headers);
+    for (var i = 0; i < keys.length; i++) {
+      var v = headers[keys[i]];
+      if (Array.isArray(v)) {
+        for (var j = 0; j < v.length; j++) v[j] = rewriteString(v[j]);
+      } else {
+        headers[keys[i]] = rewriteString(v);
+      }
+    }
+    return headers;
+  }
 
-config_file = sys.argv[1]
-bot_token = os.environ["SLACK_BOT_TOKEN"]
-app_token = os.environ.get("SLACK_APP_TOKEN", "")
-# json.dumps produces a quoted string; strip the outer quotes to get a
-# JSON-safe value that can be spliced directly into the existing string literal.
-bot_token_json = json.dumps(bot_token)[1:-1]
-app_token_json = json.dumps(app_token)[1:-1]
+  function rewriteOptions(options) {
+    if (!options || typeof options !== 'object') return options;
+    if (typeof options.path === 'string') {
+      options.path = rewriteString(options.path);
+    }
+    if (options.headers) rewriteHeaders(options.headers);
+    return options;
+  }
 
-with open(config_file) as f:
+  function adjustContentLength(req, beforeLength, afterLength) {
+    var delta = afterLength - beforeLength;
+    if (!delta || !req || typeof req.getHeader !== 'function' || typeof req.setHeader !== 'function') {
+      return;
+    }
+    // Once Node has built/sent the header block, changing Content-Length would
+    // be too late. Axios writes the urlencoded Slack body in one chunk before
+    // headers are flushed, which is the path this adjustment is for.
+    if (req.headersSent || req._header) return;
+    var current = req.getHeader('content-length');
+    if (Array.isArray(current)) current = current[0];
+    if (current === undefined || current === null || current === '') return;
+    var n = Number(current);
+    if (!isFinite(n)) return;
+    req.setHeader('Content-Length', String(n + delta));
+  }
+
+  function rewriteBodyChunk(req, chunk, encoding) {
+    if (typeof chunk === 'string') {
+      var rewritten = rewriteString(chunk);
+      if (rewritten !== chunk) {
+        adjustContentLength(
+          req,
+          Buffer.byteLength(chunk, encoding),
+          Buffer.byteLength(rewritten, encoding)
+        );
+      }
+      return rewritten;
+    }
+
+    if (!chunk || typeof chunk !== 'object') return chunk;
+    var isBuffer = Buffer.isBuffer(chunk);
+    if (!isBuffer && !(chunk instanceof Uint8Array)) return chunk;
+
+    var buf = isBuffer
+      ? chunk
+      : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    if (buf.indexOf(FAST_PATH) === -1) return chunk;
+    var s = buf.toString('utf8');
+    if (s.indexOf(FAST_PATH) === -1) return chunk;
+    // Do not rewrite arbitrary binary data. Slack's urlencoded bodies are
+    // valid UTF-8 and round-trip exactly.
+    if (!Buffer.from(s, 'utf8').equals(buf)) return chunk;
+    var rs = rewriteString(s);
+    if (rs === s) return chunk;
+    var out = Buffer.from(rs, 'utf8');
+    adjustContentLength(req, buf.length, out.length);
+    return out;
+  }
+
+  function wrapClientRequest(req) {
+    if (!req || typeof req !== 'object') return req;
+    if (req.__nemoclawSlackTokenRewriter) return req;
+    try {
+      Object.defineProperty(req, '__nemoclawSlackTokenRewriter', { value: true });
+    } catch (_e) {
+      req.__nemoclawSlackTokenRewriter = true;
+    }
+
+    var origWrite = req.write;
+    if (typeof origWrite === 'function') {
+      req.write = function (chunk, encoding, cb) {
+        if (typeof encoding === 'function') {
+          cb = encoding;
+          encoding = undefined;
+        }
+        chunk = rewriteBodyChunk(this, chunk, encoding);
+        if (cb) return origWrite.call(this, chunk, encoding, cb);
+        if (encoding !== undefined) return origWrite.call(this, chunk, encoding);
+        return origWrite.call(this, chunk);
+      };
+    }
+
+    var origEnd = req.end;
+    if (typeof origEnd === 'function') {
+      req.end = function (chunk, encoding, cb) {
+        if (arguments.length === 0) return origEnd.call(this);
+        if (typeof chunk === 'function') return origEnd.call(this, chunk);
+        if (typeof encoding === 'function') {
+          cb = encoding;
+          encoding = undefined;
+        }
+        if (chunk !== undefined && chunk !== null) {
+          chunk = rewriteBodyChunk(this, chunk, encoding);
+        }
+        if (cb) return origEnd.call(this, chunk, encoding, cb);
+        if (encoding !== undefined) return origEnd.call(this, chunk, encoding);
+        return origEnd.call(this, chunk);
+      };
+    }
+
+    return req;
+  }
+
+  function wrap(mod, methodName) {
+    var orig = mod[methodName];
+    if (typeof orig !== 'function') return;
+    mod[methodName] = function (arg1, arg2, arg3) {
+      // Signatures: m(options[, cb]); m(url[, options][, cb])
+      if (typeof arg1 === 'string') {
+        arg1 = rewriteString(arg1);
+        if (arg2 && typeof arg2 === 'object' && typeof arg2 !== 'function') {
+          rewriteOptions(arg2);
+        }
+      } else if (arg1 instanceof URL) {
+        // URL instances are immutable by component; rebuild only if needed.
+        var s = arg1.href;
+        var rs = rewriteString(s);
+        if (rs !== s) arg1 = new URL(rs);
+        if (arg2 && typeof arg2 === 'object' && typeof arg2 !== 'function') {
+          rewriteOptions(arg2);
+        }
+      } else {
+        rewriteOptions(arg1);
+      }
+      return wrapClientRequest(orig.call(this, arg1, arg2, arg3));
+    };
+  }
+
+  var http = require('http');
+  var https = require('https');
+  wrap(http, 'request');
+  wrap(http, 'get');
+  wrap(https, 'request');
+  wrap(https, 'get');
+})();
+SLACK_REWRITER_EOF
+
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_SLACK_REWRITER_SCRIPT"
+  printf '[channels] Slack token rewriter installed (NODE_OPTIONS updated)\n' >&2
+}
+
+# ── Slack secrets-on-disk tripwire ────────────────────────────────
+# Defense-in-depth: refuse to serve if a real Slack token (anything
+# starting with xoxb- or xapp- that is NOT the OPENSHELL-RESOLVE-ENV-
+# placeholder) ever appears in openclaw.json. This catches a regression
+# where someone re-introduces inline token mutation, or a bug in the
+# config generator that emits raw env values. Runs once at startup,
+# after configure_messaging_channels has finalized the config.
+verify_no_slack_secrets_on_disk() {
+  local config="/sandbox/.openclaw/openclaw.json"
+  [ -f "$config" ] || return 0
+  if python3 - "$config" <<'PYSLACKSECRET'; then
+import re
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8", errors="ignore") as f:
     content = f.read()
-
-content = re.sub(
-    r'("botToken"\s*:\s*")openshell:resolve:env:SLACK_BOT_TOKEN(")',
-    lambda m: m.group(1) + bot_token_json + m.group(2),
-    content,
-)
-if app_token:
-    content = re.sub(
-        r'("appToken"\s*:\s*")openshell:resolve:env:SLACK_APP_TOKEN(")',
-        lambda m: m.group(1) + app_token_json + m.group(2),
-        content,
-    )
-
-with open(config_file, "w") as f:
-    f.write(content)
-PYSLACK
-
-  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
-  printf '[channels] Config hash recomputed after Slack token override\n' >&2
+sys.exit(0 if re.search(r"(?:xoxb|xapp)-(?!OPENSHELL-RESOLVE-ENV-)", content) else 1)
+PYSLACKSECRET
+    printf '[SECURITY] Slack token leaked into %s — refusing to serve\n' "$config" >&2
+    exit 78 # EX_CONFIG
+  fi
 }
 
 # ── Slack channel guard (unhandled-rejection safety net) ─────────
@@ -501,9 +706,10 @@ install_slack_channel_guard() {
 // fatal (--unhandled-rejections=throw is the default), taking down
 // inference, chat, and TUI alongside the failed Slack channel.
 //
-// This preload installs a process-level handler that detects Slack-specific
-// rejections (by error code or stack trace) and logs a warning instead of
-// crashing. Non-Slack rejections are re-thrown to preserve normal behavior.
+// This preload wraps process.emit for Slack-specific process-level failures
+// and consumes those events before later OpenClaw handlers can treat the
+// provider startup failure as fatal. Non-Slack failures pass through to the
+// original event machinery unchanged.
 //
 // Ref: https://github.com/NVIDIA/NemoClaw/issues/2340
 
@@ -575,24 +781,22 @@ install_slack_channel_guard() {
     return false;
   }
 
-  // Catch async Slack errors (rejected promises from @slack/web-api).
-  process.on('unhandledRejection', function (reason, promise) {
-    if (handleSlackError(reason, 'unhandledRejection')) return;
-    // Non-Slack: re-throw to preserve default --unhandled-rejections=throw.
-    throw reason;
-  });
+  if (process.__nemoclawSlackChannelGuardInstalled) return;
+  try {
+    Object.defineProperty(process, '__nemoclawSlackChannelGuardInstalled', { value: true });
+  } catch (_e) {
+    process.__nemoclawSlackChannelGuardInstalled = true;
+  }
 
-  // Catch sync Slack errors (e.g., Bolt token format validation throws
-  // synchronously when appToken doesn't start with xapp-).
-  process.on('uncaughtException', function (err, origin) {
-    if (handleSlackError(err, 'uncaughtException')) return;
-    // Non-Slack: re-throw to preserve normal crash behavior.
-    // Print the error first since re-throw inside uncaughtException handler
-    // may not print the original stack.
-    process.stderr.write(err.stack || String(err));
-    process.stderr.write('\n');
-    process.exit(1);
-  });
+  var origEmit = process.emit;
+  process.emit = function (eventName) {
+    if (eventName === 'unhandledRejection') {
+      if (handleSlackError(arguments[1], 'unhandledRejection')) return true;
+    } else if (eventName === 'uncaughtException') {
+      if (handleSlackError(arguments[1], 'uncaughtException')) return true;
+    }
+    return origEmit.apply(this, arguments);
+  };
 })();
 SLACK_GUARD_EOF
 
@@ -897,17 +1101,34 @@ while time.time() < DEADLINE:
         time.sleep(1)
         continue
 
-    if has_browser:
-        QUIET_POLLS += 1
-        if QUIET_POLLS >= 4:
+    QUIET_POLLS += 1
+    # Exit-on-quiet conditions, checked in order of strength:
+    #   1. Browser device paired — original control-UI workflow
+    #   2. Any paired device — covers dangerouslyDisableDeviceAuth setups
+    #      where the gateway auto-pairs CLI clients directly without the
+    #      watcher running `openclaw devices approve` (so APPROVED stays
+    #      0 forever in those configurations)
+    #   3. We approved at least one device explicitly
+    # Without these, the watcher polled `openclaw devices list --json`
+    # every 1 second for 10 minutes whenever no browser device joined,
+    # saturating the gateway connect handler and starving concurrent
+    # `openclaw agent` connects (NemoClaw#2484: WS handshake-timeout).
+    if QUIET_POLLS >= 4:
+        if has_browser:
             print(f'[auto-pair] browser pairing converged approvals={APPROVED}')
             break
-    elif APPROVED > 0:
-        QUIET_POLLS += 1
-    else:
-        QUIET_POLLS = 0
+        if paired:
+            print(f'[auto-pair] devices paired ({len(paired)}); exiting approvals={APPROVED}')
+            break
+        if APPROVED > 0:
+            print(f'[auto-pair] non-browser pairing converged approvals={APPROVED}')
+            break
 
-    time.sleep(1)
+    # Back off polling once anything is paired or approved: 1s when
+    # actively processing pending requests / waiting for first pairing,
+    # 5s thereafter. The 5s cadence avoids connect-handler pile-up under
+    # high gateway connect latency.
+    time.sleep(5 if (APPROVED > 0 or paired) else 1)
 else:
     print(f'[auto-pair] watcher timed out approvals={APPROVED}')
 PYAUTOPAIR
@@ -938,6 +1159,16 @@ export http_proxy="$_PROXY_URL"
 export https_proxy="$_PROXY_URL"
 export no_proxy="$_NO_PROXY_VAL"
 
+# Git TLS CA bundle fix (NemoClaw#2270).
+# OpenShell's L7 proxy does MITM TLS termination and re-signs with its own CA.
+# OpenShell injects SSL_CERT_FILE and CURL_CA_BUNDLE pointing at the CA bundle,
+# but git does not read those — it needs GIT_SSL_CAINFO.  Without it, git clone
+# fails with "server certificate verification failed".
+# Use SSL_CERT_FILE (set by OpenShell) as the canonical CA bundle path.
+if [ -n "${SSL_CERT_FILE:-}" ] && [ -f "${SSL_CERT_FILE}" ]; then
+  export GIT_SSL_CAINFO="$SSL_CERT_FILE"
+fi
+
 # HTTP library + NODE_USE_ENV_PROXY double-proxy fix (NemoClaw#2109).
 # Node.js 22 sets NODE_USE_ENV_PROXY=1 in the OpenShell base image, which
 # intercepts https.request() calls and handles proxying via CONNECT tunnel.
@@ -962,17 +1193,21 @@ export no_proxy="$_NO_PROXY_VAL"
 # src/lib/sandbox-build-context.ts. A sync test enforces that the
 # embedded copy is byte-identical to the canonical file.
 # ── Global sandbox safety net ──────────────────────────────────
-# Catch-all handler for uncaught exceptions and unhandled rejections
-# that would otherwise crash the gateway. In a sandbox environment,
-# a crashed gateway means total loss of inference, chat, and TUI —
-# worse than degraded service from a swallowed error.
+# Last-resort handler for uncaught exceptions and unhandled rejections
+# that would otherwise crash the gateway. The gateway is shared sandbox
+# infrastructure; user-initiated actions must not be able to take it down.
 #
-# This MUST be the first --require preload so its handlers register
-# before any library code runs. Specific guards (Slack, ciao) provide
-# targeted handling; this catches everything else.
+# This is intentionally NOT a catch-all swallow. Known-benign error
+# patterns are documented inline in the script; unknown patterns are
+# logged with full stack so they can be diagnosed and either fixed
+# upstream or added to the allow-list with explicit justification.
+# Specific guards (Slack, ciao) pre-empt their own error patterns;
+# this is the backstop for everything else.
 #
-# Only active when OPENSHELL_SANDBOX=1 (set by OpenShell at runtime).
-# Outside a sandbox, normal Node.js crash behavior is preserved.
+# Only active when OPENSHELL_SANDBOX=1 (set by OpenShell at runtime),
+# and only for gateway processes. Outside a sandbox or in CLI processes
+# (agent, doctor, plugins, tui, etc.) normal Node.js crash behavior is
+# preserved so errors surface promptly to users running short-lived tools.
 _SANDBOX_SAFETY_NET="/tmp/nemoclaw-sandbox-safety-net.js"
 emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -980,53 +1215,110 @@ emit_sandbox_sourced_file "$_SANDBOX_SAFETY_NET" <<'SAFETY_NET_EOF'
 //
 // sandbox-safety-net.js — last-resort handler that keeps the gateway alive
 // when any library throws an uncaught exception or unhandled rejection.
-// Only active inside OpenShell sandboxes (OPENSHELL_SANDBOX=1).
+//
+// Contract:
+//
+//   1. Inside the OpenShell sandbox the gateway is shared infrastructure.
+//      User-initiated actions (loading a plugin, starting a sidecar,
+//      running an agent against the gateway) must not be able to take it
+//      down. Node.js 22+ defaults --unhandled-rejections=throw which
+//      crashes on the first stray rejection from any library — including
+//      libraries we don't control.
+//
+//   2. Specific known-benign patterns are documented inline below. They
+//      get a single-line summary and are absorbed silently. Each pattern
+//      MUST document which library produces it, why it's safe to absorb
+//      in the sandbox context, and what the upstream fix is. Prefer
+//      disabling/configuring the upstream component so the rejection
+//      never fires; this list is the safety net, not the policy.
+//
+//   3. Unknown errors do NOT crash the gateway either, but they are
+//      logged with full stack so they can be diagnosed and either fixed
+//      upstream or added to the allow-list with explicit justification.
+//      "Unknown means crash" is the wrong default for shared
+//      infrastructure; "unknown means log loudly" is the right default.
+//
+//   4. No process.exit interception. An earlier iteration intercepted
+//      process.exit during swallow windows, which masked legitimate
+//      shutdown signals and was itself the kind of catch-all hack we
+//      want to avoid.
+//
+//   5. Only active when OPENSHELL_SANDBOX=1 (set by OpenShell at runtime),
+//      and only for `openclaw gateway run …` invocations
+//      (process.argv[2] === "gateway"). CLI commands (agent, doctor,
+//      plugins, tui, etc.) get default Node behavior so errors surface
+//      promptly to users running short-lived tools.
 
 (function () {
   'use strict';
   if (process.env.OPENSHELL_SANDBOX !== '1') return;
+  if (process.argv[2] !== 'gateway') return;
 
-  // Track whether we're inside an unhandledRejection we chose to swallow.
-  // OpenClaw's own handler calls process.exit(1) for non-transient rejections.
-  // We intercept process.exit during swallowed rejections to prevent that.
-  var _swallowing = false;
-  var _origExit = process.exit;
-  process.exit = function (code) {
-    if (_swallowing) {
-      try {
-        process.stderr.write(
-          '[sandbox-safety-net] blocked process.exit(' + code +
-          ') during swallowed rejection — gateway continues\n'
-        );
-      } catch (_) {}
-      return;
+  // KNOWN-BENIGN ERROR PATTERNS
+  //
+  // ciao / @homebridge/ciao — mDNS service-discovery library used by the
+  // OpenClaw bonjour plugin (introduced in 2026.4.15). Sandboxes have
+  // restricted network namespaces with no multicast. Two failure modes:
+  //   - sync: os.networkInterfaces() throws ERR_SYSTEM_ERROR
+  //     uv_interface_addresses. Pre-empted by ciao-network-guard.js,
+  //     which monkey-patches os.networkInterfaces() to return {}.
+  //   - async: the probe state machine cancels itself during gateway
+  //     startup/reload and emits "CIAO PROBING CANCELLED" as an unhandled
+  //     rejection. This is the path we catch here.
+  // Upstream fix: bonjour is disabled via plugins.entries.bonjour.enabled
+  // = false in the sandbox openclaw.json. This pattern is a backstop in
+  // case the disable is bypassed or a future release introduces another
+  // mDNS code path.
+  function classifyBenignRejection(reason) {
+    if (!reason) return null;
+    var msg = String((reason && reason.message) || reason);
+    var stack = (reason && reason.stack) || '';
+
+    if (msg.indexOf('CIAO') !== -1 ||
+        stack.indexOf('@homebridge/ciao') !== -1 ||
+        stack.indexOf('/ciao/') !== -1) {
+      return 'ciao/mDNS (sandbox lacks multicast; bonjour should be disabled in openclaw.json)';
     }
-    return _origExit.call(process, code);
-  };
+    if (reason && reason.code === 'ERR_SYSTEM_ERROR' &&
+        msg.indexOf('uv_interface_addresses') !== -1) {
+      return 'uv_interface_addresses (restricted netns)';
+    }
+    return null;
+  }
 
   process.on('uncaughtException', function (err, origin) {
+    // Sync error paths are pre-empted by the targeted guards
+    // (ciao-network-guard.js, slack-channel-guard.js when Slack is
+    // configured). If we get here it's an error those guards didn't
+    // recognize. Log full stack and stay alive — registering this
+    // listener is what tells Node "don't crash on uncaughtException".
     try {
       process.stderr.write(
-        '[sandbox-safety-net] uncaughtException: ' +
-        (err && err.stack ? err.stack : String(err)) +
-        ' (origin: ' + origin + ') — swallowed, gateway continues\n'
+        '[sandbox-safety-net] uncaughtException [unhandled by upstream guards \u2014 please diagnose]: ' +
+        ((err && err.stack) ? err.stack : String(err)) +
+        ' (origin: ' + origin + ') \u2014 gateway continues\n'
       );
     } catch (_) {}
   });
 
   process.on('unhandledRejection', function (reason, promise) {
-    _swallowing = true;
+    var benign = classifyBenignRejection(reason);
+    if (benign) {
+      try {
+        process.stderr.write(
+          '[sandbox-safety-net] unhandledRejection [known-benign: ' + benign + ']: ' +
+          ((reason && reason.message) ? reason.message : String(reason)) + '\n'
+        );
+      } catch (_) {}
+      return;
+    }
     try {
       process.stderr.write(
-        '[sandbox-safety-net] unhandledRejection: ' +
-        (reason && reason.stack ? reason.stack : String(reason)) +
-        ' — swallowed, gateway continues\n'
+        '[sandbox-safety-net] unhandledRejection [UNKNOWN PATTERN \u2014 please diagnose]: ' +
+        ((reason && reason.stack) ? reason.stack : String(reason)) +
+        ' \u2014 gateway continues\n'
       );
     } catch (_) {}
-    // Keep _swallowing=true through this tick so OpenClaw's handler
-    // (which runs in the same microtask delivery) hits our process.exit
-    // intercept. Reset on next tick.
-    Promise.resolve().then(function () { _swallowing = false; });
   });
 })();
 SAFETY_NET_EOF
@@ -1091,6 +1383,66 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
   }
   if (!proxyHost) return;
 
+  // Strip headers that were meaningful for the proxy hop only. Once we
+  // re-issue against the target via https.request, the original Host
+  // points at the proxy and the hop-by-hop headers (RFC 7230 §6.1) leak
+  // upstream — they describe the connection between the caller and the
+  // proxy, not the rewritten connection to the target.
+  //
+  // RFC 7230 §6.1 hop-by-hop set (request direction):
+  //   Connection, Keep-Alive, Proxy-Authorization, TE, Trailer,
+  //   Transfer-Encoding, Upgrade.
+  // Also stripped: Host (points at the proxy); Proxy-Connection (de
+  // facto deprecated header still emitted by some clients); and
+  // Proxy-Authenticate (response-only per RFC 7235 §4.3, included
+  // belt-and-suspenders for clients that echo response headers into
+  // retry-request options). Plus: per RFC 7230 §6.1, any token named in
+  // the Connection header is itself hop-by-hop and must be stripped.
+  var STATIC_HOP_BY_HOP = [
+    'host',
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'proxy-connection',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+  ];
+
+  function sanitizeHeaders(headers) {
+    if (!headers || typeof headers !== 'object') return undefined;
+    // Collect tokens named in the Connection header — those become
+    // hop-by-hop transitively per RFC 7230 §6.1.
+    var dynamic = new Set();
+    for (var k in headers) {
+      if (
+        !Object.prototype.hasOwnProperty.call(headers, k) ||
+        String(k).toLowerCase() !== 'connection'
+      ) {
+        continue;
+      }
+      var raw = headers[k];
+      var listed = Array.isArray(raw) ? raw.join(',') : raw;
+      if (typeof listed === 'string') {
+        listed.split(',').forEach(function (token) {
+          var t = token.trim().toLowerCase();
+          if (t) dynamic.add(t);
+        });
+      }
+    }
+    var staticSet = new Set(STATIC_HOP_BY_HOP);
+    var out = {};
+    for (var key in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, key)) continue;
+      var lower = String(key).toLowerCase();
+      if (staticSet.has(lower) || dynamic.has(lower)) continue;
+      out[key] = headers[key];
+    }
+    return out;
+  }
+
   http.request = function (options, callback) {
     if (typeof options === 'string' || !options) {
       return origRequest.apply(http, arguments);
@@ -1107,10 +1459,34 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
         return origRequest.apply(http, arguments);
       }
       var https = require('https');
-      // Clone caller's options and overwrite only the proxy-specific
-      // routing fields. Preserves signal (AbortController), lookup,
-      // TLS fields (ca/cert/key/rejectUnauthorized), auth, timeout,
-      // and any other per-request setting the caller supplied.
+      // Clone caller's options and overwrite proxy-specific routing
+      // fields. Strip fields that were set up for the proxy hop and
+      // would misbehave on the rewritten https.request to the target:
+      //   - agent: a forward-proxy http.Agent cannot speak TLS. Leaving
+      //     it attached caused upstreams like deepinfra to surface as
+      //     "LLM request failed: network connection error" while other
+      //     upstreams that don't end up on this code path still worked.
+      //     On Node 22 https.request throws a synchronous TypeError; on
+      //     Node 18/20 it falls through and the TLS handshake fails.
+      //   - auth: basic-auth meant for the proxy hop. Leaving it on
+      //     would Basic-auth the target server with proxy credentials.
+      //   - servername / checkServerIdentity: TLS SNI + cert validation
+      //     pre-computed for the proxy hop. Wrong cert chain and wrong
+      //     SNI must not survive into the rewrite — drop them so Node
+      //     re-derives from the new `hostname`.
+      //   - socketPath: Unix-socket proxies exist (e.g. cntlm-style
+      //     local proxies). Routing TLS bytes into the proxy's Unix
+      //     socket would defeat the entire rewrite.
+      //   - localAddress / lookup / family / hints: source-binding and
+      //     DNS hints picked for reachability to the proxy. The
+      //     rewritten target may not be reachable from the same NIC or
+      //     DNS family.
+      //   - Host / hop-by-hop headers (RFC 7230 §6.1): stripped via
+      //     sanitizeHeaders so Node regenerates Host from `host`/`port`
+      //     to point at the real target.
+      // Signal (AbortController) and TLS material (ca/cert/key/
+      // rejectUnauthorized), timeout, body, and target-intent headers
+      // (Authorization, Content-Type, …) are preserved.
       var rewritten = Object.assign({}, options, {
         method: options.method || 'GET',
         hostname: target.hostname,
@@ -1118,7 +1494,17 @@ if [ "${NODE_USE_ENV_PROXY:-}" = "1" ]; then
         port: target.port || 443,
         path: target.pathname + target.search,
         protocol: 'https:',
+        headers: sanitizeHeaders(options.headers),
       });
+      delete rewritten.agent;
+      delete rewritten.auth;
+      delete rewritten.servername;
+      delete rewritten.checkServerIdentity;
+      delete rewritten.socketPath;
+      delete rewritten.localAddress;
+      delete rewritten.lookup;
+      delete rewritten.family;
+      delete rewritten.hints;
       return https.request(rewritten, callback);
     }
     return origRequest.apply(http, arguments);
@@ -1279,45 +1665,72 @@ emit_sandbox_sourced_file "$_CIAO_GUARD_SCRIPT" <<'CIAO_GUARD_EOF'
   // Monkey-patch os.networkInterfaces to return empty on failure.
   var os = require('os');
   var _origNetworkInterfaces = os.networkInterfaces;
+  // Rate-limit the failure log. The bonjour watchdog inside ciao retries
+  // advertising every few seconds, so a naive "log on every failure" fills
+  // sandbox logs with hundreds of identical lines per hour. Log the first
+  // failure (operator gets the actionable message) and at most one summary
+  // every 5 minutes thereafter, with a suppression count so volume is
+  // still observable. See GitHub issue #2611.
+  var _failureCount = 0;
+  var _lastLogMs = 0;
+  var _suppressedSinceLog = 0;
+  var _LOG_INTERVAL_MS = 5 * 60 * 1000;
   os.networkInterfaces = function () {
     try {
       return _origNetworkInterfaces.call(os);
     } catch (err) {
-      process.stderr.write(
-        '[guard] os.networkInterfaces() failed: ' + (err.message || err) +
-        ' — returning empty (mDNS disabled)\n'
-      );
+      _failureCount++;
+      var nowMs = Date.now();
+      var shouldLog = _failureCount === 1 || (nowMs - _lastLogMs) >= _LOG_INTERVAL_MS;
+      if (shouldLog) {
+        var suffix = _suppressedSinceLog > 0
+          ? ' [' + _suppressedSinceLog + ' suppressed in last ~5min, ' + _failureCount + ' total]'
+          : '';
+        process.stderr.write(
+          '[guard] os.networkInterfaces() failed: ' + (err.message || err) +
+          ' — returning empty (mDNS disabled)' + suffix + '\n'
+        );
+        _lastLogMs = nowMs;
+        _suppressedSinceLog = 0;
+      } else {
+        _suppressedSinceLog++;
+      }
       return {};
     }
   };
 
   // Fallback: catch uncaughtException from ciao if the monkey-patch
-  // doesn't cover all call sites.
-  process.on('uncaughtException', function (err, origin) {
-    if (
-      err && err.code === 'ERR_SYSTEM_ERROR' &&
-      String(err.message || '').indexOf('uv_interface_addresses') !== -1
-    ) {
-      process.stderr.write(
-        '[guard] ciao/networkInterfaces crash caught: ' + (err.message || err) +
-        ' — gateway continues\n'
-      );
-      return;
-    }
-    // Check stack for ciao/NetworkManager
-    if (err && err.stack && err.stack.indexOf('ciao') !== -1 &&
-        String(err.message || '').indexOf('networkInterfaces') !== -1) {
-      process.stderr.write(
-        '[guard] ciao network error caught: ' + (err.message || err) +
-        ' — gateway continues\n'
-      );
-      return;
-    }
-    // Not a ciao error — re-throw to preserve normal crash behavior.
-    process.stderr.write((err && err.stack) || String(err));
-    process.stderr.write('\n');
-    process.exit(1);
-  });
+  // doesn't cover all call sites. Gateway-only — registering ANY
+  // uncaughtException listener tells Node "don't crash by default", and
+  // we want CLI processes (agent, doctor, plugins, tui) to keep default
+  // Node crash behavior so errors surface promptly.
+  //
+  // For gateway processes, non-ciao errors fall through (return) to the
+  // sandbox safety net registered later in the preload chain. The safety
+  // net is the single point of "keep gateway alive on unknown errors".
+  if (process.argv[2] === 'gateway') {
+    process.on('uncaughtException', function (err, origin) {
+      if (
+        err && err.code === 'ERR_SYSTEM_ERROR' &&
+        String(err.message || '').indexOf('uv_interface_addresses') !== -1
+      ) {
+        process.stderr.write(
+          '[guard] ciao/networkInterfaces crash caught: ' + (err.message || err) +
+          ' \u2014 gateway continues\n'
+        );
+        return;
+      }
+      if (err && err.stack && err.stack.indexOf('ciao') !== -1 &&
+          String(err.message || '').indexOf('networkInterfaces') !== -1) {
+        process.stderr.write(
+          '[guard] ciao network error caught: ' + (err.message || err) +
+          ' \u2014 gateway continues\n'
+        );
+        return;
+      }
+      // Not ciao — let the sandbox safety net handle it.
+    });
+  }
 })();
 CIAO_GUARD_EOF
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $_CIAO_GUARD_SCRIPT"
@@ -1376,6 +1789,10 @@ PROXYEOF
   if [ -f "$_WS_FIX_SCRIPT" ]; then
     echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_WS_FIX_SCRIPT\""
   fi
+  # Git TLS CA bundle for connect sessions (NemoClaw#2270)
+  if [ -n "${GIT_SSL_CAINFO:-}" ]; then
+    printf 'export GIT_SSL_CAINFO=%q\n' "$GIT_SSL_CAINFO"
+  fi
   # Nemotron inference fix for connect sessions. (NemoClaw#1193, #2051)
   echo "export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_NEMOTRON_FIX_SCRIPT\""
   # ciao network guard for connect sessions.
@@ -1384,6 +1801,8 @@ PROXYEOF
   # by install_slack_channel_guard() — conditional on the file existing at
   # source-time so connect sessions started before Slack is configured are safe.
   echo "[ -f \"$_SLACK_GUARD_SCRIPT\" ] && export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_SLACK_GUARD_SCRIPT\""
+  # Slack token rewriter for connect sessions — same conditional pattern.
+  echo "[ -f \"$_SLACK_REWRITER_SCRIPT\" ] && export NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }--require $_SLACK_REWRITER_SCRIPT\""
   # Tool cache redirects — generated from _TOOL_REDIRECTS (single source of truth)
   echo '# Tool cache redirects — /sandbox is Landlock read-only (#804)'
   for _redir in "${_TOOL_REDIRECTS[@]}"; do
@@ -1419,11 +1838,12 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
   apply_model_override
   apply_cors_override
-  apply_slack_token_override
   export_gateway_token
   install_configure_guard
   configure_messaging_channels
+  install_slack_token_rewriter
   install_slack_channel_guard
+  verify_no_slack_secrets_on_disk
   validate_openclaw_symlinks
 
   # Ensure writable state directories exist and are owned by the current user.
@@ -1508,18 +1928,28 @@ if [ "$(id -u)" -ne 0 ]; then
   # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
   # (both are trust-boundary files; tampering would let the sandbox user
   # inject code into any Node process via NODE_OPTIONS).
-  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+  validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT" "$_SLACK_REWRITER_SCRIPT"
 
   # Start gateway in background, auto-pair, then wait
   nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
   GATEWAY_PID=$!
   echo "[gateway] openclaw gateway launched (pid $GATEWAY_PID)" >&2
+  # Diagnostic: mirror gateway log to PID 1's stderr — see root-mode block
+  # below for rationale (NVIDIA/NemoClaw#2484).
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
+  GATEWAY_LOG_TAIL_PID=$!
+  # Persistent mirror: see root-mode block for rationale.
+  mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
+  { tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+  GATEWAY_LOG_PERSIST_PID=$!
   start_auto_pair
   # NOTE: PIDs are collected after launch; a signal arriving between trap
   # registration and the final append is a small race window (same as before
   # the shared-library refactor). Acceptable for entrypoint-level cleanup.
   SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
   [ -n "${AUTO_PAIR_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$AUTO_PAIR_PID")
+  [ -n "${GATEWAY_LOG_TAIL_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_TAIL_PID")
+  [ -n "${GATEWAY_LOG_PERSIST_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_PERSIST_PID")
   # shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
   SANDBOX_WAIT_PID="$GATEWAY_PID"
   trap cleanup_on_signal SIGTERM SIGINT
@@ -1535,7 +1965,6 @@ fi
 verify_config_integrity /sandbox/.openclaw
 apply_model_override
 apply_cors_override
-apply_slack_token_override
 export_gateway_token
 install_configure_guard
 
@@ -1543,7 +1972,9 @@ install_configure_guard
 # Must run AFTER integrity check (to detect build-time tampering) and
 # BEFORE chattr +i (which locks the config permanently).
 configure_messaging_channels
+install_slack_token_rewriter
 install_slack_channel_guard
+verify_no_slack_secrets_on_disk
 
 # Write auth profile as sandbox user (needs writable .openclaw-data)
 # and recursively re-tighten any auth-profiles.json files under ~/.openclaw.
@@ -1646,7 +2077,7 @@ harden_openclaw_symlinks
 # Pass the HTTP proxy-fix path so it is validated alongside proxy-env.sh
 # (both are trust-boundary files; tampering would let the sandbox user
 # inject code into any Node process via NODE_OPTIONS).
-validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT"
+validate_tmp_permissions "$_SANDBOX_SAFETY_NET" "$_PROXY_FIX_SCRIPT" "$_NEMOTRON_FIX_SCRIPT" "$_CIAO_GUARD_SCRIPT" "$_SLACK_GUARD_SCRIPT" "$_SLACK_REWRITER_SCRIPT"
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs
@@ -1656,12 +2087,35 @@ nohup gosu gateway "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gat
 GATEWAY_PID=$!
 echo "[gateway] openclaw gateway launched as 'gateway' user (pid $GATEWAY_PID)" >&2
 
+# Diagnostic: mirror gateway log to PID 1's stderr so its content surfaces in
+# docker logs. /tmp/gateway.log is otherwise only readable from inside the
+# sandbox via `nemoclaw <sandbox> logs` and is not captured by the e2e test
+# framework on failure. Streaming it to PID 1's stderr lets a workflow-level
+# `docker logs` capture pick it up. Each line is prefixed with [gateway-log:]
+# so it can be filtered out post-hoc when not investigating.
+# Ref: NVIDIA/NemoClaw#2484 (TC-SBX-02 hang investigation)
+{ tail -n +1 -F /tmp/gateway.log 2>/dev/null | sed -u 's/^/[gateway-log:] /' >&2; } &
+GATEWAY_LOG_TAIL_PID=$!
+
+# Persistent mirror: append /tmp/gateway.log content to a file under
+# /sandbox/.openclaw-data/logs which is volume-mounted by openshell and
+# survives pod restarts. /tmp/gateway.log itself is wiped when the pod
+# restarts (TC-SBX-06 docker-kills the gateway container), so the
+# only durable record of pre-restart events lives here. The diag
+# streamer in the e2e workflow snapshots this file post-test.
+mkdir -p /sandbox/.openclaw-data/logs 2>/dev/null || true
+chown gateway:gateway /sandbox/.openclaw-data/logs 2>/dev/null || true
+{ tail -n +1 -F /tmp/gateway.log 2>/dev/null >>/sandbox/.openclaw-data/logs/gateway-persistent.log; } &
+GATEWAY_LOG_PERSIST_PID=$!
+
 start_auto_pair
 # NOTE: PIDs are collected after launch; a signal arriving between trap
 # registration and the final append is a small race window (same as before
 # the shared-library refactor). Acceptable for entrypoint-level cleanup.
 SANDBOX_CHILD_PIDS=("$GATEWAY_PID")
 [ -n "${AUTO_PAIR_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$AUTO_PAIR_PID")
+[ -n "${GATEWAY_LOG_TAIL_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_TAIL_PID")
+[ -n "${GATEWAY_LOG_PERSIST_PID:-}" ] && SANDBOX_CHILD_PIDS+=("$GATEWAY_LOG_PERSIST_PID")
 # shellcheck disable=SC2034  # read by cleanup_on_signal from sandbox-init.sh
 SANDBOX_WAIT_PID="$GATEWAY_PID"
 trap cleanup_on_signal SIGTERM SIGINT
