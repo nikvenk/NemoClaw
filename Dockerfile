@@ -371,9 +371,9 @@ os.chmod(path, 0o600)"
 # hadolint ignore=DL3002
 USER root
 
-# Ensure .openclaw-data subdirs and symlinks exist for workspace, logs,
-# credentials, sandbox, media, and plugin-runtime-deps. These are defined in
-# Dockerfile.base but the GHCR base image may not have been rebuilt yet.
+# Ensure .openclaw-data subdirs and symlinks exist for OpenClaw writable state.
+# These are defined in Dockerfile.base but the GHCR base image may not have
+# been rebuilt yet.
 # Idempotent — harmless once the base catches up.
 #
 # plugin-runtime-deps was added in OpenClaw 2026.4.24: the CLI lazy-installs
@@ -382,19 +382,27 @@ USER root
 # plugin (nvidia, openai, anthropic, ollama, …) fails to load with EACCES,
 # leaving the agent CLI with no providers. See PluginLoadFailureError in #2484.
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/804
-RUN mkdir -p /sandbox/.openclaw-data/logs \
-        /sandbox/.openclaw-data/credentials \
-        /sandbox/.openclaw-data/sandbox \
+RUN mkdir -p /sandbox/.openclaw-data/agents/main/agent \
+        /sandbox/.openclaw-data/extensions \
         /sandbox/.openclaw-data/workspace \
+        /sandbox/.openclaw-data/skills \
+        /sandbox/.openclaw-data/hooks \
+        /sandbox/.openclaw-data/identity \
+        /sandbox/.openclaw-data/devices \
+        /sandbox/.openclaw-data/canvas \
+        /sandbox/.openclaw-data/cron \
+        /sandbox/.openclaw-data/memory \
+        /sandbox/.openclaw-data/logs \
+        /sandbox/.openclaw-data/credentials \
+        /sandbox/.openclaw-data/flows \
+        /sandbox/.openclaw-data/sandbox \
+        /sandbox/.openclaw-data/telegram \
         /sandbox/.openclaw-data/media \
         /sandbox/.openclaw-data/plugin-runtime-deps \
-    && chown sandbox:sandbox /sandbox/.openclaw-data/logs \
-        /sandbox/.openclaw-data/credentials \
-        /sandbox/.openclaw-data/sandbox \
-        /sandbox/.openclaw-data/workspace \
-        /sandbox/.openclaw-data/media \
-        /sandbox/.openclaw-data/plugin-runtime-deps \
-    && for dir in logs credentials sandbox workspace media plugin-runtime-deps; do \
+    && touch /sandbox/.openclaw-data/update-check.json \
+        /sandbox/.openclaw-data/exec-approvals.json \
+    && chown -R sandbox:sandbox /sandbox/.openclaw-data \
+    && for dir in agents extensions workspace skills hooks identity devices canvas cron memory logs credentials flows sandbox telegram media plugin-runtime-deps; do \
         if [ -L "/sandbox/.openclaw/$dir" ]; then true; \
         elif [ -e "/sandbox/.openclaw/$dir" ]; then \
             cp -a "/sandbox/.openclaw/$dir/." "/sandbox/.openclaw-data/$dir/" 2>/dev/null || true; \
@@ -404,10 +412,21 @@ RUN mkdir -p /sandbox/.openclaw-data/logs \
             ln -s "/sandbox/.openclaw-data/$dir" "/sandbox/.openclaw/$dir"; \
         fi; \
     done \
+    && for file in update-check.json exec-approvals.json; do \
+        if [ -L "/sandbox/.openclaw/$file" ]; then true; \
+        elif [ -e "/sandbox/.openclaw/$file" ]; then \
+            cp -a "/sandbox/.openclaw/$file" "/sandbox/.openclaw-data/$file" 2>/dev/null || true; \
+            rm -f "/sandbox/.openclaw/$file"; \
+            ln -s "/sandbox/.openclaw-data/$file" "/sandbox/.openclaw/$file"; \
+        else \
+            ln -s "/sandbox/.openclaw-data/$file" "/sandbox/.openclaw/$file"; \
+        fi; \
+    done \
     && if [ -e /sandbox/.openclaw-data/workspace/media ] && [ ! -L /sandbox/.openclaw-data/workspace/media ]; then \
         rm -rf /sandbox/.openclaw-data/workspace/media; \
     fi \
-    && ln -sfn /sandbox/.openclaw-data/media /sandbox/.openclaw-data/workspace/media
+    && ln -sfn /sandbox/.openclaw-data/media /sandbox/.openclaw-data/workspace/media \
+    && chown -R sandbox:sandbox /sandbox/.openclaw-data
 
 # Ensure exec approvals path compatibility when using a stale published base
 # image that still points to ~/.openclaw/exec-approvals.json.

@@ -76,6 +76,33 @@ describe("sandbox provisioning: procps debug tools (#2343)", () => {
 describe("sandbox provisioning: stale base writable state compatibility", () => {
   const mainSrc = fs.readFileSync(DOCKERFILE, "utf-8");
 
+  it("Dockerfile restores writable OpenClaw state directories for stale base images", () => {
+    for (const dir of [
+      "agents/main/agent",
+      "devices",
+      "identity",
+      "hooks",
+      "skills",
+      "canvas",
+      "cron",
+      "memory",
+      "flows",
+      "telegram",
+      "plugin-runtime-deps",
+    ]) {
+      expect(mainSrc).toContain(`/sandbox/.openclaw-data/${dir}`);
+    }
+    expect(mainSrc).toContain(
+      "for dir in agents extensions workspace skills hooks identity devices",
+    );
+  });
+
+  it("Dockerfile restores mutable OpenClaw data-file symlinks for stale base images", () => {
+    expect(mainSrc).toContain("touch /sandbox/.openclaw-data/update-check.json");
+    expect(mainSrc).toContain("/sandbox/.openclaw-data/exec-approvals.json");
+    expect(mainSrc).toContain("for file in update-check.json exec-approvals.json");
+  });
+
   it("Dockerfile creates the workspace backing directory before linking workspace/media", () => {
     const workspaceDirIdx = mainSrc.indexOf("/sandbox/.openclaw-data/workspace");
     const mediaLinkIdx = mainSrc.indexOf(
@@ -87,7 +114,7 @@ describe("sandbox provisioning: stale base writable state compatibility", () => 
   });
 
   it("Dockerfile restores the .openclaw/workspace symlink for stale base images", () => {
-    expect(mainSrc).toContain("for dir in logs credentials sandbox workspace media");
+    expect(mainSrc).toContain("/sandbox/.openclaw/$dir");
   });
 });
 
