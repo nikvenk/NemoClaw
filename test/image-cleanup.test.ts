@@ -78,7 +78,7 @@ describe("image cleanup: onboard records imageTag in registry (#2086)", () => {
     // build output) rather than the local buildId (ms). The fallback still uses
     // buildId if the line is not found in output.
     expect(onboardSrc).toContain("resolvedImageTag");
-    expect(onboardSrc).toMatch(/Built image \(openshell\\\/sandbox-from:\\S\+\)/);
+    expect(onboardSrc).toMatch(/Built image \(openshell\\\/sandbox-from:\\d\+\)/);
     expect(onboardSrc).toMatch(/imageTag:\s*resolvedImageTag/);
   });
 

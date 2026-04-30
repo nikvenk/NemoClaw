@@ -4212,14 +4212,15 @@ async function createSandbox(
       providerCredentialHashes[envKey] = hash;
     }
   }
-  // Parse the actual image tag from openshell's build output.
-  // openshell assigns its own timestamp (seconds) as the tag, e.g.
-  // "Built image openshell/sandbox-from:1777534687", while the local
-  // buildId uses Date.now() (milliseconds). Using the parsed tag keeps
-  // the registry in sync with what Docker actually tagged. Fixes #2672.
+  // openshell tags images with seconds; buildId is ms. Parse actual tag from output. Fixes #2672.
   const builtImageMatch = createResult.output.match(
-    /Built image (openshell\/sandbox-from:\S+)/,
+    /Built image (openshell\/sandbox-from:\d+)/,
   );
+  if (!builtImageMatch) {
+    console.warn(
+      "  Warning: could not parse image tag from build output; imageTag may be stale. Run 'nemoclaw gc' if destroy fails.",
+    );
+  }
   const resolvedImageTag = builtImageMatch
     ? builtImageMatch[1]
     : `openshell/sandbox-from:${buildId}`;
