@@ -1001,12 +1001,26 @@ install_vllm() {
   hf_cache="${HOME}/.cache/huggingface"
   mkdir -p "$hf_cache"
 
-  info "Launching vLLM container (model: ${model_id}, port: ${port})…"
+  # On mixed-GPU systems (e.g. workstation GPU + GB300) restrict the container
+  # to the highest-VRAM GPU so vLLM subprocess workers don't try to init a
+  # display adapter. CUDA_DEVICE_ORDER=PCI_BUS_ID keeps the index stable across
+  # reboots; CUDA_VISIBLE_DEVICES scopes the container to one GPU.
+  local cuda_visible="all"
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local best_gpu_idx=""
+    best_gpu_idx=$(nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits \
+      2>/dev/null | sort -t',' -k2 -rn | head -1 | awk -F',' '{print $1}' | tr -d ' ')
+    [[ -n "$best_gpu_idx" ]] && cuda_visible="$best_gpu_idx"
+  fi
+
+  info "Launching vLLM container (model: ${model_id}, port: ${port}, gpu: ${cuda_visible})…"
   maybe_sudo docker run --detach --gpus all \
     --name "$container_name" \
     --restart unless-stopped \
     -p "${port}:${port}" \
     -v "${hf_cache}:/root/.cache/huggingface" \
+    -e CUDA_DEVICE_ORDER=PCI_BUS_ID \
+    -e CUDA_VISIBLE_DEVICES="${cuda_visible}" \
     -e NVIDIA_API_KEY="${NVIDIA_API_KEY:-}" \
     -e HUGGING_FACE_HUB_TOKEN="${hf_token}" \
     -e HF_TOKEN="${hf_token}" \
