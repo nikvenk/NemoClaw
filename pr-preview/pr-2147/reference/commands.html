@@ -1423,6 +1423,17 @@ If you run Ollama on port 11435, set <code class="docutils literal notranslate">
 Defaults are unchanged when no variable is set.
 If <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_DASHBOARD_PORT</span></code> or the port from <code class="docutils literal notranslate"><span class="pre">CHAT_UI_URL</span></code> is already occupied by another sandbox, onboarding scans <code class="docutils literal notranslate"><span class="pre">18789</span></code> through <code class="docutils literal notranslate"><span class="pre">18799</span></code> and uses the next free dashboard port.
 Pass <code class="docutils literal notranslate"><span class="pre">--control-ui-port</span> <span class="pre">&lt;N&gt;</span></code> to require a specific port.</p>
+</section>
+<section id="nemohermes-alias">
+<h2>NemoHermes Alias<a class="headerlink" href="#nemohermes-alias" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">nemohermes</span></code> is a convenience alias that pre-selects the Hermes agent.
+Every <code class="docutils literal notranslate"><span class="pre">nemohermes</span></code> command is equivalent to running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> with <code class="docutils literal notranslate"><span class="pre">--agent</span> <span class="pre">hermes</span></code> (for onboard) or <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_AGENT=hermes</span></code> (for all commands).</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>nemohermes<span class="w"> </span>onboard<span class="w">              </span><span class="c1"># equivalent to: nemoclaw onboard --agent hermes</span>
+<span class="gp">$ </span>nemohermes<span class="w"> </span>my-sandbox<span class="w"> </span>connect<span class="w">   </span><span class="c1"># same as: nemoclaw my-sandbox connect</span>
+</pre></div>
+</div>
+<p>The alias is installed alongside <code class="docutils literal notranslate"><span class="pre">nemoclaw</span></code> via <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">link</span></code> or <code class="docutils literal notranslate"><span class="pre">npm</span> <span class="pre">install</span> <span class="pre">-g</span></code>.
+Help text, version output, and error messages automatically adjust to show <code class="docutils literal notranslate"><span class="pre">nemohermes</span></code> when launched through the alias.</p>
 <section id="legacy-nemoclaw-setup">
 <h3>Legacy <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code><a class="headerlink" href="#legacy-nemoclaw-setup" title="Link to this heading">#</a></h3>
 <p>Deprecated. Use <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> instead.
@@ -1535,7 +1546,8 @@ Running <code class="docutils literal notranslate"><span class="pre">nemoclaw</s
 </li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-variables">Environment Variables</a><ul class="nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-variables">Environment Variables</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#nemohermes-alias">NemoHermes Alias</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#legacy-nemoclaw-setup">Legacy <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">setup</span></code></a></li>
 </ul>
 </li>
