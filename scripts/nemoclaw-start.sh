@@ -863,6 +863,18 @@ rewrite_rc_marker_block() {
   }
 }
 
+rewrite_rc_marker_block_or_fail_in_root() {
+  local rc_file="$1"
+  if rewrite_rc_marker_block "$@"; then
+    return 0
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    return 1
+  fi
+  echo "[setup] could not update rc file ${rc_file}; continuing in non-root mode" >&2
+  return 0
+}
+
 export_gateway_token() {
   local token
   token="$(_read_gateway_token)"
@@ -875,7 +887,7 @@ export_gateway_token() {
     unset OPENCLAW_GATEWAY_TOKEN
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
       if [ -f "$rc_file" ] && ! [ -L "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-        rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "" || true
+        rewrite_rc_marker_block_or_fail_in_root "$rc_file" "$marker_begin" "$marker_end" ""
       fi
     done
     return
@@ -895,9 +907,9 @@ ${marker_end}"
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
     [ -f "$rc_file" ] || continue
-    # Landlock may still block writes; failures are non-fatal, but root must
-    # never follow sandbox-planted rc-file symlinks.
-    rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "$snippet" || true
+    # Landlock may still block writes in non-root mode; root mode fails closed
+    # so detected rc-file trust-boundary violations cannot be booted through.
+    rewrite_rc_marker_block_or_fail_in_root "$rc_file" "$marker_begin" "$marker_end" "$snippet"
   done
 }
 
@@ -977,9 +989,9 @@ GUARD
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
     [ -f "$rc_file" ] || continue
-    # Try to write the guard snippet. Landlock may block writes even though
-    # DAC (-w) says writable (#804), but root must not follow rc-file symlinks.
-    rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "$snippet" || true
+    # Try to write the guard snippet. Landlock may block writes in non-root
+    # mode, but root mode fails closed on unsafe rc files.
+    rewrite_rc_marker_block_or_fail_in_root "$rc_file" "$marker_begin" "$marker_end" "$snippet"
   done
   # Best-effort lock — Landlock may already enforce read-only.
   lock_rc_files "$_SANDBOX_HOME"
@@ -1890,11 +1902,17 @@ ensure_mutable_for_migration() {
   return 1
 }
 
+chown_tree_no_symlink_follow() {
+  local owner="$1" target="$2"
+  [ -d "$target" ] || return 0
+  find -P "$target" \( -type d -o -type f \) -exec chown "$owner" {} + 2>/dev/null || true
+}
+
 legacy_symlinks_exist() {
   local config_dir="$1" data_dir="$2"
   local data_real entry raw_target resolved_target
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] || continue
     raw_target="$(readlink "$entry" 2>/dev/null || true)"
     resolved_target="$(readlink -f "$entry" 2>/dev/null || true)"
@@ -1916,7 +1934,7 @@ assert_no_legacy_layout() {
     return 1
   fi
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] || continue
     raw_target="$(readlink "$entry" 2>/dev/null || true)"
     resolved_target="$(readlink -f "$entry" 2>/dev/null || true)"
@@ -2026,7 +2044,7 @@ migrate_legacy_layout() {
   for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] && continue
     [ -d "$entry" ] || continue
-    chown -R sandbox:sandbox "$entry" 2>/dev/null || true
+    chown_tree_no_symlink_follow sandbox:sandbox "$entry"
   done
 
   rm -rf "$data_dir"
@@ -2052,7 +2070,7 @@ migrate_legacy_layout() {
     done
     for subdir in skills hooks cron agents extensions plugins; do
       if [ -d "$config_dir/$subdir" ]; then
-        chown -R root:root "$config_dir/$subdir" 2>/dev/null || true
+        chown_tree_no_symlink_follow root:root "$config_dir/$subdir"
         chmod 755 "$config_dir/$subdir" 2>/dev/null || true
         chmod -R go-w "$config_dir/$subdir" 2>/dev/null || true
       fi
@@ -2280,7 +2298,7 @@ NODE
       continue
     fi
     mkdir -p "$ws_path"
-    chown -R sandbox:sandbox "$ws_path" 2>/dev/null || true
+    chown_tree_no_symlink_follow sandbox:sandbox "$ws_path"
     echo "[setup] provisioned multi-agent workspace: $name" >&2
   done
 }

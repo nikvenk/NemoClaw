@@ -248,11 +248,17 @@ ensure_mutable_for_migration() {
   return 1
 }
 
+chown_tree_no_symlink_follow() {
+  local owner="$1" target="$2"
+  [ -d "$target" ] || return 0
+  find -P "$target" \( -type d -o -type f \) -exec chown "$owner" {} + 2>/dev/null || true
+}
+
 legacy_symlinks_exist() {
   local config_dir="$1" data_dir="$2"
   local data_real entry target
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] || continue
     target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
     case "$target" in
@@ -270,7 +276,7 @@ assert_no_legacy_layout() {
     return 1
   fi
   data_real="$(readlink -f "$data_dir" 2>/dev/null || echo "$data_dir")"
-  for entry in "$config_dir"/*; do
+  for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] || continue
     target="$(readlink -f "$entry" 2>/dev/null || readlink "$entry" 2>/dev/null || true)"
     case "$target" in
@@ -359,7 +365,7 @@ migrate_legacy_layout() {
   for entry in "$config_dir"/.[!.]* "$config_dir"/..?* "$config_dir"/*; do
     [ -L "$entry" ] && continue
     [ -d "$entry" ] || continue
-    chown -R sandbox:sandbox "$entry" 2>/dev/null || true
+    chown_tree_no_symlink_follow sandbox:sandbox "$entry"
   done
   rm -rf "$data_dir"
   assert_no_legacy_layout "$config_dir" "$data_dir" "$label" || return 1

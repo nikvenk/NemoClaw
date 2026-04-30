@@ -180,6 +180,19 @@ describe("nemoclaw-start gateway token export (#1114)", () => {
     expect(exportFn![1]).not.toContain('>>"$rc_file"');
   });
 
+  it("fails closed on rc marker rewrite failures in root mode", () => {
+    const helperFn = src.match(/rewrite_rc_marker_block_or_fail_in_root\(\) \{([\s\S]*?)^}/m);
+    expect(helperFn).toBeTruthy();
+    expect(helperFn![1]).toContain('[ "$(id -u)" -eq 0 ]');
+    expect(helperFn![1]).toContain("return 1");
+    expect(src).not.toContain(
+      'rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "$snippet" || true',
+    );
+    expect(src).not.toContain(
+      'rewrite_rc_marker_block "$rc_file" "$marker_begin" "$marker_end" "" || true',
+    );
+  });
+
   it("calls export_gateway_token in both root and non-root paths", () => {
     const calls = src.match(/export_gateway_token/g) || [];
     // definition + 2 call sites
@@ -861,6 +874,32 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn[1]).not.toMatch(/chown -R sandbox:sandbox "\$config_dir"\s/);
     // Only subdirectories should be chowned
     expect(fn[1]).toContain('[ -d "$entry" ] || continue');
+  });
+
+  it("checks hidden config symlinks when validating legacy layout", () => {
+    const existsFn = src.match(/legacy_symlinks_exist\(\) \{([\s\S]*?)^}/m);
+    const assertFn = src.match(/assert_no_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(existsFn).toBeTruthy();
+    expect(assertFn).toBeTruthy();
+    for (const fn of [existsFn![1], assertFn![1]]) {
+      expect(fn).toContain('"$config_dir"/.[!.]*');
+      expect(fn).toContain('"$config_dir"/..?*');
+      expect(fn).toContain('"$config_dir"/*');
+    }
+  });
+
+  it("uses non-dereferencing ownership repair for migrated state trees", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    const provisionFn = src.match(/provision_agent_workspaces\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(provisionFn).toBeTruthy();
+    expect(src).toContain("chown_tree_no_symlink_follow");
+    expect(fn![1]).toContain("chown_tree_no_symlink_follow sandbox:sandbox");
+    expect(fn![1]).toContain("chown_tree_no_symlink_follow root:root");
+    expect(fn![1]).not.toContain('chown -R sandbox:sandbox "$entry"');
+    expect(fn![1]).not.toContain('chown -R root:root "$config_dir/$subdir"');
+    expect(provisionFn![1]).toContain('chown_tree_no_symlink_follow sandbox:sandbox "$ws_path"');
+    expect(provisionFn![1]).not.toContain('chown -R sandbox:sandbox "$ws_path"');
   });
 
   it("reapplies shields-up ownership if shields were previously active", () => {

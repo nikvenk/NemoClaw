@@ -549,6 +549,23 @@ EOF
       expect(fn![1]).toContain('elif [ -d "$target" ] && [ -d "$entry" ]; then');
     });
 
+    it("hermes start.sh validates hidden legacy symlinks and avoids recursive chown following", () => {
+      const src = readFileSync(join(import.meta.dirname, "../agents/hermes/start.sh"), "utf-8");
+      const existsFn = src.match(/legacy_symlinks_exist\(\) \{([\s\S]*?)^}/m);
+      const assertFn = src.match(/assert_no_legacy_layout\(\) \{([\s\S]*?)^}/m);
+      const migrateFn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+      expect(existsFn).toBeTruthy();
+      expect(assertFn).toBeTruthy();
+      expect(migrateFn).toBeTruthy();
+      for (const fn of [existsFn![1], assertFn![1]]) {
+        expect(fn).toContain('"$config_dir"/.[!.]*');
+        expect(fn).toContain('"$config_dir"/..?*');
+      }
+      expect(src).toContain("chown_tree_no_symlink_follow");
+      expect(migrateFn![1]).toContain("chown_tree_no_symlink_follow sandbox:sandbox");
+      expect(migrateFn![1]).not.toContain('chown -R sandbox:sandbox "$entry"');
+    });
+
     it("nemoclaw-start.sh uses emit_sandbox_sourced_file for proxy-env.sh", () => {
       const src = readFileSync(join(import.meta.dirname, "../scripts/nemoclaw-start.sh"), "utf-8");
       expect(src).toContain("emit_sandbox_sourced_file");
