@@ -4322,7 +4322,101 @@ async function createSandbox(
 // eslint-disable-next-line complexity
 type ProviderChoice = { key: string; label: string };
 
-async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
+function providerNameToOptionKey(name: string | null | undefined): string | null {
+  if (!name) return null;
+  if (name === "ollama-local") return "ollama";
+  if (name === "vllm-local") return "vllm";
+  if (name === "nvidia-nim") return "nim-local";
+  for (const [key, cfg] of Object.entries(REMOTE_PROVIDER_CONFIG)) {
+    if ((cfg as { providerName?: string }).providerName === name) return key;
+  }
+  return null;
+}
+
+function readLiveInference(
+  sandboxName: string | null | undefined,
+): { provider: string | null; model: string | null } | null {
+  if (!sandboxName) return null;
+  try {
+    const { defaultSandbox, sandboxes } = registry.listSandboxes();
+    // The gateway holds one active inference config at a time. Trust the
+    // live read for the default sandbox, or when the registry has no
+    // entries (rebuild path: destroy wiped the entry but the gateway
+    // config persists). Other non-default sandboxes have a stored config
+    // that the gateway will swap to on their next connect.
+    const trustGateway = sandboxName === defaultSandbox || sandboxes.length === 0;
+    if (!trustGateway) return null;
+    const output = runCaptureOpenshell(["inference", "get"], { ignoreError: true });
+    return parseGatewayInference(output);
+  } catch {
+    return null;
+  }
+}
+
+function readRecordedProvider(sandboxName: string | null | undefined): string | null {
+  if (!sandboxName) return null;
+  try {
+    const entry = registry.getSandbox(sandboxName);
+    if (entry && typeof entry.provider === "string" && entry.provider) {
+      return entry.provider;
+    }
+  } catch {
+    // fall through to session
+  }
+  try {
+    const session = onboardSession.loadSession();
+    if (
+      session &&
+      session.sandboxName === sandboxName &&
+      typeof session.provider === "string" &&
+      session.provider
+    ) {
+      return session.provider;
+    }
+  } catch {
+    // fall through to live gateway
+  }
+  const live = readLiveInference(sandboxName);
+  if (live && typeof live.provider === "string" && live.provider) {
+    return live.provider;
+  }
+  return null;
+}
+
+function readRecordedModel(sandboxName: string | null | undefined): string | null {
+  if (!sandboxName) return null;
+  try {
+    const entry = registry.getSandbox(sandboxName);
+    if (entry && typeof entry.model === "string" && entry.model) {
+      return entry.model;
+    }
+  } catch {
+    // fall through to session
+  }
+  try {
+    const session = onboardSession.loadSession();
+    if (
+      session &&
+      session.sandboxName === sandboxName &&
+      typeof session.model === "string" &&
+      session.model
+    ) {
+      return session.model;
+    }
+  } catch {
+    // fall through to live gateway
+  }
+  const live = readLiveInference(sandboxName);
+  if (live && typeof live.model === "string" && live.model) {
+    return live.model;
+  }
+  return null;
+}
+
+async function setupNim(
+  gpu: ReturnType<typeof nim.detectGpu>,
+  sandboxName: string | null = null,
+): Promise<{
   model: string | null;
   provider: string;
   endpointUrl: string | null;
@@ -4404,7 +4498,17 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
       let selected: ProviderChoice | undefined;
 
       if (isNonInteractive()) {
-        const providerKey = requestedProvider || "build";
+        let providerKey = requestedProvider;
+        let recoveredFromSandbox = false;
+        if (!providerKey) {
+          const recoveredKey = providerNameToOptionKey(readRecordedProvider(sandboxName));
+          if (recoveredKey && options.some((o) => o.key === recoveredKey)) {
+            providerKey = recoveredKey;
+            recoveredFromSandbox = true;
+          } else {
+            providerKey = "build";
+          }
+        }
         selected = options.find((o) => o.key === providerKey);
         if (!selected) {
           // install-ollama is valid even when Ollama is already installed —
@@ -4419,7 +4523,11 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
             process.exit(1);
           }
         }
-        note(`  [non-interactive] Provider: ${selected.key}`);
+        note(
+          recoveredFromSandbox
+            ? `  [non-interactive] Provider: ${selected.key} (recovered from sandbox '${sandboxName}')`
+            : `  [non-interactive] Provider: ${selected.key}`,
+        );
       } else {
         const suggestions: string[] = [];
         if (vllmRunning) suggestions.push("vLLM");
@@ -4928,7 +5036,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
         while (true) {
           const installedModels = getOllamaModelOptions();
           if (isNonInteractive()) {
-            model = requestedModel || getDefaultOllamaModel(gpu);
+            model = requestedModel || readRecordedModel(sandboxName) || getDefaultOllamaModel(gpu);
           } else {
             model = await promptOllamaModel(gpu);
           }
@@ -5009,7 +5117,7 @@ async function setupNim(gpu: ReturnType<typeof nim.detectGpu>): Promise<{
         while (true) {
           const installedModels = getOllamaModelOptions();
           if (isNonInteractive()) {
-            model = requestedModel || getDefaultOllamaModel(gpu);
+            model = requestedModel || readRecordedModel(sandboxName) || getDefaultOllamaModel(gpu);
           } else {
             model = await promptOllamaModel(gpu);
           }
@@ -7554,7 +7662,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
         hydrateCredentialEnv(credentialEnv);
       } else {
         startRecordedStep("provider_selection", { sandboxName });
-        const selection = await setupNim(gpu);
+        const selection = await setupNim(gpu, sandboxName);
         model = selection.model;
         provider = selection.provider;
         endpointUrl = selection.endpointUrl;
@@ -7940,6 +8048,9 @@ module.exports = {
   setupMessagingChannels,
   MESSAGING_CHANNELS,
   setupNim,
+  providerNameToOptionKey,
+  readRecordedProvider,
+  readRecordedModel,
   formatOnboardConfigSummary,
   isInferenceRouteReady,
   isNonInteractive,

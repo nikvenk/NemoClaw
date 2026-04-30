@@ -3333,6 +3333,13 @@ async function sandboxRebuild(
     s.resumable = true;
     s.status = "in_progress";
     s.agent = rebuildAgent;
+    // Persist inference selection from the about-to-be-removed registry entry
+    // so onboard --resume can recreate with the same provider/model in
+    // non-interactive mode. Without this the registry is gone by the time
+    // setupNim runs, leaving no recovery source.
+    if (sb.provider) s.provider = sb.provider;
+    if (sb.model) s.model = sb.model;
+    if (sb.nimContainer) s.nimContainer = sb.nimContainer;
     return s;
   });
   process.env.NEMOCLAW_SANDBOX_NAME = sandboxName;
