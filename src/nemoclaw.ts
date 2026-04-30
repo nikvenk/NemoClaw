@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Default to the OpenClaw agent when launched via bin/nemoclaw.js (which does
-// not set NEMOCLAW_AGENT).  bin/nemohermes.js sets it to "hermes" before
-// requiring this module.  Must run before any import that reads the env var.
-if (!process.env.NEMOCLAW_AGENT) {
-  process.env.NEMOCLAW_AGENT = "openclaw";
-}
-
 const { execFileSync, spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -29,8 +22,8 @@ const _RD = _useColor ? "\x1b[1;31m" : "";
 const YW = _useColor ? "\x1b[1;33m" : "";
 
 // ---------------------------------------------------------------------------
-// Agent branding — derived from NEMOCLAW_AGENT env var set by the alias
-// launchers (bin/nemoclaw.js, bin/nemohermes.js).
+// Agent branding — derived from NEMOCLAW_AGENT when an alias launcher sets it;
+// otherwise the branding module falls back to the OpenClaw defaults.
 // ---------------------------------------------------------------------------
 const { CLI_NAME, CLI_DISPLAY_NAME, AGENT_PRODUCT_NAME } = require("./lib/branding");
 

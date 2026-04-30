@@ -34,6 +34,32 @@ function runHermes(
   }
 }
 
+function runNemoClaw(
+  args: string,
+  env: Record<string, string | undefined> = {},
+): { code: number; out: string } {
+  try {
+    const out = execSync(`node "${NEMOCLAW_CLI}" ${args}`, {
+      encoding: "utf-8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        HOME: "/tmp/nemohermes-test-" + Date.now(),
+        NEMOCLAW_AGENT: undefined,
+        NEMOCLAW_HEALTH_POLL_COUNT: "1",
+        NEMOCLAW_HEALTH_POLL_INTERVAL: "0",
+        ...env,
+      },
+    });
+    return { code: 0, out };
+  } catch (err: unknown) {
+    const e = err as { status?: number; stdout?: string | Buffer; stderr?: string | Buffer };
+    const stdout = typeof e.stdout === "string" ? e.stdout : e.stdout?.toString("utf8") ?? "";
+    const stderr = typeof e.stderr === "string" ? e.stderr : e.stderr?.toString("utf8") ?? "";
+    return { code: e.status ?? 1, out: stdout + stderr };
+  }
+}
+
 describe("nemohermes alias", () => {
   it("bin/nemohermes.js exists and is executable", () => {
     expect(fs.existsSync(HERMES_CLI)).toBe(true);
@@ -49,20 +75,8 @@ describe("nemohermes alias", () => {
   });
 
   it("nemoclaw --version does not contain nemohermes", () => {
-    let out: string;
-    try {
-      out = execSync(`node "${NEMOCLAW_CLI}" --version`, {
-        encoding: "utf-8",
-        timeout: 10000,
-        env: {
-          ...process.env,
-          HOME: "/tmp/nemohermes-test-" + Date.now(),
-        },
-      });
-    } catch (err: unknown) {
-      const e = err as { status?: number; message?: string };
-      expect.unreachable(`nemoclaw --version exited with code ${e.status}: ${e.message}`);
-    }
+    const { code, out } = runNemoClaw("--version");
+    expect(code).toBe(0);
     expect(out).toMatch(/^nemoclaw v[\d.]+/);
     expect(out).not.toContain("nemohermes");
   });
@@ -80,5 +94,13 @@ describe("nemohermes alias", () => {
     const { code, out } = runHermes("--version");
     expect(code).toBe(0);
     expect(out).toContain("nemohermes");
+  });
+
+  it("nemoclaw onboard --agent hermes uses Hermes branding after agent resolution", () => {
+    const { code, out } = runNemoClaw(
+      "onboard --agent hermes --resume --non-interactive --yes-i-accept-third-party-software",
+    );
+    expect(code).toBe(1);
+    expect(out).toContain("nemohermes onboard");
   });
 });
