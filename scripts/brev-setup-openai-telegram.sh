@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-NEMOCLAW_REPO="${NEMOCLAW_REPO:-nikvenk/NemoClaw}"
+NEMOCLAW_REPO="${NEMOCLAW_REPO:-NVIDIA/NemoClaw}"
 NEMOCLAW_REF="${NEMOCLAW_REF:-main}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-v0.0.36}"
 TARGET_USER="${SUDO_USER:-$(id -un)}"
@@ -128,18 +128,54 @@ if ! command -v openshell >/dev/null 2>&1 || [[ "$(_os_ver)" != "${OPENSHELL_VER
 fi
 info "OpenShell $(openshell --version 2>&1 || echo unknown)"
 
-# ── 5. Clone fork + build ─────────────────────────────────────────────────────
-# Cloning nikvenk/NemoClaw compiles the tool-call fix for NVIDIA Endpoints
-# (forces openai-completions so Nemotron models execute tools correctly).
+# ── 5. Clone upstream + apply tool-call patch + build ────────────────────────
+# Clones NVIDIA/NemoClaw main so the launchable always tracks the latest
+# upstream. After cloning, a Python script inserts the Nemotron tool-call fix
+# into onboard.ts (forces openai-completions for the build/NVIDIA provider so
+# Nemotron models return structured tool_calls instead of raw XML).
 if [[ -d "$NEMOCLAW_CLONE_DIR/.git" ]]; then
   git -C "$NEMOCLAW_CLONE_DIR" fetch origin "$NEMOCLAW_REF"
-  git -C "$NEMOCLAW_CLONE_DIR" checkout "$NEMOCLAW_REF"
-  git -C "$NEMOCLAW_CLONE_DIR" pull --ff-only origin "$NEMOCLAW_REF" || true
+  git -C "$NEMOCLAW_CLONE_DIR" reset --hard "origin/$NEMOCLAW_REF"
 else
   info "Cloning ${NEMOCLAW_REPO}@${NEMOCLAW_REF}..."
   git clone --branch "$NEMOCLAW_REF" --depth 1 \
     "https://github.com/${NEMOCLAW_REPO}.git" "$NEMOCLAW_CLONE_DIR"
 fi
+
+# Apply Nemotron tool-call fix to onboard.ts (gracefully skipped if upstream
+# already includes it or if the surrounding code changed significantly).
+python3 - <<'PYEOF'
+import re, sys, os
+ts = os.path.join(os.environ.get("NEMOCLAW_CLONE_DIR", os.path.expanduser("~/NemoClaw")), "src/lib/onboard.ts")
+with open(ts) as f:
+    src = f.read()
+if "tool-call-parser requires /v1/chat/completions" in src:
+    print("Tool-call fix already present — skipping")
+    sys.exit(0)
+needle = '"Please choose a provider/model again.",'
+pos = src.find(needle)
+if pos < 0:
+    print("WARNING: anchor not found, skipping tool-call fix"); sys.exit(0)
+m = re.search(r'continue selectionLoop;\n          }\n        }', src[pos:])
+if not m:
+    print("WARNING: while-loop end not found, skipping tool-call fix"); sys.exit(0)
+insert = pos + m.end()
+patch = (
+    "\n          // Nemotron tool-call fix: /v1/responses does not parse tool calls\n"
+    "          // server-side. Force openai-completions for structured tool_calls.\n"
+    "          // See: https://github.com/NVIDIA/NemoClaw/issues/976\n"
+    "          if (preferredInferenceApi !== \"openai-completions\") {\n"
+    "            console.log(\n"
+    "              \"  \u2139 Using chat completions API (tool-call-parser requires /v1/chat/completions)\",\n"
+    "            );\n"
+    "          }\n"
+    "          preferredInferenceApi = \"openai-completions\";"
+)
+src = src[:insert] + patch + src[insert:]
+with open(ts, "w") as f:
+    f.write(src)
+print("Tool-call fix applied to onboard.ts")
+PYEOF
 
 # Pre-pull Docker images in background while npm builds
 if [[ "${SKIP_DOCKER_PULL:-0}" != "1" ]]; then
@@ -155,7 +191,7 @@ else
   PULL_PID=""
 fi
 
-info "Building NemoClaw CLI from fork..."
+info "Building NemoClaw CLI from source..."
 cd "$NEMOCLAW_CLONE_DIR"
 npm install --ignore-scripts 2>&1 | tail -2
 npm run build:cli 2>&1 | tail -2
@@ -169,7 +205,10 @@ info "nemoclaw $(nemoclaw --version 2>/dev/null || echo unknown) linked"
 [[ -n "$PULL_PID" ]] && { wait "$PULL_PID" || warn "Some Docker pulls failed (will pull at onboard time)"; }
 
 # ── 6. Install configure script and write MOTD ────────────────────────────────
-sudo cp "$NEMOCLAW_CLONE_DIR/scripts/nemoclaw-configure.sh" /usr/local/bin/nemoclaw-configure
+# nemoclaw-configure.sh lives in the nikvenk fork (not upstream); fetch it directly.
+CONFIGURE_RAW="https://raw.githubusercontent.com/nikvenk/NemoClaw/main/scripts/nemoclaw-configure.sh"
+retry 3 10 "download nemoclaw-configure" \
+  sudo curl -fsSL "$CONFIGURE_RAW" -o /usr/local/bin/nemoclaw-configure
 sudo chmod +x /usr/local/bin/nemoclaw-configure
 
 sudo tee /etc/motd << 'MOTD' > /dev/null
