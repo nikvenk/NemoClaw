@@ -378,7 +378,9 @@ usage() {
   printf "                                            (aliases: cloud -> build, nim -> nim-local)\n"
   printf "    NEMOCLAW_MODEL                          Inference model tag (e.g., nemotron-3-super:120b)\n"
   printf "    NEMOCLAW_BACKEND_ENDPOINT               Override auto-detected backend URL\n"
-  printf "    NEMOCLAW_VLLM_IMAGE                     Override vLLM container image (default: resolved from NGC)\n\n"
+  printf "    NEMOCLAW_VLLM_IMAGE                     Override vLLM container image (default: resolved from NGC)\n"
+  printf "    NEMOCLAW_VLLM_MODEL                     Override model served by local vLLM (default: auto from VRAM)\n"
+  printf "    HUGGING_FACE_HUB_TOKEN                  HuggingFace token for gated models (e.g. Nemotron, Llama)\n\n"
 
   printf "  ${C_DIM}Environment — policies:${C_RESET}\n"
   printf "    NEMOCLAW_POLICY_MODE                    suggested (default) | custom | skip\n"
@@ -977,20 +979,36 @@ install_vllm() {
   info "Pulling vLLM container (${image})…"
   maybe_sudo docker pull "$image"
 
-  local vram_mb vram_gb model_id
+  local vram_mb vram_gb model_id hf_token hf_cache
   vram_mb=$(get_vram_mb)
   vram_gb=$((vram_mb / 1024))
-  if (( vram_gb >= 120 )); then
+
+  if [[ -n "${NEMOCLAW_VLLM_MODEL:-}" ]]; then
+    model_id="${NEMOCLAW_VLLM_MODEL}"
+  elif (( vram_gb >= 120 )); then
     model_id="nvidia/nemotron-3-super-120b-a12b"
   else
     model_id="nvidia/nemotron-3-nano-30b-a4b"
   fi
+
+  hf_token="${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}"
+  if [[ -z "$hf_token" ]]; then
+    warn "HUGGING_FACE_HUB_TOKEN is not set. Gated models (Nemotron, Llama, etc.) will fail to download."
+    warn "Export HUGGING_FACE_HUB_TOKEN=<your-token> and re-run with --force-reinstall to retry."
+  fi
+
+  hf_cache="${HOME}/.cache/huggingface"
+  mkdir -p "$hf_cache"
+
   info "Launching vLLM container (model: ${model_id}, port: ${port})…"
   maybe_sudo docker run --detach --gpus all \
     --name "$container_name" \
     --restart unless-stopped \
     -p "${port}:${port}" \
+    -v "${hf_cache}:/root/.cache/huggingface" \
     -e NVIDIA_API_KEY="${NVIDIA_API_KEY:-}" \
+    -e HUGGING_FACE_HUB_TOKEN="${hf_token}" \
+    -e HF_TOKEN="${hf_token}" \
     "$image" \
     --model "$model_id" \
     --port "$port"
