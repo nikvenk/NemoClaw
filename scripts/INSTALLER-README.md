@@ -231,6 +231,94 @@ openshell inference set -g nemoclaw \
 
 ---
 
+## Teardown and Re-installation
+
+Use this procedure when testing the installer from scratch or recovering from a broken state.
+Tear down in reverse startup order to avoid orphaned containers and stale gateway state.
+
+```bash
+# 1. Stop the sandbox
+nemoclaw my-assistant stop 2>/dev/null || true
+
+# 2. Destroy the gateway (this also removes the OpenShell k3s cluster)
+openshell gateway destroy --name nemoclaw
+
+# 3. Stop and remove the vLLM container
+docker stop nemoclaw-vllm && docker rm nemoclaw-vllm
+
+# 4. Remove the onboard session file so the installer starts fresh
+sudo rm -f /home/$USER/.nemoclaw/onboard-session.json
+```
+
+Then re-run the installer with `--fresh` to discard any partial state:
+
+```bash
+cd ~/NemoClaw && git pull
+HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN}" bash scripts/install.sh --fresh
+```
+
+> **Note:** When the installer detects no running vLLM server on port 8000, it launches
+> one automatically via `install_vllm()`. You do not need to start vLLM manually for a
+> clean install — the installer selects the highest-VRAM GPU and uses the correct model ID.
+> Start vLLM manually only if you want to control GPU selection or model parameters.
+
+### Automatic backup before re-installation
+
+When the installer runs and finds an existing sandbox, it automatically calls
+`nemoclaw backup-all` before doing anything destructive. This creates a timestamped
+snapshot of each running sandbox's workspace state at:
+
+```
+~/.nemoclaw/rebuild-backups/
+```
+
+Each backup is stored as a numbered archive (e.g., `my-assistant-backup-1.tar.gz`,
+`my-assistant-backup-2.tar.gz`, etc.). The number increments on each re-run, so
+prior snapshots are preserved.
+
+To restore a backup after a failed re-installation:
+
+```bash
+# List available backups
+ls ~/.nemoclaw/rebuild-backups/
+
+# Restore into a running sandbox
+nemoclaw my-assistant snapshot restore <backup-name>
+```
+
+---
+
+## Uninstalling
+
+### Remove the sandbox and gateway
+
+```bash
+nemoclaw my-assistant stop 2>/dev/null || true
+openshell gateway destroy --name nemoclaw
+```
+
+### Remove the vLLM container
+
+```bash
+docker stop nemoclaw-vllm && docker rm nemoclaw-vllm
+```
+
+### Remove the NemoClaw CLI and state
+
+```bash
+# Unlink the CLI shim
+npm unlink --global nemoclaw 2>/dev/null || true
+rm -f ~/.local/bin/nemoclaw
+
+# Remove NemoClaw state and backups (destructive — removes all sandbox backups)
+rm -rf ~/.nemoclaw
+
+# Optionally remove the HuggingFace model cache (~75 GB)
+rm -rf ~/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+```
+
+---
+
 ## Troubleshooting
 
 ### `invalid peer certificate: BadSignature` at step [4/8]
@@ -278,3 +366,24 @@ the installer cannot write to it:
 ```bash
 sudo rm -f /home/$USER/.nemoclaw/onboard-session.json
 ```
+
+### vLLM `401 Unauthorized` or `404 Not Found` when downloading the model
+
+**Wrong model ID.** The NVIDIA API / NIM catalog name for Nemotron-3 Super is
+`nvidia/nemotron-3-super-120b-a12b`, but that identifier does not exist on HuggingFace.
+vLLM fetches weights from HuggingFace and requires the HuggingFace repository name:
+
+```text
+nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4   ← correct (HuggingFace)
+nvidia/nemotron-3-super-120b-a12b                ← wrong (NIM/NGC API name only)
+```
+
+A 401 means the HuggingFace token is missing or not exported in the container's
+environment. A 404 means the model ID itself is wrong.
+
+**NGC vLLM container cannot resolve HuggingFace.** If you use the NGC-hosted vLLM
+image (`nvcr.io/nvidia/vllm:...`) instead of the Docker Hub image (`vllm/vllm-openai:latest`),
+the container may fail to reach `huggingface.co` due to NGC proxy or DNS restrictions
+in the container's network namespace. Switch to `--network host` or use the Docker Hub
+image to resolve this. The `docker run` command in Step 1 already uses `--network host`
+and `vllm/vllm-openai:latest` for this reason.
