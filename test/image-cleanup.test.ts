@@ -74,9 +74,6 @@ describe("image cleanup: onboard records imageTag in registry (#2086)", () => {
   });
 
   it("registerSandbox uses resolvedImageTag parsed from build output", () => {
-    // After fix for #2672: imageTag uses resolvedImageTag (parsed from openshell
-    // build output) rather than the local buildId (ms). The fallback still uses
-    // buildId if the line is not found in output.
     expect(onboardSrc).toContain("resolvedImageTag");
     expect(onboardSrc).toMatch(/Built image \(openshell\\\/sandbox-from:\\d\+\)/);
     expect(onboardSrc).toMatch(/imageTag:\s*resolvedImageTag/);
