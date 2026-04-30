@@ -524,6 +524,21 @@ EOF
       expect(src).toContain("lock_rc_files");
     });
 
+    it("hermes start.sh rewrites configure guard rc blocks through the symlink-safe helper", () => {
+      const src = readFileSync(join(import.meta.dirname, "../agents/hermes/start.sh"), "utf-8");
+      const helperFn = src.match(/rewrite_rc_marker_block\(\) \{([\s\S]*?)^}/m);
+      const guardFn = src.match(/install_configure_guard\(\) \{([\s\S]*?)^# configure_messaging_channels/m);
+      expect(helperFn).toBeTruthy();
+      expect(guardFn).toBeTruthy();
+      expect(helperFn![1]).toContain('[ -L "$rc_file" ]');
+      expect(helperFn![1]).toContain('mktemp "${dir}/.${base}.tmp.XXXXXX"');
+      expect(helperFn![1]).toContain('mv -f "$tmp" "$rc_file"');
+      expect(src).toContain("rewrite_rc_marker_block_or_fail_in_root");
+      expect(guardFn![1]).toContain("rewrite_rc_marker_block_or_fail_in_root");
+      expect(guardFn![1]).not.toContain('cat "$tmp" >"$rc_file"');
+      expect(guardFn![1]).not.toContain('>>"$rc_file"');
+    });
+
     it("hermes start.sh uses emit_sandbox_sourced_file for proxy config", () => {
       const src = readFileSync(join(import.meta.dirname, "../agents/hermes/start.sh"), "utf-8");
       expect(src).toContain("emit_sandbox_sourced_file");
@@ -543,6 +558,7 @@ EOF
       expect(fn).toBeTruthy();
       expect(src).toContain("path_has_immutable_bit");
       expect(src).toContain("ensure_mutable_for_migration");
+      expect(fn![1]).toContain('[ -L "$config_dir" ]');
       for (const target of ["$sentinel", "$config_dir", "$data_dir", "$entry", "$target"]) {
         expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
       }

@@ -638,9 +638,10 @@ NemoClaw's sandbox entrypoint installs a guard that intercepts `openclaw config 
 To change your configuration, exit the sandbox and rerun onboarding:
 
 ```console
-$ nemoclaw onboard --resume
+$ nemoclaw onboard
 ```
 
+If NemoClaw reports a resumable failed onboarding session, run `nemoclaw onboard --resume` instead.
 This rebuilds the sandbox with your updated settings.
 
 ### `openclaw doctor --fix` cannot repair Discord channel config inside the sandbox

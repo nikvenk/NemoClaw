@@ -85,6 +85,65 @@ HERMES_HASH_FILE="/etc/nemoclaw/hermes.config-hash"
 
 # verify_config_integrity is provided by sandbox-init.sh (parameterized).
 
+rewrite_rc_marker_block() {
+  local rc_file="$1"
+  local marker_begin="$2"
+  local marker_end="$3"
+  local snippet="${4:-}"
+  local dir base tmp
+
+  [ -e "$rc_file" ] || return 0
+  if [ -L "$rc_file" ] || [ ! -f "$rc_file" ]; then
+    echo "[SECURITY] refusing unsafe rc file: $rc_file" >&2
+    return 1
+  fi
+
+  dir="$(dirname "$rc_file")"
+  base="$(basename "$rc_file")"
+  tmp="$(mktemp "${dir}/.${base}.tmp.XXXXXX")" || return 1
+
+  awk -v b="$marker_begin" -v e="$marker_end" \
+    '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp" 2>/dev/null || {
+    rm -f "$tmp"
+    return 1
+  }
+
+  if [ -n "$snippet" ]; then
+    printf '%s\n' "$snippet" >>"$tmp" || {
+      rm -f "$tmp"
+      return 1
+    }
+  fi
+
+  if [ "$(id -u)" -eq 0 ] && ! chown root:root "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 644 "$tmp" 2>/dev/null || true
+
+  if [ -L "$rc_file" ]; then
+    echo "[SECURITY] refusing symlinked rc file during replace: $rc_file" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$rc_file" 2>/dev/null || {
+    rm -f "$tmp"
+    return 1
+  }
+}
+
+rewrite_rc_marker_block_or_fail_in_root() {
+  local rc_file="$1"
+  if rewrite_rc_marker_block "$@"; then
+    return 0
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    return 1
+  fi
+  echo "[setup] could not update rc file ${rc_file}; continuing in non-root mode" >&2
+  return 0
+}
+
 install_configure_guard() {
   local marker_begin="# nemoclaw-configure-guard begin"
   local marker_end="# nemoclaw-configure-guard end"
@@ -108,17 +167,8 @@ hermes() {
 GUARD
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
-    if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
-      local tmp
-      tmp="$(mktemp)"
-      awk -v b="$marker_begin" -v e="$marker_end" \
-        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
-      printf '%s\n' "$snippet" >>"$tmp"
-      cat "$tmp" >"$rc_file"
-      rm -f "$tmp"
-    elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
-      printf '\n%s\n' "$snippet" >>"$rc_file"
-    fi
+    [ -f "$rc_file" ] || continue
+    rewrite_rc_marker_block_or_fail_in_root "$rc_file" "$marker_begin" "$marker_end" "$snippet"
   done
   # SECURITY FIX: Lock .bashrc/.profile after all mutations are complete.
   # This was missing in Hermes (unlike OpenClaw which had it via #2125),
@@ -290,6 +340,10 @@ assert_no_legacy_layout() {
 
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
+  if [ -L "$config_dir" ]; then
+    echo "[SECURITY] ${label}: refusing migration because ${config_dir} is a symlink" >&2
+    return 1
+  fi
   if [ -L "$data_dir" ]; then
     echo "[SECURITY] ${label}: refusing migration because ${data_dir} is a symlink" >&2
     return 1

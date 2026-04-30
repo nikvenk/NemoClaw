@@ -843,9 +843,10 @@ describe("NC-2227-01: legacy migration guards", () => {
     );
   });
 
-  it("rejects symlinked legacy data directories and entries before root copy", () => {
+  it("rejects symlinked config dirs, legacy data dirs, and entries before root copy", () => {
     const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('[ -L "$config_dir" ]');
     expect(fn[1]).toContain('[ -L "$data_dir" ]');
     expect(fn[1]).toContain('[ -L "$entry" ]');
     expect(fn[1]).toContain("refusing migration");
@@ -907,6 +908,12 @@ describe("NC-2227-01: legacy migration guards", () => {
     expect(fn).toBeTruthy();
     expect(fn[1]).toContain("shields_were_active");
     expect(fn[1]).toContain("Reapplying shields-up ownership");
+    expect(src).toContain("restore_immutable_if_possible");
+    expect(fn[1]).toContain("restore_immutable_if_possible");
+    expect(fn[1]).toContain('"$config_dir"/openclaw.json');
+    expect(fn[1]).toContain('"$config_dir"/.config-hash');
+    expect(fn[1]).toContain('"$config_dir"/.env');
+    expect(fn[1]).toContain('"$config_dir"');
     for (const dir of ["skills", "hooks", "cron", "agents", "extensions", "plugins"]) {
       expect(fn[1]).toContain(dir);
     }

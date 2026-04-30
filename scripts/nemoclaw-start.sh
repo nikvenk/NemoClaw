@@ -1902,6 +1902,16 @@ ensure_mutable_for_migration() {
   return 1
 }
 
+restore_immutable_if_possible() {
+  command -v chattr >/dev/null 2>&1 || return 0
+  local target
+  for target in "$@"; do
+    [ -e "$target" ] || [ -L "$target" ] || continue
+    [ -L "$target" ] && continue
+    chattr +i "$target" 2>/dev/null || true
+  done
+}
+
 chown_tree_no_symlink_follow() {
   local owner="$1" target="$2"
   [ -d "$target" ] || return 0
@@ -1955,6 +1965,10 @@ assert_no_legacy_layout() {
 
 migrate_legacy_layout() {
   local config_dir="$1" data_dir="$2" label="$3"
+  if [ -L "$config_dir" ]; then
+    echo "[SECURITY] ${label}: refusing migration because ${config_dir} is a symlink" >&2
+    return 1
+  fi
   if [ -L "$data_dir" ]; then
     echo "[SECURITY] ${label}: refusing migration because ${data_dir} is a symlink" >&2
     return 1
@@ -2073,8 +2087,14 @@ migrate_legacy_layout() {
         chown_tree_no_symlink_follow root:root "$config_dir/$subdir"
         chmod 755 "$config_dir/$subdir" 2>/dev/null || true
         chmod -R go-w "$config_dir/$subdir" 2>/dev/null || true
+        restore_immutable_if_possible "$config_dir/$subdir"
       fi
     done
+    restore_immutable_if_possible \
+      "$config_dir"/openclaw.json \
+      "$config_dir"/.config-hash \
+      "$config_dir"/.env \
+      "$config_dir"
   fi
 
   echo "[migration] Completed ${label} layout migration (${data_dir} removed)" >&2
