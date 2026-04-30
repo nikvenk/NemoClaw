@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=349eaea7"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -492,7 +492,7 @@ window.runMermaid = runMermaid;</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.29';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -837,6 +837,7 @@ window.runMermaid = runMermaid;</script>
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -853,6 +854,7 @@ window.runMermaid = runMermaid;</script>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -1168,9 +1170,15 @@ OpenShell intercepts them and routes to the configured provider:</p>
 </div>
 <p>Refer to <a class="reference internal" href="../inference/inference-options.html"><span class="std std-doc">Inference Options</span></a> for provider configuration details.</p>
 </section>
+<section id="provider-credential-storage">
+<h2>Provider Credential Storage<a class="headerlink" href="#provider-credential-storage" title="Link to this heading">#</a></h2>
+<p>Provider credentials live in the OpenShell gateway store, not on the host filesystem.
+NemoClaw never writes them to host disk; the OpenShell L7 proxy injects values at egress.
+See <a class="reference internal" href="../security/credential-storage.html"><span class="std std-doc">Credential Storage</span></a> for the inspection, rotation, and migration flow.</p>
+</section>
 <section id="host-side-state-and-config">
 <h2>Host-Side State and Config<a class="headerlink" href="#host-side-state-and-config" title="Link to this heading">#</a></h2>
-<p>NemoClaw keeps its operator-facing state on the host rather than inside the sandbox.</p>
+<p>NemoClaw keeps non-secret operator-facing state on the host rather than inside the sandbox.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>Path</p></th>
@@ -1178,13 +1186,10 @@ OpenShell intercepts them and routes to the configured provider:</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/credentials.json</span></code></p></td>
-<td><p>Provider credentials saved during onboarding. Stored as plaintext JSON protected by local filesystem permissions; see <a class="reference internal" href="../security/credential-storage.html"><span class="std std-doc">Credential Storage</span></a>.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/sandboxes.json</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">~/.nemoclaw/sandboxes.json</span></code></p></td>
 <td><p>Registered sandbox metadata, including the default sandbox selection.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">~/.openclaw/openclaw.json</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">~/.openclaw/openclaw.json</span></code></p></td>
 <td><p>Host OpenClaw configuration that NemoClaw snapshots or restores during migration flows.</p></td>
 </tr>
 </tbody>
@@ -1276,6 +1281,7 @@ Do not treat <code class="docutils literal notranslate"><span class="pre">NEMOCL
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sandbox-environment">Sandbox Environment</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-routing">Inference Routing</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#provider-credential-storage">Provider Credential Storage</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#host-side-state-and-config">Host-Side State and Config</a></li>
 </ul>
   </nav></div>
