@@ -4322,10 +4322,15 @@ async function createSandbox(
 // eslint-disable-next-line complexity
 type ProviderChoice = { key: string; label: string };
 
-function providerNameToOptionKey(name: string | null | undefined): string | null {
+function providerNameToOptionKey(
+  name: string | null | undefined,
+  opts: { hasNimContainer?: boolean } = {},
+): string | null {
   if (!name) return null;
   if (name === "ollama-local") return "ollama";
-  if (name === "vllm-local") return "vllm";
+  // Local NIM and standalone vLLM both persist as provider="vllm-local";
+  // the presence of a nimContainer record disambiguates them.
+  if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : "vllm";
   if (name === "nvidia-nim") return "nim-local";
   for (const [key, cfg] of Object.entries(REMOTE_PROVIDER_CONFIG)) {
     if ((cfg as { providerName?: string }).providerName === name) return key;
@@ -4379,6 +4384,32 @@ function readRecordedProvider(sandboxName: string | null | undefined): string | 
   const live = readLiveInference(sandboxName);
   if (live && typeof live.provider === "string" && live.provider) {
     return live.provider;
+  }
+  return null;
+}
+
+function readRecordedNimContainer(sandboxName: string | null | undefined): string | null {
+  if (!sandboxName) return null;
+  try {
+    const entry = registry.getSandbox(sandboxName);
+    if (entry && typeof entry.nimContainer === "string" && entry.nimContainer) {
+      return entry.nimContainer;
+    }
+  } catch {
+    // fall through to session
+  }
+  try {
+    const session = onboardSession.loadSession();
+    if (
+      session &&
+      session.sandboxName === sandboxName &&
+      typeof session.nimContainer === "string" &&
+      session.nimContainer
+    ) {
+      return session.nimContainer;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -4501,8 +4532,22 @@ async function setupNim(
         let providerKey = requestedProvider;
         let recoveredFromSandbox = false;
         if (!providerKey) {
-          const recoveredKey = providerNameToOptionKey(readRecordedProvider(sandboxName));
-          if (recoveredKey && options.some((o) => o.key === recoveredKey)) {
+          const recordedProvider = readRecordedProvider(sandboxName);
+          const hasNimContainer = !!readRecordedNimContainer(sandboxName);
+          const recoveredKey = providerNameToOptionKey(recordedProvider, { hasNimContainer });
+          if (recoveredKey) {
+            // Refuse to silently switch providers behind the user's back; if
+            // the previously-recorded one is gone, surface the recorded value
+            // so the user can fix the dependency or override via env var.
+            if (!options.some((o) => o.key === recoveredKey)) {
+              console.error(
+                `  Recorded provider '${recordedProvider}' is not available in this environment.`,
+              );
+              console.error(
+                "  Set NEMOCLAW_PROVIDER explicitly, or restore the missing local-inference dependency.",
+              );
+              process.exit(1);
+            }
             providerKey = recoveredKey;
             recoveredFromSandbox = true;
           } else {
@@ -8051,6 +8096,7 @@ module.exports = {
   providerNameToOptionKey,
   readRecordedProvider,
   readRecordedModel,
+  readRecordedNimContainer,
   formatOnboardConfigSummary,
   isInferenceRouteReady,
   isNonInteractive,

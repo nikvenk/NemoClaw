@@ -8,9 +8,13 @@ import { spawnSync } from "node:child_process";
 import { describe, it, expect, afterEach } from "vitest";
 
 type ProviderRecoveryInternals = {
-  providerNameToOptionKey: (name: string | null | undefined) => string | null;
+  providerNameToOptionKey: (
+    name: string | null | undefined,
+    opts?: { hasNimContainer?: boolean },
+  ) => string | null;
   readRecordedProvider: (sandboxName: string | null | undefined) => string | null;
   readRecordedModel: (sandboxName: string | null | undefined) => string | null;
+  readRecordedNimContainer: (sandboxName: string | null | undefined) => string | null;
 };
 
 function isProviderRecoveryInternals(value: object | null): value is ProviderRecoveryInternals {
@@ -18,7 +22,8 @@ function isProviderRecoveryInternals(value: object | null): value is ProviderRec
     value !== null &&
     typeof Reflect.get(value, "providerNameToOptionKey") === "function" &&
     typeof Reflect.get(value, "readRecordedProvider") === "function" &&
-    typeof Reflect.get(value, "readRecordedModel") === "function"
+    typeof Reflect.get(value, "readRecordedModel") === "function" &&
+    typeof Reflect.get(value, "readRecordedNimContainer") === "function"
   );
 }
 
@@ -30,7 +35,12 @@ const onboardModule =
 if (!isProviderRecoveryInternals(onboardModule)) {
   throw new Error("Expected provider-recovery internals to be available");
 }
-const { providerNameToOptionKey, readRecordedProvider, readRecordedModel } = onboardModule;
+const {
+  providerNameToOptionKey,
+  readRecordedProvider,
+  readRecordedModel,
+  readRecordedNimContainer,
+} = onboardModule;
 
 const registry: typeof import("../dist/lib/registry") = require("../dist/lib/registry");
 const onboardSession: typeof import("../dist/lib/onboard-session") = require("../dist/lib/onboard-session");
@@ -53,6 +63,14 @@ describe("providerNameToOptionKey", () => {
     expect(providerNameToOptionKey("ollama-local")).toBe("ollama");
     expect(providerNameToOptionKey("vllm-local")).toBe("vllm");
     expect(providerNameToOptionKey("nvidia-nim")).toBe("nim-local");
+  });
+
+  it("disambiguates vllm-local via nimContainer", () => {
+    // Local NIM persists as provider="vllm-local" + nimContainer; without
+    // the nimContainer it means standalone vLLM.
+    expect(providerNameToOptionKey("vllm-local", { hasNimContainer: true })).toBe("nim-local");
+    expect(providerNameToOptionKey("vllm-local", { hasNimContainer: false })).toBe("vllm");
+    expect(providerNameToOptionKey("vllm-local", {})).toBe("vllm");
   });
 
   it("maps remote provider names via REMOTE_PROVIDER_CONFIG reverse lookup", () => {
@@ -217,6 +235,61 @@ describe("readRecordedModel", () => {
     expect(readRecordedModel(null)).toBeNull();
     expect(readRecordedModel(undefined)).toBeNull();
     expect(readRecordedModel("")).toBeNull();
+  });
+});
+
+describe("readRecordedNimContainer", () => {
+  const originalGetSandbox = registry.getSandbox;
+  const originalLoadSession = onboardSession.loadSession;
+  afterEach(() => {
+    registry.getSandbox = originalGetSandbox;
+    onboardSession.loadSession = originalLoadSession;
+  });
+
+  it("returns the nimContainer stored in sandboxes.json", () => {
+    registry.getSandbox = (name: string) =>
+      name === "spark-1"
+        ? ({
+            name,
+            provider: "vllm-local",
+            nimContainer: "nemoclaw-nim-foo",
+          } as ReturnType<typeof registry.getSandbox>)
+        : null;
+    onboardSession.loadSession = () => null;
+    expect(readRecordedNimContainer("spark-1")).toBe("nemoclaw-nim-foo");
+  });
+
+  it("falls back to the session for the rebuild path", () => {
+    registry.getSandbox = () => null;
+    onboardSession.loadSession = () =>
+      ({
+        sandboxName: "spark-1",
+        nimContainer: "nemoclaw-nim-bar",
+      }) as ReturnType<typeof onboardSession.loadSession>;
+    expect(readRecordedNimContainer("spark-1")).toBe("nemoclaw-nim-bar");
+  });
+
+  it("returns null when neither registry nor session has a nimContainer", () => {
+    registry.getSandbox = () => ({ name: "spark-1", nimContainer: null }) as ReturnType<typeof registry.getSandbox>;
+    onboardSession.loadSession = () =>
+      ({ sandboxName: "spark-1", nimContainer: null }) as ReturnType<typeof onboardSession.loadSession>;
+    expect(readRecordedNimContainer("spark-1")).toBeNull();
+  });
+
+  it("ignores a session that belongs to a different sandbox", () => {
+    registry.getSandbox = () => null;
+    onboardSession.loadSession = () =>
+      ({
+        sandboxName: "other-sandbox",
+        nimContainer: "nemoclaw-nim-foo",
+      }) as ReturnType<typeof onboardSession.loadSession>;
+    expect(readRecordedNimContainer("spark-1")).toBeNull();
+  });
+
+  it("returns null for empty or missing sandbox names", () => {
+    expect(readRecordedNimContainer(null)).toBeNull();
+    expect(readRecordedNimContainer(undefined)).toBeNull();
+    expect(readRecordedNimContainer("")).toBeNull();
   });
 });
 
