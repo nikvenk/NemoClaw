@@ -59,10 +59,15 @@ export HUGGING_FACE_HUB_TOKEN="hf_..."
 
 ---
 
-## Step 1: Start vLLM
+## Step 1: Start vLLM (optional — installer handles this automatically)
 
-The installer detects a running vLLM server and reuses it rather than starting a new one.
-Start vLLM manually before running the installer to control which GPU and model are used.
+The installer detects a running vLLM server on port 8000 and reuses it. If none is
+found, it automatically starts one via `install_vllm()`, selects the highest-VRAM GPU,
+and **waits up to 10 minutes for the HTTP `/health` endpoint to respond** before
+proceeding to the onboard wizard.
+
+Start vLLM manually only if you want explicit control over GPU selection or model
+parameters (e.g., during testing or when re-using an already-downloaded model).
 
 ### Find your compute GPU
 
@@ -77,15 +82,14 @@ nvidia-smi -L
 
 ### Start the container
 
-Replace `device=1` with the index of your compute GPU. Use `--network host` so the
-installer's probe can reach the server on `localhost:8000`.
+Replace `device=1` with the index of your compute GPU.
 
 ```bash
 docker run --detach \
   --name nemoclaw-vllm \
   --restart unless-stopped \
   --network host \
-  --gpus '"device=1"' \
+  --gpus "device=1" \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -e HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN}" \
   -e HF_TOKEN="${HUGGING_FACE_HUB_TOKEN}" \
@@ -94,13 +98,18 @@ docker run --detach \
   --port 8000
 ```
 
-> **Note on GPU flags:** `--gpus '"device=1"'` restricts the container to device 1 and
+> **Note on GPU flags:** `--gpus "device=1"` restricts the container to device 1 and
 > remaps it to device 0 inside the container. Do **not** also set
 > `-e CUDA_VISIBLE_DEVICES=1`; the two flags conflict and cause an
-> `NVMLError_InvalidArgument` crash.
+> `NVMLError_InvalidArgument` crash in vLLM's worker processes.
+>
+> **Note on `--network host`:** Required so the onboard wizard's curl probe can reach
+> the server via any host IP. With bridge networking, Docker's userland proxy binds the
+> host port immediately on container start — before vLLM is ready — causing false-positive
+> readiness checks.
 
-Wait for the server to be ready (first run downloads ~75 GB; subsequent runs load from cache
-in ~2 minutes):
+Wait for the server to be ready. First run downloads ~75 GB; subsequent runs load from
+cache in ~5 minutes:
 
 ```bash
 docker logs -f nemoclaw-vllm
@@ -115,30 +124,40 @@ curl -s http://localhost:8000/v1/models | python3 -m json.tool
 
 ### Base URL for the installer wizard
 
-When the onboard wizard asks for the base URL, use the host's LAN IP address
-(not `localhost`) so the endpoint is reachable from inside Docker containers during
-the gateway probe:
+When the onboard wizard asks for the base URL, include `/v1` and use the host's LAN
+IP address rather than `localhost` — the gateway probe runs inside a Docker container
+and needs a routable address:
 
-```
+```text
 http://<host-lan-ip>:8000/v1
 ```
 
-Find your LAN IP with `ip -4 addr show | grep inet`.
+Find your LAN IP:
 
-The `/v1` suffix is required. The wizard's probe appends `/chat/completions` directly
-to whatever base URL you provide.
+```bash
+ip -4 addr show | grep "inet " | awk '{print $2}' | cut -d/ -f1
+```
 
 ---
 
-## Step 2: Start the OpenShell Gateway
+## Step 2: Start the OpenShell Gateway (optional — installer handles this)
 
-Start the gateway as your regular user (not `sudo`). This ensures the TLS certificates
-and config files are owned by the same user that runs the installer.
+If the gateway is not already running, the installer starts it automatically at step
+[2/8]. The "Still starting gateway cluster... (Ns elapsed)" messages that appear during
+first-time startup are normal — k3s initialisation takes 30–90 seconds.
+
+Start the gateway manually only if you need it running before the installer, or to
+verify it is healthy:
 
 ```bash
 openshell gateway start --name nemoclaw
 # Wait for: ✓ Gateway ready — Endpoint: https://127.0.0.1:8080
 ```
+
+> **Important:** Always start the gateway as your regular user (not `sudo`). If the
+> gateway is created by root, its TLS certificates are stored in root's config directory.
+> When the installer then runs as the regular user, the certificate handshake fails with
+> `invalid peer certificate: BadSignature`.
 
 If the command fails with `Permission denied` on `~/.config/openshell/`, fix ownership
 first (see One-Time System Preparation above).
@@ -150,7 +169,7 @@ first (see One-Time System Preparation above).
 From the NemoClaw source checkout:
 
 ```bash
-cd ~/NemoClaw
+cd ~/NemoClaw && git pull
 HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN}" bash scripts/install.sh
 ```
 
@@ -195,7 +214,7 @@ openclaw agent --agent main --local -m "hello" --session-id test
 The installer prints a one-time tokenized URL at the end of installation.
 **Save it — it is not shown again.**
 
-```
+```text
 http://127.0.0.1:18789/#token=<auth-token>
 ```
 
@@ -231,16 +250,17 @@ openshell inference set -g nemoclaw \
 
 ---
 
-## Teardown and Re-installation
+## Teardown for Re-testing
 
-Use this procedure when testing the installer from scratch or recovering from a broken state.
+Use this procedure when cycling through installs during testing. It tears down only
+the NemoClaw-specific resources and leaves Docker, Node.js, and the model cache intact.
 Tear down in reverse startup order to avoid orphaned containers and stale gateway state.
 
 ```bash
 # 1. Stop the sandbox
 nemoclaw my-assistant stop 2>/dev/null || true
 
-# 2. Destroy the gateway (this also removes the OpenShell k3s cluster)
+# 2. Destroy the gateway (removes the OpenShell k3s cluster)
 openshell gateway destroy --name nemoclaw
 
 # 3. Stop and remove the vLLM container
@@ -250,39 +270,32 @@ docker stop nemoclaw-vllm && docker rm nemoclaw-vllm
 sudo rm -f /home/$USER/.nemoclaw/onboard-session.json
 ```
 
-Then re-run the installer with `--fresh` to discard any partial state:
+Then re-run the installer:
 
 ```bash
 cd ~/NemoClaw && git pull
 HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN}" bash scripts/install.sh --fresh
 ```
 
-> **Note:** When the installer detects no running vLLM server on port 8000, it launches
-> one automatically via `install_vllm()`. You do not need to start vLLM manually for a
-> clean install — the installer selects the highest-VRAM GPU and uses the correct model ID.
-> Start vLLM manually only if you want to control GPU selection or model parameters.
+On a clean install the installer launches vLLM automatically, waits for it to be
+healthy, then proceeds to the onboard wizard. You do not need to start vLLM or the
+gateway manually.
 
 ### Automatic backup before re-installation
 
-When the installer runs and finds an existing sandbox, it automatically calls
-`nemoclaw backup-all` before doing anything destructive. This creates a timestamped
-snapshot of each running sandbox's workspace state at:
+When the installer finds an existing sandbox, it automatically calls `nemoclaw backup-all`
+before doing anything destructive. Snapshots are stored as numbered archives:
 
-```
+```text
 ~/.nemoclaw/rebuild-backups/
+  my-assistant-backup-1.tar.gz
+  my-assistant-backup-2.tar.gz   ← increments on each re-run
 ```
-
-Each backup is stored as a numbered archive (e.g., `my-assistant-backup-1.tar.gz`,
-`my-assistant-backup-2.tar.gz`, etc.). The number increments on each re-run, so
-prior snapshots are preserved.
 
 To restore a backup after a failed re-installation:
 
 ```bash
-# List available backups
 ls ~/.nemoclaw/rebuild-backups/
-
-# Restore into a running sandbox
 nemoclaw my-assistant snapshot restore <backup-name>
 ```
 
@@ -290,31 +303,46 @@ nemoclaw my-assistant snapshot restore <backup-name>
 
 ## Uninstalling
 
-### Remove the sandbox and gateway
+The uninstaller is a single script that removes all NemoClaw host-side resources.
+Docker, Node.js, npm, and Ollama are **not** touched.
 
 ```bash
-nemoclaw my-assistant stop 2>/dev/null || true
-openshell gateway destroy --name nemoclaw
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/uninstall.sh | bash
 ```
 
-### Remove the vLLM container
+### What the uninstaller removes
+
+- All OpenShell sandboxes, the NemoClaw gateway, and registered inference providers
+- NemoClaw-related Docker containers, images, and volumes (including `nemoclaw-vllm`)
+- `~/.nemoclaw/`, `~/.config/openshell/`, `~/.config/nemoclaw/`
+- The global `nemoclaw` npm package and CLI shim
+- The `openshell` binary (unless `--keep-openshell` is passed)
+- NemoClaw-managed swap file (if any)
+- Shell profile PATH entries added by the installer
+
+### What the uninstaller does NOT remove
+
+- Docker, Node.js, npm, and nvm
+- Ollama and its models (pass `--delete-models` to remove NemoClaw-pulled Ollama models)
+- The HuggingFace model cache (`~/.cache/huggingface/`) — remove manually if needed:
 
 ```bash
-docker stop nemoclaw-vllm && docker rm nemoclaw-vllm
-```
-
-### Remove the NemoClaw CLI and state
-
-```bash
-# Unlink the CLI shim
-npm unlink --global nemoclaw 2>/dev/null || true
-rm -f ~/.local/bin/nemoclaw
-
-# Remove NemoClaw state and backups (destructive — removes all sandbox backups)
-rm -rf ~/.nemoclaw
-
-# Optionally remove the HuggingFace model cache (~75 GB)
 rm -rf ~/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+```
+
+### Flags
+
+| Flag | Effect |
+|------|--------|
+| `--yes` | Skip the confirmation prompt (useful for scripted teardowns) |
+| `--keep-openshell` | Leave the `openshell` binary installed |
+| `--delete-models` | Remove NemoClaw-pulled Ollama models |
+
+Example — non-interactive full teardown including Ollama models:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NemoClaw/refs/heads/main/uninstall.sh \
+  | bash -s -- --yes --delete-models
 ```
 
 ---
@@ -348,15 +376,23 @@ Fixed in the `Dockerfile` as of commit `c56e89aa`. Pull the latest and rerun.
 
 ### vLLM `NVMLError_InvalidArgument`
 
-Caused by combining `--gpus '"device=N"'` with `-e CUDA_VISIBLE_DEVICES=N`.
-Remove the `CUDA_VISIBLE_DEVICES` env var — `--gpus '"device=N"'` already restricts
-and remaps the device.
+Caused by combining `--gpus "device=N"` with `-e CUDA_VISIBLE_DEVICES=N`.
+Remove the `CUDA_VISIBLE_DEVICES` env var — `--gpus "device=N"` already restricts
+and remaps the device to index 0 inside the container.
 
-### Installer launches a new vLLM container with the wrong model
+### Onboard wizard validation fails with `exit 7` (connection refused) on port 8000
 
-The installer's `install_vllm()` function runs only if no vLLM server is detected on
-port 8000. If vLLM is already running when the installer starts, it is reused.
-Start vLLM before running the installer to avoid this.
+vLLM was launched by the installer in the background but the model had not finished
+loading when the wizard's probe ran. Watch the container logs in another terminal:
+
+```bash
+docker logs -f nemoclaw-vllm
+# Wait for: INFO: Uvicorn running on http://0.0.0.0:8000
+```
+
+Once that line appears, type `retry` in the wizard. This is fixed in the installer as
+of commit `b88861fa` — `install_vllm()` now polls the `/health` HTTP endpoint (not just
+port reachability) and waits up to 10 minutes before proceeding.
 
 ### Session file owned by root
 
@@ -381,9 +417,23 @@ nvidia/nemotron-3-super-120b-a12b                ← wrong (NIM/NGC API name onl
 A 401 means the HuggingFace token is missing or not exported in the container's
 environment. A 404 means the model ID itself is wrong.
 
-**NGC vLLM container cannot resolve HuggingFace.** If you use the NGC-hosted vLLM
-image (`nvcr.io/nvidia/vllm:...`) instead of the Docker Hub image (`vllm/vllm-openai:latest`),
-the container may fail to reach `huggingface.co` due to NGC proxy or DNS restrictions
-in the container's network namespace. Switch to `--network host` or use the Docker Hub
-image to resolve this. The `docker run` command in Step 1 already uses `--network host`
-and `vllm/vllm-openai:latest` for this reason.
+### NGC vLLM container cannot resolve HuggingFace
+
+If you use the NGC-hosted vLLM image (`nvcr.io/nvidia/vllm:...`) instead of the
+Docker Hub image (`vllm/vllm-openai:latest`), the container may fail to reach
+`huggingface.co` due to NGC proxy or DNS restrictions in the container's network
+namespace. Switch to `--network host` or use the Docker Hub image. The `docker run`
+command in Step 1 already uses `--network host` and `vllm/vllm-openai:latest`.
+
+### Installer launches a new vLLM container instead of reusing the existing one
+
+The installer reuses a running vLLM server on port 8000. If it launches a new container,
+the existing one was not detected — check that it is running and actually serving:
+
+```bash
+docker ps | grep nemoclaw-vllm
+curl -sf http://localhost:8000/health && echo "healthy" || echo "not ready"
+```
+
+If the container is running but the health check fails, wait for the model to finish
+loading (watch `docker logs -f nemoclaw-vllm`).
