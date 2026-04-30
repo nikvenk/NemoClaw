@@ -387,11 +387,13 @@ RUN mkdir -p /sandbox/.openclaw-data/logs \
         /sandbox/.openclaw-data/sandbox \
         /sandbox/.openclaw-data/media \
         /sandbox/.openclaw-data/plugin-runtime-deps \
+        /sandbox/.openclaw-data/workspace \
     && chown sandbox:sandbox /sandbox/.openclaw-data/logs \
         /sandbox/.openclaw-data/credentials \
         /sandbox/.openclaw-data/sandbox \
         /sandbox/.openclaw-data/media \
         /sandbox/.openclaw-data/plugin-runtime-deps \
+        /sandbox/.openclaw-data/workspace \
     && for dir in logs credentials sandbox media plugin-runtime-deps; do \
         if [ -L "/sandbox/.openclaw/$dir" ]; then true; \
         elif [ -e "/sandbox/.openclaw/$dir" ]; then \
