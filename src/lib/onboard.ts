@@ -3690,15 +3690,21 @@ async function createSandbox(
         current.policyPresets = previousPolicies;
         return current;
       });
-    } else if (
-      Array.isArray(previousPolicies) &&
-      previousPolicies.length > 0 &&
-      isNonInteractive() &&
-      (process.env.NEMOCLAW_POLICY_PRESETS || "").trim().length > 0
-    ) {
-      note(
-        `  [non-interactive] NEMOCLAW_POLICY_PRESETS overrides previous presets on recreate (was: ${previousPolicies.join(", ")}).`,
-      );
+    } else {
+      onboardSession.updateSession((current: Session) => {
+        current.policyPresets = null;
+        return current;
+      });
+      if (
+        Array.isArray(previousPolicies) &&
+        previousPolicies.length > 0 &&
+        isNonInteractive() &&
+        (process.env.NEMOCLAW_POLICY_PRESETS || "").trim().length > 0
+      ) {
+        note(
+          `  [non-interactive] NEMOCLAW_POLICY_PRESETS overrides previous presets on recreate (was: ${previousPolicies.join(", ")}).`,
+        );
+      }
     }
 
     note(`  Deleting and recreating sandbox '${sandboxName}'...`);
