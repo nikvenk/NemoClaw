@@ -266,7 +266,10 @@ describe("shields — unit logic", () => {
   // -------------------------------------------------------------------
   describe("NC-2227-02: three-state shields model", () => {
     it("deriveShieldsMode encodes the fresh, locked, unlocked, and legacy-state cases", () => {
-      const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "lib", "shields.ts"), "utf-8");
+      const src = fs.readFileSync(
+        path.join(import.meta.dirname, "..", "src", "lib", "shields.ts"),
+        "utf-8",
+      );
       const fn = src.match(/function deriveShieldsMode\([\s\S]*?^}/m);
       expect(fn).toBeTruthy();
       expect(fn![0]).toContain('if (!hasStateFile) return "mutable_default"');
@@ -346,7 +349,10 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     const src = getSourceCode();
     const fnStart = src.indexOf("function restoreSandboxState");
     const fnBody = src.slice(fnStart);
-    const cleanupCheck = fnBody.slice(fnBody.indexOf("const rmResult"), fnBody.indexOf("const extractCmd"));
+    const cleanupCheck = fnBody.slice(
+      fnBody.indexOf("const rmResult"),
+      fnBody.indexOf("const extractCmd"),
+    );
 
     expect(cleanupCheck).toContain("rmResult.status !== 0");
     expect(cleanupCheck).toContain("rmResult.error");
@@ -355,16 +361,27 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(cleanupCheck).toContain("failedDirs: [...localDirs]");
   });
 
-  it("restore fails closed when post-restore ownership repair fails", () => {
+  it("restore treats post-restore ownership repair as best-effort and verifies usability", () => {
     const src = getSourceCode();
     const fnStart = src.indexOf("function restoreSandboxState");
     const fnBody = src.slice(fnStart);
-    const chownCheck = fnBody.slice(fnBody.indexOf("const chownResult"), fnBody.indexOf("if (ownershipFixed)"));
+    const chownCheck = fnBody.slice(
+      fnBody.indexOf("const chownCmd"),
+      fnBody.indexOf("const usabilityCmd"),
+    );
+    const usabilityCheck = fnBody.slice(
+      fnBody.indexOf("const usabilityCmd"),
+      fnBody.indexOf("} else {\n      failedDirs.push(...localDirs);"),
+    );
 
-    expect(chownCheck).toContain("chownResult.status !== 0");
+    expect(chownCheck).toContain("chown -R sandbox:sandbox --");
+    expect(chownCheck).toContain("2>/dev/null || true");
     expect(chownCheck).toContain("chownResult.error");
     expect(chownCheck).toContain("chownResult.signal");
-    expect(chownCheck).toContain("FAILED: post-restore chown failed");
+    expect(chownCheck).toContain("WARNING: post-restore ownership repair did not complete");
+    expect(usabilityCheck).toContain("[ -r");
+    expect(usabilityCheck).toContain("[ -w");
+    expect(usabilityCheck).toContain("FAILED: restored state usability check failed");
     expect(fnBody).toContain("failedDirs.push(...localDirs)");
   });
 });
