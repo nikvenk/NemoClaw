@@ -164,7 +164,7 @@ export function buildRecoveryScript(agent: AgentDefinition | null, port: number)
     ? gatewayLaunchCommand(`"$AGENT_BIN" gateway run --port ${port}`)
     : gatewayLaunchCommand(`${configuredGatewayCommand} --port ${port}`);
   const isHermes = agent.name === "hermes";
-  const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes-data; " : "";
+  const hermesHome = isHermes ? "export HERMES_HOME=/sandbox/.hermes; " : "";
 
   // Source /tmp/nemoclaw-proxy-env.sh explicitly before launching. That file
   // is the single source of truth for NODE_OPTIONS preload guards (safety-net,
