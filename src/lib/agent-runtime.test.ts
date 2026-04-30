@@ -171,6 +171,8 @@ describe("buildRecoveryScript", () => {
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {
       const script = buildOpenClawRecoveryScript(18789);
       expect(script).toContain("os.fchown(fd");
+      expect(script).toContain("pw.pw_gid");
+      expect(script).not.toContain("grp.getgrnam");
       expect(script).toContain("owner_mode = 0o644");
       expect(script).toContain("os.fchmod(fd, owner_mode)");
       expect(script).toContain("/tmp/gateway.log 'gateway'");

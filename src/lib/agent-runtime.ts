@@ -55,7 +55,7 @@ function buildNoFollowLogSetupCommand(
 ): string {
   const displayPath = path.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const prepareLog = [
-    "import errno, grp, os, pwd, stat, sys",
+    "import errno, os, pwd, stat, sys",
     "path = sys.argv[1]",
     "owner = sys.argv[2] if len(sys.argv) > 2 else ''",
     `owner_mode = ${ownerMode}`,
@@ -79,11 +79,10 @@ function buildNoFollowLogSetupCommand(
     "    if owner and os.geteuid() == 0:",
     "        try:",
     "            pw = pwd.getpwnam(owner)",
-    "            gr = grp.getgrnam(owner)",
     "        except KeyError:",
     "            os.fchmod(fd, fallback_mode)",
     "        else:",
-    "            os.fchown(fd, pw.pw_uid, gr.gr_gid)",
+    "            os.fchown(fd, pw.pw_uid, pw.pw_gid)",
     "            os.fchmod(fd, owner_mode)",
     "    else:",
     "        os.fchmod(fd, fallback_mode)",

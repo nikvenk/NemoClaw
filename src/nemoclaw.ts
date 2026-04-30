@@ -330,14 +330,13 @@ function isSandboxGatewayRunning(sandboxName: string): boolean | null {
 }
 
 /**
- * Restart the OpenClaw gateway process inside the sandbox after a pod restart.
+ * Restart the gateway process inside the sandbox after a pod restart.
  * Cleans stale lock/temp files, sources proxy config, and launches the gateway
  * in the background. Returns true on success.
  */
 function recoverSandboxProcesses(sandboxName: string): boolean {
   const agent = agentRuntime.getSessionAgent(sandboxName);
   const agentScript = agentRuntime.buildRecoveryScript(agent, agent?.forwardPort ?? DASHBOARD_PORT);
-  const script = agentScript || agentRuntime.buildOpenClawRecoveryScript(DASHBOARD_PORT);
   const hasRecoveryMarker = (result: SandboxCommandResult | null) =>
     !!(
       result &&
@@ -346,6 +345,14 @@ function recoverSandboxProcesses(sandboxName: string): boolean {
   const recoveredSsh = (result: SandboxCommandResult | null) =>
     !!(result && result.status === 0 && hasRecoveryMarker(result));
 
+  if (agentScript) {
+    // Non-OpenClaw manifests do not yet declare a runtime user for root
+    // sandbox exec. Recover them over SSH so the launch inherits the sandbox
+    // login user instead of creating root-owned agent state under /sandbox.
+    return recoveredSsh(executeSandboxCommand(sandboxName, agentScript));
+  }
+
+  const script = agentRuntime.buildOpenClawRecoveryScript(DASHBOARD_PORT);
   const execResult = executeSandboxExecCommand(sandboxName, script, 30000);
   if (hasRecoveryMarker(execResult)) return true;
   if (execResult !== null) return false;
