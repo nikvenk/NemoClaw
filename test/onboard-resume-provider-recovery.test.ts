@@ -65,15 +65,14 @@ describe("providerNameToOptionKey", () => {
     expect(providerNameToOptionKey("nvidia-nim")).toBe("build");
   });
 
-  it("disambiguates vllm-local via nimContainer; refuses to guess otherwise", () => {
-    // Local NIM persists as provider="vllm-local" + nimContainer; without
-    // the nimContainer it's ambiguous (could be standalone vLLM or NIM), so
-    // we return null and let the caller surface that rather than silently
-    // routing into the wrong branch.
+  it("disambiguates vllm-local via nimContainer", () => {
+    // NIM persists as provider="vllm-local" + nimContainer; absence of the
+    // nimContainer marker reliably means standalone vLLM in registry/session
+    // recovery (the standalone path never records a container).
     expect(providerNameToOptionKey("vllm-local", { hasNimContainer: true })).toBe("nim-local");
-    expect(providerNameToOptionKey("vllm-local", { hasNimContainer: false })).toBeNull();
-    expect(providerNameToOptionKey("vllm-local", {})).toBeNull();
-    expect(providerNameToOptionKey("vllm-local")).toBeNull();
+    expect(providerNameToOptionKey("vllm-local", { hasNimContainer: false })).toBe("vllm");
+    expect(providerNameToOptionKey("vllm-local", {})).toBe("vllm");
+    expect(providerNameToOptionKey("vllm-local")).toBe("vllm");
   });
 
   it("maps remote provider names via REMOTE_PROVIDER_CONFIG reverse lookup", () => {

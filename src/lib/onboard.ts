@@ -4312,13 +4312,13 @@ function providerNameToOptionKey(
 ): string | null {
   if (!name) return null;
   if (name === "ollama-local") return "ollama";
-  // Local NIM and standalone vLLM both persist as provider="vllm-local";
-  // the presence of a nimContainer record disambiguates them. Without that
-  // marker (e.g. live-gateway-only recovery, where the gateway returns
-  // provider/model only) the value is genuinely ambiguous — refuse to guess
-  // and let callers surface the situation rather than silently routing into
-  // the wrong branch.
-  if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : null;
+  // Local NIM and standalone vLLM both persist as provider="vllm-local". NIM
+  // is positively identified by a nimContainer record; the absence of one in
+  // registry/session recovery reliably means standalone vLLM (the standalone
+  // path never records a container), so default to "vllm" there. Live-gateway
+  // recovery doesn't carry container info either, but the caller's
+  // option-availability check still gates on whether vllm is actually running.
+  if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : "vllm";
   // `nvidia-nim` is a legacy alias for cloud NVIDIA Endpoints (see
   // setupInference: it routes nvidia-nim through REMOTE_PROVIDER_CONFIG.build),
   // not a marker for Local NIM. Local NIM persists as vllm-local + nimContainer.
