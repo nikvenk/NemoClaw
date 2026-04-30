@@ -34,12 +34,7 @@ export interface RunDeprecatedOnboardAliasCommandDeps extends RunOnboardCommandD
   kind: "setup" | "setup-spark";
 }
 
-const ONBOARD_BASE_ARGS = [
-  "--non-interactive",
-  "--resume",
-  "--fresh",
-  "--recreate-sandbox",
-];
+const ONBOARD_BASE_ARGS = ["--non-interactive", "--resume", "--fresh", "--recreate-sandbox"];
 
 function onboardUsageLines(noticeAcceptFlag: string): string[] {
   const name = CLI_NAME;

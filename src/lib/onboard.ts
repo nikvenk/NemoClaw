@@ -49,7 +49,8 @@ function agentProductName(): string {
  *  Covers CSI (color, erase, cursor), OSC, and C1 two-byte escapes per ECMA-48. */
 const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|[@-_])/g;
 const runner: typeof import("./runner") = require("./runner");
-const { ROOT, SCRIPTS, redact, run, runShell, runCapture, runFile, shellQuote, validateName } = runner;
+const { ROOT, SCRIPTS, redact, run, runShell, runCapture, runFile, shellQuote, validateName } =
+  runner;
 const docker: typeof import("./docker") = require("./docker");
 const {
   dockerContainerInspectFormat,
@@ -446,11 +447,7 @@ async function promptYesNoOrDefault(
 ): Promise<boolean> {
   const fullQuestion = `${question} ${defaultIsYes ? "[Y/n]" : "[y/N]"}: `;
   const nonInteractive = isNonInteractive();
-  const input = nonInteractive
-    ? envVar
-      ? process.env[envVar]
-      : null
-    : await prompt(fullQuestion);
+  const input = nonInteractive ? (envVar ? process.env[envVar] : null) : await prompt(fullQuestion);
 
   const value = String(input ?? "")
     .trim()
@@ -1067,8 +1064,21 @@ function persistMigratedLegacyKeys(): void {
   }
 }
 
-function upsertProvider(name: string, type: string, credentialEnv: string, baseUrl: string | null, env: NodeJS.ProcessEnv = {}) {
-  const result = onboardProviders.upsertProvider(name, type, credentialEnv, baseUrl, env, runOpenshell);
+function upsertProvider(
+  name: string,
+  type: string,
+  credentialEnv: string,
+  baseUrl: string | null,
+  env: NodeJS.ProcessEnv = {},
+) {
+  const result = onboardProviders.upsertProvider(
+    name,
+    type,
+    credentialEnv,
+    baseUrl,
+    env,
+    runOpenshell,
+  );
   if (result.ok && credentialEnv) {
     const stagedValue = stagedLegacyValues.get(credentialEnv);
     if (stagedValue !== undefined) {
@@ -1521,7 +1531,11 @@ function agentSupportsWebSearch(
   agent: AgentDefinition | null | undefined,
   dockerfilePathOverride: string | null = null,
 ): boolean {
-  const candidates = [dockerfilePathOverride, agent?.dockerfilePath, path.join(ROOT, "Dockerfile")].filter(
+  const candidates = [
+    dockerfilePathOverride,
+    agent?.dockerfilePath,
+    path.join(ROOT, "Dockerfile"),
+  ].filter(
     (candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
   );
 
@@ -1559,7 +1573,7 @@ async function configureWebSearch(
     const validation = validateBraveSearchApiKey(braveApiKey);
     if (!validation.ok) {
       console.warn(
-        "  Brave Search API key validation failed. Web search will be disabled — re-enable later via `nemoclaw config web-search`.",
+        `  Brave Search API key validation failed. Web search will be disabled — re-enable later via \`${cliName()} config web-search\`.`,
       );
       if (validation.message) {
         console.warn(`  ${validation.message}`);
@@ -1604,10 +1618,10 @@ function verifyWebSearchInsideSandbox(
     if (agentName === "hermes") {
       // `hermes dump` outputs config_overrides and active toolsets.
       // Look for the web backend in its output.
-      const dump = runCaptureOpenshell(
-        ["sandbox", "exec", sandboxName, "hermes", "dump"],
-        { ignoreError: true, timeout: 10_000 },
-      );
+      const dump = runCaptureOpenshell(["sandbox", "exec", sandboxName, "hermes", "dump"], {
+        ignoreError: true,
+        timeout: 10_000,
+      });
       if (!dump) {
         console.warn("  ⚠ Could not verify web search config inside sandbox (hermes dump failed).");
         return;
@@ -1619,9 +1633,11 @@ function verifyWebSearchInsideSandbox(
         /^\s*active toolsets:\s*.*\bweb\b/im.test(dump) ||
         /^\s*toolsets:\s*.*\bweb\b/im.test(dump);
       if (!hasWebBackend) {
-        console.warn("  ⚠ Web search was configured but Hermes does not report an active web backend.");
+        console.warn(
+          "  ⚠ Web search was configured but Hermes does not report an active web backend.",
+        );
         console.warn("    The agent may not have accepted the web search configuration.");
-        console.warn("    Check: nemoclaw " + sandboxName + " exec hermes dump");
+        console.warn(`    Check: ${cliName()} ${sandboxName} exec hermes dump`);
       } else {
         console.log("  ✓ Web search is active inside sandbox");
       }
@@ -1640,7 +1656,9 @@ function verifyWebSearchInsideSandbox(
         if (parsed?.tools?.web?.search?.enabled) {
           console.log("  ✓ Web search is active inside sandbox");
         } else {
-          console.warn("  ⚠ Web search was configured but tools.web.search is not enabled in openclaw.json.");
+          console.warn(
+            "  ⚠ Web search was configured but tools.web.search is not enabled in openclaw.json.",
+          );
         }
       } catch {
         console.warn("  ⚠ Could not parse openclaw.json to verify web search config.");
@@ -2730,7 +2748,9 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
     );
     console.error(`    blueprint.yaml max_openshell_version: ${maxOpenshellVersion}`);
     console.error("");
-    console.error(`    Upgrade ${cliDisplayName()} to a version that supports your OpenShell release,`);
+    console.error(
+      `    Upgrade ${cliDisplayName()} to a version that supports your OpenShell release,`,
+    );
     console.error("    or install a supported OpenShell version:");
     console.error("      https://github.com/NVIDIA/OpenShell/releases");
     console.error("");
@@ -2840,7 +2860,9 @@ async function preflight(): Promise<ReturnType<typeof nim.detectGpu>> {
     let portCheck = await checkPortAvailable(port);
     if (!portCheck.ok) {
       if ((port === GATEWAY_PORT || port === DASHBOARD_PORT) && gatewayReuseState === "healthy") {
-        console.log(`  ✓ Port ${port} already owned by healthy ${cliDisplayName()} runtime (${label})`);
+        console.log(
+          `  ✓ Port ${port} already owned by healthy ${cliDisplayName()} runtime (${label})`,
+        );
         continue;
       }
       // Auto-cleanup orphaned SSH port-forward from a previous NemoClaw session
@@ -3539,7 +3561,7 @@ async function createSandbox(
       }
       if (isNonInteractive()) {
         console.error(
-          "  Aborting: resolve the messaging channel conflict above or run `nemoclaw <sandbox> destroy` on the other sandbox.",
+          `  Aborting: resolve the messaging channel conflict above or run \`${cliName()} <sandbox> destroy\` on the other sandbox.`,
         );
         process.exit(1);
       }
@@ -3850,9 +3872,7 @@ async function createSandbox(
       cleanupCustomBuildCtx();
       const errorObject = typeof err === "object" && err !== null ? err : null;
       if (isErrnoException(errorObject) && errorObject.code === "EACCES") {
-        console.error(
-          `  Permission denied while copying build context from: ${buildContextDir}`,
-        );
+        console.error(`  Permission denied while copying build context from: ${buildContextDir}`);
         console.error(
           "  The --from flag uses the Dockerfile's parent directory as the Docker build context.",
         );
@@ -6753,7 +6773,11 @@ function ensureDashboardForward(
   } catch (err) {
     if (!rollbackSandboxOnFailure) throw err;
     const delResult = runOpenshell(["sandbox", "delete", sandboxName], { ignoreError: true });
-    for (const line of buildOrphanedSandboxRollbackMessage(sandboxName, err, delResult.status === 0)) {
+    for (const line of buildOrphanedSandboxRollbackMessage(
+      sandboxName,
+      err,
+      delResult.status === 0,
+    )) {
       console.error(line);
     }
     process.exit(1);
@@ -7081,7 +7105,7 @@ function printDashboard(
       console.log(`  ${entry.label}: ${entry.url}`);
     }
     console.log(
-      `  Token:       nemoclaw ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
+      `  Token:       ${cliName()} ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
     );
     console.log(
       `               append  #token=<token>  to the URL, or see /tmp/gateway.log inside the sandbox.`,
@@ -7216,9 +7240,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
   const stdoutIsTty = Boolean(process.stdout && process.stdout.isTTY);
   const cannotPrompt = isNonInteractive() || !stdinIsTty || !stdoutIsTty;
   let requestedSandboxName: string | null =
-    typeof opts.sandboxName === "string" && opts.sandboxName.length > 0
-      ? opts.sandboxName
-      : null;
+    typeof opts.sandboxName === "string" && opts.sandboxName.length > 0 ? opts.sandboxName : null;
   let requestedSandboxSource: "--name" | "NEMOCLAW_SANDBOX_NAME" | null = requestedSandboxName
     ? "--name"
     : null;
@@ -7396,7 +7418,9 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
             );
           }
         }
-        console.error(`  Run: ${cliName()} onboard              # start a fresh onboarding session`);
+        console.error(
+          `  Run: ${cliName()} onboard              # start a fresh onboarding session`,
+        );
         console.error("  Or rerun with the original settings to continue that session.");
         process.exit(1);
       }
@@ -7536,7 +7560,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     let sandboxName = session?.sandboxName || requestedSandboxName || null;
     if (sandboxName && RESERVED_SANDBOX_NAMES.has(sandboxName)) {
       console.error(
-        `  Reserved name in resumed session: '${sandboxName}' is a NemoClaw CLI command.`,
+        `  Reserved name in resumed session: '${sandboxName}' is a ${cliDisplayName()} CLI command.`,
       );
       console.error("  Start a fresh onboard with --name <sandbox> to choose a different name.");
       process.exit(1);
@@ -7657,7 +7681,9 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
 
     const webSearchSupportProbePath = fromDockerfile ? path.resolve(fromDockerfile) : null;
     if (webSearchConfig && !agentSupportsWebSearch(agent, webSearchSupportProbePath)) {
-      note(`  Web search is not yet supported by ${agent?.displayName ?? "this sandbox image"}. Clearing stale config.`);
+      note(
+        `  Web search is not yet supported by ${agent?.displayName ?? "this sandbox image"}. Clearing stale config.`,
+      );
       webSearchConfig = null;
       if (session) {
         session.webSearchConfig = null;
@@ -7847,14 +7873,11 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     // never received the legacy secret, so unlinking the file would
     // strand the user's only copy.
     const allStagedMigrated =
-      stagedLegacyKeys.length > 0 &&
-      stagedLegacyKeys.every((k) => migratedLegacyKeys.has(k));
+      stagedLegacyKeys.length > 0 && stagedLegacyKeys.every((k) => migratedLegacyKeys.has(k));
     if (allStagedMigrated) {
       removeLegacyCredentialsFile();
     } else if (stagedLegacyKeys.length > 0) {
-      const unmigrated = stagedLegacyKeys.filter(
-        (k) => !migratedLegacyKeys.has(k),
-      );
+      const unmigrated = stagedLegacyKeys.filter((k) => !migratedLegacyKeys.has(k));
       console.error(
         `  Kept ~/.nemoclaw/credentials.json: ${String(unmigrated.length)} ` +
           `legacy credential(s) were not migrated verbatim to the gateway in this run ` +

@@ -45,10 +45,7 @@ const {
 } = require("./lib/onboard");
 const { ensureOllamaAuthProxy } = require("./lib/onboard-ollama-proxy");
 const { parseGatewayTokenArgs, runGatewayTokenCommand } = require("./lib/gateway-token-command");
-const {
-  getCredential,
-  prompt: askPrompt,
-} = require("./lib/credentials");
+const { getCredential, prompt: askPrompt } = require("./lib/credentials");
 const registry = require("./lib/registry");
 import type { SandboxEntry } from "./lib/registry";
 const nim = require("./lib/nim");
@@ -1048,7 +1045,9 @@ function printOldLogsCompatibilityGuidance(installedVersion = null) {
   console.error(
     `  Installed OpenShell${versionText} is too old or incompatible with \`${CLI_NAME} logs\`.`,
   );
-  console.error(`  ${CLI_DISPLAY_NAME} expects \`openshell logs <name>\` and live streaming via \`--tail\`.`);
+  console.error(
+    `  ${CLI_DISPLAY_NAME} expects \`openshell logs <name>\` and live streaming via \`--tail\`.`,
+  );
   console.error(
     `  Upgrade OpenShell by rerunning \`${CLI_NAME} onboard\`, or reinstall the OpenShell CLI and try again.`,
   );
@@ -1242,11 +1241,19 @@ async function credentialsCommand(args: string[]): Promise<void> {
     console.log(`  Usage: ${CLI_NAME} credentials <subcommand>`);
     console.log("");
     console.log("  Subcommands:");
-    console.log("    list                  List provider credentials registered with the OpenShell gateway");
-    console.log("    reset <PROVIDER> [--yes]   Remove a provider credential so onboard re-prompts");
+    console.log(
+      "    list                  List provider credentials registered with the OpenShell gateway",
+    );
+    console.log(
+      "    reset <PROVIDER> [--yes]   Remove a provider credential so onboard re-prompts",
+    );
     console.log("");
-    console.log("  Credentials live in the OpenShell gateway. Inspect with `openshell provider list`.");
-    console.log("  Nothing is persisted to host disk; deploy/non-onboard commands read from env vars.");
+    console.log(
+      "  Credentials live in the OpenShell gateway. Inspect with `openshell provider list`.",
+    );
+    console.log(
+      "  Nothing is persisted to host disk; deploy/non-onboard commands read from env vars.",
+    );
     console.log("");
     return;
   }
@@ -1256,8 +1263,10 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // us list (or later delete) providers from the wrong place.
     const recovery = await recoverNamedGatewayRuntime();
     if (!recovery.recovered) {
-      console.error("  Could not query the NemoClaw OpenShell gateway. Is it running?");
-      console.error("  Run 'openshell gateway start --name nemoclaw' or 'nemoclaw onboard' first.");
+      console.error(`  Could not query the ${CLI_DISPLAY_NAME} OpenShell gateway. Is it running?`);
+      console.error(
+        `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
+      );
       process.exit(1);
     }
     const result = runOpenshell(["provider", "list", "--names"], {
@@ -1266,7 +1275,9 @@ async function credentialsCommand(args: string[]): Promise<void> {
     });
     if (result.status !== 0) {
       console.error("  Could not query OpenShell gateway. Is it running?");
-      console.error("  Run 'openshell gateway start --name nemoclaw' or 'nemoclaw onboard' first.");
+      console.error(
+        `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
+      );
       process.exit(1);
     }
     const allNames = String(result.stdout || "")
@@ -1323,9 +1334,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // the gateway provider list could tear down a running bridge and
     // leave the sandbox in a half-configured state.
     if (isBridgeProviderName(key)) {
-      console.error(
-        `  '${key}' is a per-sandbox messaging bridge, not a credential.`,
-      );
+      console.error(`  '${key}' is a per-sandbox messaging bridge, not a credential.`);
       console.error(
         `  Use \`${CLI_NAME} <sandbox> channels remove <telegram|discord|slack>\` to retire`,
       );
@@ -1339,7 +1348,9 @@ async function credentialsCommand(args: string[]): Promise<void> {
     }
     const skipPrompt = args.includes("--yes") || args.includes("-y");
     if (!skipPrompt) {
-      const answer = (await askPrompt(`  Remove provider '${key}' from the OpenShell gateway? [y/N]: `))
+      const answer = (
+        await askPrompt(`  Remove provider '${key}' from the OpenShell gateway? [y/N]: `)
+      )
         .trim()
         .toLowerCase();
       if (answer !== "y" && answer !== "yes") {
@@ -2081,7 +2092,12 @@ function streamSandboxFollowLogs(sandboxName: string): void {
   });
 
   const addSource = (label: string, args: string[]) => {
-    const source = { label, args, child: spawn(getOpenshellBinary(), args, spawnOptions), done: false };
+    const source = {
+      label,
+      args,
+      child: spawn(getOpenshellBinary(), args, spawnOptions),
+      done: false,
+    };
     sources.push(source);
     source.child.on("error", (error: Error) => {
       markSourceDone(source, 1, error.message);
@@ -2401,7 +2417,9 @@ async function applyChannelAddToGatewayAndRegistry(
 ): Promise<void> {
   const recovery = await recoverNamedGatewayRuntime();
   if (!recovery.recovered) {
-    console.error("  Could not reach the NemoClaw OpenShell gateway. Tokens were staged");
+    console.error(
+      `  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway. Tokens were staged`,
+    );
     console.error("  in env for this run only — re-run after starting the gateway, or run");
     console.error("  'openshell gateway start --name nemoclaw' manually.");
     process.exit(1);
@@ -2439,8 +2457,12 @@ async function applyChannelRemoveToGatewayAndRegistry(
 ): Promise<void> {
   const recovery = await recoverNamedGatewayRuntime();
   if (!recovery.recovered) {
-    console.error("  Could not reach the NemoClaw OpenShell gateway to delete the bridge.");
-    console.error("  Re-run after starting the gateway, or run 'openshell gateway start --name nemoclaw'.");
+    console.error(
+      `  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway to delete the bridge.`,
+    );
+    console.error(
+      "  Re-run after starting the gateway, or run 'openshell gateway start --name nemoclaw'.",
+    );
     process.exit(1);
   }
   // Capture each delete's outcome. If any non-NotFound failure surfaces
@@ -2482,7 +2504,9 @@ async function applyChannelRemoveToGatewayAndRegistry(
 async function promptAndRebuild(sandboxName: string, actionDesc: string): Promise<void> {
   if (isNonInteractive()) {
     console.log("");
-    console.log(`  Change queued. Run '${CLI_NAME} ${sandboxName} rebuild' to apply (${actionDesc}).`);
+    console.log(
+      `  Change queued. Run '${CLI_NAME} ${sandboxName} rebuild' to apply (${actionDesc}).`,
+    );
     return;
   }
   const answer = (await askPrompt(`  Rebuild '${sandboxName}' now to apply? [Y/n]: `))
@@ -2532,7 +2556,7 @@ async function sandboxChannelsAdd(sandboxName: string, args: string[] = []): Pro
     if (isNonInteractive()) {
       console.error(`  Missing ${envKey} for channel '${channelArg}'.`);
       console.error(
-        `  Set ${envKey} in the environment or via 'nemoclaw credentials' before running in non-interactive mode.`,
+        `  Set ${envKey} in the environment or via '${CLI_NAME} credentials' before running in non-interactive mode.`,
       );
       process.exit(1);
     }
@@ -3204,9 +3228,7 @@ async function sandboxRebuild(
       console.error("");
       console.error(`  ${_RD}Rebuild preflight failed:${R} provider credential not found.`);
       console.error(`  The non-interactive recreate step requires ${rebuildCredentialEnv},`);
-      console.error(
-        "  but it is not set in the environment.",
-      );
+      console.error("  but it is not set in the environment.");
       console.error("");
       console.error("  To fix, do one of:");
       console.error(`    export ${rebuildCredentialEnv}=<your-key>`);
@@ -3417,7 +3439,9 @@ async function sandboxRebuild(
     console.error(`    2. Run: ${CLI_NAME} onboard --resume`);
     console.error(`       This will recreate sandbox '${sandboxName}'.`);
     console.error(`    3. Then restore your workspace state:`);
-    console.error(`       ${CLI_NAME} ${sandboxName} snapshot restore "${backup.manifest.timestamp}"`);
+    console.error(
+      `       ${CLI_NAME} ${sandboxName} snapshot restore "${backup.manifest.timestamp}"`,
+    );
     console.error("");
     bail(
       `Recreate failed (sandbox destroyed). Backup: ${backup.manifest.backupPath}`,
@@ -4002,7 +4026,9 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
       console.log(
         `                                             Create a snapshot (auto-versioned v1, v2, ...)`,
       );
-      console.log(`    ${CLI_NAME} ${sandboxName} snapshot list            List available snapshots`);
+      console.log(
+        `    ${CLI_NAME} ${sandboxName} snapshot list            List available snapshots`,
+      );
       console.log(`    ${CLI_NAME} ${sandboxName} snapshot restore [selector] [--to <dst>]`);
       console.log(
         `                                             Restore by version (v1), name, or timestamp.`,
@@ -4217,9 +4243,13 @@ function help() {
     `    ${D}• Change inference model:  openshell inference set -g nemoclaw --model <model> --provider <provider>${R}`,
   );
   lines.push(`    ${D}• Add network presets:     use the policy-add command on your sandbox${R}`);
-  lines.push(`    ${D}• Change credentials:      credentials reset <PROVIDER>, then re-run onboard${R}`);
+  lines.push(
+    `    ${D}• Change credentials:      credentials reset <PROVIDER>, then re-run onboard${R}`,
+  );
   lines.push(`    ${D}• Agent config is read-only inside the sandbox (Landlock enforced).${R}`);
-  lines.push(`    ${D}  To change ${AGENT_PRODUCT_NAME} settings, re-run onboard to rebuild the sandbox.${R}`);
+  lines.push(
+    `    ${D}  To change ${AGENT_PRODUCT_NAME} settings, re-run onboard to rebuild the sandbox.${R}`,
+  );
 
   // ── Footer ──
   lines.push("");
@@ -4345,11 +4375,15 @@ const [cmd, ...args] = process.argv.slice(2);
     switch (action) {
       case "connect":
         if (actionArgs.length > 0) {
-          console.error(`  Unknown connect argument${actionArgs.length === 1 ? "" : "s"}: ${actionArgs.join(" ")}`);
+          console.error(
+            `  Unknown connect argument${actionArgs.length === 1 ? "" : "s"}: ${actionArgs.join(" ")}`,
+          );
           if (actionArgs.includes("--dangerously-skip-permissions")) {
-            console.error("  --dangerously-skip-permissions was removed; use shields commands instead.");
+            console.error(
+              "  --dangerously-skip-permissions was removed; use shields commands instead.",
+            );
           }
-          console.error("  Usage: nemoclaw <name> connect");
+          console.error(`  Usage: ${CLI_NAME} <name> connect`);
           process.exit(1);
         }
         await sandboxConnect(cmd);
@@ -4377,7 +4411,7 @@ const [cmd, ...args] = process.argv.slice(2);
           parseGatewayTokenArgs(actionArgs);
         if (gatewayTokenUnknown.length > 0) {
           console.error(`  Unknown flag: ${gatewayTokenUnknown[0]}`);
-          console.error("  Usage: nemoclaw <name> gateway-token [--quiet|-q]");
+          console.error(`  Usage: ${CLI_NAME} <name> gateway-token [--quiet|-q]`);
           process.exit(1);
         }
         // Suppress EPIPE traces when the consumer closes the pipe early
@@ -4477,7 +4511,9 @@ const [cmd, ...args] = process.argv.slice(2);
             break;
           default:
             console.error(`  Unknown channels subcommand: ${channelsSub}`);
-            console.error(`  Usage: ${CLI_NAME} <name> channels <list|add|remove|stop|start> [args]`);
+            console.error(
+              `  Usage: ${CLI_NAME} <name> channels <list|add|remove|stop|start> [args]`,
+            );
             console.error("    list                  List supported messaging channels");
             console.error("    add <channel>         Store credentials and rebuild the sandbox");
             console.error("    remove <channel>      Clear credentials and rebuild the sandbox");
@@ -4500,14 +4536,18 @@ const [cmd, ...args] = process.argv.slice(2);
               if (flag === "--key") {
                 if (i + 1 >= actionArgs.length || actionArgs[i + 1].startsWith("--")) {
                   console.error("  --key requires a value.");
-                  console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                  console.error(
+                    `  Usage: ${CLI_NAME} <name> config get [--key dotpath] [--format json|yaml]`,
+                  );
                   process.exit(1);
                 }
                 configOpts.key = actionArgs[++i];
               } else if (flag === "--format") {
                 if (i + 1 >= actionArgs.length || actionArgs[i + 1].startsWith("--")) {
                   console.error("  --format requires a value (json|yaml).");
-                  console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                  console.error(
+                    `  Usage: ${CLI_NAME} <name> config get [--key dotpath] [--format json|yaml]`,
+                  );
                   process.exit(1);
                 }
                 const format = actionArgs[++i];
@@ -4518,7 +4558,9 @@ const [cmd, ...args] = process.argv.slice(2);
                 configOpts.format = format;
               } else {
                 console.error(`  Unknown flag: ${flag}`);
-                console.error("  Usage: nemoclaw <name> config get [--key dotpath] [--format json|yaml]");
+                console.error(
+                  `  Usage: ${CLI_NAME} <name> config get [--key dotpath] [--format json|yaml]`,
+                );
                 process.exit(1);
               }
             }

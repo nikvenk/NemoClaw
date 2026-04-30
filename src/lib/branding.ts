@@ -33,7 +33,9 @@ const AGENT_BRANDING: Record<string, AgentBranding> = {
 
 const DEFAULT_AGENT = "openclaw";
 
-export function getAgentBranding(agentName: string | null | undefined = process.env.NEMOCLAW_AGENT): AgentBranding {
+export function getAgentBranding(
+  agentName: string | null | undefined = process.env.NEMOCLAW_AGENT,
+): AgentBranding {
   return AGENT_BRANDING[agentName || DEFAULT_AGENT] ?? DEFAULT_BRANDING;
 }
 

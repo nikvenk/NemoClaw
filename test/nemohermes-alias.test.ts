@@ -28,8 +28,8 @@ function runHermes(
     return { code: 0, out };
   } catch (err: unknown) {
     const e = err as { status?: number; stdout?: string | Buffer; stderr?: string | Buffer };
-    const stdout = typeof e.stdout === "string" ? e.stdout : e.stdout?.toString("utf8") ?? "";
-    const stderr = typeof e.stderr === "string" ? e.stderr : e.stderr?.toString("utf8") ?? "";
+    const stdout = typeof e.stdout === "string" ? e.stdout : (e.stdout?.toString("utf8") ?? "");
+    const stderr = typeof e.stderr === "string" ? e.stderr : (e.stderr?.toString("utf8") ?? "");
     return { code: e.status ?? 1, out: stdout + stderr };
   }
 }
@@ -54,8 +54,8 @@ function runNemoClaw(
     return { code: 0, out };
   } catch (err: unknown) {
     const e = err as { status?: number; stdout?: string | Buffer; stderr?: string | Buffer };
-    const stdout = typeof e.stdout === "string" ? e.stdout : e.stdout?.toString("utf8") ?? "";
-    const stderr = typeof e.stderr === "string" ? e.stderr : e.stderr?.toString("utf8") ?? "";
+    const stdout = typeof e.stdout === "string" ? e.stdout : (e.stdout?.toString("utf8") ?? "");
+    const stderr = typeof e.stderr === "string" ? e.stderr : (e.stderr?.toString("utf8") ?? "");
     return { code: e.status ?? 1, out: stdout + stderr };
   }
 }
