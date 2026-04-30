@@ -5,13 +5,13 @@
  * Central agent branding — maps the active agent to CLI name, display name,
  * and product name so every user-visible string can stay agent-neutral.
  *
- * Both `nemoclaw` and `nemohermes` are thin alias launchers that set
- * `NEMOCLAW_AGENT` before requiring the compiled CLI.  This module reads
- * that env var (and argv) once at startup and exports frozen constants
- * consumed by the rest of the CLI.
+ * `nemohermes` is a thin alias launcher that sets `NEMOCLAW_AGENT` before
+ * requiring the compiled CLI.  The exported constants cover normal startup,
+ * while getAgentBranding() lets onboard refresh branding after --agent or
+ * resumable session state chooses a different agent at runtime.
  */
 
-interface AgentBranding {
+export interface AgentBranding {
   /** Binary name shown in usage strings, e.g. "nemoclaw" or "nemohermes". */
   cli: string;
   /** Title-case display name, e.g. "NemoClaw" or "NemoHermes". */
@@ -20,15 +20,24 @@ interface AgentBranding {
   product: string;
 }
 
+const DEFAULT_BRANDING: AgentBranding = {
+  cli: "nemoclaw",
+  display: "NemoClaw",
+  product: "OpenClaw",
+};
+
 const AGENT_BRANDING: Record<string, AgentBranding> = {
-  openclaw: { cli: "nemoclaw", display: "NemoClaw", product: "OpenClaw" },
+  openclaw: DEFAULT_BRANDING,
   hermes: { cli: "nemohermes", display: "NemoHermes", product: "Hermes" },
 };
 
 const DEFAULT_AGENT = "openclaw";
 
-const agentName = process.env.NEMOCLAW_AGENT || DEFAULT_AGENT;
-const branding = AGENT_BRANDING[agentName] ?? AGENT_BRANDING[DEFAULT_AGENT];
+export function getAgentBranding(agentName: string | null | undefined = process.env.NEMOCLAW_AGENT): AgentBranding {
+  return AGENT_BRANDING[agentName || DEFAULT_AGENT] ?? DEFAULT_BRANDING;
+}
+
+const branding = getAgentBranding();
 
 /** CLI binary name for usage strings — "nemoclaw" or "nemohermes". */
 export const CLI_NAME: string = branding.cli;
