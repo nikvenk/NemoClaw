@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=d5d76a5c"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -492,7 +492,7 @@ window.runMermaid = runMermaid;</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.31';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -837,6 +837,7 @@ window.runMermaid = runMermaid;</script>
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -853,6 +854,7 @@ window.runMermaid = runMermaid;</script>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -1032,7 +1034,7 @@ The following table compares the two paths.</p>
 </tr>
 <tr class="row-odd"><td><p>Filesystem policy</p></td>
 <td><p>The community sandbox bundles a policy for OpenClaw.</p></td>
-<td><p>NemoClaw defines a more restrictive read-only and read-write layout. The agent’s home directory (<code class="docutils literal notranslate"><span class="pre">/sandbox</span></code>) is read-only. Gateway config (<code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code>) is immutable. Only specific data paths (<code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code>, <code class="docutils literal notranslate"><span class="pre">/sandbox/.nemoclaw</span></code>, <code class="docutils literal notranslate"><span class="pre">/tmp</span></code>) are writable. This prevents the agent from writing and executing scripts, modifying its own environment, or staging data for exfiltration.</p></td>
+<td><p>NemoClaw defines a targeted read-only and read-write layout. System paths (<code class="docutils literal notranslate"><span class="pre">/usr</span></code>, <code class="docutils literal notranslate"><span class="pre">/lib</span></code>, <code class="docutils literal notranslate"><span class="pre">/etc</span></code>) are read-only. The agent’s home directory (<code class="docutils literal notranslate"><span class="pre">/sandbox</span></code>) and config directory (<code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code>) are writable by default so the agent can manage config, install skills, and write to standard paths natively. Operators can opt into config immutability with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code>.</p></td>
 </tr>
 <tr class="row-even"><td><p>Inference setup</p></td>
 <td><p>The community sandbox includes an <code class="docutils literal notranslate"><span class="pre">openclaw-start</span></code> script that runs OpenClaw’s onboarding wizard inside the sandbox. You can also create providers and configure OpenShell inference routing manually from the host.</p></td>

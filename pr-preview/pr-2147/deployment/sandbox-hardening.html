@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=d5d76a5c"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.31';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -66,7 +66,7 @@
 
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Workspace Files" href="../workspace/workspace-files.html" />
-    <link rel="prev" title="Set Up Telegram" href="set-up-telegram-bridge.html" />
+    <link rel="prev" title="Install OpenClaw Plugins" href="install-openclaw-plugins.html" />
 
 
 
@@ -401,6 +401,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -417,6 +418,7 @@
 <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -555,10 +557,10 @@ capability dropping in your <code class="docutils literal notranslate"><span cla
 </div></blockquote>
 </section>
 </section>
-<section id="read-only-home-directory">
-<h2>Read-Only Home Directory<a class="headerlink" href="#read-only-home-directory" title="Link to this heading">#</a></h2>
-<p>The sandbox Landlock policy restricts <code class="docutils literal notranslate"><span class="pre">/sandbox</span></code> (the agent’s home directory) to read-only access.
-Only explicitly declared directories are writable:</p>
+<section id="filesystem-layout">
+<h2>Filesystem Layout<a class="headerlink" href="#filesystem-layout" title="Link to this heading">#</a></h2>
+<p>The sandbox Landlock policy declares which paths are writable.
+The agent’s home directory (<code class="docutils literal notranslate"><span class="pre">/sandbox</span></code>) is writable by default:</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>Path</p></th>
@@ -568,34 +570,29 @@ Only explicitly declared directories are writable:</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox</span></code></p></td>
-<td><p>read-only</p></td>
-<td><p>Home directory — agents cannot create arbitrary files</p></td>
+<td><p>read-write</p></td>
+<td><p>Home directory — agents can create files and use standard home paths</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code></p></td>
-<td><p>read-only</p></td>
-<td><p>Immutable gateway config (auth tokens, CORS)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code></p></td>
 <td><p>read-write</p></td>
-<td><p>Agent state, workspace, plugins (via symlinks)</p></td>
+<td><p>Agent config, state, workspace, plugins (lockable via <code class="docutils literal notranslate"><span class="pre">shields</span> <span class="pre">up</span></code>)</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.nemoclaw</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.nemoclaw</span></code></p></td>
 <td><p>read-write</p></td>
 <td><p>Plugin state and config; blueprints within are DAC-protected (root-owned)</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/tmp</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/tmp</span></code></p></td>
 <td><p>read-write</p></td>
 <td><p>Temporary files and logs</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>This prevents agents from:</p>
+<p>System paths remain read-only to prevent agents from:</p>
 <ul class="simple">
-<li><p>Writing scripts and executing them later</p></li>
-<li><p>Modifying their own runtime environment</p></li>
-<li><p>Creating hidden files that persist across invocations</p></li>
-<li><p>Using writable space for data staging before exfiltration</p></li>
+<li><p>Replacing system binaries with trojanized versions</p></li>
+<li><p>Modifying DNS resolution or TLS trust stores</p></li>
+<li><p>Tampering with libraries or shell configuration outside <code class="docutils literal notranslate"><span class="pre">/sandbox</span></code></p></li>
 </ul>
 <p>The image build pre-creates shell init files <code class="docutils literal notranslate"><span class="pre">.bashrc</span></code> and <code class="docutils literal notranslate"><span class="pre">.profile</span></code>.
 These files source runtime proxy configuration from <code class="docutils literal notranslate"><span class="pre">/tmp/nemoclaw-proxy-env.sh</span></code>.</p>
@@ -604,7 +601,7 @@ These files source runtime proxy configuration from <code class="docutils litera
 <p>Landlock LSM requires Linux kernel 5.13 or later with <code class="docutils literal notranslate"><span class="pre">CONFIG_SECURITY_LANDLOCK=y</span></code>.
 The NemoClaw sandbox policy uses <code class="docutils literal notranslate"><span class="pre">compatibility:</span> <span class="pre">best_effort</span></code>, which means Landlock enforcement is silently skipped on kernels that do not support it.</p>
 <p>On such kernels, protection falls back to DAC (file ownership and permissions) only.
-Files owned by the sandbox user (e.g., <code class="docutils literal notranslate"><span class="pre">.bashrc</span></code>, <code class="docutils literal notranslate"><span class="pre">.profile</span></code>) would be writable by the agent despite the Landlock read-only policy.</p>
+Files outside the writable paths would be inaccessible to the agent regardless of DAC permissions.</p>
 <p>Operators should verify Landlock availability:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ls<span class="w"> </span>/sys/kernel/security/landlock
 </pre></div>
@@ -616,7 +613,7 @@ The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cl
 <section id="references">
 <h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/804" rel="noreferer noopener" target="_blank">#804</a>: Read-only home directory</p></li>
+<li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/804" rel="noreferer noopener" target="_blank">#804</a>: Filesystem layout and Landlock policy</p></li>
 <li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/807" rel="noreferer noopener" target="_blank">#807</a>: gcc in sandbox image</p></li>
 <li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/808" rel="noreferer noopener" target="_blank">#808</a>: netcat in sandbox image</p></li>
 <li><p><a class="reference external" href="https://github.com/NVIDIA/NemoClaw/issues/809" rel="noreferer noopener" target="_blank">#809</a>: No process limit</p></li>
@@ -636,12 +633,12 @@ The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cl
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="set-up-telegram-bridge.html"
+       href="install-openclaw-plugins.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Set Up Telegram</p>
+        <p class="prev-next-title">Install OpenClaw Plugins</p>
       </div>
     </a>
     <a class="right-next"
@@ -680,7 +677,7 @@ The <code class="docutils literal notranslate"><span class="pre">test/e2e/e2e-cl
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-compose-example">Docker Compose Example</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#read-only-home-directory">Read-Only Home Directory</a><ul class="nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#filesystem-layout">Filesystem Layout</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#landlock-kernel-requirements">Landlock Kernel Requirements</a></li>
 </ul>
 </li>

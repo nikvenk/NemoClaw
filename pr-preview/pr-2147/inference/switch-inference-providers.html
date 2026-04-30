@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=d5d76a5c"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.31';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -65,7 +65,7 @@
     <link rel="icon" href="../_static/favicon.png"/>
 
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Approve or Deny Agent Network Requests" href="../network-policy/approve-network-requests.html" />
+    <link rel="next" title="Set Up Task-Specific Sub-Agents" href="set-up-sub-agent.html" />
     <link rel="prev" title="Use a Local Inference Server" href="use-local-inference.html" />
 
 
@@ -401,6 +401,7 @@
 <li class="toctree-l1"><a class="reference internal" href="inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -417,6 +418,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -597,7 +599,7 @@ This variable is only needed when switching between provider families.</p>
 </section>
 <section id="tune-model-metadata">
 <h2>Tune Model Metadata<a class="headerlink" href="#tune-model-metadata" title="Link to this heading">#</a></h2>
-<p>The sandbox image bakes model metadata (context window, max output tokens, and reasoning mode) into <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at build time.
+<p>The sandbox image bakes model metadata (context window, max output tokens, reasoning mode, and accepted input modalities) into <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> at build time.
 To change these values, set the corresponding environment variables before running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">onboard</span></code> so they patch into the Dockerfile before the image builds.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
@@ -619,17 +621,23 @@ To change these values, set the corresponding environment variables before runni
 <td><p><code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_AGENT_TIMEOUT</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_INPUTS</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">text</span></code> or <code class="docutils literal notranslate"><span class="pre">text,image</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">text</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NEMOCLAW_AGENT_TIMEOUT</span></code></p></td>
 <td><p>Positive integer (seconds)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">600</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Invalid values are ignored, and the default bakes into the image.</p>
+<p>Invalid values are ignored, and the default bakes into the image.
+Use <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_INPUTS=text,image</span></code> only for a model that accepts image input through the selected provider.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_CONTEXT_WINDOW</span><span class="o">=</span><span class="m">65536</span>
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_MAX_TOKENS</span><span class="o">=</span><span class="m">8192</span>
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_REASONING</span><span class="o">=</span><span class="nb">true</span>
+<span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_INFERENCE_INPUTS</span><span class="o">=</span>text,image
 <span class="gp">$ </span><span class="nb">export</span><span class="w"> </span><span class="nv">NEMOCLAW_AGENT_TIMEOUT</span><span class="o">=</span><span class="m">1800</span>
 <span class="gp">$ </span>nemoclaw<span class="w"> </span>onboard
 </pre></div>
@@ -665,6 +673,7 @@ If you change them on an existing sandbox, recreate the sandbox so the new value
 <li><p>Same-provider model switches take effect immediately via the gateway route alone.</p></li>
 <li><p>Cross-provider switches also require <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_MODEL_OVERRIDE</span></code> (and <code class="docutils literal notranslate"><span class="pre">NEMOCLAW_INFERENCE_API_OVERRIDE</span></code>) plus a sandbox recreate so the entrypoint patches the config at startup.</p></li>
 <li><p>Overrides are applied at container startup. Changing or removing env vars requires a sandbox recreate to take effect.</p></li>
+<li><p>Local Ollama and local vLLM routes use local provider tokens rather than <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code>. Rebuilds of older local-inference sandboxes clear the stale OpenAI credential requirement automatically.</p></li>
 </ul>
 </section>
 <section id="related-topics">
@@ -695,11 +704,11 @@ If you change them on an existing sandbox, recreate the sandbox so the new value
       </div>
     </a>
     <a class="right-next"
-       href="../network-policy/approve-network-requests.html"
+       href="set-up-sub-agent.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Approve or Deny Agent Network Requests</p>
+        <p class="prev-next-title">Set Up Task-Specific Sub-Agents</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

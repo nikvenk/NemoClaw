@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=d5d76a5c"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -56,7 +56,7 @@
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.31';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -401,6 +401,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="current nav bd-sidenav">
@@ -417,6 +418,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -501,6 +503,13 @@
 <p>Add, remove, or modify the endpoints that the sandbox is allowed to reach.</p>
 <p>The sandbox policy is defined in a declarative YAML file in the NemoClaw repository and enforced at runtime by <a class="reference external" href="https://github.com/NVIDIA/OpenShell" rel="noreferer noopener" target="_blank">NVIDIA OpenShell</a>.
 NemoClaw supports both static policy changes that persist across restarts and dynamic updates applied to a running sandbox through the OpenShell CLI.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If the sandbox needs to reach an HTTP service running on the host, expose the service on a host IP that the OpenShell gateway can reach.
+Apply a custom NemoClaw preset with <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;sandbox&gt;</span> <span class="pre">policy-add</span> <span class="pre">--from-file</span></code>.
+Do not rely on <code class="docutils literal notranslate"><span class="pre">host.docker.internal</span></code> as a general host-service path because it bypasses the OpenShell policy path and may not be reachable in every sandbox runtime.
+See <a class="reference internal" href="../reference/troubleshooting.html#agent-cannot-reach-a-host-side-http-service"><span class="std std-ref">Agent cannot reach a host-side HTTP service</span></a>.</p>
+</div>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
 <ul class="simple">

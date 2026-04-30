@@ -45,7 +45,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=ec4c6754"></script>
+    <script src="../_static/documentation_options.js?v=d5d76a5c"></script>
     <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -492,7 +492,7 @@ window.runMermaid = runMermaid;</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.16.1';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = '../versions1.json';
-        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.25';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.0.31';
         DOCUMENTATION_OPTIONS.show_version_warning_banner =
             false;
         </script>
@@ -837,6 +837,7 @@ window.runMermaid = runMermaid;</script>
 <li class="toctree-l1"><a class="reference internal" href="../inference/inference-options.html">Inference Options</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/use-local-inference.html">Use Local Inference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../inference/switch-inference-providers.html">Switch Inference Providers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../inference/set-up-sub-agent.html">Set Up Task-Specific Sub-Agents</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Network Policy</span></p>
 <ul class="nav bd-sidenav">
@@ -853,6 +854,7 @@ window.runMermaid = runMermaid;</script>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deployment/deploy-to-remote-gpu.html">Deploy to a Remote GPU Instance</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/set-up-telegram-bridge.html">Set Up Telegram</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/install-openclaw-plugins.html">Install OpenClaw Plugins</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/sandbox-hardening.html">Sandbox Hardening</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Workspace</span></p>
@@ -1266,16 +1268,19 @@ See the [Filesystem Controls](https://docs.nvidia.com/openshell/latest/security/
 </table>
 </div>
 </section>
-<section id="read-only-openclaw-config">
-<h3>Read-Only <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> Config<a class="headerlink" href="#read-only-openclaw-config" title="Link to this heading">#</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> directory contains the OpenClaw gateway configuration, including auth tokens and CORS settings.
-The container mounts it read-only while writable agent state (plugins, agent data) lives in <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> through symlinks.</p>
-<p>Multiple defense layers protect this directory:</p>
+<section id="agent-config-directory">
+<h3>Agent Config Directory<a class="headerlink" href="#agent-config-directory" title="Link to this heading">#</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> directory contains the OpenClaw gateway configuration (model routing, CORS settings, channel config).
+The current entrypoint reads the gateway auth token from OpenClaw config when present, exports it as <code class="docutils literal notranslate"><span class="pre">OPENCLAW_GATEWAY_TOKEN</span></code>, and writes it to <code class="docutils literal notranslate"><span class="pre">/tmp/nemoclaw-proxy-env.sh</span></code> so interactive sandbox sessions can reach the gateway through the static <code class="docutils literal notranslate"><span class="pre">/sandbox/.bashrc</span></code> and <code class="docutils literal notranslate"><span class="pre">/sandbox/.profile</span></code> source shims.
+In root mode, the gateway process still runs as the separate <code class="docutils literal notranslate"><span class="pre">gateway</span></code> user, but the token is intentionally available to sandbox shells for local gateway access.</p>
+<p>Writable agent state such as plugins, skills, hooks, and workspace metadata lives directly under <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code>.</p>
+<p>By default, this directory starts writable so the agent can manage its own config, install skills, and write to standard home-directory paths natively.
+Operators can opt into immutability by running <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code>, which locks the config and writable state entry points until <code class="docutils literal notranslate"><span class="pre">shields</span> <span class="pre">down</span></code> restores the default writable state.</p>
 <ul class="simple">
-<li><p><strong>DAC permissions.</strong> Root owns the directory and <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> with <code class="docutils literal notranslate"><span class="pre">chmod</span> <span class="pre">444</span></code>, so the sandbox user cannot write to them.</p></li>
-<li><p><strong>Immutable flag.</strong> The entrypoint applies <code class="docutils literal notranslate"><span class="pre">chattr</span> <span class="pre">+i</span></code> to the directory and all symlinks, preventing modification even if other controls fail.</p></li>
-<li><p><strong>Symlink validation.</strong> At startup, the entrypoint verifies every symlink in <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> points to the expected <code class="docutils literal notranslate"><span class="pre">.openclaw-data</span></code> target. If any symlink points elsewhere, the container refuses to start.</p></li>
-<li><p><strong>Config integrity hash.</strong> The build process pins a SHA256 hash of <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. The entrypoint verifies it at startup and refuses to start if the hash does not match.</p></li>
+<li><p><strong>DAC permissions (default).</strong> The sandbox user owns <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> with mode <code class="docutils literal notranslate"><span class="pre">700</span></code> and <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> with mode <code class="docutils literal notranslate"><span class="pre">600</span></code>, so the agent can read and write config directly.</p></li>
+<li><p><strong>Config integrity hash.</strong> The image includes a SHA256 hash of <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. In the default mutable state, <code class="docutils literal notranslate"><span class="pre">.config-hash</span></code> is sandbox-owned and is not a tamper-proof trust anchor, so startup does not fail closed on that hash. After <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> locks the hash root-owned and read-only, startup enforces it and refuses to start if the hash does not match.</p></li>
+<li><p><strong>Gateway token environment.</strong> The gateway exports <code class="docutils literal notranslate"><span class="pre">OPENCLAW_GATEWAY_TOKEN</span></code> and writes it to <code class="docutils literal notranslate"><span class="pre">/tmp/nemoclaw-proxy-env.sh</span></code> for interactive sandbox sessions. Keep this in mind when deciding whether a workload should run with mutable config or with Shields UP.</p></li>
+<li><p><strong>Shields UP (opt-in).</strong> <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> applies root-owned read-only permissions and best-effort immutable bits to sensitive config files, and locks writable state directories such as workspace, memory, skills, hooks, cron, agents, and extensions.</p></li>
 </ul>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
@@ -1285,16 +1290,16 @@ The container mounts it read-only while writable agent state (plugins, agent dat
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Default</p></td>
-<td><p>The container mounts <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> as read-only, root-owned, immutable, and integrity-verified at startup. <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code> remains writable.</p></td>
+<td><p>The sandbox keeps <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> writable (<code class="docutils literal notranslate"><span class="pre">700</span> <span class="pre">sandbox:sandbox</span></code>), sets <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code> to <code class="docutils literal notranslate"><span class="pre">600</span> <span class="pre">sandbox:sandbox</span></code>, lets the agent manage state directly, and has the gateway place <code class="docutils literal notranslate"><span class="pre">OPENCLAW_GATEWAY_TOKEN</span></code> in <code class="docutils literal notranslate"><span class="pre">/tmp/nemoclaw-proxy-env.sh</span></code> for interactive shells.</p></td>
 </tr>
 <tr class="row-odd"><td><p>What you can change</p></td>
-<td><p>Move <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> from <code class="docutils literal notranslate"><span class="pre">read_only</span></code> to <code class="docutils literal notranslate"><span class="pre">read_write</span></code> in the policy file.</p></td>
+<td><p>Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> to lock config and state directories with DAC permissions and the immutable flag where available. Run <code class="docutils literal notranslate"><span class="pre">shields</span> <span class="pre">down</span></code> to return to the writable default.</p></td>
 </tr>
-<tr class="row-even"><td><p>Risk if relaxed</p></td>
-<td><p>A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> directory lets the agent modify its own gateway config: disabling CORS, changing auth tokens, or redirecting inference to an attacker-controlled endpoint. This is the single most dangerous filesystem change.</p></td>
+<tr class="row-even"><td><p>Risk of default</p></td>
+<td><p>A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> directory lets the agent modify its own gateway config: disabling CORS or redirecting inference to an attacker-controlled endpoint.</p></td>
 </tr>
 <tr class="row-odd"><td><p>Recommendation</p></td>
-<td><p>Never make <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> writable.</p></td>
+<td><p>For always-on assistants handling sensitive workloads, use <code class="docutils literal notranslate"><span class="pre">shields</span> <span class="pre">up</span></code> to lock config after initial setup. For development workflows, the writable default is appropriate.</p></td>
 </tr>
 </tbody>
 </table>
@@ -1726,7 +1731,7 @@ The scanner intercepts Write, Edit, and similar tool calls targeting memory and 
 <td><p>Enabled. The plugin registers a <code class="docutils literal notranslate"><span class="pre">before_tool_call</span></code> hook that scans for 14 high-confidence secret patterns.</p></td>
 </tr>
 <tr class="row-odd"><td><p>What it covers</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">.openclaw-data/memory/</span></code>, <code class="docutils literal notranslate"><span class="pre">workspace/</span></code>, <code class="docutils literal notranslate"><span class="pre">agents/</span></code>, <code class="docutils literal notranslate"><span class="pre">skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">hooks/</span></code>, and <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>.</p></td>
+<td><p>Examples include <code class="docutils literal notranslate"><span class="pre">.openclaw/memory/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/workspace/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/agents/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/skills/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/hooks/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/credentials/</span></code>, <code class="docutils literal notranslate"><span class="pre">.openclaw/openclaw.json</span></code>, <code class="docutils literal notranslate"><span class="pre">.nemoclaw/</span></code>, and <code class="docutils literal notranslate"><span class="pre">MEMORY.md</span></code>; the exact coverage is defined by <code class="docutils literal notranslate"><span class="pre">MEMORY_PATH_SEGMENTS</span></code> and enforced through <code class="docutils literal notranslate"><span class="pre">isMemoryPath()</span></code>.</p></td>
 </tr>
 <tr class="row-even"><td><p>What you can change</p></td>
 <td><p>This is not a user-facing knob. The plugin enforces it automatically.</p></td>
@@ -1905,9 +1910,9 @@ They provide guidance on which controls to keep tight or relax.</p>
 <td><p>The entrypoint drops dangerous capabilities using <code class="docutils literal notranslate"><span class="pre">capsh</span></code>, but this is best-effort. If <code class="docutils literal notranslate"><span class="pre">capsh</span></code> is unavailable or <code class="docutils literal notranslate"><span class="pre">CAP_SETPCAP</span></code> is not in the bounding set, the container runs with the default capability set.</p></td>
 <td><p>Pass <code class="docutils literal notranslate"><span class="pre">--cap-drop=ALL</span></code> at the container runtime level as defense-in-depth.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Granting write access to <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code></p></td>
-<td><p>This directory contains the OpenClaw gateway configuration. A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> lets the agent modify auth tokens, disable CORS, or redirect inference routing.</p></td>
-<td><p>Store agent-writable state in <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data</span></code>.</p></td>
+<tr class="row-odd"><td><p>Leaving <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw</span></code> writable on sensitive workloads</p></td>
+<td><p>This directory contains the OpenClaw gateway configuration. A writable <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> lets the agent disable CORS, redirect inference routing, or weaken gateway protections.</p></td>
+<td><p>Run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> to lock config for always-on assistants handling sensitive data.</p></td>
 </tr>
 <tr class="row-even"><td><p>Adding inference provider hosts to the network policy</p></td>
 <td><p>Direct network access to an inference host bypasses credential isolation and usage tracking.</p></td>
@@ -2022,7 +2027,7 @@ They provide guidance on which controls to keep tight or relax.</p>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#filesystem-controls">Filesystem Controls</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#read-only-system-paths">Read-Only System Paths</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#read-only-openclaw-config">Read-Only <code class="docutils literal notranslate"><span class="pre">.openclaw</span></code> Config</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-config-directory">Agent Config Directory</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#writable-paths">Writable Paths</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#landlock-lsm-enforcement">Landlock LSM Enforcement</a></li>
 </ul>
