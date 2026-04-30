@@ -17,7 +17,7 @@ NEMOCLAW_REF="${NEMOCLAW_REF:-main}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-v0.0.36}"
 TARGET_USER="${SUDO_USER:-$(id -un)}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-NEMOCLAW_CLONE_DIR="${NEMOCLAW_CLONE_DIR:-${TARGET_HOME}/NemoClaw}"
+export NEMOCLAW_CLONE_DIR="${NEMOCLAW_CLONE_DIR:-${TARGET_HOME}/NemoClaw}"
 LAUNCH_LOG="${LAUNCH_LOG:-/tmp/launch-plugin.log}"
 SENTINEL="/var/run/nemoclaw-launchable-ready"
 DOCKER_IMAGES=("ghcr.io/nvidia/nemoclaw/sandbox-base:latest" "node:22-slim")
@@ -144,14 +144,13 @@ fi
 
 # Apply Nemotron tool-call fix to onboard.ts (gracefully skipped if upstream
 # already includes it or if the surrounding code changed significantly).
-python3 - <<'PYEOF'
+python3 - <<'PYEOF' || warn "Tool-call patch step failed — continuing without Nemotron fix"
 import re, sys, os
 ts = os.path.join(os.environ.get("NEMOCLAW_CLONE_DIR", os.path.expanduser("~/NemoClaw")), "src/lib/onboard.ts")
 with open(ts) as f:
     src = f.read()
 if "tool-call-parser requires /v1/chat/completions" in src:
-    print("Tool-call fix already present — skipping")
-    sys.exit(0)
+    print("Tool-call fix already present — skipping"); sys.exit(0)
 needle = '"Please choose a provider/model again.",'
 pos = src.find(needle)
 if pos < 0:
