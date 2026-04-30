@@ -27,6 +27,14 @@ function runtimeShellEnvBlock(src: string): string {
   return src.slice(start, end);
 }
 
+function runtimeShellEnvShimBlock(src: string): string {
+  const start = src.indexOf("ensure_runtime_shell_env_shim() {");
+  const end = src.indexOf("# ── Legacy layout migration", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
 describe("nemoclaw-start non-root fallback", () => {
   it("detaches gateway output from sandbox create in non-root mode", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
@@ -142,6 +150,30 @@ describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
     expect(runtimeBlock).toContain("nemoclaw-configure-guard begin");
     expect(runtimeBlock).not.toContain("${_SANDBOX_HOME}/.bashrc");
     expect(runtimeBlock).not.toContain("${_SANDBOX_HOME}/.profile");
+  });
+
+  it("backfills the runtime env shim into stale rc files before locking them", () => {
+    const shimBlock = runtimeShellEnvShimBlock(src);
+    expect(src).toContain(
+      '_RUNTIME_SHELL_ENV_SHIM="[ -f ${_RUNTIME_SHELL_ENV_FILE} ] && . ${_RUNTIME_SHELL_ENV_FILE}"',
+    );
+    expect(shimBlock).toContain('"${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"');
+    expect(shimBlock).toContain('grep -qxF "$_RUNTIME_SHELL_ENV_SHIM" "$rc_file"');
+    expect(shimBlock).toContain('chown root:root "$rc_file"');
+    expect(shimBlock).toContain("printf '\\n%s\\n%s\\n'");
+
+    for (const block of [
+      src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/)?.[1],
+      src.slice(src.indexOf("# ── Root path")),
+    ]) {
+      expect(block).toBeTruthy();
+      const writePos = block!.indexOf("write_runtime_shell_env");
+      const ensurePos = block!.indexOf("ensure_runtime_shell_env_shim");
+      const lockPos = block!.indexOf('lock_rc_files "$_SANDBOX_HOME"');
+      expect(writePos).toBeGreaterThan(-1);
+      expect(ensurePos).toBeGreaterThan(writePos);
+      expect(lockPos).toBeGreaterThan(ensurePos);
+    }
   });
 });
 

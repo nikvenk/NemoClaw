@@ -1652,6 +1652,9 @@ fi
 # Both uppercase and lowercase variants are required: Node.js undici prefers
 # lowercase (no_proxy) over uppercase (NO_PROXY) when both are set.
 # curl/wget use uppercase.  gRPC C-core uses lowercase.
+_RUNTIME_SHELL_ENV_FILE="/tmp/nemoclaw-proxy-env.sh"
+_RUNTIME_SHELL_ENV_SHIM="[ -f ${_RUNTIME_SHELL_ENV_FILE} ] && . ${_RUNTIME_SHELL_ENV_FILE}"
+
 write_runtime_shell_env() {
   _PROXY_ENV_FILE="/tmp/nemoclaw-proxy-env.sh"
   {
@@ -1771,6 +1774,65 @@ GUARDENVEOF
 # SANDBOX_CHILD_PIDS (array of all PIDs) and SANDBOX_WAIT_PID (the
 # primary process whose exit status is returned).
 # Each code path below sets these before registering the trap.
+
+# Stale base images may have rc files from before the runtime env source shim
+# was baked into Dockerfile.base. Backfill the static shim before lock_rc_files
+# makes those files read-only so connect sessions still receive proxy config,
+# gateway auth, and command guards through /tmp/nemoclaw-proxy-env.sh.
+ensure_runtime_shell_env_shim() {
+  local failed=0
+  local rc_file
+
+  for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    if [ -L "$rc_file" ]; then
+      echo "[SECURITY] refusing symlinked rc file: $rc_file" >&2
+      failed=1
+      continue
+    fi
+    if [ -e "$rc_file" ] && [ ! -f "$rc_file" ]; then
+      echo "[SECURITY] refusing non-regular rc file: $rc_file" >&2
+      failed=1
+      continue
+    fi
+    if [ -f "$rc_file" ] && grep -qxF "$_RUNTIME_SHELL_ENV_SHIM" "$rc_file" 2>/dev/null; then
+      continue
+    fi
+
+    if [ "$(id -u)" -eq 0 ] && [ -f "$rc_file" ]; then
+      if ! chown root:root "$rc_file" 2>/dev/null; then
+        echo "[SECURITY] could not take ownership of $rc_file before shim backfill" >&2
+        failed=1
+        continue
+      fi
+      if ! chmod 644 "$rc_file" 2>/dev/null; then
+        echo "[SECURITY] could not make $rc_file writable before shim backfill" >&2
+        failed=1
+        continue
+      fi
+    elif [ -f "$rc_file" ]; then
+      chmod u+w "$rc_file" 2>/dev/null || true
+    fi
+
+    if [ -e "$rc_file" ]; then
+      if ! printf '\n%s\n%s\n' '# Source runtime proxy config' "$_RUNTIME_SHELL_ENV_SHIM" >>"$rc_file"; then
+        echo "[SECURITY] could not backfill runtime env shim into $rc_file" >&2
+        failed=1
+        continue
+      fi
+    elif ! printf '%s\n%s\n' '# Source runtime proxy config' "$_RUNTIME_SHELL_ENV_SHIM" >"$rc_file"; then
+      echo "[SECURITY] could not create $rc_file with runtime env shim" >&2
+      failed=1
+      continue
+    fi
+
+    if ! grep -qxF "$_RUNTIME_SHELL_ENV_SHIM" "$rc_file" 2>/dev/null; then
+      echo "[SECURITY] runtime env shim missing after backfill: $rc_file" >&2
+      failed=1
+    fi
+  done
+
+  return "$failed"
+}
 
 # ── Legacy layout migration ──────────────────────────────────────
 # Sandboxes created with the OLD base image have:
@@ -2029,6 +2091,7 @@ if [ "$(id -u)" -ne 0 ]; then
   apply_cors_override
   export_gateway_token
   write_runtime_shell_env
+  ensure_runtime_shell_env_shim
   lock_rc_files "$_SANDBOX_HOME"
   configure_messaging_channels
   install_slack_token_rewriter
@@ -2115,6 +2178,7 @@ apply_model_override
 apply_cors_override
 export_gateway_token
 write_runtime_shell_env
+ensure_runtime_shell_env_shim
 lock_rc_files "$_SANDBOX_HOME"
 
 # Inject messaging channel config if provider tokens are present.

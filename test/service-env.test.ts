@@ -28,6 +28,19 @@ function extractRuntimeShellEnvSnippet() {
   return `${src.slice(start, end).trimEnd()}\nwrite_runtime_shell_env`;
 }
 
+function extractRuntimeShellEnvShimSnippet() {
+  const src = readFileSync(NEMOCLAW_START_SCRIPT, "utf-8");
+  const start = src.indexOf("ensure_runtime_shell_env_shim() {");
+  const end = src.indexOf("# ── Legacy layout migration", start);
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error(
+      "Failed to extract ensure_runtime_shell_env_shim from scripts/nemoclaw-start.sh — " +
+        "the rc shim helper may have been moved or renamed",
+    );
+  }
+  return `${src.slice(start, end).trimEnd()}\nensure_runtime_shell_env_shim`;
+}
+
 describe("service environment", () => {
   describe("start-services behavior", () => {
     const scriptPath = join(import.meta.dirname, "../scripts/start-services.sh");
@@ -485,6 +498,45 @@ describe("service environment", () => {
         }
         try {
           execFileSync("rm", ["-rf", fakeDataDir]);
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+
+    it("backfills proxy-env.sh source shims into stale rc files", () => {
+      const fakeHome = join(tmpdir(), `nemoclaw-rc-shim-test-${process.pid}`);
+      const proxyEnvPath = join(fakeHome, "proxy-env.sh");
+      const tmpFile = join(tmpdir(), `nemoclaw-rc-shim-write-test-${process.pid}.sh`);
+      const runtimeEnvShim = `[ -f ${proxyEnvPath} ] && . ${proxyEnvPath}`;
+      try {
+        execFileSync("mkdir", ["-p", fakeHome]);
+        writeFileSync(join(fakeHome, ".bashrc"), "# old bashrc\n", { mode: 0o644 });
+        writeFileSync(join(fakeHome, ".profile"), "# old profile\n", { mode: 0o444 });
+
+        const wrapper = [
+          "#!/usr/bin/env bash",
+          `_SANDBOX_HOME=${JSON.stringify(fakeHome)}`,
+          `_RUNTIME_SHELL_ENV_FILE=${JSON.stringify(proxyEnvPath)}`,
+          '_RUNTIME_SHELL_ENV_SHIM="[ -f ${_RUNTIME_SHELL_ENV_FILE} ] && . ${_RUNTIME_SHELL_ENV_FILE}"',
+          extractRuntimeShellEnvShimSnippet(),
+          "ensure_runtime_shell_env_shim",
+        ].join("\n");
+        writeFileSync(tmpFile, wrapper, { mode: 0o700 });
+        execFileSync("bash", [tmpFile], { encoding: "utf-8" });
+
+        for (const rcName of [".bashrc", ".profile"]) {
+          const rcFile = readFileSync(join(fakeHome, rcName), "utf-8");
+          expect(rcFile.split(runtimeEnvShim).length - 1).toBe(1);
+        }
+      } finally {
+        try {
+          unlinkSync(tmpFile);
+        } catch {
+          /* ignore */
+        }
+        try {
+          execFileSync("rm", ["-rf", fakeHome]);
         } catch {
           /* ignore */
         }
