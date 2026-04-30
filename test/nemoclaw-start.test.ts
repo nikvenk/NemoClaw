@@ -10,6 +10,31 @@ import { describe, it, expect } from "vitest";
 
 const START_SCRIPT = path.join(import.meta.dirname, "..", "scripts", "nemoclaw-start.sh");
 
+function configureGuardBlock(src: string): string {
+  const start = src.indexOf("# nemoclaw-configure-guard begin");
+  const end = src.indexOf("# nemoclaw-configure-guard end", start);
+  const endMarker = "# nemoclaw-configure-guard end";
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end + endMarker.length);
+}
+
+function runtimeShellEnvBlock(src: string): string {
+  const start = src.indexOf("write_runtime_shell_env() {");
+  const end = src.indexOf("# cleanup_on_signal", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
+function runtimeShellEnvShimBlock(src: string): string {
+  const start = src.indexOf("ensure_runtime_shell_env_shim() {");
+  const end = src.indexOf("# ── Legacy layout migration", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
 describe("nemoclaw-start non-root fallback", () => {
   it("detaches gateway output from sandbox create in non-root mode", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
@@ -21,23 +46,23 @@ describe("nemoclaw-start non-root fallback", () => {
     );
   });
 
-  it("exits on config integrity failure in non-root mode", () => {
+  it("exits on locked config integrity failure in non-root mode", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
     const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
     expect(nonRootBlock).toBeTruthy();
-    // Non-root block must call verify_config_integrity (with config dir) and exit 1 on failure
-    expect(nonRootBlock[1]).toMatch(/if ! verify_config_integrity\b.*; then\s+.*exit 1/s);
+    // Non-root block must call the locked-aware verifier and exit 1 on failure.
+    expect(nonRootBlock[1]).toMatch(/if ! verify_config_integrity_if_locked\b.*; then\s+.*exit 1/s);
     // Must not contain the old "proceeding anyway" fallback
     expect(src).not.toMatch(/proceeding anyway/i);
   });
 
-  it("calls verify_config_integrity in both root and non-root paths", () => {
+  it("calls verify_config_integrity_if_locked in both root and non-root paths", () => {
     const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
     // The function must be called at least twice: once in the non-root
     // if-block and once in the root path below it.
-    const calls = src.match(/verify_config_integrity/g) || [];
+    const calls = src.match(/verify_config_integrity_if_locked/g) || [];
     expect(calls.length).toBeGreaterThanOrEqual(3); // definition + 2 call sites
   });
 
@@ -82,6 +107,15 @@ describe("nemoclaw-start non-root fallback", () => {
     expect(src).toContain('export "${_raw_args[$i]}"');
     expect(src).toContain('set -- "${_raw_args[@]:$((_self_wrapper_index + 1))}"');
   });
+
+  it("repairs ownership for all writable OpenClaw state directories in non-root mode", () => {
+    const src = fs.readFileSync(START_SCRIPT, "utf-8");
+    const fn = src.match(/fix_openclaw_ownership\(\) \{([\s\S]*?)^\s*\}/m);
+    expect(fn).toBeTruthy();
+    for (const dir of ["workspace", "memory", "credentials", "flows", "telegram", "media"]) {
+      expect(fn![1]).toContain(dir);
+    }
+  });
 });
 
 describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
@@ -93,7 +127,7 @@ describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
 
     // All usages must come after the definition
     const usages = [...src.matchAll(/\$\{?_SANDBOX_HOME\}?/g)];
-    expect(usages.length).toBeGreaterThanOrEqual(3);
+    expect(usages.length).toBeGreaterThanOrEqual(2);
     for (const m of usages) {
       // Skip the definition line itself
       if (m.index === defPos) continue;
@@ -101,20 +135,45 @@ describe("nemoclaw-start _SANDBOX_HOME variable (#1609)", () => {
     }
   });
 
-  it("uses _SANDBOX_HOME for rc file paths in export_gateway_token", () => {
+  it("does not rewrite rc files while exporting the gateway token", () => {
     const exportFn = src.match(/export_gateway_token\(\) \{([\s\S]*?)^\}/m);
     expect(exportFn).toBeTruthy();
-    expect(exportFn[1]).toContain("${_SANDBOX_HOME}/.bashrc");
-    expect(exportFn[1]).toContain("${_SANDBOX_HOME}/.profile");
+    expect(exportFn[1]).not.toContain("${_SANDBOX_HOME}/.bashrc");
+    expect(exportFn[1]).not.toContain("${_SANDBOX_HOME}/.profile");
+    expect(exportFn[1]).not.toContain("rewrite_rc_marker_block");
   });
 
-  it("uses _SANDBOX_HOME for rc file paths in install_configure_guard", () => {
-    const guardFn = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
+  it("keeps dynamic shell state in the sourced runtime env file", () => {
+    const runtimeBlock = runtimeShellEnvBlock(src);
+    expect(runtimeBlock).toContain("/tmp/nemoclaw-proxy-env.sh");
+    expect(runtimeBlock).toContain("OPENCLAW_GATEWAY_TOKEN");
+    expect(runtimeBlock).toContain("nemoclaw-configure-guard begin");
+    expect(runtimeBlock).not.toContain("${_SANDBOX_HOME}/.bashrc");
+    expect(runtimeBlock).not.toContain("${_SANDBOX_HOME}/.profile");
+  });
+
+  it("backfills the runtime env shim into stale rc files before locking them", () => {
+    const shimBlock = runtimeShellEnvShimBlock(src);
+    expect(src).toContain(
+      '_RUNTIME_SHELL_ENV_SHIM="[ -f ${_RUNTIME_SHELL_ENV_FILE} ] && . ${_RUNTIME_SHELL_ENV_FILE}"',
     );
-    expect(guardFn).toBeTruthy();
-    expect(guardFn[1]).toContain("${_SANDBOX_HOME}/.bashrc");
-    expect(guardFn[1]).toContain("${_SANDBOX_HOME}/.profile");
+    expect(shimBlock).toContain('"${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"');
+    expect(shimBlock).toContain('grep -qxF "$_RUNTIME_SHELL_ENV_SHIM" "$rc_file"');
+    expect(shimBlock).toContain('chown root:root "$rc_file"');
+    expect(shimBlock).toContain("printf '\\n%s\\n%s\\n'");
+
+    for (const block of [
+      src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/)?.[1],
+      src.slice(src.indexOf("# ── Root path")),
+    ]) {
+      expect(block).toBeTruthy();
+      const writePos = block!.indexOf("write_runtime_shell_env");
+      const ensurePos = block!.indexOf("ensure_runtime_shell_env_shim");
+      const lockPos = block!.indexOf('lock_rc_files "$_SANDBOX_HOME"');
+      expect(writePos).toBeGreaterThan(-1);
+      expect(ensurePos).toBeGreaterThan(writePos);
+      expect(lockPos).toBeGreaterThan(ensurePos);
+    }
   });
 });
 
@@ -149,13 +208,17 @@ describe("nemoclaw-start gateway token export (#1114)", () => {
     expect(unsetPos).toBeLessThan(returnPos);
   });
 
-  it("shell-escapes the token before embedding in rc snippet", () => {
-    const exportFn = src.match(/export_gateway_token\(\) \{([\s\S]*?)^\}/m);
-    expect(exportFn).toBeTruthy();
-    const body = exportFn[1];
-    // Must use single quotes around the escaped token value
-    expect(body).toContain("escaped_token");
-    expect(body).toMatch(/export OPENCLAW_GATEWAY_TOKEN='\$\{escaped_token\}'/);
+  it("shell-escapes the token before embedding it in proxy-env.sh", () => {
+    const runtimeBlock = runtimeShellEnvBlock(src);
+    expect(runtimeBlock).toContain("_escaped_gateway_token");
+    expect(runtimeBlock).toContain("sed \"s/'/'\\\\\\\\''/g\"");
+    expect(runtimeBlock).toMatch(/export OPENCLAW_GATEWAY_TOKEN='%s'/);
+  });
+
+  it("does not mutate .bashrc or .profile for token propagation", () => {
+    expect(src).not.toContain("rewrite_rc_marker_block");
+    expect(src).not.toContain(".bashrc.tmp");
+    expect(src).not.toContain("nemoclaw-gateway-token begin");
   });
 
   it("calls export_gateway_token in both root and non-root paths", () => {
@@ -168,47 +231,41 @@ describe("nemoclaw-start gateway token export (#1114)", () => {
 describe("nemoclaw-start configure guard (#1114)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
-  it("defines install_configure_guard function", () => {
-    expect(src).toMatch(/install_configure_guard\(\) \{/);
+  it("emits configure guard through proxy-env.sh", () => {
+    const runtimeBlock = runtimeShellEnvBlock(src);
+    expect(runtimeBlock).toContain("nemoclaw-configure-guard begin");
+    expect(runtimeBlock).toContain("emit_sandbox_sourced_file");
   });
 
   it("intercepts openclaw configure with an actionable error", () => {
-    // The guard installs a heredoc containing a shell function — extract the
-    // full block between the function definition and the next top-level function.
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    const body = guardBlock[1];
+    const body = configureGuardBlock(src);
     expect(body).toContain("configure)");
     expect(body).toContain("nemoclaw onboard --resume");
     expect(body).toContain("return 1");
   });
 
   it("passes non-configure subcommands through to the real binary", () => {
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    expect(guardBlock[1]).toContain('command openclaw "$@"');
+    expect(configureGuardBlock(src)).toContain('command openclaw "$@"');
   });
 
-  it("uses idempotent marker blocks", () => {
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    const body = guardBlock[1];
+  it("keeps marker comments while relying on proxy-env replacement for idempotence", () => {
+    const body = configureGuardBlock(src);
     expect(body).toContain("nemoclaw-configure-guard begin");
     expect(body).toContain("nemoclaw-configure-guard end");
-    // Uses awk to strip existing block before re-inserting
-    expect(body).toContain("awk");
+    expect(runtimeShellEnvBlock(src)).toContain('emit_sandbox_sourced_file "$_PROXY_ENV_FILE"');
   });
 
-  it("calls install_configure_guard in both root and non-root paths", () => {
-    const calls = src.match(/install_configure_guard/g) || [];
+  it("writes runtime shell env in both root and non-root paths", () => {
+    const calls = src.match(/write_runtime_shell_env/g) || [];
     // definition + 2 call sites
     expect(calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not write configure guard into rc files", () => {
+    const runtimeBlock = runtimeShellEnvBlock(src);
+    expect(runtimeBlock).not.toContain('>"$rc_file"');
+    expect(runtimeBlock).not.toContain('>>"$rc_file"');
+    expect(src).not.toContain("install_configure_guard");
   });
 });
 
@@ -216,11 +273,7 @@ describe("nemoclaw-start configure guard blocks --local (#2016)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
   it("blocks openclaw agent --local with a hard error and return 1", () => {
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    const body = guardBlock[1];
+    const body = configureGuardBlock(src);
     // Must contain the agent) case that checks for --local
     expect(body).toContain("agent)");
     expect(body).toContain('"--local"');
@@ -232,19 +285,11 @@ describe("nemoclaw-start configure guard blocks --local (#2016)", () => {
   });
 
   it("suggests the correct alternative command without --local", () => {
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    expect(guardBlock[1]).toContain("openclaw agent --agent main");
+    expect(configureGuardBlock(src)).toContain("openclaw agent --agent main");
   });
 
   it("allows openclaw agent without --local to pass through", () => {
-    const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
-    );
-    expect(guardBlock).toBeTruthy();
-    const body = guardBlock[1];
+    const body = configureGuardBlock(src);
     // The agent) case only returns 1 inside the --local check.
     // After the for loop, execution falls through to `command openclaw "$@"`.
     expect(body).toContain('command openclaw "$@"');
@@ -275,6 +320,26 @@ describe("nemoclaw-start configure guard blocks config set/unset (#1973)", () =>
   });
 });
 
+describe("nemoclaw-start persistent gateway log hardening", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("creates a regular root-owned persistent log before root append", () => {
+    const helperFn = src.match(/start_persistent_gateway_log_mirror\(\) \{([\s\S]*?)^}/m);
+    expect(helperFn).toBeTruthy();
+    expect(helperFn![1]).toContain('[ -L "$log_dir" ]');
+    expect(helperFn![1]).toContain('[ -L "$log_file" ]');
+    expect(helperFn![1]).toContain("install -d -o root -g root -m 755");
+    expect(helperFn![1]).toContain("install -o root -g root -m 644 /dev/null");
+    expect(helperFn![1]).toContain('>>"$log_file"');
+  });
+
+  it("uses the persistent log helper in root and non-root paths", () => {
+    const calls = src.match(/start_persistent_gateway_log_mirror \|\| exit 1/g) || [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(src).not.toContain("chown gateway:gateway /sandbox/.openclaw/logs");
+  });
+});
+
 describe("nemoclaw-start configure guard blocks channels mutators (#2097)", () => {
   const src = fs.readFileSync(START_SCRIPT, "utf-8");
 
@@ -301,17 +366,17 @@ describe("runtime model override (#759)", () => {
     expect(src).toContain("NEMOCLAW_MODEL_OVERRIDE");
   });
 
-  it("calls apply_model_override after verify_config_integrity in both paths", () => {
+  it("calls apply_model_override after locked-aware integrity check in both paths", () => {
     // Non-root path: extract from uid check to the Root path comment
     const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
     expect(nonRootBlock).toBeTruthy();
     expect(nonRootBlock[1]).toMatch(
-      /verify_config_integrity[\s\S]*?apply_model_override[\s\S]*?export_gateway_token/,
+      /verify_config_integrity_if_locked[\s\S]*?apply_model_override[\s\S]*?export_gateway_token/,
     );
 
-    // Root path: verify_config_integrity → apply_model_override → apply_cors_override
+    // Root path: locked-aware integrity check → apply_model_override → apply_cors_override
     const rootBlock = src.match(
-      /# ── Root path[\s\S]*?verify_config_integrity[\s\S]*?apply_model_override[\s\S]*?apply_cors_override[\s\S]*?export_gateway_token/,
+      /# ── Root path[\s\S]*?verify_config_integrity_if_locked[\s\S]*?apply_model_override[\s\S]*?apply_cors_override[\s\S]*?export_gateway_token/,
     );
     expect(rootBlock).toBeTruthy();
   });
@@ -745,6 +810,153 @@ describe("nemoclaw-start CHAT_UI_URL override for configurable dashboard port (#
     expect(rootBlock).toMatch(
       /nohup gosu gateway "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/,
     );
+  });
+});
+
+// -------------------------------------------------------------------
+// NC-2227-01: Legacy migration guards
+// -------------------------------------------------------------------
+describe("NC-2227-01: legacy migration guards", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("uses a migration-complete sentinel to prevent re-running migration", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain(".migration-complete");
+    expect(fn[1]).toContain("sentinel");
+  });
+
+  it("requires root to run migration", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("id -u");
+    expect(fn[1]).toContain("migration skipped");
+    expect(fn[1]).toContain("requires root");
+  });
+
+  it("rejects sandbox-owned data directories without a legacy symlink bridge", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("data_owner");
+    expect(fn[1]).toContain("sandbox-owned");
+    expect(fn[1]).toContain("legacy symlink bridge");
+    expect(fn[1]).toContain("possible agent-planted trigger");
+  });
+
+  it("repairs trusted-sentinel sandboxes when legacy artifacts remain", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("trusted sentinel exists but legacy artifacts remain; repairing");
+    expect(fn[1]).toContain("legacy_symlinks_exist");
+    expect(fn[1]).toContain("assert_no_legacy_layout");
+  });
+
+  it("fails entrypoint startup if legacy migration cannot complete", () => {
+    expect(src).toContain(
+      'migrate_legacy_layout "/sandbox/.openclaw" "/sandbox/.openclaw-data" "openclaw" || exit 1',
+    );
+  });
+
+  it("rejects symlinked config dirs, legacy data dirs, and entries before root copy", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('[ -L "$config_dir" ]');
+    expect(fn[1]).toContain('[ -L "$data_dir" ]');
+    expect(fn[1]).toContain('[ -L "$entry" ]');
+    expect(fn[1]).toContain("refusing migration");
+  });
+
+  it("checks immutable bits before touching legacy migration artifacts", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(src).toContain("path_has_immutable_bit");
+    expect(src).toContain("ensure_mutable_for_migration");
+    for (const target of ["$sentinel", "$config_dir", "$data_dir", "$target"]) {
+      expect(fn![1]).toContain(`ensure_mutable_for_migration "${target}"`);
+    }
+    expect(fn![1]).toContain('elif [ -d "$target" ] && [ -d "$entry" ]; then');
+  });
+
+  it("uses a sandbox placeholder in shields-down recovery hints", () => {
+    expect(src).toContain("nemoclaw <sandbox> shields down");
+    expect(src).not.toContain("nemoclaw ${label} shields down");
+  });
+
+  it("does not chown -R the config directory itself", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    // The old pattern chown -R sandbox:sandbox "$config_dir" must NOT exist
+    expect(fn[1]).not.toMatch(/chown -R sandbox:sandbox "\$config_dir"\s/);
+    // Only subdirectories should be chowned
+    expect(fn[1]).toContain('[ -d "$entry" ] || continue');
+  });
+
+  it("checks hidden config symlinks when validating legacy layout", () => {
+    const existsFn = src.match(/legacy_symlinks_exist\(\) \{([\s\S]*?)^}/m);
+    const assertFn = src.match(/assert_no_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(existsFn).toBeTruthy();
+    expect(assertFn).toBeTruthy();
+    for (const fn of [existsFn![1], assertFn![1]]) {
+      expect(fn).toContain('"$config_dir"/.[!.]*');
+      expect(fn).toContain('"$config_dir"/..?*');
+      expect(fn).toContain('"$config_dir"/*');
+    }
+  });
+
+  it("uses non-dereferencing ownership repair for migrated state trees", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    const provisionFn = src.match(/provision_agent_workspaces\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(provisionFn).toBeTruthy();
+    expect(src).toContain("chown_tree_no_symlink_follow");
+    expect(fn![1]).toContain("chown_tree_no_symlink_follow sandbox:sandbox");
+    expect(fn![1]).toContain("chown_tree_no_symlink_follow root:root");
+    expect(fn![1]).not.toContain('chown -R sandbox:sandbox "$entry"');
+    expect(fn![1]).not.toContain('chown -R root:root "$config_dir/$subdir"');
+    expect(provisionFn![1]).toContain('chown_tree_no_symlink_follow sandbox:sandbox "$ws_path"');
+    expect(provisionFn![1]).not.toContain('chown -R sandbox:sandbox "$ws_path"');
+  });
+
+  it("reapplies shields-up ownership if shields were previously active", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("shields_were_active");
+    expect(fn[1]).toContain("Reapplying shields-up ownership");
+    expect(src).toContain("restore_immutable_if_possible");
+    expect(fn[1]).toContain("restore_immutable_if_possible");
+    expect(fn[1]).toContain('"$config_dir"/openclaw.json');
+    expect(fn[1]).toContain('"$config_dir"/.config-hash');
+    expect(fn[1]).toContain('"$config_dir"/.env');
+    expect(fn[1]).toContain('"$config_dir"');
+    for (const dir of ["skills", "hooks", "cron", "agents", "extensions", "plugins"]) {
+      expect(fn[1]).toContain(dir);
+    }
+    expect(fn[1]).toContain("chmod -R go-w");
+  });
+
+  it("writes a root-owned read-only sentinel after successful migration", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    // Sentinel must be root-owned and 444
+    expect(fn[1]).toMatch(/chown root:root "\$sentinel"/);
+    expect(fn[1]).toMatch(/chmod 444 "\$sentinel"/);
+  });
+
+  it("only provisions canonical workspace-* paths from config", () => {
+    const fn = src.match(/provision_agent_workspaces\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("workspacePattern");
+    expect(fn[1]).toContain("workspacePattern.test(relative)");
+    expect(fn[1]).toContain("workspacePattern.test(name)");
+    expect(fn[1]).toContain('[ -L "$d" ]');
+    expect(fn[1]).toContain('[ -L "$ws_path" ]');
+  });
+
+  it("migrates hidden legacy entries before removing the legacy data dir", () => {
+    const fn = src.match(/migrate_legacy_layout\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('"$data_dir"/.[!.]*');
+    expect(fn[1]).toContain('"$data_dir"/..?*');
   });
 });
 
