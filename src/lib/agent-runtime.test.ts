@@ -171,9 +171,22 @@ describe("buildRecoveryScript", () => {
     it("prepares gateway.log for the real gateway-owned sandbox log", () => {
       const script = buildOpenClawRecoveryScript(18789);
       expect(script).toContain("os.fchown(fd");
-      expect(script).toContain("os.fchmod(fd, 0o644)");
+      expect(script).toContain("owner_mode = 0o644");
+      expect(script).toContain("os.fchmod(fd, owner_mode)");
       expect(script).toContain("/tmp/gateway.log 'gateway'");
       expect(script).toContain("gosu 'gateway'");
+    });
+
+    it("prepares auto-pair.log without unlinking or following symlinks", () => {
+      const script = buildOpenClawRecoveryScript(18789);
+      expect(script).toContain("refusing to prepare symlinked /tmp/auto-pair.log");
+      expect(script).toContain("/tmp/auto-pair.log 'sandbox'");
+      expect(script).toContain("owner_mode = 0o600");
+      expect(script).not.toContain("rm -f /tmp/auto-pair.log");
+      expect(script).not.toContain(": > /tmp/auto-pair.log");
+      expect(script).not.toContain("touch /tmp/auto-pair.log");
+      expect(script).not.toContain("chown sandbox:sandbox /tmp/auto-pair.log");
+      expect(script).not.toContain("chmod 600 /tmp/auto-pair.log");
     });
 
     it("does not force non-OpenClaw agents to run as the gateway user", () => {

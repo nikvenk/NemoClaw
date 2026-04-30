@@ -4452,10 +4452,11 @@ const [cmd, ...args] = process.argv.slice(2);
 
   // Sandbox-scoped commands: nemoclaw <name> <action>
   const firstSandboxArg = args[0];
-  const implicitConnectHelp = firstSandboxArg === "--help" || firstSandboxArg === "-h";
+  const implicitConnectArg =
+    firstSandboxArg === "--help" || firstSandboxArg === "-h" || firstSandboxArg === "--probe-only";
   const requestedSandboxAction =
-    !firstSandboxArg || implicitConnectHelp ? "connect" : firstSandboxArg;
-  const requestedSandboxActionArgs = !firstSandboxArg || implicitConnectHelp ? args : args.slice(1);
+    !firstSandboxArg || implicitConnectArg ? "connect" : firstSandboxArg;
+  const requestedSandboxActionArgs = !firstSandboxArg || implicitConnectArg ? args : args.slice(1);
   if (
     requestedSandboxAction === "connect" &&
     requestedSandboxActionArgs.some((arg) => arg === "--help" || arg === "-h")
@@ -4469,7 +4470,7 @@ const [cmd, ...args] = process.argv.slice(2);
   // command, attempt recovery — the sandbox may still be live with a stale registry.
   // Derived from command registry — single source of truth
   const sandboxActions = sandboxActionTokens();
-  if (!registry.getSandbox(cmd) && sandboxActions.includes(args[0] || "")) {
+  if (!registry.getSandbox(cmd) && sandboxActions.includes(requestedSandboxAction)) {
     validateName(cmd, "sandbox name");
     await recoverRegistryEntries({ requestedSandboxName: cmd });
     if (!registry.getSandbox(cmd)) {
@@ -4488,8 +4489,8 @@ const [cmd, ...args] = process.argv.slice(2);
   const sandbox = registry.getSandbox(cmd);
   if (sandbox) {
     validateName(cmd, "sandbox name");
-    const action = args[0] || "connect";
-    const actionArgs = args.slice(1);
+    const action = requestedSandboxAction;
+    const actionArgs = requestedSandboxActionArgs;
 
     switch (action) {
       case "connect":
