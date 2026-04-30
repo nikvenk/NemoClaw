@@ -566,8 +566,8 @@ workspace directory alongside the default <code class="docutils literal notransl
 Files are per-agent — changes in <code class="docutils literal notranslate"><span class="pre">workspace-main/AGENTS.md</span></code> are not visible to
 <code class="docutils literal notranslate"><span class="pre">workspace-support/</span></code>.</p>
 <p>Persistence and snapshots are handled automatically for per-agent workspaces:
-the sandbox entrypoint provisions each <code class="docutils literal notranslate"><span class="pre">workspace-&lt;name&gt;/</span></code> as a symlink into the
-writable <code class="docutils literal notranslate"><span class="pre">.openclaw-data/</span></code> tree so state survives sandbox restart, and
+the sandbox entrypoint provisions each <code class="docutils literal notranslate"><span class="pre">workspace-&lt;name&gt;/</span></code> directly under the
+writable <code class="docutils literal notranslate"><span class="pre">.openclaw/</span></code> tree so state survives sandbox restart, and
 <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">snapshot</span> <span class="pre">create</span></code> discovers every <code class="docutils literal notranslate"><span class="pre">workspace-&lt;name&gt;/</span></code> directory
 and includes it in the snapshot bundle alongside the default <code class="docutils literal notranslate"><span class="pre">workspace/</span></code>.</p>
 <div class="admonition note">

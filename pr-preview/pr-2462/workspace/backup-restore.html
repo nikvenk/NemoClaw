@@ -532,8 +532,8 @@ Snapshots capture all workspace state directories defined in the agent manifest 
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">rebuild</span></code> command uses the same snapshot mechanism automatically.
-Snapshot restore accepts symlinks that resolve to NemoClaw-managed sandbox data paths such as <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data/</span></code>.
-Symlinks that point outside the known sandbox data paths are still rejected during extraction.
+Snapshot restore performs a targeted repair for legacy <code class="docutils literal notranslate"><span class="pre">.openclaw-data</span></code> symlinks that were created by older images.
+Unsafe symlinks and hard links inside sandbox state are rejected during backup creation before they can enter a snapshot.
 For full details, see the <a class="reference internal" href="../reference/commands.html"><span class="std std-doc">Commands reference</span></a>.</p>
 </section>
 <section id="manual-backup">
@@ -612,9 +612,8 @@ and so on — see <a class="reference internal" href="workspace-files.html#multi
 directory under the sandbox state tree and includes it in the snapshot bundle
 alongside the default <code class="docutils literal notranslate"><span class="pre">workspace/</span></code>. <code class="docutils literal notranslate"><span class="pre">snapshot</span> <span class="pre">restore</span></code> re-applies the full
 per-agent set. No manual per-workspace backup pattern is needed.</p>
-<p>The sandbox entrypoint ensures every per-agent workspace is backed by the
-persistent <code class="docutils literal notranslate"><span class="pre">.openclaw-data/</span></code> tree (via a symlink from
-<code class="docutils literal notranslate"><span class="pre">.openclaw/workspace-&lt;name&gt;/</span></code>) so state also survives <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">restart</span></code>.</p>
+<p>The sandbox entrypoint ensures every per-agent workspace lives directly under
+the persistent <code class="docutils literal notranslate"><span class="pre">.openclaw/</span></code> tree, so state also survives <code class="docutils literal notranslate"><span class="pre">openshell</span> <span class="pre">sandbox</span> <span class="pre">restart</span></code>.</p>
 <section id="shared-files-across-agents">
 <h3>Shared files across agents<a class="headerlink" href="#shared-files-across-agents" title="Link to this heading">#</a></h3>
 <p>Files that operators typically want consistent across every per-agent workspace

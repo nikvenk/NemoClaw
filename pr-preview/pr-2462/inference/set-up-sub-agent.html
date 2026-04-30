@@ -518,12 +518,12 @@ When adapting an OpenClaw sub-agent setup, use these paths inside the sandbox:</
 <td><p>OpenClaw config, including <code class="docutils literal notranslate"><span class="pre">models.providers</span></code>, <code class="docutils literal notranslate"><span class="pre">agents.defaults</span></code>, and <code class="docutils literal notranslate"><span class="pre">agents.list</span></code>.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/.config-hash</span></code></p></td>
-<td><p>Integrity hash for <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. Refresh it after editing the config.</p></td>
+<td><p>Hash for <code class="docutils literal notranslate"><span class="pre">openclaw.json</span></code>. Keep it in sync after manual config edits; it becomes a startup-enforced trust anchor only after <code class="docutils literal notranslate"><span class="pre">shields</span> <span class="pre">up</span></code> locks it root-owned and read-only.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data/agents/&lt;agent-id&gt;/agent/auth-profiles.json</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/agents/&lt;agent-id&gt;/agent/auth-profiles.json</span></code></p></td>
 <td><p>Per-agent provider credentials. Use this when a sub-agent calls an auxiliary provider directly.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data/workspace/</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/workspace/</span></code></p></td>
 <td><p>Writable shared workspace path for files the primary agent passes to the sub-agent.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/tmp/gateway.log</span></code></p></td>
@@ -532,8 +532,8 @@ When adapting an OpenClaw sub-agent setup, use these paths inside the sandbox:</
 </tbody>
 </table>
 </div>
-<p>For file-based tasks, instruct agents to use <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw-data/workspace/</span></code>.
-Avoid relying on symlinked or read-only OpenClaw paths in delegation instructions.</p>
+<p>For file-based tasks, instruct agents to use <code class="docutils literal notranslate"><span class="pre">/sandbox/.openclaw/workspace/</span></code>.
+Avoid relying on legacy <code class="docutils literal notranslate"><span class="pre">.openclaw-data</span></code> paths or read-only OpenClaw paths in delegation instructions.</p>
 </section>
 <section id="omni-vision-sub-agent-example">
 <h2>Omni Vision Sub-Agent Example<a class="headerlink" href="#omni-vision-sub-agent-example" title="Link to this heading">#</a></h2>
@@ -580,7 +580,8 @@ The primary orchestration model remains responsible for conversation, planning, 
 </div>
 <p>Create <code class="docutils literal notranslate"><span class="pre">/tmp/openclaw.updated.json</span></code> with the OpenClaw sub-agent config.
 For the Omni example, the demo provides <code class="docutils literal notranslate"><span class="pre">vlm-demo/vlm-subagent/openclaw-patch.py</span></code>.</p>
-<p>Upload the patched config and refresh the hash:</p>
+<p>Upload the patched config and refresh the hash.
+In the default mutable state, this keeps the local hash consistent but does not make it tamper-proof; run <code class="docutils literal notranslate"><span class="pre">nemoclaw</span> <span class="pre">&lt;name&gt;</span> <span class="pre">shields</span> <span class="pre">up</span></code> afterward if the sandbox should enforce config integrity at startup.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_CTR</span><span class="s2">&quot;</span><span class="w"> </span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>openshell<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SANDBOX</span><span class="s2">&quot;</span><span class="w"> </span>-c<span class="w"> </span>agent<span class="w"> </span>--<span class="w"> </span>chmod<span class="w"> </span><span class="m">644</span><span class="w"> </span>/sandbox/.openclaw/openclaw.json
 <span class="gp">$ </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_CTR</span><span class="s2">&quot;</span><span class="w"> </span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>openshell<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SANDBOX</span><span class="s2">&quot;</span><span class="w"> </span>-c<span class="w"> </span>agent<span class="w"> </span>--<span class="w"> </span>chmod<span class="w"> </span><span class="m">644</span><span class="w"> </span>/sandbox/.openclaw/.config-hash
 <span class="gp">$ </span>cat<span class="w"> </span>/tmp/openclaw.updated.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_CTR</span><span class="s2">&quot;</span><span class="w"> </span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-i<span class="w"> </span>-n<span class="w"> </span>openshell<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SANDBOX</span><span class="s2">&quot;</span><span class="w"> </span>-c<span class="w"> </span>agent<span class="w"> </span>--<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;cat &gt; /sandbox/.openclaw/openclaw.json&#39;</span>
@@ -595,12 +596,12 @@ For the Omni example, the demo provides <code class="docutils literal notranslat
 <h2>Add Sub-Agent Credentials<a class="headerlink" href="#add-sub-agent-credentials" title="Link to this heading">#</a></h2>
 <p>If the auxiliary model uses a provider key outside the normal NemoClaw inference route, put that key in the sub-agent auth profile.
 For the Omni example:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>/sandbox/.openclaw-data/agents/vision-operator/agent/auth-profiles.json
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>/sandbox/.openclaw/agents/vision-operator/agent/auth-profiles.json
 </pre></div>
 </div>
 <p>Use the same provider ID that appears in <code class="docutils literal notranslate"><span class="pre">models.providers</span></code>, such as <code class="docutils literal notranslate"><span class="pre">nvidia-omni</span></code>.
 After uploading the auth profile, make sure the sub-agent directory is owned by the sandbox user:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_CTR</span><span class="s2">&quot;</span><span class="w"> </span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>openshell<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SANDBOX</span><span class="s2">&quot;</span><span class="w"> </span>-c<span class="w"> </span>agent<span class="w"> </span>--<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>sandbox:sandbox<span class="w"> </span>/sandbox/.openclaw-data/agents/vision-operator
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_CTR</span><span class="s2">&quot;</span><span class="w"> </span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>openshell<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SANDBOX</span><span class="s2">&quot;</span><span class="w"> </span>-c<span class="w"> </span>agent<span class="w"> </span>--<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>sandbox:sandbox<span class="w"> </span>/sandbox/.openclaw/agents/vision-operator
 </pre></div>
 </div>
 </section>
@@ -614,7 +615,7 @@ In the Omni demo, the OpenClaw gateway runs as <code class="docutils literal not
 <h2>Add Delegation Instructions<a class="headerlink" href="#add-delegation-instructions" title="Link to this heading">#</a></h2>
 <p>OpenClaw handles <code class="docutils literal notranslate"><span class="pre">sessions_spawn</span></code>, but the primary agent still needs task instructions.
 Place those instructions in the writable workspace, for example:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>/sandbox/.openclaw-data/workspace/TOOLS.md
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>/sandbox/.openclaw/workspace/TOOLS.md
 </pre></div>
 </div>
 <p>The Omni demo includes <code class="docutils literal notranslate"><span class="pre">vlm-demo/vlm-subagent/TOOLS.md</span></code>, which tells <code class="docutils literal notranslate"><span class="pre">main</span></code> to delegate image tasks to <code class="docutils literal notranslate"><span class="pre">vision-operator</span></code> and tells the sub-agent to read the image path it receives.
