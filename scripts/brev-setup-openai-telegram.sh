@@ -66,6 +66,27 @@ fi
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$TARGET_USER" 2>/dev/null || true
 sudo chmod 666 /var/run/docker.sock
+
+# Brev GCP instances configure Docker with an internal proxy (http://gcp:...)
+# that cannot resolve external hostnames like ghcr.io, causing all image pulls
+# to fail with "proxyconnect: lookup gcp: server misbehaving".
+# Clear the proxy so Docker reaches the internet directly.
+DOCKER_PROXY_DIR=/etc/systemd/system/docker.service.d
+if sudo grep -qr "HTTP_PROXY\|HTTPS_PROXY" "$DOCKER_PROXY_DIR" 2>/dev/null; then
+  info "Clearing Brev Docker proxy (prevents ghcr.io pull failures)..."
+  sudo mkdir -p "$DOCKER_PROXY_DIR"
+  sudo tee "$DOCKER_PROXY_DIR/http-proxy.conf" > /dev/null << 'PROXY_EOF'
+[Service]
+Environment="HTTP_PROXY="
+Environment="HTTPS_PROXY="
+Environment="NO_PROXY="
+PROXY_EOF
+  sudo systemctl daemon-reload
+  sudo systemctl restart docker
+  sudo chmod 666 /var/run/docker.sock
+  info "Docker proxy cleared and daemon restarted"
+fi
+
 info "Docker ready ($(docker --version 2>/dev/null | cut -c1-40))"
 
 # ── 3. Node.js 22 ─────────────────────────────────────────────────────────────
@@ -125,7 +146,7 @@ if [[ "${SKIP_DOCKER_PULL:-0}" != "1" ]]; then
   (
     CLUSTER_TAG="${OPENSHELL_VERSION#v}"
     for img in "${DOCKER_IMAGES[@]}" "ghcr.io/nvidia/openshell/cluster:${CLUSTER_TAG}"; do
-      sg docker -c "docker pull $img" 2>&1 | tail -1 &
+      docker pull "$img" 2>&1 | tail -1 &
     done
     wait
   ) &
@@ -151,7 +172,7 @@ info "nemoclaw $(nemoclaw --version 2>/dev/null || echo unknown) linked"
 sudo cp "$NEMOCLAW_CLONE_DIR/scripts/nemoclaw-configure.sh" /usr/local/bin/nemoclaw-configure
 sudo chmod +x /usr/local/bin/nemoclaw-configure
 
-cat > /etc/motd << 'MOTD'
+sudo tee /etc/motd << 'MOTD' > /dev/null
 
   ╔══════════════════════════════════════════════════════════════╗
   ║           NemoClaw — Ready to Configure                      ║
