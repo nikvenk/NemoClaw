@@ -1108,14 +1108,22 @@ print_dependency_table() {
   fi
   openshell_act="$(_decide_action "$openshell_ver" "$MIN_OPENSHELL_VERSION")"
 
-  # Backend probe (read-only)
+  # Backend probe — mirrors select_backend() priority so the table reflects
+  # what will actually happen, not just what is currently running.
   local backend_present="none"
-  if _port_listening 8000 && _proc_running vllm; then
+  if [[ -n "${FORCE_REINSTALL:-}" ]]; then
+    backend_present="vLLM:8000"
+    backend_act="INSTALL"
+  elif _port_listening 8000 && _proc_running vllm; then
     backend_present="vLLM:8000"
     backend_act="REUSE"
   elif _proc_running sglang; then
     backend_present="SGLang"
     backend_act="REUSE"
+  elif [[ "${NEMOCLAW_DETECTED_PLATFORM:-}" == "station" ]] && detect_gpu; then
+    # Station: vLLM will be installed regardless of Ollama presence.
+    backend_present="vLLM:8000"
+    backend_act="INSTALL"
   elif command_exists ollama && _port_listening 11434; then
     backend_present="Ollama:11434"
     backend_act="REUSE"
