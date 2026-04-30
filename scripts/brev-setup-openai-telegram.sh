@@ -4,29 +4,14 @@
 #
 # Brev launchable: NemoClaw + multi-provider + Telegram
 # Source: https://github.com/nikvenk/NemoClaw
-
-# ┌─────────────────────────────────────────────────────────────────┐
-# │  CONFIGURE HERE — fill in your values before deploying          │
-# └─────────────────────────────────────────────────────────────────┘
-export NEMOCLAW_PROVIDER="cloud"           # cloud | openai | anthropic | gemini | compatible-endpoint
-export NVIDIA_API_KEY=""                   # nvapi-... from build.nvidia.com  (cloud only)
-export OPENAI_API_KEY=""                   # OpenAI key                       (openai only)
-export ANTHROPIC_API_KEY=""               # Anthropic key                    (anthropic only)
-export GEMINI_API_KEY=""                   # Google Gemini key                (gemini only)
-export NEMOCLAW_MODEL="nvidia/nemotron-3-super-120b-a12b"
-export TELEGRAM_BOT_TOKEN=""              # Bot token from @BotFather (leave blank to skip)
-export TELEGRAM_ALLOWED_IDS=""            # e.g. "123456789,987654321" (leave blank for none)
-# ─────────────────────────────────────────────────────────────────
-#   OPENSHELL_VERSION      (default: v0.0.36)
-#   SKIP_DOCKER_PULL       Set to 1 to skip image pre-pulls
+#
+# This script runs automatically at VM boot and pre-installs everything.
+# When you SSH in, run:  nemoclaw onboard
+# The interactive wizard will ask for your provider, API key, model,
+# Telegram bot token, and any other settings.
 
 set -euo pipefail
 
-# ── Config ────────────────────────────────────────────────────────────────────
-NEMOCLAW_PROVIDER="${NEMOCLAW_PROVIDER:-cloud}"
-NEMOCLAW_MODEL="${NEMOCLAW_MODEL:-}"
-NEMOCLAW_SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-my-assistant}"
-NEMOCLAW_POLICY_TIER="${NEMOCLAW_POLICY_TIER:-balanced}"
 NEMOCLAW_REPO="${NEMOCLAW_REPO:-nikvenk/NemoClaw}"
 NEMOCLAW_REF="${NEMOCLAW_REF:-main}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-v0.0.36}"
@@ -63,37 +48,6 @@ wait_apt() {
     sleep 5; ((w += 5))
   done
 }
-
-# ── 0. Validate credentials ───────────────────────────────────────────────────
-info "Provider: $NEMOCLAW_PROVIDER"
-case "$NEMOCLAW_PROVIDER" in
-  cloud)
-    [[ -n "${NVIDIA_API_KEY:-}" ]] || fail "NVIDIA_API_KEY required for provider=cloud"
-    export NVIDIA_API_KEY ;;
-  openai)
-    [[ -n "${OPENAI_API_KEY:-}" ]] || fail "OPENAI_API_KEY required for provider=openai"
-    export OPENAI_API_KEY; unset NVIDIA_API_KEY 2>/dev/null || true ;;
-  anthropic)
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY required for provider=anthropic"
-    export ANTHROPIC_API_KEY; unset NVIDIA_API_KEY 2>/dev/null || true ;;
-  gemini)
-    [[ -n "${GEMINI_API_KEY:-}" ]] || fail "GEMINI_API_KEY required for provider=gemini"
-    export GEMINI_API_KEY; unset NVIDIA_API_KEY 2>/dev/null || true ;;
-  compatible-endpoint)
-    [[ -n "${NEMOCLAW_ENDPOINT_URL:-}" ]] || fail "NEMOCLAW_ENDPOINT_URL required for provider=compatible-endpoint"
-    export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY="${COMPATIBLE_API_KEY:-dummy}"
-    unset NVIDIA_API_KEY 2>/dev/null || true ;;
-  *) fail "Unknown NEMOCLAW_PROVIDER='$NEMOCLAW_PROVIDER'. Valid: cloud|openai|anthropic|gemini|compatible-endpoint" ;;
-esac
-
-export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
-export TELEGRAM_ALLOWED_IDS="${TELEGRAM_ALLOWED_IDS:-}"
-[[ -n "$TELEGRAM_BOT_TOKEN" ]] && info "Telegram: enabled" || info "Telegram: disabled"
-
-export NEMOCLAW_NON_INTERACTIVE=1
-export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
-export NEMOCLAW_SANDBOX_NAME NEMOCLAW_POLICY_TIER
-[[ -n "$NEMOCLAW_MODEL" ]] && export NEMOCLAW_MODEL
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 sudo systemctl stop unattended-upgrades 2>/dev/null || true
@@ -153,7 +107,9 @@ if ! command -v openshell >/dev/null 2>&1 || [[ "$(_os_ver)" != "${OPENSHELL_VER
 fi
 info "OpenShell $(openshell --version 2>&1 || echo unknown)"
 
-# ── 5. Clone fork + build (compiles tool-call fix for NVIDIA Endpoints) ───────
+# ── 5. Clone fork + build ─────────────────────────────────────────────────────
+# Cloning nikvenk/NemoClaw compiles the tool-call fix for NVIDIA Endpoints
+# (forces openai-completions so Nemotron models execute tools correctly).
 if [[ -d "$NEMOCLAW_CLONE_DIR/.git" ]]; then
   git -C "$NEMOCLAW_CLONE_DIR" fetch origin "$NEMOCLAW_REF"
   git -C "$NEMOCLAW_CLONE_DIR" checkout "$NEMOCLAW_REF"
@@ -189,13 +145,33 @@ sudo ln -sf "$NEMOCLAW_CLONE_DIR/bin/nemoclaw.js" /usr/local/bin/nemoclaw
 sudo chmod +x "$NEMOCLAW_CLONE_DIR/bin/nemoclaw.js"
 info "nemoclaw $(nemoclaw --version 2>/dev/null || echo unknown) linked"
 
-[[ -n "$PULL_PID" ]] && { wait "$PULL_PID" || warn "Some Docker pulls failed"; }
+[[ -n "$PULL_PID" ]] && { wait "$PULL_PID" || warn "Some Docker pulls failed (will pull at onboard time)"; }
 
-# ── 6. Run onboard ────────────────────────────────────────────────────────────
-info "Running nemoclaw onboard (provider=$NEMOCLAW_PROVIDER, sandbox=$NEMOCLAW_SANDBOX_NAME)..."
-nemoclaw onboard --non-interactive --yes-i-accept-third-party-software
+# ── 6. Write a welcome message shown on every SSH login ──────────────────────
+cat > /etc/motd << 'MOTD'
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║           NemoClaw — Ready to Configure                      ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║  Run the setup wizard to configure your AI assistant:        ║
+  ║                                                              ║
+  ║    nemoclaw onboard                                          ║
+  ║                                                              ║
+  ║  The wizard will ask you to choose:                          ║
+  ║    • Inference provider (NVIDIA, OpenAI, Anthropic, Gemini)  ║
+  ║    • API key for that provider                               ║
+  ║    • Model (e.g. nvidia/nemotron-3-super-120b-a12b, gpt-4o)  ║
+  ║    • Telegram bot token (optional)                           ║
+  ║    • Telegram allowed user IDs (optional)                    ║
+  ║                                                              ║
+  ║  After setup:                                                ║
+  ║    nemoclaw my-assistant connect   → enter sandbox           ║
+  ║    openclaw tui                    → open chat UI            ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+MOTD
 
 # ── 7. Sentinel ───────────────────────────────────────────────────────────────
 sudo touch "$SENTINEL"
 echo "=== Ready ===" | sudo tee -a "$LAUNCH_LOG" >/dev/null
-info "Setup complete. Connect: nemoclaw ${NEMOCLAW_SANDBOX_NAME} connect"
+info "Pre-installation complete. SSH in and run: nemoclaw onboard"
