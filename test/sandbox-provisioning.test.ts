@@ -73,6 +73,24 @@ describe("sandbox provisioning: procps debug tools (#2343)", () => {
   });
 });
 
+describe("sandbox provisioning: stale base writable state compatibility", () => {
+  const mainSrc = fs.readFileSync(DOCKERFILE, "utf-8");
+
+  it("Dockerfile creates the workspace backing directory before linking workspace/media", () => {
+    const workspaceDirIdx = mainSrc.indexOf("/sandbox/.openclaw-data/workspace");
+    const mediaLinkIdx = mainSrc.indexOf(
+      "ln -sfn /sandbox/.openclaw-data/media /sandbox/.openclaw-data/workspace/media",
+    );
+
+    expect(workspaceDirIdx).toBeGreaterThanOrEqual(0);
+    expect(mediaLinkIdx).toBeGreaterThan(workspaceDirIdx);
+  });
+
+  it("Dockerfile restores the .openclaw/workspace symlink for stale base images", () => {
+    expect(mainSrc).toContain("for dir in logs credentials sandbox workspace media");
+  });
+});
+
 describe("sandbox provisioning: root-owned read-only config (#514)", () => {
   const src = fs.readFileSync(DOCKERFILE, "utf-8");
 
