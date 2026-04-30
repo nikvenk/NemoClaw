@@ -933,7 +933,8 @@ _resolve_vllm_image() {
       | python3 -c "
 import sys, json, re
 data = json.load(sys.stdin)
-tags = [t for t in data.get('tags', []) if re.match(r'^\d{2}\.\d{2}', t) or re.match(r'^v?\d+\.\d+\.\d+', t)]
+# NGC vLLM tags use YY.MM-py3 format (e.g. 26.01-py3, 25.12-py3)
+tags = [t for t in data.get('tags', []) if re.match(r'^\d{2}\.\d{2}-py\d+$', t)]
 tags.sort(reverse=True)
 print(tags[0] if tags else '')
 " 2>/dev/null || true)
