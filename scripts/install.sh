@@ -958,7 +958,6 @@ install_vllm() {
   if [[ -n "$force" ]]; then
     info "vLLM reinstall requested — stopping existing container and any running vLLM process…"
     docker stop "$container_name" 2>/dev/null || true
-    docker rm   "$container_name" 2>/dev/null || true
     if _proc_running vllm; then
       pkill -f vllm 2>/dev/null || true
       sleep 2
@@ -969,6 +968,9 @@ install_vllm() {
     info "vLLM already running on :${port} — skipping pull"
     return 0
   fi
+
+  # Remove any stopped container with the same name before creating a new one.
+  docker rm "$container_name" 2>/dev/null || true
 
   info "Pulling vLLM container (${image})…"
   docker pull "$image"
