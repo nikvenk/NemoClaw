@@ -1831,6 +1831,26 @@ exit 1
     expect(result.stdout.trim()).toBe("yes");
   });
 
+  it("is_real_nemoclaw_cli accepts semver prerelease plus build metadata", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemohermes-real-cli-"));
+    const fakeCli = path.join(tmp, "nemohermes");
+    writeExecutable(
+      fakeCli,
+      `#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  echo "nemohermes v0.1.0-rc.1+build.5"
+  exit 0
+fi
+exit 1
+`,
+    );
+
+    const result = callInstallerFn(
+      `is_real_nemoclaw_cli ${JSON.stringify(fakeCli)} "nemohermes" && echo yes || echo no`,
+    );
+    expect(result.stdout.trim()).toBe("yes");
+  });
+
   it("is_real_nemoclaw_cli rejects mismatched CLI aliases", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemohermes-real-cli-"));
     const fakeCli = path.join(tmp, "nemohermes");

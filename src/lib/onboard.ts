@@ -1556,7 +1556,7 @@ async function configureWebSearch(
     const validation = validateBraveSearchApiKey(braveApiKey);
     if (!validation.ok) {
       console.warn(
-        "  Brave Search API key validation failed. Web search will be disabled — re-enable later via `nemoclaw config web-search`.",
+        `  Brave Search API key validation failed. Web search will be disabled — re-enable later via \`${cliName()} config web-search\`.`,
       );
       if (validation.message) {
         console.warn(`  ${validation.message}`);
@@ -1618,7 +1618,7 @@ function verifyWebSearchInsideSandbox(
       if (!hasWebBackend) {
         console.warn("  ⚠ Web search was configured but Hermes does not report an active web backend.");
         console.warn("    The agent may not have accepted the web search configuration.");
-        console.warn("    Check: nemoclaw " + sandboxName + " exec hermes dump");
+        console.warn(`    Check: ${cliName()} ${sandboxName} exec hermes dump`);
       } else {
         console.log("  ✓ Web search is active inside sandbox");
       }
@@ -3536,7 +3536,7 @@ async function createSandbox(
       }
       if (isNonInteractive()) {
         console.error(
-          "  Aborting: resolve the messaging channel conflict above or run `nemoclaw <sandbox> destroy` on the other sandbox.",
+          `  Aborting: resolve the messaging channel conflict above or run \`${cliName()} <sandbox> destroy\` on the other sandbox.`,
         );
         process.exit(1);
       }
@@ -7077,7 +7077,7 @@ function printDashboard(
       console.log(`  ${entry.label}: ${entry.url}`);
     }
     console.log(
-      `  Token:       nemoclaw ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
+      `  Token:       ${cliName()} ${sandboxName} connect  →  jq -r '.gateway.auth.token' /sandbox/.openclaw/openclaw.json`,
     );
     console.log(
       `               append  #token=<token>  to the URL, or see /tmp/gateway.log inside the sandbox.`,
@@ -7532,7 +7532,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
     let sandboxName = session?.sandboxName || requestedSandboxName || null;
     if (sandboxName && RESERVED_SANDBOX_NAMES.has(sandboxName)) {
       console.error(
-        `  Reserved name in resumed session: '${sandboxName}' is a NemoClaw CLI command.`,
+        `  Reserved name in resumed session: '${sandboxName}' is a ${cliDisplayName()} CLI command.`,
       );
       console.error("  Start a fresh onboard with --name <sandbox> to choose a different name.");
       process.exit(1);

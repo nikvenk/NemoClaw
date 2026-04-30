@@ -1080,7 +1080,7 @@ install_nemoclaw() {
 
     # Install/upgrade the OpenShell CLI on the GitHub-clone path (curl|bash).
     # Without this, install.sh defers the openshell version gate entirely to
-    # `nemoclaw onboard`, so any later skip of onboard (preflight blocking,
+    # onboard, so any later skip of onboard (preflight blocking,
     # interrupted session) leaves openshell stale below blueprint's
     # min_openshell_version even though the new NemoClaw declared a higher
     # floor. The source-checkout branch intentionally skips this — a developer
@@ -1108,7 +1108,7 @@ is_real_nemoclaw_cli() {
   version_output="$("$bin_path" --version 2>/dev/null)" || return 1
   # Real CLI outputs: "nemoclaw v0.1.0" or "nemohermes v0.1.0"
   # (or any semver, with optional pre-release/build metadata).
-  [[ "$version_output" =~ ^${expected_name}[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]
+  [[ "$version_output" =~ ^${expected_name}[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$ ]]
 }
 
 verify_nemoclaw() {
@@ -1241,7 +1241,7 @@ run_onboard() {
   local -a onboard_cmd=(onboard)
   local session_file="${HOME}/.nemoclaw/onboard-session.json"
   # --fresh takes precedence over any session state. We forward --fresh to
-  # `nemoclaw onboard` so the CLI clears the existing session file before
+  # the active CLI's onboard command so it clears the existing session file before
   # creating a new one — the install.sh classifier is bypassed entirely.
   if [ "${FRESH:-}" = "1" ]; then
     info "Starting a fresh onboarding session (--fresh)."
@@ -1355,16 +1355,16 @@ post_install_message() {
 
   echo ""
   echo "  ──────────────────────────────────────────────────"
-  warn "Your current shell cannot resolve 'nemoclaw' yet."
+  warn "Your current shell cannot resolve '${_CLI_BIN}' yet."
   echo ""
-  echo "  To use nemoclaw now, run:"
+  echo "  To use ${_CLI_BIN} now, run:"
   echo ""
   echo "    export PATH=\"${NEMOCLAW_RECOVERY_EXPORT_DIR}:\$PATH\""
   echo "    source ${NEMOCLAW_RECOVERY_PROFILE}"
   echo ""
   echo "  Then run:"
   echo ""
-  echo "    nemoclaw onboard"
+  echo "    ${_CLI_BIN} onboard"
   echo ""
   echo "  Or open a new terminal window after updating your shell profile."
   echo "  ──────────────────────────────────────────────────"
@@ -1427,7 +1427,7 @@ main() {
   # Check the registry file directly to avoid shelling out to nemoclaw (which
   # may be a stub in test environments).
   local _reg_file="${HOME}/.nemoclaw/sandboxes.json"
-  if [ -f "$_reg_file" ] && command_exists nemoclaw && command_exists openshell; then
+  if [ -f "$_reg_file" ] && command_exists "$_CLI_BIN" && command_exists openshell; then
     local _has_sandboxes
     _has_sandboxes="$(python3 -c "
 import json, sys
@@ -1439,12 +1439,12 @@ except Exception:
 " "$_reg_file" 2>/dev/null || echo 0)"
     if [ "$_has_sandboxes" -gt 0 ]; then
       info "Backing up $_has_sandboxes sandbox(es) before upgrade…"
-      nemoclaw backup-all 2>&1 || warn "Pre-upgrade backup failed (non-fatal). Continuing."
+      "$_CLI_BIN" backup-all 2>&1 || warn "Pre-upgrade backup failed (non-fatal). Continuing."
     fi
   fi
 
   step 3 "Onboarding"
-  if command_exists nemoclaw; then
+  if command_exists "$_CLI_BIN"; then
     if [[ -f "${HOME}/.nemoclaw/sandboxes.json" ]] && node -e '
       const fs = require("fs");
       try {
@@ -1457,9 +1457,9 @@ except Exception:
     ' "${HOME}/.nemoclaw/sandboxes.json"; then
       warn "Existing sandbox sessions detected. Onboarding may disrupt running agents."
       if [[ "${NEMOCLAW_SINGLE_SESSION:-}" == "1" ]]; then
-        error "Aborting — NEMOCLAW_SINGLE_SESSION is set. Destroy existing sessions with 'nemoclaw <name> destroy' before reinstalling."
+        error "Aborting — NEMOCLAW_SINGLE_SESSION is set. Destroy existing sessions with '${_CLI_BIN} <name> destroy' before reinstalling."
       fi
-      warn "Consider destroying existing sessions with 'nemoclaw <name> destroy' first."
+      warn "Consider destroying existing sessions with '${_CLI_BIN} <name> destroy' first."
       warn "Set NEMOCLAW_SINGLE_SESSION=1 to abort the installer when sessions are active."
     fi
     if run_installer_host_preflight; then
@@ -1467,15 +1467,15 @@ except Exception:
       ONBOARD_RAN=true
       # After onboard, check for stale sandboxes that need rebuilding (#1904).
       # Uses --auto so it runs non-interactively in piped/CI contexts.
-      if [ "${_has_sandboxes:-0}" -gt 0 ] 2>/dev/null && command_exists nemoclaw; then
+      if [ "${_has_sandboxes:-0}" -gt 0 ] 2>/dev/null && command_exists "$_CLI_BIN"; then
         info "Checking for sandboxes that need upgrading…"
-        nemoclaw upgrade-sandboxes --auto 2>&1 || warn "Sandbox upgrade check failed (non-fatal)."
+        "$_CLI_BIN" upgrade-sandboxes --auto 2>&1 || warn "Sandbox upgrade check failed (non-fatal)."
       fi
     else
       warn "Skipping onboarding until the host prerequisites above are fixed."
     fi
   else
-    warn "Skipping onboarding — this shell still cannot resolve 'nemoclaw'."
+    warn "Skipping onboarding — this shell still cannot resolve '${_CLI_BIN}'."
   fi
 
   print_done

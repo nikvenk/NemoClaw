@@ -1262,8 +1262,10 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // us list (or later delete) providers from the wrong place.
     const recovery = await recoverNamedGatewayRuntime();
     if (!recovery.recovered) {
-      console.error("  Could not query the NemoClaw OpenShell gateway. Is it running?");
-      console.error("  Run 'openshell gateway start --name nemoclaw' or 'nemoclaw onboard' first.");
+      console.error(`  Could not query the ${CLI_DISPLAY_NAME} OpenShell gateway. Is it running?`);
+      console.error(
+        `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
+      );
       process.exit(1);
     }
     const result = runOpenshell(["provider", "list", "--names"], {
@@ -1272,7 +1274,9 @@ async function credentialsCommand(args: string[]): Promise<void> {
     });
     if (result.status !== 0) {
       console.error("  Could not query OpenShell gateway. Is it running?");
-      console.error("  Run 'openshell gateway start --name nemoclaw' or 'nemoclaw onboard' first.");
+      console.error(
+        `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
+      );
       process.exit(1);
     }
     const allNames = String(result.stdout || "")
@@ -1299,7 +1303,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
         `  ${String(bridgeNames.length)} per-sandbox messaging bridge(s) are also registered.`,
       );
       console.log(
-        "  Manage those with `nemoclaw <sandbox> channels list/remove/stop` — not this command.",
+        `  Manage those with \`${CLI_NAME} <sandbox> channels list/remove/stop\` — not this command.`,
       );
     }
     return;
@@ -1361,7 +1365,7 @@ async function credentialsCommand(args: string[]): Promise<void> {
     // a credential env variable.
     const recovery = await recoverNamedGatewayRuntime();
     if (!recovery.recovered) {
-      console.error("  Could not reach the NemoClaw OpenShell gateway. Is it running?");
+      console.error(`  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway. Is it running?`);
       console.error(
         `  Run 'openshell gateway start --name nemoclaw' or '${CLI_NAME} onboard' first.`,
       );
@@ -2412,7 +2416,9 @@ async function applyChannelAddToGatewayAndRegistry(
 ): Promise<void> {
   const recovery = await recoverNamedGatewayRuntime();
   if (!recovery.recovered) {
-    console.error("  Could not reach the NemoClaw OpenShell gateway. Tokens were staged");
+    console.error(
+      `  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway. Tokens were staged`,
+    );
     console.error("  in env for this run only — re-run after starting the gateway, or run");
     console.error("  'openshell gateway start --name nemoclaw' manually.");
     process.exit(1);
@@ -2450,7 +2456,9 @@ async function applyChannelRemoveToGatewayAndRegistry(
 ): Promise<void> {
   const recovery = await recoverNamedGatewayRuntime();
   if (!recovery.recovered) {
-    console.error("  Could not reach the NemoClaw OpenShell gateway to delete the bridge.");
+    console.error(
+      `  Could not reach the ${CLI_DISPLAY_NAME} OpenShell gateway to delete the bridge.`,
+    );
     console.error(
       "  Re-run after starting the gateway, or run 'openshell gateway start --name nemoclaw'.",
     );
@@ -2547,7 +2555,7 @@ async function sandboxChannelsAdd(sandboxName: string, args: string[] = []): Pro
     if (isNonInteractive()) {
       console.error(`  Missing ${envKey} for channel '${channelArg}'.`);
       console.error(
-        `  Set ${envKey} in the environment or via 'nemoclaw credentials' before running in non-interactive mode.`,
+        `  Set ${envKey} in the environment or via '${CLI_NAME} credentials' before running in non-interactive mode.`,
       );
       process.exit(1);
     }
@@ -4374,7 +4382,7 @@ const [cmd, ...args] = process.argv.slice(2);
               "  --dangerously-skip-permissions was removed; use shields commands instead.",
             );
           }
-          console.error("  Usage: nemoclaw <name> connect");
+          console.error(`  Usage: ${CLI_NAME} <name> connect`);
           process.exit(1);
         }
         await sandboxConnect(cmd);
@@ -4402,7 +4410,7 @@ const [cmd, ...args] = process.argv.slice(2);
           parseGatewayTokenArgs(actionArgs);
         if (gatewayTokenUnknown.length > 0) {
           console.error(`  Unknown flag: ${gatewayTokenUnknown[0]}`);
-          console.error("  Usage: nemoclaw <name> gateway-token [--quiet|-q]");
+          console.error(`  Usage: ${CLI_NAME} <name> gateway-token [--quiet|-q]`);
           process.exit(1);
         }
         // Suppress EPIPE traces when the consumer closes the pipe early
