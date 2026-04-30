@@ -93,7 +93,11 @@ type OnboardTestInternals = {
   parsePolicyPresetEnv: (value: string | null) => string[];
   shouldCarryPreviousPolicies: (
     previousPolicies: string[] | null | undefined,
-    options?: { nonInteractive?: boolean; envPolicyPresetsRaw?: string },
+    options?: {
+      nonInteractive?: boolean;
+      envPolicyPresetsRaw?: string;
+      envPolicyModeRaw?: string;
+    },
   ) => boolean;
   patchStagedDockerfile: ShimFn<void>;
   pullAndResolveBaseImageDigest: () => { digest: string; ref: string } | null;
@@ -301,6 +305,36 @@ describe("onboard helpers", () => {
         shouldCarryPreviousPolicies(["npm"], {
           nonInteractive: false,
           envPolicyPresetsRaw: "pypi",
+        }),
+      ).toBe(true);
+    });
+
+    it("drops previous policies when NEMOCLAW_POLICY_MODE=skip", () => {
+      expect(
+        shouldCarryPreviousPolicies(["npm"], {
+          nonInteractive: true,
+          envPolicyPresetsRaw: "",
+          envPolicyModeRaw: "skip",
+        }),
+      ).toBe(false);
+    });
+
+    it("drops previous policies when NEMOCLAW_POLICY_MODE=custom forces explicit selection", () => {
+      expect(
+        shouldCarryPreviousPolicies(["npm"], {
+          nonInteractive: true,
+          envPolicyPresetsRaw: "",
+          envPolicyModeRaw: "custom",
+        }),
+      ).toBe(false);
+    });
+
+    it("carries previous policies when NEMOCLAW_POLICY_MODE=suggested (implicit)", () => {
+      expect(
+        shouldCarryPreviousPolicies(["npm"], {
+          nonInteractive: true,
+          envPolicyPresetsRaw: "",
+          envPolicyModeRaw: "suggested",
         }),
       ).toBe(true);
     });

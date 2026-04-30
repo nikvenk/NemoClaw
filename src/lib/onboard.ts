@@ -3695,15 +3695,19 @@ async function createSandbox(
         current.policyPresets = null;
         return current;
       });
-      if (
-        Array.isArray(previousPolicies) &&
-        previousPolicies.length > 0 &&
-        isNonInteractive() &&
-        (process.env.NEMOCLAW_POLICY_PRESETS || "").trim().length > 0
-      ) {
-        note(
-          `  [non-interactive] NEMOCLAW_POLICY_PRESETS overrides previous presets on recreate (was: ${previousPolicies.join(", ")}).`,
-        );
+      if (Array.isArray(previousPolicies) && previousPolicies.length > 0 && isNonInteractive()) {
+        const envPresetsRaw = (process.env.NEMOCLAW_POLICY_PRESETS || "").trim();
+        const envModeRaw = (process.env.NEMOCLAW_POLICY_MODE || "").trim().toLowerCase();
+        const wasList = previousPolicies.join(", ");
+        if (envPresetsRaw.length > 0) {
+          note(
+            `  [non-interactive] NEMOCLAW_POLICY_PRESETS overrides previous presets on recreate (was: ${wasList}).`,
+          );
+        } else if (EXPLICIT_POLICY_MODES.includes(envModeRaw)) {
+          note(
+            `  [non-interactive] NEMOCLAW_POLICY_MODE=${envModeRaw} overrides previous presets on recreate (was: ${wasList}).`,
+          );
+        }
       }
     }
 
@@ -5756,18 +5760,29 @@ function arePolicyPresetsApplied(sandboxName: string, selectedPresets: string[] 
   return selectedPresets.every((preset) => applied.has(preset));
 }
 
-// Skip carrying previous policies forward on --recreate-sandbox when the user
-// explicitly set NEMOCLAW_POLICY_PRESETS for the new run (#2675).
+// Skip carrying previous policies forward when the user gives a non-interactive
+// NEMOCLAW_POLICY_PRESETS or NEMOCLAW_POLICY_MODE override (#2675).
+const EXPLICIT_POLICY_MODES = ["skip", "none", "no", "custom", "list"];
 function shouldCarryPreviousPolicies(
   previousPolicies: string[] | null | undefined,
-  options: { nonInteractive?: boolean; envPolicyPresetsRaw?: string } = {},
+  options: {
+    nonInteractive?: boolean;
+    envPolicyPresetsRaw?: string;
+    envPolicyModeRaw?: string;
+  } = {},
 ): boolean {
   if (!Array.isArray(previousPolicies) || previousPolicies.length === 0) return false;
   const nonInteractive = options.nonInteractive ?? isNonInteractive();
+  if (!nonInteractive) return true;
   const envRaw = (
     options.envPolicyPresetsRaw ?? process.env.NEMOCLAW_POLICY_PRESETS ?? ""
   ).trim();
-  return !(nonInteractive && envRaw.length > 0);
+  if (envRaw.length > 0) return false;
+  const envMode = (
+    options.envPolicyModeRaw ?? process.env.NEMOCLAW_POLICY_MODE ?? ""
+  ).trim().toLowerCase();
+  if (EXPLICIT_POLICY_MODES.includes(envMode)) return false;
+  return true;
 }
 
 /**
