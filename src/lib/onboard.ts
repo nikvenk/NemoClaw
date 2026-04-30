@@ -4319,7 +4319,10 @@ function providerNameToOptionKey(
   // and let callers surface the situation rather than silently routing into
   // the wrong branch.
   if (name === "vllm-local") return opts.hasNimContainer ? "nim-local" : null;
-  if (name === "nvidia-nim") return "nim-local";
+  // `nvidia-nim` is a legacy alias for cloud NVIDIA Endpoints (see
+  // setupInference: it routes nvidia-nim through REMOTE_PROVIDER_CONFIG.build),
+  // not a marker for Local NIM. Local NIM persists as vllm-local + nimContainer.
+  if (name === "nvidia-nim") return "build";
   for (const [key, cfg] of Object.entries(REMOTE_PROVIDER_CONFIG)) {
     if ((cfg as { providerName?: string }).providerName === name) return key;
   }

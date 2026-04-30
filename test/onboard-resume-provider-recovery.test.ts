@@ -61,7 +61,8 @@ function stubLiveGatewayUntrusted(): void {
 describe("providerNameToOptionKey", () => {
   it("maps local provider names to option keys", () => {
     expect(providerNameToOptionKey("ollama-local")).toBe("ollama");
-    expect(providerNameToOptionKey("nvidia-nim")).toBe("nim-local");
+    // nvidia-nim is a legacy alias for cloud NVIDIA Endpoints, not Local NIM.
+    expect(providerNameToOptionKey("nvidia-nim")).toBe("build");
   });
 
   it("disambiguates vllm-local via nimContainer; refuses to guess otherwise", () => {
