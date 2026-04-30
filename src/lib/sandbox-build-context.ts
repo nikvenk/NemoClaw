@@ -75,6 +75,14 @@ function stageOptimizedSandboxBuildContext(
   fs.cpSync(path.join(sourceBlueprintDir, "policies"), path.join(stagedBlueprintDir, "policies"), {
     recursive: true,
   });
+  // nemoclaw-blueprint/scripts/ contains ws-proxy-fix.js and other runtime
+  // scripts that the Dockerfile COPYs into the sandbox image. Without this
+  // the optimized build context is missing those files and docker build fails.
+  fs.cpSync(
+    path.join(sourceBlueprintDir, "scripts"),
+    path.join(stagedBlueprintDir, "scripts"),
+    { recursive: true },
+  );
 
   fs.mkdirSync(stagedScriptsDir, { recursive: true });
   fs.copyFileSync(
