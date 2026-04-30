@@ -75,8 +75,10 @@ describe("image cleanup: onboard records imageTag in registry (#2086)", () => {
 
   it("registerSandbox uses resolvedImageTag parsed from build output", () => {
     expect(onboardSrc).toContain("resolvedImageTag");
-    expect(onboardSrc).toMatch(/Built image \(openshell\\\/sandbox-from:\\d\+\)/);
+    expect(onboardSrc).toMatch(/sandbox-from:\\d\+/);
     expect(onboardSrc).toMatch(/imageTag:\s*resolvedImageTag/);
+    expect(onboardSrc).toMatch(/buildId/);
+    expect(onboardSrc).toMatch(/console\.warn/);
   });
 
   it("onboard recreate path cleans up old image", () => {
