@@ -18,6 +18,7 @@ const {
   getOllamaWarmupCommand,
   validateOllamaModel,
 } = require("./local-inference");
+const { buildSubprocessEnv } = require("./subprocess-env");
 const { prompt } = require("./credentials");
 const { promptManualModelId } = require("./model-prompts");
 
@@ -104,12 +105,11 @@ function spawnOllamaAuthProxy(token: string): number | null {
   const child = spawn(process.execPath, [path.join(SCRIPTS, "ollama-auth-proxy.js")], {
     detached: true,
     stdio: "ignore",
-    env: {
-      ...process.env,
+    env: buildSubprocessEnv({
       OLLAMA_PROXY_TOKEN: token,
       OLLAMA_PROXY_PORT: String(OLLAMA_PROXY_PORT),
       OLLAMA_BACKEND_PORT: String(OLLAMA_PORT),
-    },
+    }),
   });
   child.unref();
   persistProxyPid(child.pid);
@@ -166,8 +166,40 @@ function startOllamaAuthProxy(): boolean {
 }
 
 /**
- * Ensure the auth proxy is running — called on sandbox connect to recover
- * from host reboots where the background proxy process was lost.
+ * Probe the running proxy to confirm it accepts the given token.
+ * The proxy validates auth before forwarding to Ollama. A backend error like
+ * 502 still proves the token was accepted, while 401 means token mismatch.
+ */
+function probeProxyToken(token: string): "accepted" | "rejected" | "unreachable" {
+  const result = spawnSync(
+    "curl",
+    [
+      "-sS",
+      "-o",
+      "/dev/null",
+      "-w",
+      "%{http_code}",
+      "--max-time",
+      "3",
+      "-H",
+      `Authorization: Bearer ${token}`,
+      `http://localhost:${OLLAMA_PROXY_PORT}/v1/models`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) return "unreachable";
+
+  const status = String(result.stdout || "").trim();
+  if (status === "401") return "rejected";
+  if (/^\d{3}$/.test(status)) return "accepted";
+  return "unreachable";
+}
+
+/**
+ * Ensure the auth proxy is running with the correct persisted token.
+ * Called on sandbox connect to recover from host reboots where the
+ * background proxy process was lost, and to detect token divergence
+ * after a failed re-onboard (see issue #2553).
  */
 function ensureOllamaAuthProxy(): void {
   // Try to load persisted token first — if none, this isn't an Ollama setup.
@@ -176,22 +208,64 @@ function ensureOllamaAuthProxy(): void {
 
   const pid = loadPersistedProxyPid();
   if (isOllamaProxyProcess(pid)) {
-    ollamaProxyToken = token;
-    return;
+    const tokenStatus = probeProxyToken(token);
+    if (tokenStatus === "accepted") {
+      ollamaProxyToken = token;
+      return;
+    }
   }
-
-  // Proxy not running — restart it with the persisted token.
   killStaleProxy();
+
+  // Proxy not running, token mismatch, or PID stale — restart with the persisted token.
   ollamaProxyToken = token;
-  spawnOllamaAuthProxy(token);
-  sleep(1);
+  const startedPid = spawnOllamaAuthProxy(token);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (isOllamaProxyProcess(startedPid) && probeProxyToken(token) === "accepted") return;
+    sleep(1);
+  }
+  console.error(`  Error: Ollama auth proxy did not become ready after restart.`);
 }
 
+/** Return the current proxy token, falling back to the persisted file. */
 function getOllamaProxyToken(): string | null {
   if (ollamaProxyToken) return ollamaProxyToken;
   // Fall back to persisted token (resume / reconnect scenario)
   ollamaProxyToken = loadPersistedProxyToken();
   return ollamaProxyToken;
+}
+
+/**
+ * Check whether the Ollama auth proxy is actually healthy — not just that
+ * the PID exists, but that the proxy endpoint responds to HTTP requests.
+ *
+ * This is the correct check for the setupInference fallback: if the
+ * container reachability test fails (Docker bridge issue) but the proxy
+ * is confirmed healthy on the host, onboarding can safely continue.
+ */
+function isProxyHealthy(): boolean {
+  // 1. PID check — informational, but don't early-return on failure.
+  //    The proxy may have been restarted with a new PID that isn't in our
+  //    PID file, so the HTTP probe is the authoritative signal.
+  const pid = loadPersistedProxyPid();
+  const hasValidPid = isOllamaProxyProcess(pid);
+
+  // 2. HTTP probe — confirm the proxy actually responds. This is the
+  //    authoritative check: a successful probe wins even if the PID file
+  //    is missing or stale (e.g., after a manual restart).
+  const proxyUrl = `http://127.0.0.1:${OLLAMA_PROXY_PORT}/api/tags`;
+  const token = loadPersistedProxyToken();
+  const probeCmd = token
+    ? ["curl", "-sf", "--connect-timeout", "3", "--max-time", "5",
+       "-H", `Authorization: Bearer ${token}`, proxyUrl]
+    : ["curl", "-sf", "--connect-timeout", "3", "--max-time", "5", proxyUrl];
+
+  const output = runCapture(probeCmd, { ignoreError: true });
+  if (output) return true;
+
+  // HTTP probe failed — fall back to PID as a weaker signal.
+  // This covers edge cases where the probe transiently fails but the
+  // process is confirmed alive.
+  return hasValidPid;
 }
 
 async function promptOllamaModel(gpu = null) {
@@ -235,7 +309,7 @@ function pullOllamaModel(model) {
     encoding: "utf8",
     stdio: "inherit",
     timeout: 600_000,
-    env: { ...process.env },
+    env: buildSubprocessEnv(),
   });
   if (result.signal === "SIGTERM") {
     console.error(
@@ -268,6 +342,8 @@ function prepareOllamaModel(model, installedModels = []) {
 module.exports = {
   ensureOllamaAuthProxy,
   getOllamaProxyToken,
+  isProxyHealthy,
+  killStaleProxy,
   persistProxyToken,
   startOllamaAuthProxy,
   promptOllamaModel,

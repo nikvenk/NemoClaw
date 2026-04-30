@@ -4,13 +4,14 @@
 import * as onboardSession from "./onboard-session";
 import type { ListSandboxesCommandDeps, RecoveryResult } from "./inventory-commands";
 import { parseGatewayInference } from "./inference-config";
+import { OPENSHELL_PROBE_TIMEOUT_MS } from "./openshell-timeouts";
 import { parseSshProcesses, createSystemDeps } from "./sandbox-session-state";
 import { resolveOpenshell } from "./resolve-openshell";
 
 interface ListCommandRuntimeBridge {
   captureOpenshell: (
     args: string[],
-    opts?: { ignoreError?: boolean },
+    opts?: { ignoreError?: boolean; timeout?: number },
   ) => { status: number; output: string };
   recoverRegistryEntries: (options?: {
     requestedSandboxName?: string | null;
@@ -44,7 +45,10 @@ export function buildListCommandDeps(): ListSandboxesCommandDeps {
     recoverRegistryEntries: () => runtime.recoverRegistryEntries(),
     getLiveInference: () =>
       parseGatewayInference(
-        runtime.captureOpenshell(["inference", "get"], { ignoreError: true }).output,
+        runtime.captureOpenshell(["inference", "get"], {
+          ignoreError: true,
+          timeout: OPENSHELL_PROBE_TIMEOUT_MS,
+        }).output,
       ),
     loadLastSession: () => onboardSession.loadSession(),
     getActiveSessionCount: sessionDeps

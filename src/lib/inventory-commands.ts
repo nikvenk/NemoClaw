@@ -11,6 +11,7 @@ export interface SandboxEntry {
   policies?: string[] | null;
   messagingChannels?: string[] | null;
   agent?: string | null;
+  dashboardPort?: number | null;
 }
 
 export interface MessagingBridgeHealth {
@@ -41,6 +42,7 @@ export interface SandboxInventoryRow {
   gpuEnabled: boolean;
   policies: string[];
   agent: string | null;
+  dashboardPort?: number | null;
   isDefault: boolean;
   activeSessionCount: number | null;
   connected: boolean;
@@ -89,6 +91,7 @@ function buildSandboxInventoryRow(
     gpuEnabled: sandbox.gpuEnabled === true,
     policies: Array.isArray(sandbox.policies) ? sandbox.policies : [],
     agent: sandbox.agent || null,
+    ...(sandbox.dashboardPort != null ? { dashboardPort: sandbox.dashboardPort } : {}),
     isDefault: sandbox.name === defaultSandbox,
     activeSessionCount,
     connected: activeSessionCount !== null && activeSessionCount > 0,
@@ -180,6 +183,9 @@ export function renderSandboxInventoryText(
       if (providerDrifted) parts.push(`provider=${sandbox.provider || "unknown"}`);
       log(`      (onboarded: ${parts.join(", ")})`);
     }
+    if (sandbox.dashboardPort != null) {
+      log(`      dashboard: http://127.0.0.1:${sandbox.dashboardPort}/`);
+    }
   }
   log("");
   log("  * = default sandbox");
@@ -215,7 +221,8 @@ export function showStatusCommand(deps: ShowStatusCommandDeps): void {
       // agrees with `openshell inference get` (#2369).
       const liveModel = isDefault && live ? live.model : null;
       const model = liveModel || sb.model;
-      log(`    ${sb.name}${def}${model ? ` (${model})` : ""}`);
+      const portSuffix = sb.dashboardPort != null ? ` :${sb.dashboardPort}` : "";
+      log(`    ${sb.name}${def}${model ? ` (${model})` : ""}${portSuffix}`);
       if (isDefault && liveModel && liveModel !== sb.model) {
         log(`      (onboarded: ${sb.model || "unknown"})`);
       }
