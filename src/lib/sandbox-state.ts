@@ -87,6 +87,12 @@ export interface BackupResult {
   manifest?: RebuildManifest;
   backedUpDirs: string[];
   failedDirs: string[];
+  // Files skipped during tar due to permission errors (e.g. root-owned
+  // files from kubectl-exec diagnostics). Callers should only display
+  // these when `success` is true (partial but usable backup). May also
+  // be populated on failure if stderr contained permission errors before
+  // a fatal exit. See issue #2727.
+  skippedFiles: string[];
   // Set when the failure is a precondition (e.g. duplicate --name) rather
   // than a mid-backup error. CLI surfaces this to the user verbatim.
   error?: string;
@@ -577,6 +583,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         success: false,
         backedUpDirs: [],
         failedDirs: [],
+        skippedFiles: [],
         error: validationError,
       };
     }
@@ -586,6 +593,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         success: false,
         backedUpDirs: [],
         failedDirs: [],
+        skippedFiles: [],
         error:
           `Snapshot name '${providedName}' already exists for '${sandboxName}' ` +
           `(at ${conflict.timestamp}). Pick a different name or delete the existing snapshot.`,
@@ -628,11 +636,12 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
 
   const backedUpDirs: string[] = [];
   const failedDirs: string[] = [];
+  let skippedFiles: string[] = [];
 
   if (stateDirs.length === 0) {
     _log("WARNING: Agent manifest declares no state_dirs — nothing to back up");
     writeManifest(backupPath, manifest);
-    return { success: true, manifest, backedUpDirs, failedDirs };
+    return { success: true, manifest, backedUpDirs, failedDirs, skippedFiles };
   }
 
   // SSH+tar single-roundtrip download
@@ -640,7 +649,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
   const sshConfig = getSshConfig(sandboxName);
   if (!sshConfig) {
     _log("FAILED: Could not get SSH config");
-    return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs] };
+    return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs], skippedFiles };
   }
   _log(`SSH config obtained (${sshConfig.length} bytes)`);
 
@@ -678,13 +687,13 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
       _log(
         `FAILED: SSH dir check exited ${existResult.status} — cannot determine which dirs exist`,
       );
-      return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs] };
+      return { success: false, manifest, backedUpDirs, failedDirs: [...stateDirs], skippedFiles };
     }
 
     if (existingDirs.length === 0) {
       _log("No state dirs found in sandbox (all empty)");
       writeManifest(backupPath, manifest);
-      return { success: true, manifest, backedUpDirs, failedDirs };
+      return { success: true, manifest, backedUpDirs, failedDirs, skippedFiles };
     }
 
     // NC-2227-04: Pre-backup audit — reject symlinks, hardlinks, and special
@@ -711,6 +720,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         manifest,
         backedUpDirs,
         failedDirs: [...existingDirs],
+        skippedFiles,
         error: `Pre-backup audit failed: ${detail}`,
       };
     }
@@ -726,36 +736,69 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
         manifest,
         backedUpDirs,
         failedDirs: [...existingDirs],
+        skippedFiles,
         error: `Pre-backup audit rejected: symlinks, hard links, or special files found in state dirs: ${violations.slice(0, 3).join("; ")}`,
       };
     }
     _log("Pre-backup audit passed — no symlinks, hard links, or special files found");
 
     // Download via SSH+tar
-    // NC-2227-04: Removed -h flag (was following symlinks). State dirs are
-    // now agent-writable and co-located with config — a compromised agent
-    // could create symlinks to exfiltrate config contents via backup.
-    const tarCmd = `tar -cf - -C ${shellQuote(dir)} -- ${existingDirs.map(shellQuote).join(" ")}`;
+    // --ignore-failed-read: tolerate per-file permission errors (e.g. root-owned
+    // files created by kubectl-exec diagnostics). GNU tar will still write all
+    // readable files to stdout and log warnings to stderr, but exits 0 instead
+    // of 2. LC_ALL=C ensures English stderr for the parsing below. See #2727.
+    const tarCmd = `LC_ALL=C tar --ignore-failed-read -cf - -C ${shellQuote(dir)} -- ${existingDirs.map(shellQuote).join(" ")}`;
     _log(`Downloading via SSH+tar: ${tarCmd}`);
     const result = spawnSync("ssh", [...sshArgs(configFile, sandboxName), tarCmd], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 120000,
       maxBuffer: 256 * 1024 * 1024,
     });
+    const tarStderr = result.stderr?.toString() || "";
     _log(
-      `SSH+tar download: exit=${result.status}, stdout=${result.stdout ? result.stdout.length + " bytes" : "null"}, stderr=${(result.stderr?.toString() || "").substring(0, 200)}`,
+      `SSH+tar download: exit=${result.status}, stdout=${result.stdout ? result.stdout.length + " bytes" : "null"}, stderr=${tarStderr.substring(0, 200)}`,
     );
 
-    if (result.status === 0 && result.stdout && result.stdout.length > 0) {
+    // Parse any per-file permission errors from tar stderr so callers can
+    // surface which files were skipped (partial backup).
+    skippedFiles = tarStderr
+      .split("\n")
+      .filter((l) => l.includes("Cannot open") || l.includes("Permission denied"))
+      .map((l) => l.replace(/^tar:\s*/, "").replace(/: Cannot open.*$/, "").replace(/: Permission denied.*$/, ""));
+
+    // With --ignore-failed-read, GNU tar exits 0 even when individual files
+    // are unreadable. Reject truly fatal exits: null (signal-killed), 2
+    // (fatal tar error without --ignore-failed-read fallback), or ≥128
+    // (signal/SSH failures like 255). Exit 1 is "some files differ" which
+    // is benign for backup purposes.
+    const isFatalExit =
+      result.status === null || result.status === 2 || result.status >= 128;
+
+    if (!isFatalExit && result.stdout && result.stdout.length > 0) {
       // SECURITY: Validate tar entries, extract safely, audit symlinks
       const extractResult = safeTarExtract(result.stdout, backupPath);
       if (extractResult.success) {
         backedUpDirs.push(...existingDirs);
+        if (result.status !== 0) {
+          _log(
+            `WARN: tar exited ${result.status} but produced valid output (partial backup); stderr: ${tarStderr.substring(0, 500)}`,
+          );
+        }
+        if (skippedFiles.length > 0) {
+          _log(
+            `WARN: ${skippedFiles.length} file(s) skipped due to permission errors: ${skippedFiles.slice(0, 10).join(", ")}`,
+          );
+        }
       } else {
         _log(`SECURITY: tar extraction blocked: ${extractResult.error}`);
         failedDirs.push(...existingDirs);
       }
     } else {
+      if (isFatalExit) {
+        _log(
+          `FAILED: tar exited with fatal status ${result.status} — rejecting backup; stderr: ${tarStderr.substring(0, 500)}`,
+        );
+      }
       failedDirs.push(...existingDirs);
     }
   } finally {
@@ -792,6 +835,7 @@ export function backupSandboxState(sandboxName: string, options: BackupOptions =
     manifest,
     backedUpDirs,
     failedDirs,
+    skippedFiles,
   };
 }
 

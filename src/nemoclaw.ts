@@ -3250,6 +3250,17 @@ async function sandboxRebuild(
   }
   console.log(`  ${G}\u2713${R} State backed up (${backup.backedUpDirs.length} directories)`);
   console.log(`    Backup: ${backup.manifest.backupPath}`);
+  if (backup.skippedFiles.length > 0) {
+    console.log(
+      `  ${YW}⚠${R} ${backup.skippedFiles.length} file(s) skipped (permission denied — likely root-owned):`,
+    );
+    for (const f of backup.skippedFiles.slice(0, 10)) {
+      console.log(`    ${D}${f}${R}`);
+    }
+    if (backup.skippedFiles.length > 10) {
+      console.log(`    ${D}... and ${backup.skippedFiles.length - 10} more${R}`);
+    }
+  }
 
   // Step 3: Delete sandbox without tearing down gateway or session.
   // sandboxDestroy() cleans up the gateway when it's the last sandbox and
@@ -3824,6 +3835,17 @@ async function sandboxSnapshot(sandboxName: string, subArgs: string[]) {
           `  ${G}\u2713${R} Snapshot ${v}${nameSuffix} created (${result.backedUpDirs.length} directories)`,
         );
         console.log(`    ${result.manifest.backupPath}`);
+        if (result.skippedFiles.length > 0) {
+          console.log(
+            `  ${YW}⚠${R} ${result.skippedFiles.length} file(s) skipped (permission denied — likely root-owned):`,
+          );
+          for (const f of result.skippedFiles.slice(0, 10)) {
+            console.log(`    ${D}${f}${R}`);
+          }
+          if (result.skippedFiles.length > 10) {
+            console.log(`    ${D}... and ${result.skippedFiles.length - 10} more${R}`);
+          }
+        }
       } else {
         if (result.error) {
           console.error(`  ${result.error}`);
@@ -4037,6 +4059,11 @@ function backupAll() {
       console.log(
         `  ${G}\u2713${R} ${sb.name}: ${result.backedUpDirs.length} dirs → ${result.manifest.backupPath}`,
       );
+      if (result.skippedFiles.length > 0) {
+        console.log(
+          `    ${YW}⚠${R} ${result.skippedFiles.length} file(s) skipped (permission denied)`,
+        );
+      }
       backed++;
     } else {
       console.error(`  ${_RD}✗${R} ${sb.name}: backup failed (${result.failedDirs.join(", ")})`);

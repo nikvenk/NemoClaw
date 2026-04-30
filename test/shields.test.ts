@@ -299,11 +299,14 @@ describe("NC-2227-04: sandbox-state.ts tar commands do not follow symlinks", () 
     expect(fnStart).not.toBe(-1);
     const fnBody = src.slice(fnStart);
 
-    // The tar command should be `tar -cf` not `tar -chf`
-    const tarCmdMatch = fnBody.match(/tar -c([a-z]*)f/g);
-    expect(tarCmdMatch).not.toBeNull();
-    for (const match of tarCmdMatch!) {
-      expect(match).not.toContain("h");
+    // The tar command should be `tar ... -cf` not `tar ... -chf`
+    // Account for flags like --ignore-failed-read between tar and -cf.
+    // Use matchAll to extract only the flags between -c and f (capture
+    // group 1), not the entire match which may contain unrelated 'h's.
+    const tarCmdMatches = [...fnBody.matchAll(/tar\b[^\n]*?-c([a-z]*)f/g)];
+    expect(tarCmdMatches.length).toBeGreaterThan(0);
+    for (const m of tarCmdMatches) {
+      expect(m[1]).not.toContain("h");
     }
   });
 
