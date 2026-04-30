@@ -1003,24 +1003,30 @@ install_vllm() {
 
   # On mixed-GPU systems (e.g. workstation GPU + GB300) restrict the container
   # to the highest-VRAM GPU so vLLM subprocess workers don't try to init a
-  # display adapter. CUDA_DEVICE_ORDER=PCI_BUS_ID keeps the index stable across
-  # reboots; CUDA_VISIBLE_DEVICES scopes the container to one GPU.
-  local cuda_visible="all"
+  # display adapter. Use --gpus "device=N" rather than --gpus all +
+  # CUDA_VISIBLE_DEVICES=N: combining those two flags remaps the device inside
+  # the container to index 0 while the env var still says N, which causes
+  # NVMLError_InvalidArgument in vLLM's worker processes.
+  local best_gpu_idx=""
+  local gpus_arg="all"
   if command -v nvidia-smi >/dev/null 2>&1; then
-    local best_gpu_idx=""
     best_gpu_idx=$(nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits \
       2>/dev/null | sort -t',' -k2 -rn | head -1 | awk -F',' '{print $1}' | tr -d ' ')
-    [[ -n "$best_gpu_idx" ]] && cuda_visible="$best_gpu_idx"
+    [[ -n "$best_gpu_idx" ]] && gpus_arg="device=${best_gpu_idx}"
   fi
 
-  info "Launching vLLM container (model: ${model_id}, port: ${port}, gpu: ${cuda_visible})…"
-  maybe_sudo docker run --detach --gpus all \
+  # Use --network host so that:
+  # (a) the host's _port_listening check sees the port only when Uvicorn is
+  #     actually serving (Docker bridge networking publishes the port via
+  #     docker-proxy before vLLM is ready, causing false-positive readiness);
+  # (b) the onboard wizard's curl probe can reach the server via any host IP.
+  info "Launching vLLM container (model: ${model_id}, port: ${port}, gpu: ${gpus_arg})…"
+  maybe_sudo docker run --detach \
+    --gpus "${gpus_arg}" \
+    --network host \
     --name "$container_name" \
     --restart unless-stopped \
-    -p "${port}:${port}" \
     -v "${hf_cache}:/root/.cache/huggingface" \
-    -e CUDA_DEVICE_ORDER=PCI_BUS_ID \
-    -e CUDA_VISIBLE_DEVICES="${cuda_visible}" \
     -e NVIDIA_API_KEY="${NVIDIA_API_KEY:-}" \
     -e HUGGING_FACE_HUB_TOKEN="${hf_token}" \
     -e HF_TOKEN="${hf_token}" \
@@ -1028,11 +1034,18 @@ install_vllm() {
     --model "$model_id" \
     --port "$port"
 
-  info "Waiting for vLLM to become ready on :${port}…"
-  local attempts=0
-  until _port_listening "$port" || (( ++attempts >= 30 )); do sleep 5; done
-  if ! _port_listening "$port"; then
-    warn "vLLM container started but port ${port} not yet listening — continuing; onboard will retry"
+  # HTTP health probe — vLLM's /health endpoint returns 200 only after the
+  # model is fully loaded and Uvicorn is serving. Port-only checks succeed
+  # as soon as docker-proxy binds the host port, which is before vLLM is ready.
+  # Allow up to 10 minutes (large models take 5-6 min on first load from cache).
+  info "Waiting for vLLM to become ready on :${port} (up to 10 min for large models)…"
+  local attempts=0 max_attempts=60
+  until curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1 \
+        || (( ++attempts >= max_attempts )); do
+    sleep 10
+  done
+  if ! curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+    warn "vLLM did not become healthy within $((max_attempts * 10))s — continuing; onboard will retry"
   else
     info "vLLM ready on :${port}"
   fi
