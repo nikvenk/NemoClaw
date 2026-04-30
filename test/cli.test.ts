@@ -1314,16 +1314,16 @@ describe("CLI dispatch", () => {
     expect(fs.existsSync(markerFile)).toBe(false);
   });
 
-  it("rejects probe-only connect when skip-permissions was also requested", () => {
+  it("rejects the removed skip-permissions connect flag", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-cli-connect-probe-flags-"));
     writeSandboxRegistry(home);
 
-    const r = runWithEnv("alpha connect --probe-only --dangerously-skip-permissions", {
+    const r = runWithEnv("alpha connect --dangerously-skip-permissions", {
       HOME: home,
     });
 
     expect(r.code).toBe(1);
-    expect(r.out).toContain("--probe-only cannot be combined with --dangerously-skip-permissions");
+    expect(r.out).toContain("--dangerously-skip-permissions was removed");
   });
 
   it("connect --probe-only recovers the gateway without opening SSH", () => {
