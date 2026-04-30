@@ -23,7 +23,7 @@ const onboardSrc = fs.readFileSync(
 describe("Issue #2674: local inference detection must not hang", () => {
   it("declares bounded curl args for the local-probe block", () => {
     const block = onboardSrc.match(
-      /localProbeCurlArgs\s*=\s*\[\s*"--connect-timeout"\s*,\s*"\d+"\s*,\s*"--max-time"\s*,\s*"\d+"\s*\]/,
+      /localProbeCurlArgs\s*=\s*\[\s*"--connect-timeout"\s*,\s*"[1-9]\d*"\s*,\s*"--max-time"\s*,\s*"[1-9]\d*"\s*\]/,
     );
     expect(block, "expected localProbeCurlArgs with --connect-timeout/--max-time").not.toBeNull();
   });
