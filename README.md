@@ -27,6 +27,68 @@ It installs the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) runtime,
 
 NemoClaw adds guided onboarding, a hardened blueprint, state management, OpenShell-managed channel messaging, routed inference, and layered protection on top of the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) runtime. For the full feature list, refer to [Overview](https://docs.nvidia.com/nemoclaw/latest/about/overview.html). For the system diagram, component model, and blueprint lifecycle, refer to [How It Works](https://docs.nvidia.com/nemoclaw/latest/about/how-it-works.html) and [Architecture](https://docs.nvidia.com/nemoclaw/latest/reference/architecture.html).
 
+## Deploy on Brev — Multi-Provider + Telegram Launchable
+
+This fork ships a ready-to-use [Brev](https://brev.nvidia.com/) launchable that adds three improvements over the upstream default:
+
+| Fix | Details |
+|-----|---------|
+| **Multi-provider credential routing** | Only the API key for the selected provider is exported. The upstream default hard-codes `NVIDIA_API_KEY`, which produces HTTP 401 when OpenAI, Anthropic, or Gemini is chosen. |
+| **NVIDIA Endpoints tool-call fix** | Forces `openai-completions` for the `cloud` (NVIDIA Endpoints) provider so Nemotron models execute tools through structured `tool_calls` instead of printing raw `<tool_call>` XML. ([upstream issue #976](https://github.com/NVIDIA/NemoClaw/issues/976)) |
+| **Telegram first-class support** | `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_IDS` are configured as environment variable inputs on the Brev deploy page — no manual SSH editing required. |
+
+### One-click deploy
+
+[![Launch on Brev](https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg)](https://brev.nvidia.com/launchable/deploy?launchableID=env-nikvenk-openai-telegram)
+
+> **Note:** Replace the launchable ID above with the one you receive after creating the launchable in the [Brev Console](https://brev.nvidia.com/).
+
+### Environment variables
+
+Set these on the Brev deploy page when launching the instance.
+
+| Variable | Required | Example / Notes |
+|----------|----------|-----------------|
+| `NEMOCLAW_PROVIDER` | **Yes** | `cloud` · `openai` · `anthropic` · `gemini` · `compatible-endpoint` |
+| `NVIDIA_API_KEY` | If `cloud` | `nvapi-…` key from [build.nvidia.com](https://build.nvidia.com/settings/api-keys) |
+| `OPENAI_API_KEY` | If `openai` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | If `anthropic` | Anthropic API key |
+| `GEMINI_API_KEY` | If `gemini` | Google Gemini API key |
+| `COMPATIBLE_API_KEY` | If `compatible-endpoint` | Leave blank for no-auth endpoints |
+| `NEMOCLAW_ENDPOINT_URL` | If `compatible-endpoint` | e.g. `http://172.17.0.1:8000/v1` |
+| `NEMOCLAW_MODEL` | **Yes** | `nvidia/nemotron-3-super-120b-a12b`, `gpt-4o`, `claude-sonnet-4-6`, … |
+| `TELEGRAM_BOT_TOKEN` | Optional | Bot token from [@BotFather](https://t.me/BotFather). Leave empty to skip Telegram. |
+| `TELEGRAM_ALLOWED_IDS` | Optional | Comma-separated Telegram user IDs for DM access. |
+| `NEMOCLAW_SANDBOX_NAME` | Optional | Default: `my-assistant` |
+| `NEMOCLAW_POLICY_TIER` | Optional | `restricted` · `balanced` (default) · `open` |
+
+### Create the launchable yourself
+
+1. Go to [brev.nvidia.com](https://brev.nvidia.com/) → **Launchables → Create Launchable**
+2. **Step 1 — Files:** Select **Git Repository** → `https://github.com/nikvenk/NemoClaw` · Runtime: **VM Mode**
+3. **Step 2 — Environment:** Enable setup script → paste contents of [`scripts/brev-setup-openai-telegram.sh`](scripts/brev-setup-openai-telegram.sh)
+4. **Step 3 — Networking:** No Jupyter needed; no public ports (SSH only)
+5. **Step 4 — Compute:** CPU instance (e.g. n2d-standard-4) for cloud/API providers; GPU for local NIM
+6. **Step 5 — Review:** Name it and copy the launchable link
+
+### Post-deploy verification
+
+```bash
+# SSH into the instance
+brev shell <instance-name>
+
+# Confirm the tool-call fix is active (should print openai-completions)
+nemoclaw my-assistant status | grep Inference
+
+# Smoke test tool use — agent should read identity files, not print raw XML
+nemoclaw my-assistant connect
+openclaw agent --agent main --local -m "what is your name?" --session-id smoke
+
+# If Telegram was configured, send a DM to your bot to confirm delivery
+```
+
+---
+
 ## Getting Started
 
 Follow these steps to install NemoClaw and run your first sandboxed OpenClaw agent.
@@ -191,6 +253,9 @@ NemoClaw/
 │       └── onboard/      # Onboarding config
 ├── nemoclaw-blueprint/   # Blueprint YAML and network policies
 ├── scripts/          # Install helpers, setup, automation
+│   └── brev-setup-openai-telegram.sh  # Brev launchable: multi-provider + Telegram
+├── src/lib/          # TypeScript source
+│   └── onboard.ts    # Onboarding logic (includes tool-call fix for NVIDIA Endpoints)
 ├── test/             # Integration and E2E tests
 └── docs/             # User-facing docs (Sphinx/MyST)
 ```

@@ -5006,6 +5006,18 @@ async function setupNim(
             }
             continue selectionLoop;
           }
+          // NVIDIA Endpoints /v1/responses does not run a server-side tool-call
+          // parser for Nemotron models — tool invocations arrive as raw XML text
+          // rather than structured tool_calls objects that OpenClaw can execute.
+          // Force chat completions, which does run the parser, matching the same
+          // override already applied for nim-local and vllm.
+          // See: https://github.com/NVIDIA/NemoClaw/issues/976
+          if (preferredInferenceApi !== "openai-completions") {
+            console.log(
+              "  ℹ Using chat completions API (tool-call-parser requires /v1/chat/completions)",
+            );
+          }
+          preferredInferenceApi = "openai-completions";
         }
 
         console.log(`  Using ${remoteConfig.label} with model: ${model}`);
